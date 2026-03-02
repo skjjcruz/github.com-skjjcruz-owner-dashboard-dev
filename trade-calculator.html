@@ -946,18 +946,18 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users) {
     // rosters don't inflate everyone into "Elite". Depth lives in healthScore
     // only as a diagnostic number.
     //
-    // ELITE      ≥ 243  pts/wk  (at/above target)      ~top teams
-    // CONTENDER  ≥ 194  pts/wk  (within 20% below)     ~playoff-caliber
-    // CROSSROADS ≥ 170  pts/wk  (21–30% below target)  ~on the fence
-    // REBUILDING < 170  pts/wk  (>30% below target)    ~build mode
+    // ELITE      ≥ 272  pts/wk  (≥12% above target)    ~top 2-4 teams, trading from strength
+    // CONTENDER  ≥ 243  pts/wk  (at/above target)       ~playoff-caliber, on track
+    // CROSSROADS ≥ 207  pts/wk  (within 15% below)      ~competitive but slipping, decision time
+    // REBUILDING < 207  pts/wk  (>15% below target)     ~build mode, willing sellers
     //
     // When scoring data is unavailable (weeklyPts=0), fall back to depth score.
     let tier, tierColor, tierBg;
     if (weeklyPts > 0) {
-        if      (weeklyPts >= WEEKLY_TARGET)        { tier='ELITE';      tierColor='#D4AF37'; tierBg='rgba(212,175,55,0.15)'; }
-        else if (weeklyPts >= WEEKLY_TARGET * 0.80) { tier='CONTENDER';  tierColor='#2ECC71'; tierBg='rgba(46,204,113,0.12)'; }
-        else if (weeklyPts >= WEEKLY_TARGET * 0.70) { tier='CROSSROADS'; tierColor='#F0A500'; tierBg='rgba(240,165,0,0.12)';  }
-        else                                         { tier='REBUILDING'; tierColor='#E74C3C'; tierBg='rgba(231,76,60,0.12)';  }
+        if      (weeklyPts >= WEEKLY_TARGET * 1.12) { tier='ELITE';      tierColor='#D4AF37'; tierBg='rgba(212,175,55,0.15)'; }
+        else if (weeklyPts >= WEEKLY_TARGET)         { tier='CONTENDER';  tierColor='#2ECC71'; tierBg='rgba(46,204,113,0.12)'; }
+        else if (weeklyPts >= WEEKLY_TARGET * 0.85)  { tier='CROSSROADS'; tierColor='#F0A500'; tierBg='rgba(240,165,0,0.12)';  }
+        else                                          { tier='REBUILDING'; tierColor='#E74C3C'; tierBg='rgba(231,76,60,0.12)';  }
     } else {
         // No scoring data yet — use depth coverage as proxy
         if      (coverageScore >= 36) { tier='CONTENDER';  tierColor='#2ECC71'; tierBg='rgba(46,204,113,0.12)'; }
@@ -967,8 +967,8 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users) {
 
     // Panic meter (0–5) — thresholds align with scoring tiers
     let panic = 0;
-    if      (weeklyPts > 0 && weeklyPts < WEEKLY_TARGET * 0.70) panic += 2; // REBUILDING zone
-    else if (weeklyPts > 0 && weeklyPts < WEEKLY_TARGET)        panic += 1; // CROSSROADS/CONTENDER zone
+    if      (weeklyPts > 0 && weeklyPts < WEEKLY_TARGET * 0.85) panic += 2; // REBUILDING zone
+    else if (weeklyPts > 0 && weeklyPts < WEEKLY_TARGET)        panic += 1; // CROSSROADS zone
     const criticals = Object.values(posAssessment).filter(p => p.status === 'deficit').length;
     if      (criticals >= 3) panic += 2;
     else if (criticals >= 1) panic += 1;
@@ -1058,7 +1058,7 @@ function teamCommentary(assessment, eliteSet) {
     const identities = {
         ELITE:     'Championship-caliber operation — trading from a position of strength.',
         CONTENDER: 'Legitimate playoff threat — at or above the scoring target, solid across the board.',
-        CROSSROADS: 'At a crossroads — 21–30% below target with gaps that need addressing before falling further behind.',
+        CROSSROADS: 'At a crossroads — within 15% of target but slipping. Address the gaps or fall into rebuild mode.',
         REBUILDING: 'Building for the future — position yourself as a willing seller for premium return.',
     };
 
@@ -1547,10 +1547,10 @@ function TradeCalculator() {
                         <div className="divider" />
                         <div style={{ marginTop:'0.4rem' }}>
                             {[
-                                { tier:'ELITE',      color:'#D4AF37', score:`${WEEKLY_TARGET}+ pts/wk`,                  desc:`At/above ${WEEKLY_TARGET} target. Trade from strength.` },
-                                { tier:'CONTENDER',  color:'#2ECC71', score:`${Math.round(WEEKLY_TARGET*0.80)}+ pts/wk`, desc:`Within 20% of target. Playoff-caliber, on track.` },
-                                { tier:'CROSSROADS', color:'#F0A500', score:`${Math.round(WEEKLY_TARGET*0.70)}+ pts/wk`, desc:`21–30% below target. Decision time.` },
-                                { tier:'REBUILDING', color:'#E74C3C', score:`<${Math.round(WEEKLY_TARGET*0.70)} pts/wk`, desc:`>30% below target. Build mode, willing sellers.` },
+                                { tier:'ELITE',      color:'#D4AF37', score:`${Math.round(WEEKLY_TARGET*1.12)}+ pts/wk`, desc:`≥12% above ${WEEKLY_TARGET} target. Trading from strength.` },
+                                { tier:'CONTENDER',  color:'#2ECC71', score:`${WEEKLY_TARGET}+ pts/wk`,                  desc:`At/above target. Playoff-caliber and on track.` },
+                                { tier:'CROSSROADS', color:'#F0A500', score:`${Math.round(WEEKLY_TARGET*0.85)}+ pts/wk`, desc:`Within 15% of target. Competitive but decisions loom.` },
+                                { tier:'REBUILDING', color:'#E74C3C', score:`<${Math.round(WEEKLY_TARGET*0.85)} pts/wk`, desc:`>15% below target. Build mode — willing sellers.` },
                             ].map(t => (
                                 <div key={t.tier} className="guide-tier-row">
                                     <span className="guide-color-dot" style={{ background:t.color }} />
@@ -1787,7 +1787,7 @@ function TradeCalculator() {
                     </select>
                 </div>
                 <div style={{ fontSize:'0.6rem', color:'var(--silver)', opacity:0.4, marginBottom:'0.75rem', lineHeight:1.4 }}>
-                    <strong style={{ color:'rgba(212,175,55,0.5)' }}>Tier = scoring vs {WEEKLY_TARGET} target:</strong> Elite ≥{WEEKLY_TARGET} · Contender ≥{Math.round(WEEKLY_TARGET*0.80)} · Crossroads ≥{Math.round(WEEKLY_TARGET*0.70)} · Rebuilding &lt;{Math.round(WEEKLY_TARGET*0.70)} pts/wk
+                    <strong style={{ color:'rgba(212,175,55,0.5)' }}>Tier = scoring vs {WEEKLY_TARGET} target:</strong> Elite ≥{Math.round(WEEKLY_TARGET*1.12)} · Contender ≥{WEEKLY_TARGET} · Crossroads ≥{Math.round(WEEKLY_TARGET*0.85)} · Rebuilding &lt;{Math.round(WEEKLY_TARGET*0.85)} pts/wk
                     &nbsp;·&nbsp; Health score = scoring (60%) + depth (40%) · ★ = top-5 at position league-wide
                 </div>
 
