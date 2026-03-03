@@ -543,6 +543,9 @@ const IDEAL_ROSTER = { QB:3, RB:7, WR:7, TE:4, K:2, DL:7, LB:6, DB:6 };
 // 32 NFL teams × starters/team = how many "NFL starters" exist at each position
 const LINEUP_STARTERS = { QB:1, RB:2, WR:3, TE:1, K:1, DL:3, LB:2, DB:3 };
 
+// How many players league-wide are considered "starting quality" at each position
+const NFL_STARTER_POOL = { QB:32, RB:64, WR:96, TE:32, DL:96, LB:64, DB:96 };
+
 // Weekly points each position group must produce (sums to 243)
 // QB:20 | RB:36 | WR:36 | TE:10 | K:9 | DL:24 | LB:16 | DB:24
 const POS_PT_TARGETS = { QB:20, RB:36, WR:36, TE:10, K:9, DL:24, LB:16, DB:24 };
@@ -928,7 +931,7 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
     // Each position is assessed by how many "NFL-starter-quality" players the
     // team has, not raw count. NFL-starter quality is determined by whether the
     // player ranks in the global top N at their position by dynasty/trade value
-    // (N = LINEUP_STARTERS[pos] × 32 NFL teams). Using value rather than PPG
+    // (N = NFL_STARTER_POOL[pos]). Using value rather than PPG
     // means injuries and partial seasons don't penalise legitimate starters.
     for (const [pos, ideal] of Object.entries(IDEAL_ROSTER)) {
         const playerIds   = posGroups[pos] || [];
@@ -941,7 +944,7 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
             .sort((a,b) => b.ppg - a.ppg);
         const projectedPts = withPPG.slice(0, startingReq).reduce((s, p) => s + p.ppg, 0);
 
-        // NFL-starter count: how many of this team's players are in the global starter pool
+        // NFL-starter count: how many of this team's players rank in the global top-N pool
         const posStarters    = nflStarterSet[pos] || new Set();
         const nflStarterIds  = playerIds.filter(id => posStarters.has(id));
         const nflStarters    = nflStarterIds.length;
@@ -1042,21 +1045,23 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
 //   • PPG scaled to the same 0–10 000 range is the fallback for players
 //     absent from FC (e.g., injured starters with no current-year entry)
 // Pool = LINEUP_STARTERS[pos] × 32 NFL teams (original strict sizing).
+// Rank every player in playersData by FC dynasty value and return
+// a Set of the top-N ids per position, where N = NFL_STARTER_POOL[pos].
 function calcNflStarterSet(playersData, valueIndex, statsData, scoring) {
     const byPos = {};
     for (const [id, p] of Object.entries(playersData)) {
         const pos = normPos(p.position);
-        if (!pos || !LINEUP_STARTERS[pos]) continue;
+        if (!pos || !(pos in NFL_STARTER_POOL)) continue;
         if (!byPos[pos]) byPos[pos] = [];
         const fcVal = getPlayerValue(id, valueIndex).value;
         const ppg   = calcPPG(id, statsData || {}, scoring || {});
-        // ~30 PPG × 300 ≈ 9 000 keeps the PPG scale comparable to FC values
+        // Use FC value when available; fall back to PPG-based score
         const score = fcVal > 0 ? fcVal : ppg * 300;
         if (score > 0) byPos[pos].push({ id, score });
     }
     const result = {};
     for (const [pos, players] of Object.entries(byPos)) {
-        const poolSize = (LINEUP_STARTERS[pos] || 1) * 32;
+        const poolSize = NFL_STARTER_POOL[pos];
         result[pos] = new Set(
             players.sort((a,b) => b.score - a.score).slice(0, poolSize).map(p => p.id)
         );
