@@ -1718,27 +1718,17 @@ function TradeCalculator() {
             const { actual, ideal, status, nflStarters = actual, nflStarterIds = [], sortedIds = [], startingReq = 1 } = assessment;
             const statusIcon  = { surplus:'↑', ok:'✓', thin:'~', deficit:'✗' }[status];
             const statusColor = { surplus:'var(--gold)', ok:'var(--win-green)', thin:'var(--amber)', deficit:'var(--loss-red)' }[status];
-            const dots = [];
-            // Starter zone: solid = NFL-starter quality, empty = slot unfilled
-            for (let i = 0; i < startingReq; i++) {
-                dots.push(<span key={`s${i}`} className={`dot ${i < nflStarters ? 'dot-filled' : 'dot-empty'}`} />);
-            }
-            // Depth zone: dim = depth player, empty = needs depth
-            for (let i = startingReq; i < ideal; i++) {
-                dots.push(<span key={`d${i}`} className={`dot ${i < actual ? 'dot-depth' : 'dot-empty'}`} />);
-            }
-            // Surplus beyond ideal
-            for (let i = ideal; i < actual; i++) {
-                dots.push(<span key={`x${i}`} className="dot dot-surplus" />);
-            }
 
-            // Players ranked best→worst by PPG; starters in green, depth in gray
+            // One dot per player, in rank order — green if starter-quality, gray if not
             const starterSet = new Set(nflStarterIds);
             const rankedNames = sortedIds.map(id => {
                 const p = playersData[id];
                 const name = p ? `${p.first_name?.[0]||''}. ${p.last_name||''}`.trim() : id;
-                return { name, isStarter: starterSet.has(id) };
+                return { id, name, isStarter: starterSet.has(id) };
             });
+            const dots = rankedNames.map(({ id, isStarter }) => (
+                <span key={id} className={`dot ${isStarter ? 'dot-filled' : 'dot-depth'}`} />
+            ));
 
             return (
                 <div style={{ marginBottom:'0.1rem' }}>
