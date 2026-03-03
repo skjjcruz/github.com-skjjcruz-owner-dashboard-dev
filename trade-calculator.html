@@ -955,6 +955,19 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
         else                                 status = 'ok';       // starters covered, thin on depth
 
         posAssessment[pos] = { actual, ideal, diff, nflStarters, startingReq, ptTarget, projectedPts, status };
+
+        // DEBUG — log QB details for every team so we can see what's happening
+        if (pos === 'QB') {
+            const posStarters = nflStarterSet['QB'] || new Set();
+            console.log(`[QB debug] ${ownerName} / ${teamName}:`);
+            playerIds.forEach(id => {
+                const p = playersData[id];
+                const name = `${p?.first_name||''} ${p?.last_name||''}`.trim();
+                const fcVal = getPlayerValue(id, {}).value; // just show raw
+                const inPool = posStarters.has(id);
+                console.log(`  ${inPool ? '✓' : '✗'} ${name} (id:${id}) — in starter pool: ${inPool}`);
+            });
+        }
     }
 
     // Optimal weekly scoring
@@ -1039,9 +1052,7 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
 //   • Dynasty/trade value (FC preferred) is the primary signal
 //   • PPG scaled to the same 0–10 000 range is the fallback for players
 //     absent from FC (e.g., injured starters with no current-year entry)
-// Pool = 1.5 × the raw NFL starter count so that legitimate starters just
-// outside a strict 32-team cutoff (dynasty value inflation in 2QB/SF,
-// declining-but-starting veterans, late-entry rookies) aren't missed.
+// Pool = LINEUP_STARTERS[pos] × 32 NFL teams (original strict sizing).
 function calcNflStarterSet(playersData, valueIndex, statsData, scoring) {
     const byPos = {};
     for (const [id, p] of Object.entries(playersData)) {
@@ -1056,11 +1067,18 @@ function calcNflStarterSet(playersData, valueIndex, statsData, scoring) {
     }
     const result = {};
     for (const [pos, players] of Object.entries(byPos)) {
-        const poolSize = Math.round((LINEUP_STARTERS[pos] || 1) * 32 * 1.5);
+        const poolSize = (LINEUP_STARTERS[pos] || 1) * 32;
         result[pos] = new Set(
             players.sort((a,b) => b.score - a.score).slice(0, poolSize).map(p => p.id)
         );
     }
+    // DEBUG — remove once QB issue is diagnosed
+    console.log('[nflStarterSet] QB pool (top 32 by score):',
+        [...(result.QB || [])].map(id => {
+            const p = playersData[id];
+            return `${p?.first_name||''} ${p?.last_name||''} (${id})`.trim();
+        }).join(', ')
+    );
     return result;
 }
 
