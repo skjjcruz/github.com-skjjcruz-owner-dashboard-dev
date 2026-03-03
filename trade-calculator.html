@@ -550,10 +550,11 @@ const LINEUP_STARTERS = { QB:1, RB:2, WR:3, TE:1, K:1, DL:3, LB:2, DB:3 };
 // RB: 3 — need a true starter plus two quality handcuffs/flex options (top-40 pool).
 // WR: 3 — need three starting-caliber pass-catchers (top-64 pool).
 // TE: 2 — need a starter plus one quality backup (top-32 pool).
-const MIN_STARTER_QUALITY = { QB:2, RB:3, WR:3, TE:2, K:1, DL:3, LB:2, DB:3 };
+// DL: 2 — need two starting-caliber pass rushers/run stoppers (top-42 pool).
+const MIN_STARTER_QUALITY = { QB:2, RB:3, WR:3, TE:2, K:1, DL:2, LB:2, DB:3 };
 
 // How many players league-wide are considered "starting quality" at each position
-const NFL_STARTER_POOL = { QB:32, RB:40, WR:64, TE:32, K:32, DL:96, LB:64, DB:96 };
+const NFL_STARTER_POOL = { QB:32, RB:40, WR:64, TE:32, K:32, DL:42, LB:64, DB:96 };
 
 // Weekly points each position group must produce (sums to 243)
 // QB:20 | RB:36 | WR:36 | TE:10 | K:9 | DL:24 | LB:16 | DB:24
@@ -997,6 +998,11 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
             if      (nflStarters < 1)    status = 'thin';    // no starting-caliber K — real need
             else if (nflStarters === 1)  status = 'ok';      // covered — 1 starting-caliber K
             else                         status = 'surplus';  // 2+ top-32 Ks — tradeable depth
+        } else if (pos === 'DL') {
+            // DL rule: need 2 top-42 DLs; anything less is a shortfall, more is a surplus
+            if      (nflStarters < 2)    status = 'thin';    // fewer than 2 — real need
+            else if (nflStarters === 2)  status = 'ok';      // covered — 2 starting-caliber DLs
+            else                         status = 'surplus';  // 3+ top-42 DLs — tradeable depth
         } else {
             if      (nflStarters < minQuality)  status = 'thin';    // can't meet quality threshold
             else if (actual >= ideal)           status = 'surplus';  // quality + solid depth
