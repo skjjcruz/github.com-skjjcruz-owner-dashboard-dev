@@ -942,8 +942,9 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
         const projectedPts = withPPG.slice(0, startingReq).reduce((s, p) => s + p.ppg, 0);
 
         // NFL-starter count: how many of this team's players are in the global starter pool
-        const posStarters = nflStarterSet[pos] || new Set();
-        const nflStarters = playerIds.filter(id => posStarters.has(id)).length;
+        const posStarters    = nflStarterSet[pos] || new Set();
+        const nflStarterIds  = playerIds.filter(id => posStarters.has(id));
+        const nflStarters    = nflStarterIds.length;
 
         const actual = playerIds.length;
         const diff   = actual - ideal;
@@ -954,20 +955,7 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
         else if (actual >= ideal)            status = 'surplus';  // starters covered + solid depth
         else                                 status = 'ok';       // starters covered, thin on depth
 
-        posAssessment[pos] = { actual, ideal, diff, nflStarters, startingReq, ptTarget, projectedPts, status };
-
-        // DEBUG — log QB details for every team so we can see what's happening
-        if (pos === 'QB') {
-            const posStarters = nflStarterSet['QB'] || new Set();
-            console.log(`[QB debug] ${ownerName} / ${teamName}:`);
-            playerIds.forEach(id => {
-                const p = playersData[id];
-                const name = `${p?.first_name||''} ${p?.last_name||''}`.trim();
-                const fcVal = getPlayerValue(id, {}).value; // just show raw
-                const inPool = posStarters.has(id);
-                console.log(`  ${inPool ? '✓' : '✗'} ${name} (id:${id}) — in starter pool: ${inPool}`);
-            });
-        }
+        posAssessment[pos] = { actual, ideal, diff, nflStarters, nflStarterIds, startingReq, ptTarget, projectedPts, status };
     }
 
     // Optimal weekly scoring
@@ -1072,13 +1060,6 @@ function calcNflStarterSet(playersData, valueIndex, statsData, scoring) {
             players.sort((a,b) => b.score - a.score).slice(0, poolSize).map(p => p.id)
         );
     }
-    // DEBUG — remove once QB issue is diagnosed
-    console.log('[nflStarterSet] QB pool (top 32 by score):',
-        [...(result.QB || [])].map(id => {
-            const p = playersData[id];
-            return `${p?.first_name||''} ${p?.last_name||''} (${id})`.trim();
-        }).join(', ')
-    );
     return result;
 }
 
@@ -1719,31 +1700,57 @@ function TradeCalculator() {
         }
 
         // Enhanced TeamCard with elite markers in pos rows
-        function AuditPosRow({ pos, assessment }) {
-            const { actual, ideal, status, nflStarters = actual, startingReq = 1 } = assessment;
+        function AuditPosRow({ pos, assessment, posGroupIds = [] }) {
+            const { actual, ideal, status, nflStarters = actual, nflStarterIds = [], startingReq = 1 } = assessment;
             const statusIcon  = { surplus:'↑', ok:'✓', thin:'~', deficit:'✗' }[status];
             const statusColor = { surplus:'var(--gold)', ok:'var(--win-green)', thin:'var(--amber)', deficit:'var(--loss-red)' }[status];
             const dots = [];
             // Starter zone: solid = NFL-starter quality, empty = slot unfilled
             for (let i = 0; i < startingReq; i++) {
-                dots.push(<span key={`s${i}`} className={`dot ${i < nflStarters ? 'dot-filled' : 'dot-empty'}`}
-                    title={i < nflStarters ? 'NFL-starter quality' : 'Starting slot unfilled'} />);
+                dots.push(<span key={`s${i}`} className={`dot ${i < nflStarters ? 'dot-filled' : 'dot-empty'}`} />);
             }
             // Depth zone: dim = depth player, empty = needs depth
             for (let i = startingReq; i < ideal; i++) {
-                dots.push(<span key={`d${i}`} className={`dot ${i < actual ? 'dot-depth' : 'dot-empty'}`}
-                    title={i < actual ? 'Depth player' : 'Depth needed'} />);
+                dots.push(<span key={`d${i}`} className={`dot ${i < actual ? 'dot-depth' : 'dot-empty'}`} />);
             }
             // Surplus beyond ideal
             for (let i = ideal; i < actual; i++) {
-                dots.push(<span key={`x${i}`} className="dot dot-surplus" title="Surplus" />);
+                dots.push(<span key={`x${i}`} className="dot dot-surplus" />);
             }
+
+            // Build starter names and non-starter names for display
+            const starterNames = nflStarterIds.map(id => {
+                const p = playersData[id];
+                return p ? `${p.first_name?.[0]||''}. ${p.last_name||''}`.trim() : id;
+            });
+            const nonStarterIds = posGroupIds.filter(id => !nflStarterIds.includes(id));
+            const nonStarterNames = nonStarterIds.map(id => {
+                const p = playersData[id];
+                return p ? `${p.first_name?.[0]||''}. ${p.last_name||''}`.trim() : id;
+            });
+
             return (
-                <div className="pos-row">
-                    <span className="pos-label" style={{ color:posColor(pos) }}>{pos}</span>
-                    <span className="pos-dots">{dots}</span>
-                    <span className="pos-count" style={{ color:statusColor }}>{nflStarters}/{startingReq}</span>
-                    <span className="pos-status-icon" style={{ color:statusColor }}>{statusIcon}</span>
+                <div style={{ marginBottom:'0.1rem' }}>
+                    <div className="pos-row">
+                        <span className="pos-label" style={{ color:posColor(pos) }}>{pos}</span>
+                        <span className="pos-dots">{dots}</span>
+                        <span className="pos-count" style={{ color:statusColor }}>{nflStarters}/{startingReq}</span>
+                        <span className="pos-status-icon" style={{ color:statusColor }}>{statusIcon}</span>
+                    </div>
+                    {(starterNames.length > 0 || nonStarterNames.length > 0) && (
+                        <div style={{ paddingLeft:'24px', marginTop:'0.05rem', lineHeight:1.3 }}>
+                            {starterNames.length > 0 && (
+                                <div style={{ fontSize:'0.52rem', color:'var(--win-green)', opacity:0.9 }}>
+                                    ✓ {starterNames.join(', ')}
+                                </div>
+                            )}
+                            {nonStarterNames.length > 0 && (
+                                <div style={{ fontSize:'0.52rem', color:'var(--silver)', opacity:0.45 }}>
+                                    {nonStarterNames.join(', ')}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -1811,7 +1818,7 @@ function TradeCalculator() {
                                             const eliteHere = posIds.filter(id => elitePlayerSet.has(id)).length;
                                             return (
                                                 <div key={pos} style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
-                                                    <div style={{ flex:1 }}><AuditPosRow pos={pos} assessment={data} /></div>
+                                                    <div style={{ flex:1 }}><AuditPosRow pos={pos} assessment={data} posGroupIds={myAssessment.posGroups[pos]||[]} /></div>
                                                     {eliteHere > 0 && <span title={`${eliteHere} elite player(s)`} style={{ fontSize:'0.65rem', color:'var(--gold)' }}>{'★'.repeat(eliteHere)}</span>}
                                                 </div>
                                             );
@@ -1860,7 +1867,7 @@ function TradeCalculator() {
                                         const eliteHere = posIds.filter(id => elitePlayerSet.has(id)).length;
                                         return (
                                             <div key={pos} style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
-                                                <div style={{ flex:1 }}><AuditPosRow pos={pos} assessment={data} /></div>
+                                                <div style={{ flex:1 }}><AuditPosRow pos={pos} assessment={data} posGroupIds={selectedDetail.posGroups[pos]||[]} /></div>
                                                 {eliteHere > 0 && <span style={{ fontSize:'0.65rem', color:'var(--gold)' }}>{'★'.repeat(eliteHere)}</span>}
                                             </div>
                                         );
