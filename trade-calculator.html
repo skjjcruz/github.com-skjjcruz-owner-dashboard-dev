@@ -547,11 +547,12 @@ const LINEUP_STARTERS = { QB:1, RB:2, WR:3, TE:1, K:1, DL:3, LB:2, DB:3 };
 // Minimum number of starting-caliber players a team must hold at each position
 // to be considered adequately covered (not a need/shortfall).
 // QB: 2 — starter + viable backup; losing your only top-32 QB is season-altering.
-// RB: 3 — need a true starter plus two quality handcuffs/flex options (top-64 pool).
+// RB: 3 — need a true starter plus two quality handcuffs/flex options (top-40 pool).
+// WR: 3 — need three starting-caliber pass-catchers (top-64 pool).
 const MIN_STARTER_QUALITY = { QB:2, RB:3, WR:3, TE:1, K:1, DL:3, LB:2, DB:3 };
 
 // How many players league-wide are considered "starting quality" at each position
-const NFL_STARTER_POOL = { QB:32, RB:40, WR:96, TE:32, DL:96, LB:64, DB:96 };
+const NFL_STARTER_POOL = { QB:32, RB:40, WR:64, TE:32, DL:96, LB:64, DB:96 };
 
 // Weekly points each position group must produce (sums to 243)
 // QB:20 | RB:36 | WR:36 | TE:10 | K:9 | DL:24 | LB:16 | DB:24
@@ -976,10 +977,15 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
             else if (nflStarters === 2)  status = 'ok';      // covered — 2 starting-caliber QBs
             else                         status = 'surplus';  // 3+ top-32 QBs — tradeable asset
         } else if (pos === 'RB') {
-            // RB rule: need 3 top-64 RBs; anything less is a shortfall, more is a surplus
+            // RB rule: need 3 top-40 RBs; anything less is a shortfall, more is a surplus
             if      (nflStarters < 3)    status = 'thin';    // fewer than 3 — real need
             else if (nflStarters === 3)  status = 'ok';      // covered — 3 starting-caliber RBs
-            else                         status = 'surplus';  // 4+ top-64 RBs — tradeable depth
+            else                         status = 'surplus';  // 4+ top-40 RBs — tradeable depth
+        } else if (pos === 'WR') {
+            // WR rule: need 3 top-64 WRs; anything less is a shortfall, more is a surplus
+            if      (nflStarters < 3)    status = 'thin';    // fewer than 3 — real need
+            else if (nflStarters === 3)  status = 'ok';      // covered — 3 starting-caliber WRs
+            else                         status = 'surplus';  // 4+ top-64 WRs — tradeable depth
         } else {
             if      (nflStarters < minQuality)  status = 'thin';    // can't meet quality threshold
             else if (actual >= ideal)           status = 'surplus';  // quality + solid depth
