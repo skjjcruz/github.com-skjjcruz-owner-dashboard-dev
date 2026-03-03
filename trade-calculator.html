@@ -904,7 +904,7 @@ function calcOptimalLineup(playerIds, reserve, taxi, playersData, statsData, sco
     return Math.round(total * 10) / 10;
 }
 
-function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarterSet = {}) {
+function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarterSet = {}, valueIndex = {}) {
     const scoring   = leagueInfo?.scoring_settings;
     const rosterPos = leagueInfo?.roster_positions || [];
     const user      = users.find(u => u.user_id === roster.owner_id);
@@ -938,7 +938,7 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
         const startingReq = LINEUP_STARTERS[pos] || 1;
         const ptTarget    = POS_PT_TARGETS[pos]  || 8;
 
-        // Projected pts from this position (top starters by PPG — still useful)
+        // Projected pts from this position (top starters by PPG — still useful for scoring calc)
         const withPPG = playerIds
             .map(id => ({ id, ppg: calcPPG(id, statsData, scoring) }))
             .sort((a,b) => b.ppg - a.ppg);
@@ -958,7 +958,16 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
         else if (actual >= ideal)            status = 'surplus';  // starters covered + solid depth
         else                                 status = 'ok';       // starters covered, thin on depth
 
-        const sortedIds = withPPG.map(p => p.id);   // best → worst by PPG
+        // Sort display order by the same signal used for green/gray (FC value, PPG fallback)
+        // so rank position and color are always consistent.
+        const sortedIds = [...playerIds]
+            .map(id => {
+                const fcVal = getPlayerValue(id, valueIndex).value;
+                const ppg   = calcPPG(id, statsData, scoring);
+                return { id, score: fcVal > 0 ? fcVal : ppg * 300 };
+            })
+            .sort((a,b) => b.score - a.score)
+            .map(p => p.id);
         posAssessment[pos] = { actual, ideal, diff, nflStarters, nflStarterIds, sortedIds, startingReq, ptTarget, projectedPts, status };
     }
 
@@ -1404,7 +1413,7 @@ function TradeCalculator() {
         const nflStarterSet = Object.keys(valueIndex).length
             ? calcNflStarterSet(playersData, valueIndex, statsData, scoring)
             : {};
-        return allRosters.map(r => assessTeam(r, playersData, statsData, leagueInfo, leagueUsers, nflStarterSet));
+        return allRosters.map(r => assessTeam(r, playersData, statsData, leagueInfo, leagueUsers, nflStarterSet, valueIndex));
     }, [allRosters, playersData, statsData, leagueInfo, leagueUsers, valueIndex]);
 
     const myAssessment = useMemo(() =>
