@@ -901,7 +901,7 @@ function calcOptimalLineup(playerIds, reserve, taxi, playersData, statsData, sco
     return Math.round(total * 10) / 10;
 }
 
-function assessTeam(roster, playersData, statsData, leagueInfo, users) {
+function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarterSet = {}) {
     const scoring   = leagueInfo?.scoring_settings;
     const rosterPos = leagueInfo?.roster_positions || [];
     const user      = users.find(u => u.user_id === roster.owner_id);
@@ -926,28 +926,27 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users) {
     // Assess each position vs ideal
     const posAssessment = {};
     // Each position is assessed by how many "NFL-starter-quality" players the
-    // team has, not raw count.  A player qualifies as starter-quality when their
-    // PPG meets 65% of the per-slot weekly target for that position.
-    //   QB threshold  ≈ 13 pts  (65% of 20)
-    //   RB threshold  ≈ 12 pts  (65% of 18)
-    //   WR threshold  ≈  8 pts  (65% of 12)
-    //   TE threshold  ≈  7 pts  (65% of 10)
-    //   K  threshold  ≈  6 pts  (65% of  9)
-    //   DL/LB/DB      ≈  5 pts  (65% of  8)
+    // team has, not raw count. NFL-starter quality is determined by whether the
+    // player ranks in the global top N at their position by dynasty/trade value
+    // (N = LINEUP_STARTERS[pos] × 32 NFL teams). Using value rather than PPG
+    // means injuries and partial seasons don't penalise legitimate starters.
     for (const [pos, ideal] of Object.entries(IDEAL_ROSTER)) {
         const playerIds   = posGroups[pos] || [];
         const startingReq = LINEUP_STARTERS[pos] || 1;
         const ptTarget    = POS_PT_TARGETS[pos]  || 8;
-        const threshold   = (ptTarget / startingReq) * 0.65;
 
+        // Projected pts from this position (top starters by PPG — still useful)
         const withPPG = playerIds
             .map(id => ({ id, ppg: calcPPG(id, statsData, scoring) }))
             .sort((a,b) => b.ppg - a.ppg);
-
-        const nflStarters  = withPPG.filter(p => p.ppg >= threshold).length;
         const projectedPts = withPPG.slice(0, startingReq).reduce((s, p) => s + p.ppg, 0);
-        const actual       = playerIds.length;
-        const diff         = actual - ideal;
+
+        // NFL-starter count: how many of this team's players are in the global starter pool
+        const posStarters = nflStarterSet[pos] || new Set();
+        const nflStarters = playerIds.filter(id => posStarters.has(id)).length;
+
+        const actual = playerIds.length;
+        const diff   = actual - ideal;
 
         let status;
         if      (nflStarters === 0)          status = 'deficit';  // no starter-quality player
@@ -955,7 +954,7 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users) {
         else if (actual >= ideal)            status = 'surplus';  // starters covered + solid depth
         else                                 status = 'ok';       // starters covered, thin on depth
 
-        posAssessment[pos] = { actual, ideal, diff, nflStarters, startingReq, ptTarget, projectedPts, threshold, status };
+        posAssessment[pos] = { actual, ideal, diff, nflStarters, startingReq, ptTarget, projectedPts, status };
     }
 
     // Optimal weekly scoring
@@ -967,10 +966,11 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users) {
     // Health score: 60% scoring + 40% coverage  (kept as a diagnostic 0-100 number)
     const scoringScore  = Math.min(60, (weeklyPts / WEEKLY_TARGET) * 60);
     let coverageScore   = 0;
+    const hasValueData = Object.keys(nflStarterSet).length > 0;
     for (const [pos, data] of Object.entries(posAssessment)) {
-        // When stats are available rank by starter quality (NFL starters filled vs required).
-        // When no stats yet, fall back to raw depth count to preserve the health score proxy.
-        const ratio = weeklyPts > 0
+        // nflStarters is value-based so reliable even without stats data.
+        // Fall back to raw count only when the value index hasn't loaded yet.
+        const ratio = hasValueData
             ? Math.min(1, data.nflStarters / (data.startingReq || 1))
             : Math.min(1, data.actual / data.ideal);
         coverageScore += ratio * ((POS_WEIGHTS[pos]||0) / TOTAL_WEIGHT) * 40;
@@ -1033,6 +1033,28 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users) {
 
     return { rosterId:roster.roster_id, ownerId:roster.owner_id, teamName, ownerName, avatar, wins, losses, ties, pf,
              posGroups, posAssessment, weeklyPts, healthScore, tier, tierColor, tierBg, panic, window, needs, strengths };
+}
+
+// Build per-position "NFL starter sets" by ranking ALL players in playersData
+// by dynasty/trade value. Top N players at each position = NFL-starter quality,
+// where N = LINEUP_STARTERS[pos] × 32 NFL teams.
+// Using value (not PPG) means injuries and limited games don't distort the check.
+function calcNflStarterSet(playersData, valueIndex) {
+    const byPos = {};
+    for (const [id, p] of Object.entries(playersData)) {
+        const pos = normPos(p.position);
+        if (!pos || !LINEUP_STARTERS[pos]) continue;
+        if (!byPos[pos]) byPos[pos] = [];
+        byPos[pos].push({ id, value: getPlayerValue(id, valueIndex).value });
+    }
+    const result = {};
+    for (const [pos, players] of Object.entries(byPos)) {
+        const poolSize = (LINEUP_STARTERS[pos] || 1) * 32;
+        result[pos] = new Set(
+            players.sort((a,b) => b.value - a.value).slice(0, poolSize).map(p => p.id)
+        );
+    }
+    return result;
 }
 
 // Top 5 players per position across all rosters = "elite"
@@ -1357,11 +1379,20 @@ function TradeCalculator() {
         }
     }
 
+    // Merged market value index (FC preferred, internal fallback)
+    // Must be declared before assessments so the NFL starter set can be built from it.
+    const valueIndex = useMemo(() => mergeValues(fcValues, internalVals), [fcValues, internalVals]);
+
     // Compute all team assessments
     const assessments = useMemo(() => {
         if (!allRosters.length || !leagueInfo) return [];
-        return allRosters.map(r => assessTeam(r, playersData, statsData, leagueInfo, leagueUsers));
-    }, [allRosters, playersData, statsData, leagueInfo, leagueUsers]);
+        // Build the global NFL-starter set once (value-ranked, position-pooled),
+        // then pass it into every team's assessment so starter quality is consistent.
+        const nflStarterSet = Object.keys(valueIndex).length
+            ? calcNflStarterSet(playersData, valueIndex)
+            : {};
+        return allRosters.map(r => assessTeam(r, playersData, statsData, leagueInfo, leagueUsers, nflStarterSet));
+    }, [allRosters, playersData, statsData, leagueInfo, leagueUsers, valueIndex]);
 
     const myAssessment = useMemo(() =>
         assessments.find(a => a.rosterId === myRosterId) || null,
@@ -1374,9 +1405,6 @@ function TradeCalculator() {
             setTradeOwner(prev => ({ ...prev, A: myAssessment.ownerId }));
         }
     }, [myRosterId, assessments.length]); // eslint-disable-line
-
-    // Merged market value index (FC preferred, internal fallback)
-    const valueIndex = useMemo(() => mergeValues(fcValues, internalVals), [fcValues, internalVals]);
 
     // Elite player set — top 5 per position across all rosters
     const elitePlayerSet = useMemo(() => {
