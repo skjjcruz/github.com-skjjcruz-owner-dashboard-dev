@@ -1763,7 +1763,7 @@ function TradeCalculator() {
                             <span className="guide-step-num">3</span>
                             <div className="guide-step-body">
                                 <div className="guide-step-title">View Any Team's Detail</div>
-                                <div className="guide-step-desc">Click "View Detail" on any team card below to see their full assessment with the same commentary breakdown — useful for scouting potential trading partners.</div>
+                                <div className="guide-step-desc">Click any team card in the grid to expand their full assessment — position depth, commentary, picks, and DNA. Click again to collapse. Useful for scouting potential trading partners.</div>
                             </div>
                         </div>
                     </div>
@@ -1928,12 +1928,14 @@ function TradeCalculator() {
                         <div className="commentary-card-title">Positional Needs</div>
                         <div className="commentary-card-text">{commentary.needsText}</div>
                     </div>
-                    {dnaKey !== 'NONE' && dna.desc && (
-                        <div className="commentary-card" style={{ borderColor:`${dna.color}30` }}>
-                            <div className="commentary-card-title" style={{ color:dna.color }}>Owner DNA — {dna.label}</div>
-                            <div className="commentary-card-text">{dna.strategy}</div>
+                    <div className="commentary-card" style={{ borderColor: dnaKey !== 'NONE' ? `${dna.color}30` : 'rgba(255,255,255,0.06)' }}>
+                        <div className="commentary-card-title" style={{ color: dnaKey !== 'NONE' ? dna.color : 'var(--silver)' }}>
+                            Owner DNA{dnaKey !== 'NONE' ? ` — ${dna.label}` : ''}
                         </div>
-                    )}
+                        <div className="commentary-card-text">
+                            {dnaKey !== 'NONE' && dna.strategy ? dna.strategy : 'No profile assigned — set one in the Owner DNA tab to unlock psychological trade modifiers.'}
+                        </div>
+                    </div>
                     <div className="commentary-card">
                         <div className="commentary-card-title">Draft Pick Capital</div>
                         <div className="commentary-card-text">{commentary.picksText}</div>
@@ -2172,18 +2174,18 @@ function TradeCalculator() {
                     {sortedAssessments.map(a => {
                         const isMe = a.rosterId === myRosterId;
                         const eliteHere = countElite(a, elitePlayerSet);
+                        const isSelected = selectedAuditTeam === a.rosterId;
                         return (
-                            <div key={a.rosterId} style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                            <div
+                                key={a.rosterId}
+                                style={{ display:'flex', flexDirection:'column', gap:'0.3rem', cursor: isMe ? 'default' : 'pointer' }}
+                                onClick={() => { if (!isMe) setSelectedAuditTeam(isSelected ? null : a.rosterId); }}
+                            >
                                 <TeamCard assessment={a} isMyTeam={isMe} ownerDna={ownerDna[a.ownerId]||'NONE'} />
                                 {eliteHere > 0 && (
                                     <div style={{ textAlign:'center', fontSize:'0.6rem', color:'var(--gold)', letterSpacing:'0.05em' }}>
                                         {'★'.repeat(Math.min(eliteHere,5))} {eliteHere} ELITE PLAYER{eliteHere>1?'S':''}
                                     </div>
-                                )}
-                                {!isMe && (
-                                    <button className="team-card-link" onClick={() => setSelectedAuditTeam(selectedAuditTeam === a.rosterId ? null : a.rosterId)}>
-                                        {selectedAuditTeam === a.rosterId ? '▲ Hide Detail' : '▼ View Detail'}
-                                    </button>
                                 )}
                             </div>
                         );
