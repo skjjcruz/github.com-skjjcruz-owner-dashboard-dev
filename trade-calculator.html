@@ -1439,7 +1439,7 @@ function TeamCard({ assessment, isMyTeam, ownerDna }) {
                 {needs.length > 0 && (
                     <div className="chip-row">
                         {needs.map(n => (
-                            <span key={n.pos} className={`chip ${n.urgency==='deficit'?'chip-need':'chip-thin'}`}>
+                            <span key={n.pos} className="chip chip-need">
                                 {n.urgency==='deficit'?'⚠ ':''}{n.pos}
                             </span>
                         ))}
@@ -1846,6 +1846,10 @@ function TradeCalculator() {
             const commentary = teamCommentary(assessment, elitePlayerSet);
             const dnaKey = ownerDna[assessment.ownerId] || 'NONE';
             const dna    = DNA_TYPES[dnaKey] || DNA_TYPES.NONE;
+            const eliteNames = Object.values(assessment.posGroups || {}).flat()
+                .filter(id => elitePlayerSet.has(id))
+                .map(id => { const p = playersData[id]; return p ? `${p.first_name} ${p.last_name}` : null; })
+                .filter(Boolean);
             return (
                 <div className="commentary-panel">
                     <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
@@ -1864,6 +1868,15 @@ function TradeCalculator() {
                             <span className="elite-tag">★ {commentary.eliteCount} ELITE</span>
                         </div>
                         <div className="commentary-card-text">{commentary.elite}</div>
+                        {eliteNames.length > 0 && (
+                            <div style={{ marginTop:'0.3rem', display:'flex', flexWrap:'wrap', gap:'0.25rem' }}>
+                                {eliteNames.map(name => (
+                                    <span key={name} style={{ fontSize:'0.6rem', fontWeight:700, color:'var(--gold)', background:'rgba(212,175,55,0.1)', border:'1px solid rgba(212,175,55,0.35)', borderRadius:3, padding:'0.1rem 0.35rem' }}>
+                                        ★ {name}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="commentary-card">
                         <div className="commentary-card-title">Trade Currency (Strengths)</div>
