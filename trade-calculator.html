@@ -931,7 +931,74 @@ function calcOptimalLineup(playerIds, reserve, taxi, playersData, statsData, sco
     return Math.round(total * 10) / 10;
 }
 
-function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarterSet = {}, tradedPicksAll = []) {
+// ─── PICK RESOLUTION (Team Comp–style) ───────────────────────────────────────
+// Detects whether traded_picks.owner_id is a roster_id or user_id.
+function detectPickIdMode(rosters, tradedPicks) {
+    const rosterIds = new Set(rosters.map(r => String(r.roster_id)));
+    const userIds   = new Set(rosters.map(r => String(r.owner_id)));
+    let rosterHits = 0, userHits = 0;
+    for (const tp of tradedPicks || []) {
+        const oid = String(tp.owner_id ?? '');
+        if (rosterIds.has(oid)) rosterHits++;
+        if (userIds.has(oid))   userHits++;
+    }
+    return rosterHits >= userHits ? 'roster' : 'user';
+}
+
+// Builds a map of userId → [{year, round}] for every team in the league.
+// Initialises each team with all their own picks then applies traded_picks on top.
+function buildPicksByOwner(rosters, tradedPicks, leagueSeason) {
+    const PICK_YEARS_INT = Array.from({ length: PICK_HORIZON }, (_, i) => leagueSeason + i);
+    const mode           = detectPickIdMode(rosters, tradedPicks);
+    const rosterById     = {};
+    for (const r of rosters) rosterById[String(r.roster_id)] = r;
+
+    // ownerByKey["year-round-originRosterId"] = currentOwnerUserId
+    const ownerByKey = {};
+    for (const r of rosters) {
+        const originRosterId = String(r.roster_id);
+        const ownerUserId    = String(r.owner_id);
+        for (const y of PICK_YEARS_INT) {
+            for (let rd = 1; rd <= DRAFT_ROUNDS; rd++) {
+                ownerByKey[`${y}-${rd}-${originRosterId}`] = ownerUserId;
+            }
+        }
+    }
+
+    // Apply trades
+    for (const tp of tradedPicks || []) {
+        const y  = Number(tp.season);
+        if (!PICK_YEARS_INT.includes(y)) continue;
+        const rd = Number(tp.round);
+        if (!Number.isFinite(rd) || rd < 1 || rd > DRAFT_ROUNDS) continue;
+        const originRosterId = String(tp.roster_id);
+        let newOwnerUserId;
+        if (mode === 'user') {
+            newOwnerUserId = String(tp.owner_id ?? '');
+        } else {
+            const r = rosterById[String(tp.owner_id ?? '')];
+            newOwnerUserId = r?.owner_id ? String(r.owner_id) : null;
+        }
+        if (!newOwnerUserId) continue;
+        const key = `${y}-${rd}-${originRosterId}`;
+        if (key in ownerByKey) ownerByKey[key] = newOwnerUserId;
+    }
+
+    // Aggregate by current owner
+    const picksByOwner = {};
+    for (const [key, ownerUserId] of Object.entries(ownerByKey)) {
+        const parts = key.split('-');
+        const y = Number(parts[0]), rd = Number(parts[1]);
+        if (!picksByOwner[ownerUserId]) picksByOwner[ownerUserId] = [];
+        picksByOwner[ownerUserId].push({ year: y, round: rd });
+    }
+    for (const oid of Object.keys(picksByOwner)) {
+        picksByOwner[oid].sort((a, b) => a.year - b.year || a.round - b.round);
+    }
+    return picksByOwner;
+}
+
+function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarterSet = {}, ownerPicks = []) {
     const scoring   = leagueInfo?.scoring_settings;
     const rosterPos = leagueInfo?.roster_positions || [];
     const user      = users.find(u => u.user_id === roster.owner_id);
@@ -1044,22 +1111,11 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
         posAssessment[pos] = { actual, ideal, diff, nflStarters, nflStarterIds, sortedIds, startingReq, minQuality, ptTarget, projectedPts, status };
     }
 
-    // Draft picks assessment — ideal = PICK_IDEAL picks across next PICK_HORIZON drafts (21 over 3 years).
-    // Uses /league/{id}/traded_picks. Per (season, round) slot:
-    //   • Not in traded_picks  → team naturally holds their own pick (+1)
-    //   • previous_owner_id = myUserId → gave it away (−1 natural)
-    //   • roster_id = myRosterId       → holds an acquired pick (+1)
+    // Draft picks assessment — ownerPicks is pre-computed by buildPicksByOwner()
+    // and contains [{year, round}] for every pick this team currently holds.
     const leagueSeason = parseInt(leagueInfo?.season || new Date().getFullYear());
-    const myRosterId   = roster.roster_id;
-    const myUserId     = roster.owner_id;
+    const pickYears    = Array.from({ length: PICK_HORIZON }, (_, i) => String(leagueSeason + i));
 
-    // Build year list: current season + next two (e.g. 2026, 2027, 2028)
-    // Sleeper updates leagueInfo.season to the current year during the off-season,
-    // so we start from leagueSeason (not +1) to include the upcoming 2026 draft.
-    const pickYears = Array.from({ length: PICK_HORIZON }, (_, i) => String(leagueSeason + i));
-
-    // Count picks per round (summed across years), per year (summed across rounds),
-    // AND per year+round combination for the detailed bullet display.
     const pickCountByRound     = {};
     const pickCountByYear      = {};
     const pickCountByYearRound = {};
@@ -1069,32 +1125,13 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
         pickCountByYearRound[year] = {};
         for (let r = 1; r <= DRAFT_ROUNDS; r++) pickCountByYearRound[year][r] = 0;
     }
-
-    for (const year of pickYears) {
-        for (let r = 1; r <= DRAFT_ROUNDS; r++) {
-            const slot = tradedPicksAll.filter(p => p.season === year && p.round === r);
-            let n;
-            if (slot.length === 0) {
-                n = 1; // slot never traded → every team holds their own natural pick
-            } else {
-                // Sleeper traded_picks semantics:
-                //   roster_id  = original owner of the pick slot (never changes through re-trades)
-                //   owner_id   = current holder's user_id (updates with every trade)
-                // This correctly handles multi-step trades (A→B→C):
-                //   roster_id stays = A's roster, owner_id updates to C's user_id.
-                const myOwnEntry  = slot.find(p => String(p.roster_id) === String(myRosterId));
-                const iHoldMyOwn  = myOwnEntry && String(myOwnEntry.owner_id) === String(myUserId);
-                const iAcquired   = slot.filter(p =>
-                    String(p.roster_id) !== String(myRosterId) &&
-                    String(p.owner_id)  === String(myUserId)
-                ).length;
-                // If my pick never appears in traded_picks → I still have my natural pick
-                n = (myOwnEntry ? (iHoldMyOwn ? 1 : 0) : 1) + iAcquired;
-            }
-            pickCountByRound[r]          += n;
-            pickCountByYear[year]        += n;
-            pickCountByYearRound[year][r] += n;
-        }
+    for (const { year, round } of ownerPicks) {
+        const y = String(year);
+        if (!pickYears.includes(y)) continue;
+        if (round < 1 || round > DRAFT_ROUNDS) continue;
+        pickCountByRound[round]++;
+        pickCountByYear[y]++;
+        pickCountByYearRound[y][round]++;
     }
     const totalPicks    = Object.values(pickCountByRound).reduce((a, b) => a + b, 0);
     const roundsMissing = Object.values(pickCountByRound).filter(c => c === 0).length; // rounds with zero picks across all years
@@ -1569,7 +1606,12 @@ function TradeCalculator() {
         const nflStarterSet = Object.keys(valueIndex).length
             ? calcNflStarterSet(playersData, valueIndex, statsData, scoring)
             : {};
-        return allRosters.map(r => assessTeam(r, playersData, statsData, leagueInfo, leagueUsers, nflStarterSet, tradedPicks));
+        const leagueSeason  = parseInt(leagueInfo?.season || new Date().getFullYear());
+        const picksByOwner  = buildPicksByOwner(allRosters, tradedPicks, leagueSeason);
+        return allRosters.map(r => {
+            const ownerPicks = picksByOwner[String(r.owner_id)] || [];
+            return assessTeam(r, playersData, statsData, leagueInfo, leagueUsers, nflStarterSet, ownerPicks);
+        });
     }, [allRosters, playersData, statsData, leagueInfo, leagueUsers, valueIndex, tradedPicks]);
 
     const myAssessment = useMemo(() =>
@@ -1886,16 +1928,43 @@ function TradeCalculator() {
                         <div className="commentary-card-title">Positional Needs</div>
                         <div className="commentary-card-text">{commentary.needsText}</div>
                     </div>
-                    <div className="commentary-card">
-                        <div className="commentary-card-title">Draft Pick Capital</div>
-                        <div className="commentary-card-text">{commentary.picksText}</div>
-                    </div>
                     {dnaKey !== 'NONE' && dna.desc && (
                         <div className="commentary-card" style={{ borderColor:`${dna.color}30` }}>
                             <div className="commentary-card-title" style={{ color:dna.color }}>Owner DNA — {dna.label}</div>
                             <div className="commentary-card-text">{dna.strategy}</div>
                         </div>
                     )}
+                    <div className="commentary-card">
+                        <div className="commentary-card-title">Draft Pick Capital</div>
+                        <div className="commentary-card-text">{commentary.picksText}</div>
+                        {(() => {
+                            const pa = assessment.picksAssessment;
+                            if (!pa) return null;
+                            const ordinal = n => { const s=['th','st','nd','rd']; const v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); };
+                            return (
+                                <div style={{ marginTop:'0.4rem' }}>
+                                    {pa.pickYears.map(year => {
+                                        const byRound = pa.pickCountByYearRound[year] || {};
+                                        const rounds = [];
+                                        for (let r = 1; r <= pa.draftRounds; r++) {
+                                            for (let i = 0; i < (byRound[r] || 0); i++) rounds.push(r);
+                                        }
+                                        if (!rounds.length) return (
+                                            <div key={year} style={{ fontSize:'0.6rem', marginBottom:'0.15rem', color:'var(--silver)', opacity:0.5 }}>
+                                                <span style={{ color:'var(--gold)', fontWeight:700, opacity:1 }}>{year}:</span> —
+                                            </div>
+                                        );
+                                        return (
+                                            <div key={year} style={{ fontSize:'0.6rem', marginBottom:'0.15rem' }}>
+                                                <span style={{ color:'var(--gold)', fontWeight:700 }}>{year}:</span>
+                                                {' '}<span style={{ color:'var(--silver)' }}>{rounds.map(r => ordinal(r)).join(', ')}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
+                    </div>
                 </div>
             );
         }
