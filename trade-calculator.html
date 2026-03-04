@@ -1352,64 +1352,6 @@ function PosRow({ pos, assessment }) {
     );
 }
 
-function PicksRow({ picksAssessment }) {
-    if (!picksAssessment) return null;
-    const { pickCountByYear, pickCountByYearRound, pickYears, totalPicks, draftRounds, idealTotal, status } = picksAssessment;
-    const displayIdeal = idealTotal ?? (draftRounds * (pickYears?.length || 1));
-    const iconMap  = { surplus:'↑', ok:'✓', thin:'~', deficit:'✗' };
-    const colorMap = { surplus:'var(--gold)', ok:'var(--win-green)', thin:'var(--amber)', deficit:'var(--loss-red)' };
-    const statusIcon  = iconMap[status];
-    const statusColor = colorMap[status];
-
-    return (
-        <div style={{ display:'flex', flexDirection:'column', gap:'0.06rem' }}>
-            {/* Header: label + overall total */}
-            <div className="pos-row">
-                <span className="pos-label" style={{ color:'#A8D8A8', fontSize:'0.51rem', letterSpacing:'-0.02em' }}>PICKS</span>
-                <span style={{ flex:1 }} />
-                <span className="pos-count" style={{ color: statusColor }}>{totalPicks}/{displayIdeal}</span>
-                <span className="pos-status-icon" style={{ color: statusColor }}>{statusIcon}</span>
-            </div>
-            {/* Per-year groups, each broken into per-round rows */}
-            {(pickYears || []).map((year, yi) => {
-                const yearCount = (pickCountByYear && pickCountByYear[year]) ?? 0;
-                const yrStatus  = yearCount === 0 ? 'deficit' : yearCount < draftRounds ? 'thin' : yearCount === draftRounds ? 'ok' : 'surplus';
-                const yrColor   = colorMap[yrStatus];
-                return (
-                    <div key={year} style={{ paddingLeft:'22px', marginTop: yi > 0 ? '0.22rem' : '0.04rem' }}>
-                        {/* Year label + year total */}
-                        <div style={{ display:'flex', alignItems:'baseline', gap:'0.35rem', marginBottom:'0.1rem' }}>
-                            <span style={{ fontSize:'0.54rem', fontWeight:700, color: yrColor, flexShrink:0 }}>{year}</span>
-                            <span style={{ fontSize:'0.44rem', color: yrColor, opacity:0.7 }}>{yearCount}/{draftRounds}</span>
-                            <span style={{ fontSize:'0.44rem', color: yrColor, opacity:0.7 }}>{iconMap[yrStatus]}</span>
-                        </div>
-                        {/* One row per round */}
-                        {Array.from({ length: draftRounds }, (_, i) => {
-                            const r     = i + 1;
-                            const count = (pickCountByYearRound?.[year]?.[r]) ?? 0;
-                            const isEmpty = count === 0;
-                            const rLabelColor = isEmpty ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.55)';
-                            // One bullet per pick; extras beyond the first are gold (acquired/surplus)
-                            const bullets = isEmpty
-                                ? [<span key="e" className="dot dot-empty" title={`R${r} — no pick`} />]
-                                : Array.from({ length: count }, (_, j) =>
-                                    <span key={j}
-                                        className={`dot ${j === 0 ? 'dot-filled' : 'dot-surplus'}`}
-                                        title={`R${r} pick ${j + 1}`} />
-                                  );
-                            return (
-                                <div key={r} style={{ display:'flex', alignItems:'center', gap:'0.28rem', marginBottom:'0.04rem' }}>
-                                    <span style={{ fontSize:'0.46rem', color: rLabelColor, width:'14px', flexShrink:0 }}>R{r}</span>
-                                    <span style={{ display:'flex', gap:'2px', flexWrap:'wrap' }}>{bullets}</span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
 
 function PanicMeter({ level }) {
     return (
@@ -1477,7 +1419,6 @@ function TeamCard({ assessment, isMyTeam, ownerDna }) {
                         .sort((a,b) => (POS_ORDER[a[0]]??9) - (POS_ORDER[b[0]]??9))
                         .map(([pos, data]) => <PosRow key={pos} pos={pos} assessment={data} />)
                     }
-                    <PicksRow picksAssessment={picksAssessment} />
                 </div>
 
                 <div className="divider" />
@@ -2051,7 +1992,6 @@ function TradeCalculator() {
                                             );
                                         })
                                     }
-                                    <PicksRow picksAssessment={myAssessment.picksAssessment} />
                                 </div>
 
                                 <div className="divider" style={{ margin:'0.5rem 0' }} />
@@ -2101,7 +2041,6 @@ function TradeCalculator() {
                                         );
                                     })
                                 }
-                                <PicksRow picksAssessment={selectedDetail.picksAssessment} />
                             </div>
                             <div className="divider" style={{ margin:'0.5rem 0' }} />
                             <PanicMeter level={selectedDetail.panic} />
