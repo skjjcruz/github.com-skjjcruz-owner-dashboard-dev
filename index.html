@@ -1510,6 +1510,11 @@
                     </div>
 
                     <div style={{ display: 'flex', gap: '0.75rem', flexDirection: 'column' }}>
+                        {!isGiftedAccount && (
+                            <button onClick={() => window.location.href = 'gift.html'} style={{ padding: '0.75rem', background: 'linear-gradient(135deg, var(--gold) 0%, #b8922a 100%)', border: 'none', borderRadius: '8px', color: 'var(--black)', fontFamily: 'Oswald, sans-serif', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
+                                🎁 Gift a Dashboard
+                            </button>
+                        )}
                         <button onClick={handleLogout} style={{ padding: '0.75rem', background: 'linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)', border: 'none', borderRadius: '8px', color: 'white', fontFamily: 'Oswald, sans-serif', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                             Logout
                         </button>
