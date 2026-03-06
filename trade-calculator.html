@@ -2001,8 +2001,9 @@ function TradeCalculator() {
                             );
                         })()}
                         {commentary.waiverBudget > 0 && (
-                            <div style={{ marginTop:'0.5rem', paddingTop:'0.4rem', borderTop:'1px solid rgba(255,255,255,0.06)' }}>
-                                <div className="commentary-card-text">{commentary.faabText}</div>
+                            <div style={{ marginTop:'0.5rem', paddingTop:'0.4rem', borderTop:'1px solid rgba(46,204,113,0.25)', background:'rgba(46,204,113,0.07)', borderRadius:4, padding:'0.4rem 0.5rem' }}>
+                                <div style={{ fontSize:'0.6rem', fontWeight:700, color:'#2ECC71', letterSpacing:'0.05em', marginBottom:'0.2rem' }}>FAAB</div>
+                                <div className="commentary-card-text" style={{ color:'#2ECC71' }}>{commentary.faabText}</div>
                             </div>
                         )}
                     </div>
