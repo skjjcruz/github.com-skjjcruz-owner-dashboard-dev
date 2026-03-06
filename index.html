@@ -890,8 +890,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="supabase-client.js"></script>
-<script src="themes.js"></script>
-<script>window.applyStoredTheme();</script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1379,13 +1377,12 @@
     };
 
     // Settings Modal
-    function SettingsModal({ onClose, activeTheme, onThemeChange }) {
+    function SettingsModal({ onClose, initDisplayName, onDisplayNameSave }) {
         const [pwMsg, setPwMsg] = React.useState('');
         const [currentPw, setCurrentPw] = React.useState('');
         const [newPw, setNewPw] = React.useState('');
         const [confirmPw, setConfirmPw] = React.useState('');
-        const [displayName, setDisplayName] = React.useState(activeTheme.displayName || '');
-        const [selectedTeam, setSelectedTeam] = React.useState(activeTheme.teamId || 'default');
+        const [displayName, setDisplayName] = React.useState(initDisplayName || '');
 
         const isGiftedAccount = React.useMemo(() => {
             try {
@@ -1394,15 +1391,8 @@
             } catch { return false; }
         }, []);
 
-        function handleThemeSelect(teamId) {
-            setSelectedTeam(teamId);
-            const updated = { ...activeTheme, teamId, displayName };
-            onThemeChange(updated);
-        }
-
         function handleDisplayNameSave() {
-            const updated = { ...activeTheme, teamId: selectedTeam, displayName };
-            onThemeChange(updated);
+            onDisplayNameSave(displayName);
         }
 
         async function handleChangePassword() {
@@ -1455,39 +1445,10 @@
                         {isGiftedAccount && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--gold)', background: 'rgba(212,175,55,0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>GIFTED — change your password below</span>}
                     </div>
 
-                    {/* ── TEAM THEME ── */}
+                    {/* ── DISPLAY NAME ── */}
                     <div style={sectionStyle}>
-                        <div style={sectionTitle}>TEAM THEME</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.75rem' }}>Pick your NFL team colors</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.35rem', marginBottom: '0.75rem' }}>
-                            {window.NFL_THEMES.map(team => (
-                                <div
-                                    key={team.id}
-                                    onClick={() => handleThemeSelect(team.id)}
-                                    title={`${team.city} ${team.name}`}
-                                    style={{
-                                        background: team.primary,
-                                        border: selectedTeam === team.id ? `3px solid var(--white)` : `2px solid ${team.primaryDark}`,
-                                        borderRadius: '6px',
-                                        padding: '0.3rem 0.1rem',
-                                        textAlign: 'center',
-                                        cursor: 'pointer',
-                                        fontSize: '0.55rem',
-                                        fontWeight: '700',
-                                        color: '#fff',
-                                        textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-                                        letterSpacing: '0.03em',
-                                        lineHeight: 1.2,
-                                        boxShadow: selectedTeam === team.id ? '0 0 8px rgba(255,255,255,0.4)' : 'none',
-                                        transition: 'all 0.15s ease',
-                                        userSelect: 'none',
-                                    }}
-                                >
-                                    {team.abbr}
-                                </div>
-                            ))}
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.5rem' }}>Display name (optional)</div>
+                        <div style={sectionTitle}>DISPLAY NAME</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.5rem' }}>Custom name (optional)</div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <input
                                 style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
@@ -2286,11 +2247,10 @@
         const [calendarEvents, setCalendarEvents] = useState(() => loadCalendarEvents());
         const [showCalendar, setShowCalendar] = useState(false);
 
-        // Theme state
-        const [activeTheme, setActiveTheme] = useState(() => {
-            try { return JSON.parse(localStorage.getItem('od_theme')) || {}; } catch { return {}; }
+        // Display name state
+        const [customDisplayName, setCustomDisplayName] = useState(() => {
+            return localStorage.getItem('od_display_name') || '';
         });
-        const customDisplayName = activeTheme.displayName || '';
 
         // Cloud sync — load from Supabase on mount and update state if remote data differs
         useEffect(() => {
@@ -2300,11 +2260,8 @@
             window.OD.loadEarnings().then(remote => {
                 if (remote && remote.length > 0) setEarningsEntries(remote);
             }).catch(() => {});
-            window.OD.loadTheme().then(themeData => {
-                if (themeData && Object.keys(themeData).length > 0) {
-                    setActiveTheme(themeData);
-                    if (themeData.teamId) window.applyNFLTheme(themeData.teamId);
-                }
+            window.OD.loadDisplayName().then(name => {
+                if (name) { setCustomDisplayName(name); localStorage.setItem('od_display_name', name); }
             }).catch(() => {});
         }, []);
         const [showEventForm, setShowEventForm] = useState(false);
@@ -2742,11 +2699,10 @@
                 {showSettings && (
                     <SettingsModal
                         onClose={() => setShowSettings(false)}
-                        activeTheme={activeTheme}
-                        onThemeChange={(themeData) => {
-                            setActiveTheme(themeData);
-                            window.OD.saveTheme(themeData);
-                            if (themeData.teamId) window.applyNFLTheme(themeData.teamId);
+                        initDisplayName={customDisplayName}
+                        onDisplayNameSave={(name) => {
+                            setCustomDisplayName(name);
+                            window.OD.saveDisplayName(name);
                         }}
                     />
                 )}

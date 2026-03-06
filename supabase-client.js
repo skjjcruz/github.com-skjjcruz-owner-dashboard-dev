@@ -276,58 +276,33 @@ window.OD.saveTargets = function(leagueId, data) {
 };
 
 // ============================================================
-// THEME
+// DISPLAY NAME
 // ============================================================
-const THEME_LS_KEY = 'od_theme';
+const DISPLAY_NAME_LS_KEY = 'od_display_name';
 
-async function dbLoadTheme(username) {
-    const db = getClient();
-    if (!db || !isConfigured() || !username) return null;
-    const { data, error } = await db
-        .from('users')
-        .select('theme, display_name')
-        .eq('sleeper_username', username)
-        .maybeSingle();
-    if (error || !data) return null;
-    const theme = data.theme || {};
-    // Merge top-level display_name column into theme object
-    if (data.display_name && !theme.displayName) {
-        theme.displayName = data.display_name;
-    }
-    return theme;
-}
-
-async function dbSaveTheme(username, themeData) {
-    const db = getClient();
-    if (!db || !isConfigured() || !username) return;
-    await ensureUser(username);
-    const update = { theme: themeData };
-    if (themeData.displayName) update.display_name = themeData.displayName;
-    const { error } = await db.from('users').update(update).eq('sleeper_username', username);
-    if (error) console.warn('[OD] theme save error', error);
-}
-
-window.OD.loadTheme = async function() {
+window.OD.loadDisplayName = async function() {
     const username = getCurrentUsername();
     if (isConfigured() && username) {
-        const remote = await dbLoadTheme(username);
-        if (remote && Object.keys(remote).length > 0) {
-            localStorage.setItem(THEME_LS_KEY, JSON.stringify(remote));
-            return remote;
+        const db = getClient();
+        const { data } = await db.from('users').select('display_name').eq('sleeper_username', username).maybeSingle();
+        if (data && data.display_name) {
+            localStorage.setItem(DISPLAY_NAME_LS_KEY, data.display_name);
+            return data.display_name;
         }
     }
-    try {
-        const raw = localStorage.getItem(THEME_LS_KEY);
-        if (raw) return JSON.parse(raw);
-    } catch {}
-    return {};
+    return localStorage.getItem(DISPLAY_NAME_LS_KEY) || '';
 };
 
-window.OD.saveTheme = function(themeData) {
-    localStorage.setItem(THEME_LS_KEY, JSON.stringify(themeData));
+window.OD.saveDisplayName = function(name) {
+    localStorage.setItem(DISPLAY_NAME_LS_KEY, name);
     const username = getCurrentUsername();
     if (isConfigured() && username) {
-        dbSaveTheme(username, themeData).catch(console.warn);
+        const db = getClient();
+        ensureUser(username).then(() => {
+            db.from('users').update({ display_name: name || null }).eq('sleeper_username', username).then(({ error }) => {
+                if (error) console.warn('[OD] display_name save error', error);
+            });
+        }).catch(console.warn);
     }
 };
 
@@ -345,19 +320,17 @@ async function hashPassword(password) {
 }
 
 // Create (or update) a gifted user row in Supabase
-window.OD.createGiftUser = async function({ sleeperUsername, password, teamId, displayName }) {
+window.OD.createGiftUser = async function({ sleeperUsername, password, displayName }) {
     const db = getClient();
     if (!db || !isConfigured()) throw new Error('Supabase not configured');
 
     const passwordHash = await hashPassword(password);
-    const theme = { teamId: teamId || 'default', displayName: displayName || '' };
 
     const { error } = await db.from('users').upsert(
         {
             sleeper_username: sleeperUsername,
             password_hash: passwordHash,
             display_name: displayName || null,
-            theme,
             is_gifted: true,
         },
         { onConflict: 'sleeper_username' }

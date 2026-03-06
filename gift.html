@@ -178,41 +178,6 @@
             border: 2px solid var(--win-green);
         }
 
-        /* Theme grid */
-        .theme-grid {
-            display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 0.4rem;
-            margin-bottom: 1rem;
-        }
-
-        .theme-swatch {
-            border-radius: 6px;
-            padding: 0.35rem 0.1rem;
-            text-align: center;
-            cursor: pointer;
-            font-size: 0.6rem;
-            font-weight: 700;
-            color: #fff;
-            text-shadow: 0 1px 3px rgba(0,0,0,0.9);
-            letter-spacing: 0.02em;
-            line-height: 1.2;
-            border: 2px solid transparent;
-            transition: all 0.15s ease;
-            user-select: none;
-        }
-
-        .theme-swatch:hover { transform: scale(1.08); }
-        .theme-swatch.selected { border: 3px solid #fff !important; box-shadow: 0 0 10px rgba(255,255,255,0.35); transform: scale(1.08); }
-
-        /* Preview bar */
-        .preview-bar {
-            height: 6px;
-            border-radius: 3px;
-            margin-bottom: 1rem;
-            transition: background 0.3s;
-        }
-
         /* Success state */
         .success-panel {
             display: none;
@@ -302,17 +267,9 @@
         <div class="error-msg" id="step1Error"></div>
     </div>
 
-    <!-- STEP 2: Team Theme -->
+    <!-- STEP 2: Name + Password -->
     <div class="card" id="step2Card" style="opacity:0.4; pointer-events:none;">
-        <div class="card-title"><span class="step-badge">2</span>Choose Their Team Theme</div>
-        <div class="preview-bar" id="previewBar" style="background: var(--gold);"></div>
-        <div class="theme-grid" id="themeGrid"></div>
-        <div style="font-size:0.75rem; color:var(--silver); margin-top:0.25rem;" id="selectedTeamName">Selected: Default</div>
-    </div>
-
-    <!-- STEP 3: Name + Password -->
-    <div class="card" id="step3Card" style="opacity:0.4; pointer-events:none;">
-        <div class="card-title"><span class="step-badge">3</span>Personalise &amp; Set Password</div>
+        <div class="card-title"><span class="step-badge">2</span>Personalise &amp; Set Password</div>
 
         <label class="form-label" for="displayNameInput">Display Name (optional)</label>
         <input type="text" id="displayNameInput" class="form-input" placeholder="e.g. Big Pete — leave blank to use Sleeper name" />
@@ -324,7 +281,7 @@
         <hr class="divider">
 
         <button class="btn btn-primary btn-full" id="createBtn" onclick="createGift()">Create Gift Dashboard</button>
-        <div class="error-msg" id="step3Error"></div>
+        <div class="error-msg" id="step2Error"></div>
     </div>
 
     <!-- SUCCESS -->
@@ -343,38 +300,9 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="supabase-client.js"></script>
-<script src="themes.js"></script>
 <script>
     let verifiedUsername = null;
-    let selectedTeamId = 'default';
     let generatedUrl = '';
-
-    // Build the theme grid
-    function buildThemeGrid() {
-        const grid = document.getElementById('themeGrid');
-        grid.innerHTML = '';
-        window.NFL_THEMES.forEach(team => {
-            const swatch = document.createElement('div');
-            swatch.className = 'theme-swatch' + (team.id === 'default' ? ' selected' : '');
-            swatch.style.background = team.primary;
-            swatch.style.borderColor = team.primaryDark;
-            swatch.title = `${team.city} ${team.name}`;
-            swatch.textContent = team.abbr;
-            swatch.onclick = () => selectTeam(team.id);
-            swatch.id = `swatch-${team.id}`;
-            grid.appendChild(swatch);
-        });
-    }
-
-    function selectTeam(teamId) {
-        selectedTeamId = teamId;
-        document.querySelectorAll('.theme-swatch').forEach(el => el.classList.remove('selected'));
-        const swatch = document.getElementById(`swatch-${teamId}`);
-        if (swatch) swatch.classList.add('selected');
-        const theme = window.getNFLTheme(teamId);
-        document.getElementById('previewBar').style.background = `linear-gradient(90deg, ${theme.primary}, ${theme.primaryDark})`;
-        document.getElementById('selectedTeamName').textContent = `Selected: ${theme.city} ${theme.name}`;
-    }
 
     async function validateSleeper() {
         const username = document.getElementById('sleeperInput').value.trim();
@@ -406,11 +334,9 @@
             }
             badge.classList.add('show');
             btn.textContent = '✓ Verified'; btn.disabled = false;
-            // Unlock steps 2 & 3
+            // Unlock step 2
             document.getElementById('step2Card').style.opacity = '1';
             document.getElementById('step2Card').style.pointerEvents = 'auto';
-            document.getElementById('step3Card').style.opacity = '1';
-            document.getElementById('step3Card').style.pointerEvents = 'auto';
         } catch {
             showErr(err, 'Failed to reach Sleeper API. Check your connection.');
             btn.textContent = 'Verify'; btn.disabled = false;
@@ -418,7 +344,7 @@
     }
 
     async function createGift() {
-        const err = document.getElementById('step3Error');
+        const err = document.getElementById('step2Error');
         const password = document.getElementById('giftPassword').value;
         const displayName = document.getElementById('displayNameInput').value.trim();
         const btn = document.getElementById('createBtn');
@@ -433,7 +359,6 @@
             await window.OD.createGiftUser({
                 sleeperUsername: verifiedUsername,
                 password,
-                teamId: selectedTeamId,
                 displayName: displayName || ''
             });
 
@@ -446,7 +371,6 @@
             document.getElementById('successPanel').classList.add('show');
             document.getElementById('step1Card').style.display = 'none';
             document.getElementById('step2Card').style.display = 'none';
-            document.getElementById('step3Card').style.display = 'none';
         } catch (e) {
             showErr(err, 'Failed to save. Make sure Supabase is configured. ' + (e.message || ''));
             btn.textContent = 'Create Gift Dashboard';
@@ -463,29 +387,23 @@
     }
 
     function resetForm() {
-        verifiedUsername = null; selectedTeamId = 'default'; generatedUrl = '';
+        verifiedUsername = null; generatedUrl = '';
         document.getElementById('sleeperInput').value = '';
         document.getElementById('displayNameInput').value = '';
         document.getElementById('giftPassword').value = '';
         document.getElementById('validateBtn').textContent = 'Verify';
         document.getElementById('validatedBadge').classList.remove('show');
         document.getElementById('step1Error').classList.remove('show');
-        document.getElementById('step3Error').classList.remove('show');
+        document.getElementById('step2Error').classList.remove('show');
         document.getElementById('step2Card').style.opacity = '0.4';
         document.getElementById('step2Card').style.pointerEvents = 'none';
-        document.getElementById('step3Card').style.opacity = '0.4';
-        document.getElementById('step3Card').style.pointerEvents = 'none';
-        ['step1Card','step2Card','step3Card'].forEach(id => document.getElementById(id).style.display = '');
+        ['step1Card','step2Card'].forEach(id => document.getElementById(id).style.display = '');
         document.getElementById('successPanel').classList.remove('show');
-        selectTeam('default');
         document.getElementById('createBtn').textContent = 'Create Gift Dashboard';
         document.getElementById('createBtn').disabled = false;
     }
 
     function showErr(el, msg) { el.textContent = msg; el.classList.add('show'); }
-
-    // Init
-    buildThemeGrid();
 </script>
 </body>
 </html>
