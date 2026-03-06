@@ -417,6 +417,47 @@
 
         /* ---- States ---- */
         .center-msg { text-align: center; color: var(--silver); opacity: 0.5; padding: 2rem 1rem; font-size: 0.78rem; }
+
+        /* ---- Mobile two-panel tab bar (phone only, ≤768px) ---- */
+        .mobile-tab-bar {
+            display: none;
+            flex-shrink: 0;
+            height: 50px;
+            background: var(--off-black);
+            border-top: 2px solid rgba(212,175,55,0.3);
+        }
+        .mobile-tab-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            border-top: 3px solid transparent;
+            color: var(--silver);
+            font-family: 'Oswald', sans-serif;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            cursor: pointer;
+            opacity: 0.55;
+            transition: color 0.12s, opacity 0.12s, border-color 0.12s;
+        }
+        .mobile-tab-btn.mob-active { color: var(--gold); opacity: 1; border-top-color: var(--gold); }
+
+        @media (max-width: 768px) {
+            .mobile-tab-bar { display: flex; }
+            .tracker-grid {
+                grid-template-columns: 1fr !important;
+                height: calc(100vh - 46px - 50px) !important;
+                overflow: hidden !important;
+                gap: 0 !important;
+                padding: 0.4rem !important;
+            }
+            /* Hide My Roster on phone — two panels only */
+            .roster-panel { display: none !important; }
+            /* All panels hidden by default; only the active one shows */
+            .panel { display: none; }
+            .panel.mob-active { display: flex; }
+        }
     </style>
 </head>
 <body>
@@ -563,6 +604,7 @@
             const [dropTarget, setDropTarget]     = useState(false);
             const [editingCostId, setEditingCostId] = useState(null);
             const [editingCostVal, setEditingCostVal] = useState('');
+            const [mobileTab, setMobileTab] = useState('fa');
 
             // ---- Bootstrap ----
             useEffect(() => { boot(); }, []);
@@ -935,6 +977,7 @@
                     {leagueLoading ? (
                         <div className="center-msg" style={{ paddingTop:'4rem' }}>Loading league data...</div>
                     ) : (
+                        <>
                         <div className="tracker-grid">
 
                             {/* ===== LEFT: MY ROSTER ===== */}
@@ -1034,7 +1077,7 @@
                             </div>
 
                             {/* ===== CENTER: FREE AGENTS ===== */}
-                            <div className="panel">
+                            <div className={`panel${mobileTab === 'fa' ? ' mob-active' : ''}`}>
                                 <div className="panel-header">
                                     <div className="ph-title">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1111,7 +1154,7 @@
                             </div>
 
                             {/* ===== RIGHT: FA TARGETS ===== */}
-                            <div className="panel">
+                            <div className={`panel${mobileTab === 'targets' ? ' mob-active' : ''}`}>
                                 <div className="panel-header">
                                     <div className="ph-title">
                                         FA TARGETS
@@ -1239,6 +1282,21 @@
                             </div>
 
                         </div>
+
+                        {/* Mobile tab bar — hidden on iPad/desktop via CSS */}
+                        <div className="mobile-tab-bar">
+                            <button
+                                className={`mobile-tab-btn${mobileTab === 'fa' ? ' mob-active' : ''}`}
+                                onClick={() => setMobileTab('fa')}>
+                                Free Agents
+                            </button>
+                            <button
+                                className={`mobile-tab-btn${mobileTab === 'targets' ? ' mob-active' : ''}`}
+                                onClick={() => setMobileTab('targets')}>
+                                FA Targets
+                            </button>
+                        </div>
+                        </>
                     )}
                 </div>
             );
