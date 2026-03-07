@@ -867,16 +867,12 @@
         }
 
         .right-column {
-            overflow-y: auto;
+            overflow-y: scroll;
             overflow-x: hidden;
             overscroll-behavior: contain;
             -webkit-overflow-scrolling: touch;
             touch-action: pan-y;
             height: 100%;
-        }
-
-        /* Right column: normal column, not fixed bar */
-        .right-column {
             position: static;
             flex-direction: column;
             flex-wrap: nowrap;
@@ -899,7 +895,7 @@
         }
         .key-events-scroll {
             flex: 1;
-            overflow-y: auto;
+            overflow-y: scroll;
             overflow-x: hidden;
             min-height: 0;
             -webkit-overflow-scrolling: touch;
@@ -916,7 +912,7 @@
         }
         .league-window-scroll {
             flex: 1;
-            overflow-y: auto;
+            overflow-y: scroll;
             overflow-x: hidden;
             min-height: 0;
             -webkit-overflow-scrolling: touch;
