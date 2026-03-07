@@ -2856,9 +2856,9 @@
                         </div>
 
                         <div className="league-window">
-                            <div className="league-window-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                <div><span>⚡</span> SLEEPER LEAGUES</div>
-                                <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                            <div className="league-window-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                                <div style={{ flexShrink: 0 }}><span>⚡</span> SLEEPER LEAGUES</div>
+                                <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', overflowX: 'auto', flexShrink: 1 }}>
                                     {AVAILABLE_YEARS.map(year => (
                                         <div
                                             key={year}
