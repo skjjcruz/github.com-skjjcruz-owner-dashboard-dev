@@ -1249,20 +1249,20 @@ function calcNflStarterSet(playersData, valueIndex, statsData, scoring) {
 }
 
 // Top 5 players per position across all rosters = "elite"
-function calcElitePlayers(assessments, valueIndex) {
+function calcElitePlayers(assessments, statsData, scoring) {
     const byPos = {};
     for (const a of assessments) {
         for (const [pos, ids] of Object.entries(a.posGroups || {})) {
             if (!byPos[pos]) byPos[pos] = [];
             for (const id of ids) {
-                const v = getPlayerValue(id, valueIndex);
-                byPos[pos].push({ id, value: v.value });
+                const pts = calcSeasonPts(id, statsData, scoring);
+                byPos[pos].push({ id, pts });
             }
         }
     }
     const eliteSet = new Set();
     for (const players of Object.values(byPos)) {
-        players.sort((a,b) => b.value - a.value).slice(0,5).forEach(p => eliteSet.add(p.id));
+        players.sort((a,b) => b.pts - a.pts).slice(0,5).forEach(p => eliteSet.add(p.id));
     }
     return eliteSet;
 }
@@ -1631,9 +1631,9 @@ function TradeCalculator() {
 
     // Elite player set — top 5 per position across all rosters
     const elitePlayerSet = useMemo(() => {
-        if (!assessments.length || !Object.keys(valueIndex).length) return new Set();
-        return calcElitePlayers(assessments, valueIndex);
-    }, [assessments, valueIndex]);
+        if (!assessments.length || !Object.keys(statsData).length) return new Set();
+        return calcElitePlayers(assessments, statsData, leagueInfo?.scoring_settings);
+    }, [assessments, statsData, leagueInfo]);
 
     // Player search across all loaded players — QBs first, then sorted by value within each position group
     const playerSearchResults = useCallback((query) => {
