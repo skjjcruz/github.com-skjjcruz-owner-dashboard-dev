@@ -602,6 +602,7 @@
             const [search, setSearch]       = useState('');
 
             const [targets, setTargets]               = useState([]);
+            const targetsLoadedRef = useRef(null); // tracks leagueId for which targets are ready to save
             const [startingBudget, setStartingBudget] = useState(1000);
             const [editingBudget, setEditingBudget]   = useState(false);
             const [budgetDraft, setBudgetDraft]       = useState('1000');
@@ -673,7 +674,9 @@
                     setPlayersData(players);
                     setStatsData(stats);
 
-                    // Load targets: start from cache, then merge cloud data
+                    // Load targets: start from cache, then merge cloud data.
+                    // Clear the ref first so the save effect won't fire with stale data.
+                    targetsLoadedRef.current = null;
                     const saved = loadTargets(leagueId);
                     setTargets(saved.targets || []);
 
@@ -690,6 +693,9 @@
                         setBudgetDraft(String(saved.startingBudget || 1000));
                     }
 
+                    // Capture leagueId for the async closure
+                    const loadedLeagueId = leagueId;
+
                     // Async cloud load — overwrites local cache if remote has data
                     window.OD.loadTargets(leagueId).then(remote => {
                         if (remote && remote.targets && remote.targets.length > 0) {
@@ -697,7 +703,10 @@
                             setStartingBudget(remote.startingBudget || 1000);
                             setBudgetDraft(String(remote.startingBudget || 1000));
                         }
-                    }).catch(() => {});
+                    }).catch(() => {}).finally(() => {
+                        // Mark targets as ready to save only after cloud load resolves
+                        targetsLoadedRef.current = loadedLeagueId;
+                    });
                 } catch (e) {
                     console.error('League load failed:', e);
                 } finally {
@@ -706,7 +715,9 @@
             }
 
             useEffect(() => {
-                if (!leagueId) return;
+                // Only save after targets have been loaded for THIS league —
+                // prevents overwriting saved data with stale state when leagueId changes.
+                if (!leagueId || targetsLoadedRef.current !== leagueId) return;
                 saveTargets(leagueId, { startingBudget, targets });
             }, [targets, startingBudget, leagueId]);
 
