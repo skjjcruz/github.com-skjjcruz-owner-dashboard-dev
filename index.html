@@ -2901,28 +2901,27 @@
                         <div className="league-window">
                             <div className="league-window-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                                 <div style={{ flexShrink: 0 }}><span>⚡</span> SLEEPER LEAGUES</div>
-                                <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', overflowX: 'auto', flexShrink: 1 }}>
+                                <select
+                                    value={selectedYear}
+                                    onChange={e => setSelectedYear(e.target.value)}
+                                    style={{
+                                        background: 'var(--charcoal)',
+                                        border: '1px solid rgba(212,175,55,0.4)',
+                                        borderRadius: '4px',
+                                        color: 'var(--gold)',
+                                        fontFamily: 'Oswald, sans-serif',
+                                        fontWeight: '700',
+                                        fontSize: '0.72rem',
+                                        padding: '0.18rem 0.45rem',
+                                        cursor: 'pointer',
+                                        outline: 'none',
+                                        flexShrink: 0,
+                                    }}
+                                >
                                     {AVAILABLE_YEARS.map(year => (
-                                        <div
-                                            key={year}
-                                            onClick={() => setSelectedYear(year)}
-                                            style={{
-                                                padding: '0.2rem 0.55rem',
-                                                borderRadius: '4px',
-                                                fontSize: '0.72rem',
-                                                fontWeight: '700',
-                                                fontFamily: 'Oswald, sans-serif',
-                                                color: year === selectedYear ? 'var(--black)' : 'var(--silver)',
-                                                background: year === selectedYear ? 'var(--gold)' : 'transparent',
-                                                border: year === selectedYear ? '1px solid var(--gold)' : '1px solid rgba(212, 175, 55, 0.3)',
-                                                cursor: year === selectedYear ? 'default' : 'pointer',
-                                                transition: 'all 0.2s'
-                                            }}
-                                        >
-                                            {year}
-                                        </div>
+                                        <option key={year} value={year}>{year}</option>
                                     ))}
-                                </div>
+                                </select>
                             </div>
 
                             <div className="league-window-scroll">
