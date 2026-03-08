@@ -435,7 +435,8 @@
         /* Tighten side panels on small phones */
         @media(max-width:799px){
             /* Prevent grid blowout — allow columns to shrink below content size */
-            .ta-3col > * { min-width: 0; overflow: hidden; }
+            .ta-3col > * { min-width: 0; }
+            .ta-side { overflow: hidden; }
             /* Compact side panels */
             .ta-side { padding:0.45rem 0.4rem; gap:0.3rem; font-size:0.72rem; }
             .ta-player-row { padding:0.28rem 0.35rem; gap:0.3rem; }
