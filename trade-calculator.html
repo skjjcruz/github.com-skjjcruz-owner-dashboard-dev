@@ -247,6 +247,7 @@
         .ta-remove:hover { color: var(--loss-red); }
         .ta-val-bar-wrap { flex: 1; height: 4px; background: rgba(255,255,255,0.07); border-radius: 2px; overflow: hidden; }
         .ta-val-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+        .ta-val-col { width: 80px; flex-shrink: 0; }
 
         .ta-total-row {
             display: flex; align-items: center; justify-content: space-between;
@@ -432,13 +433,27 @@
         @media(min-width:1150px){ .scout-panel { grid-column:3; grid-row:1; max-height:660px; } }
 
         /* Tighten side panels on small phones */
-        @media(max-width:480px){
-            .ta-side { padding:0.5rem 0.45rem; gap:0.35rem; }
-            .ta-player-row { padding:0.35rem 0.45rem; }
-            .ta-roster-item { padding:0.3rem 0.45rem; font-size:0.72rem; }
-            .ta-search { font-size:0.75rem; padding:0.35rem 0.45rem; }
-            .ta-roster-filter { font-size:0.72rem; padding:0.3rem 0.45rem; }
-            .ta-total-val { font-size:1.2rem; }
+        @media(max-width:799px){
+            /* Prevent grid blowout — allow columns to shrink below content size */
+            .ta-3col > * { min-width: 0; overflow: hidden; }
+            /* Compact side panels */
+            .ta-side { padding:0.45rem 0.4rem; gap:0.3rem; font-size:0.72rem; }
+            .ta-player-row { padding:0.28rem 0.35rem; gap:0.3rem; }
+            .ta-roster-item { padding:0.25rem 0.35rem; font-size:0.68rem; }
+            .ta-pos-group-hdr { font-size:0.58rem; padding:0.18rem 0.35rem; }
+            .ta-search { font-size:0.7rem; padding:0.3rem 0.4rem; }
+            .ta-roster-filter { font-size:0.68rem; padding:0.25rem 0.4rem; }
+            .ta-dropdown-item { font-size:0.68rem; padding:0.3rem 0.4rem; gap:0.3rem; }
+            .ta-total-val { font-size:1.15rem; }
+            .ta-total-label { font-size:0.58rem; }
+            /* Value bar: hide the bar, shrink the value box so player name has room */
+            .ta-val-col { width: 42px; }
+            .ta-val-bar-wrap { display:none; }
+            .ta-player-val { font-size:0.62rem; }
+            /* Player name truncation */
+            .ta-player-name { font-size:0.7rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            /* Owner header label */
+            .ta-side > div:first-child span:first-child { font-size:0.78rem; }
         }
         .scout-team-card { background:var(--charcoal); border:1px solid rgba(255,255,255,0.07); border-radius:6px; padding:0.6rem 0.7rem; cursor:pointer; transition:border-color 0.15s, background 0.15s; display:flex; flex-direction:column; gap:0.3rem; }
         .scout-team-card:hover { border-color:rgba(212,175,55,0.4); background:rgba(212,175,55,0.04); }
@@ -2970,11 +2985,11 @@ function TradeCalculator() {
                             <div key={pid} className="ta-player-row">
                                 <button className="ta-remove" onClick={() => removePlayer(side, pid)}>✕</button>
                                 <span className="ta-pos-dot" style={{ background: posColor(normPos(p.position)) }} />
-                                <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                <span className="ta-player-name" style={{ flex:1, fontSize:'0.82rem', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                                     {p.first_name} {p.last_name}
                                     {elitePlayerSet.has(pid) && <span style={{ color:'var(--gold)', marginLeft:'0.25rem' }}>★</span>}
                                 </span>
-                                <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2, width:80 }}>
+                                <div className="ta-val-col" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
                                     <div className="ta-val-bar-wrap">
                                         <div className="ta-val-bar-fill" style={{ width:`${pct}%`, background: color }} />
                                     </div>
@@ -3000,11 +3015,11 @@ function TradeCalculator() {
                             <div key={pkId} className="ta-player-row">
                                 <button className="ta-remove" onClick={() => removePick(side, pkId)}>✕</button>
                                 <span className="ta-pos-dot" style={{ background: pickColor }} />
-                                <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600 }}>
+                                <span className="ta-player-name" style={{ flex:1, fontSize:'0.82rem', fontWeight:600 }}>
                                     {yr} {pickLabel(rd)}
                                     {!isOwn && via && <span style={{ fontSize:'0.65rem', color:'var(--silver)', opacity:0.6, marginLeft:'0.3rem' }}>via {via}</span>}
                                 </span>
-                                <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2, width:80 }}>
+                                <div className="ta-val-col" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
                                     <div className="ta-val-bar-wrap">
                                         <div className="ta-val-bar-fill" style={{ width:`${pct}%`, background: pickColor }} />
                                     </div>
