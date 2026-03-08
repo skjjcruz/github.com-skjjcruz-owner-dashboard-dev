@@ -1611,6 +1611,7 @@ function TradeCalculator() {
     const [tradeOwner,    setTradeOwner]    = useState({ A:null, B:null });
     const [searchText,    setSearchText]    = useState({ A:'', B:'' });
     const [showSearch,    setShowSearch]    = useState({ A:false, B:false });
+    const [sideALocked,   setSideALocked]   = useState(true); // true = my team, false = pick any team
 
     // Phase 3 — Grudge Tax
     const [grudges,       setGrudges]       = useState([]);
@@ -2912,7 +2913,7 @@ function TradeCalculator() {
             const rosterPlayers = rosterPlayersFor(side);
             const globalResults = side === 'A' ? resultsA : resultsB;
             const ownerSelected = !!tradeOwner[side];
-            const isLockedSide  = side === 'A'; // Side A is always my team
+            const isLockedSide  = side === 'A' && sideALocked;
 
             // Picks available to this side's owner
             const ownerId       = tradeOwner[side] || (isLockedSide ? myAssessment?.ownerId : null);
@@ -2954,17 +2955,50 @@ function TradeCalculator() {
 
             return (
                 <div className={`ta-side side-${side.toLowerCase()}${isLockedSide?' ta-side-locked':''}`}>
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', flexWrap:'wrap' }}>
-                        <span style={{ fontFamily:'Bebas Neue,cursive', fontSize:'0.95rem', color, letterSpacing:'0.08em' }}>{label}</span>
-                        {isLockedSide && (
-                            <span style={{ fontSize:'0.6rem', color, opacity:0.7, fontWeight:700, letterSpacing:'0.05em' }}>
-                                MY TEAM {myAssessment ? `· ${myAssessment.ownerName}` : ''}
-                            </span>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.4rem' }}>
+                        <span style={{ fontFamily:'Bebas Neue,cursive', fontSize:'0.95rem', color, letterSpacing:'0.08em', flexShrink:0 }}>{label}</span>
+                        {side === 'A' && (
+                            <button
+                                onClick={() => {
+                                    const next = !sideALocked;
+                                    setSideALocked(next);
+                                    // Reset Side A to my team when re-locking; clear players either way
+                                    setTradeIds(prev => ({ ...prev, A: [] }));
+                                    setTradePickIds(prev => ({ ...prev, A: [] }));
+                                    setTradeFaab(prev => ({ ...prev, A: 0 }));
+                                    setSearchText(prev => ({ ...prev, A: '' }));
+                                    setTradeOwner(prev => ({ ...prev, A: next ? null : (myAssessment?.ownerId || null) }));
+                                }}
+                                title={sideALocked ? 'Switch to another team' : 'Switch back to my team'}
+                                style={{
+                                    display:'flex', alignItems:'center', gap:'0.3rem',
+                                    background:'none', border:'none', cursor:'pointer', padding:0, flexShrink:0,
+                                }}
+                            >
+                                {/* Toggle track */}
+                                <span style={{
+                                    display:'inline-flex', width:30, height:16, borderRadius:8,
+                                    background: sideALocked ? 'rgba(93,173,226,0.35)' : 'rgba(212,175,55,0.5)',
+                                    border: sideALocked ? '1px solid rgba(93,173,226,0.6)' : '1px solid rgba(212,175,55,0.8)',
+                                    alignItems:'center', transition:'background 0.2s, border 0.2s', flexShrink:0,
+                                    position:'relative',
+                                }}>
+                                    <span style={{
+                                        position:'absolute', width:12, height:12, borderRadius:'50%',
+                                        background: sideALocked ? 'rgba(93,173,226,0.9)' : 'var(--gold)',
+                                        left: sideALocked ? 1 : 15,
+                                        transition:'left 0.2s, background 0.2s',
+                                    }} />
+                                </span>
+                                <span style={{ fontSize:'0.58rem', color:'var(--silver)', opacity:0.7, fontWeight:700, letterSpacing:'0.04em' }}>
+                                    {sideALocked ? 'MY TEAM' : 'OTHER'}
+                                </span>
+                            </button>
                         )}
                     </div>
 
-                    {/* Owner selector — hidden for Side A (locked to my team) */}
-                    {!isLockedSide && (
+                    {/* Owner selector — shown for Side B always, and for Side A when unlocked */}
+                    {(side === 'B' || !sideALocked) && (
                         <select
                             className="ta-owner-select"
                             value={tradeOwner[side] || ''}
@@ -3072,7 +3106,7 @@ function TradeCalculator() {
                         <div className="ta-search-wrap">
                             <input
                                 className="ta-search"
-                                placeholder={isLockedSide ? 'Loading your roster…' : 'Search any player to add…'}
+                                placeholder="Search any player to add…"
                                 value={srch}
                                 onChange={e => { setSearchText(prev=>({...prev,[side]:e.target.value})); setShowSearch(prev=>({...prev,[side]:true})); }}
                                 onFocus={() => setShowSearch(prev => ({...prev,[side]:true}))}
