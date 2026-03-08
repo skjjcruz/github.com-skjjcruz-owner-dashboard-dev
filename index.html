@@ -2957,9 +2957,11 @@
                                                 console.log('League clicked:', league);
                                             }}
                                         >
-                                            <div className="league-item-name">{league.name}</div>
+                                            <div className="league-item-name">
+                                                {league.name}{league.championships > 0 && <span style={{ marginLeft:'0.3rem', fontSize:'0.75rem' }}>🏆</span>}
+                                            </div>
                                             <div className="league-item-record">
-                                                {league.wins}-{league.losses}{league.ties > 0 ? `-${league.ties}` : ''}{league.championships > 0 ? ' 🏆' : ''}
+                                                {league.wins}-{league.losses}{league.ties > 0 ? `-${league.ties}` : ''}
                                             </div>
                                         </div>
                                     ))
