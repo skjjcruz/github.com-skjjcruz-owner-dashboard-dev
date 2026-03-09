@@ -1819,6 +1819,7 @@
         const [viewingOwnerId, setViewingOwnerId] = useState(sleeperUserId);
         const [statsData, setStatsData] = useState({});
         const [projectionsData, setProjectionsData] = useState({});
+        const [stats2025Data, setStats2025Data] = useState({});
         const [currentLeague, setCurrentLeague] = useState(league);
         const [activeYear, setActiveYear] = useState(league.season);
 
@@ -1856,14 +1857,16 @@
 
                 setStandings(standingsData);
 
-                const [players, stats, projections] = await Promise.all([
+                const [players, stats, projections, s2025] = await Promise.all([
                     fetchAllPlayers(),
                     fetchSeasonStats(currentLeague.season),
-                    fetchSeasonProjections(currentLeague.season)
+                    fetchSeasonProjections(currentLeague.season),
+                    fetchSeasonStats(2025)
                 ]);
                 setPlayersData(players);
                 setStatsData(stats);
                 setProjectionsData(projections);
+                setStats2025Data(s2025);
                 setLoading(false);
             } catch (err) {
                 console.error('Failed to load league details:', err);
@@ -1981,7 +1984,7 @@
 
         function getPlayerStats(playerId) {
             const player = playersData[playerId];
-            const s = statsData[playerId];
+            const s = statsData[playerId] || stats2025Data[playerId];
             const p = projectionsData[playerId];
 
             // Years of experience
@@ -2000,9 +2003,11 @@
                 avg = (rawPts / s.gp).toFixed(1);
             }
 
-            // Projected points
+            // Projected points — fall back to 2025 season totals when unavailable
             const rawProj = p ? (p.pts_half_ppr ?? p.pts_ppr ?? p.pts_std ?? null) : null;
-            const proj = rawProj !== null ? Number(rawProj).toFixed(1) : '-';
+            const s2025 = stats2025Data[playerId];
+            const rawPts2025 = calcRawPts(s2025);
+            const proj = rawProj !== null ? Number(rawProj).toFixed(1) : (rawPts2025 !== null ? Number(rawPts2025).toFixed(1) : '-');
 
             return { yrs, pts, gp, avg, proj };
         }
@@ -2195,12 +2200,12 @@
 
         // Nav buttons
         const navButtons = [
-            { label: 'Main', action: onBack },
+            { label: 'Dashboard', action: onBack },
             { label: 'Team Comps', url: 'https://skjjcruz.github.io/fantasy-football-owner-dashboard/' },
             { label: 'Matchup', url: `https://sleeper.com/leagues/${currentLeague.id}/matchup` },
-            { label: 'Draft Board', url: 'https://skjjcruz.github.io/Owner-Dashboard--V7/' },
-            { label: 'Trades', url: `https://sleeper.com/leagues/${currentLeague.id}/trades` },
-            { label: 'Free Agents', url: `https://sleeper.com/leagues/${currentLeague.id}/players` }
+            { label: 'Draft War Room', url: 'https://skjjcruz.github.io/Owner-Dashboard--V7/' },
+            { label: 'Trade Calculator', url: `https://sleeper.com/leagues/${currentLeague.id}/trades` },
+            { label: 'Free Agent Tracker', action: () => window.location.href = 'free-agency.html' }
         ];
 
         return (
@@ -2229,10 +2234,10 @@
                             onClick={() => btn.action ? btn.action() : window.open(btn.url, '_blank')}
                             style={{
                                 padding: '0.3rem 0.65rem',
-                                background: btn.label === 'Main' ? 'var(--gold)' : 'var(--black)',
+                                background: btn.label === 'Dashboard' ? 'var(--gold)' : 'var(--black)',
                                 border: '1.5px solid var(--gold)',
                                 borderRadius: '4px',
-                                color: btn.label === 'Main' ? 'var(--black)' : 'var(--gold)',
+                                color: btn.label === 'Dashboard' ? 'var(--black)' : 'var(--gold)',
                                 fontFamily: 'Oswald, sans-serif',
                                 fontSize: '0.68rem',
                                 fontWeight: '700',
@@ -2242,8 +2247,8 @@
                                 transition: 'all 0.2s ease',
                                 whiteSpace: 'nowrap'
                             }}
-                            onMouseEnter={e => { if (btn.label !== 'Main') { e.target.style.background = 'rgba(212,175,55,0.15)'; }}}
-                            onMouseLeave={e => { if (btn.label !== 'Main') { e.target.style.background = 'var(--black)'; }}}
+                            onMouseEnter={e => { if (btn.label !== 'Dashboard') { e.target.style.background = 'rgba(212,175,55,0.15)'; }}}
+                            onMouseLeave={e => { if (btn.label !== 'Dashboard') { e.target.style.background = 'var(--black)'; }}}
                         >
                             {btn.label}
                         </button>
