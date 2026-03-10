@@ -590,11 +590,6 @@ async function fetchSeasonStats(year) {
     return _statsCache[year];
 }
 
-// ─── AI BETA FLAG ─────────────────────────────────────────────────────────────
-// To enable: open browser console and run:  localStorage.setItem('od_ai_beta','true')
-// To disable:                               localStorage.removeItem('od_ai_beta')
-const AI_BETA = localStorage.getItem('od_ai_beta') === 'true';
-
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const SEASON           = '2026';
 const AVAILABLE_YEARS  = ['2023', '2024', '2025', '2026'];
@@ -3800,7 +3795,7 @@ function TradeCalculator() {
                     { key:'audit',   label:'Roster Audit'  },
                     { key:'dna',     label:'Owner DNA'     },
                     { key:'analyzer',label:'Trade Analyzer'},
-                    ...(AI_BETA ? [{ key:'ai', label:'AI Scout' }] : []),
+                    { key:'ai', label:'AI Scout' },
                 ].map(t => (
                     <button
                         key={t.key}
@@ -3818,7 +3813,7 @@ function TradeCalculator() {
                 {activeTab === 'audit'    && renderAudit()}
                 {activeTab === 'analyzer' && renderTradeAnalyzer()}
                 {activeTab === 'dna'      && renderOwnerDna()}
-                {activeTab === 'ai'       && AI_BETA && renderAIScout()}
+                {activeTab === 'ai'       && renderAIScout()}
             </div>
         </div>
     );
