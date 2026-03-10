@@ -590,13 +590,6 @@ async function fetchSeasonStats(year) {
     return _statsCache[year];
 }
 
-// ─── AI BETA FLAG ─────────────────────────────────────────────────────────────
-// Enable via URL param:  trade-calculator.html?ai=1  (bookmark this on iPad)
-// Enable via console:    localStorage.setItem('od_ai_beta','true')
-const _aiParam = new URLSearchParams(location.search).get('ai') === '1';
-if (_aiParam) localStorage.setItem('od_ai_beta', 'true'); // persist after first visit
-const AI_BETA = _aiParam || localStorage.getItem('od_ai_beta') === 'true';
-
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const SEASON           = '2026';
 const AVAILABLE_YEARS  = ['2023', '2024', '2025', '2026'];
@@ -3801,7 +3794,7 @@ function TradeCalculator() {
                     { key:'audit',   label:'Roster Audit'  },
                     { key:'dna',     label:'Owner DNA'     },
                     { key:'analyzer',label:'Trade Analyzer'},
-                    ...(AI_BETA ? [{ key:'ai', label:'AI Scout' }] : []),
+                    { key:'ai', label:'AI Scout' },
                 ].map(t => (
                     <button
                         key={t.key}
@@ -3819,7 +3812,7 @@ function TradeCalculator() {
                 {activeTab === 'audit'    && renderAudit()}
                 {activeTab === 'analyzer' && renderTradeAnalyzer()}
                 {activeTab === 'dna'      && renderOwnerDna()}
-                {activeTab === 'ai'       && AI_BETA && renderAIScout()}
+                {activeTab === 'ai'       && renderAIScout()}
             </div>
         </div>
     );
