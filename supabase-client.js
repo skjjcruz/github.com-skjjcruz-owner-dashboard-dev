@@ -9,7 +9,7 @@
 // ============================================================
 
 const SUPABASE_URL  = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
-const SUPABASE_ANON = 'sb_publishable_5p-lnHKiF1NBaAvoTwO4kA_9bkPrs1-';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4c2hpcXl4aGhpZnZ0ZnFhd2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MTExMzAsImV4cCI6MjA4ODI4NzEzMH0.zJi9W986ZLaANiZN6pt6ReFwaQU6yPeidsERIWo2ibI';
 
 // ── Bootstrap Supabase client (loaded via CDN in each HTML file) ──
 let _supabase = null;
