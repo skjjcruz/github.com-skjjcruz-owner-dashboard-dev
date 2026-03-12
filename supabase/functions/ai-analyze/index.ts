@@ -61,32 +61,66 @@ Provide:
 
 function buildTeamPrompt(ctx: any): string {
     const t = ctx.team;
+    const isMyTeam = t.isMyTeam === true;
+
     const rosterStr = (t.roster || []).map((p: any) =>
         `  ${p.pos} | ${p.name} (${p.team}) | Value: ${p.value}${p.isElite ? ' ★ELITE' : ''}`
     ).join('\n');
 
-    return `Provide a comprehensive scouting report on **${t.owner}**'s team in ${ctx.leagueName}.
+    // Build detailed pick breakdown with per-year flagging
+    const pa = t.picksAssessment;
+    let pickDetail = t.picksText || 'No pick data available';
+    if (pa && pa.pickCountByYear && pa.pickYears) {
+        const yearLines = (pa.pickYears as string[]).map((yr: string) => {
+            const count = pa.pickCountByYear[yr] ?? 0;
+            const firstCount = pa.pickCountByYearRound?.[yr]?.[1] ?? 0;
+            if (count === 0) return `  ${yr}: ⚠️ ZERO PICKS — cannot participate in ${yr} rookie draft`;
+            const firstNote = firstCount > 0 ? ` (${firstCount} first-round${firstCount > 1 ? 's' : ''} 🔑)` : ' (no 1st rounders)';
+            return `  ${yr}: ${count} pick${count > 1 ? 's' : ''}${firstNote}`;
+        }).join('\n');
+        pickDetail = `${t.picksText}\nYear-by-year breakdown:\n${yearLines}`;
+    }
+
+    // Top 10 most valuable players for value-anchoring trade advice
+    const topValues = (t.roster || [])
+        .slice(0, 10)
+        .map((p: any) => `${p.name} (${p.pos}, ${p.value})`)
+        .join(', ');
+
+    const negotiationSection = isMyTeam
+        ? `**MY NEGOTIATION STRATEGY** — I am ${t.owner}. Based on my ${t.dna} DNA and current roster situation, how should I approach trade negotiations? What leverage do I have, what should I lead with, and what traps should I avoid?`
+        : `**NEGOTIATION PLAYBOOK** — ${ctx.myOwner ? `I am ${ctx.myOwner} looking to trade with ${t.owner}.` : ''} Based on ${t.owner}'s ${t.dna} DNA profile, how should I approach negotiating with this owner? What buttons to push, what to avoid, how to frame offers?`;
+
+    return `Provide a comprehensive scouting report on **${t.owner}**'s team in ${ctx.leagueName}.${isMyTeam ? ' This is MY OWN team — give me honest self-assessment and first-person strategic advice.' : ''}
 
 **TEAM OVERVIEW:** ${t.record} | ${t.tier} | Health: ${t.healthScore}/100 | ${t.weeklyPts} pts/wk | Posture: ${t.posture}
 **OWNER DNA:** ${t.dna}${t.dnaDescription ? ` — ${t.dnaDescription}` : ''}
 **STATED NEEDS:** ${(t.needs || []).join(', ') || 'none identified'}
 **STATED STRENGTHS:** ${(t.strengths || []).join(', ') || 'none identified'}
-**DRAFT CAPITAL:** ${t.picksText || 'No pick data available'}
+**DRAFT CAPITAL:** ${pickDetail}
 **FAAB:** ${t.faabText || (t.waiverBudget > 0 ? `$${t.faabRemaining} of $${t.waiverBudget} remaining` : 'No FAAB system')}
 
-**ROSTER (by position, sorted by value):**
+**ROSTER (by position, sorted by value — scale 0-10,000):**
 ${rosterStr || 'No roster data available'}
 
-${ctx.myOwner ? `**I am:** ${ctx.myOwner}\n` : ''}
+**TOP 10 BY VALUE:** ${topValues || 'N/A'}
+${ctx.myOwner && !isMyTeam ? `**I am:** ${ctx.myOwner}\n` : ''}
+
+TRADE RECOMMENDATION RULES (strictly enforce):
+- Values are on a 0-10,000 scale. Only propose trades where combined values are within ~20% of each other.
+- Never suggest offering a low-value player for a clearly higher-value target (e.g. do not offer a 1,500-value DB for a 4,000-value RB).
+- Respect positional market rates: elite RBs and QBs command premium return; DBs, LBs, and depth pieces do not.
+- A player with a high value (4,000+) is likely a borderline elite — do not frame them as depth or "cheap filler."
+- Only recommend trades that a reasonable opposing owner would actually accept.
 
 Provide:
 **TEAM IDENTITY** — What type of contender/rebuilder/pretender is this? (2-3 sentences)
 **CORE STRENGTHS** — What does this team do well? Name the specific players driving it
 **CRITICAL WEAKNESSES** — Where are the real gaps? Be brutally honest
-**DRAFT CAPITAL & FAAB** — Assess their pick inventory and budget. How does it shape their options?
+**DRAFT CAPITAL & FAAB** — Zero-pick years are a crisis. Pick-rich years are leverage. Assess accordingly and state what it means for their ability to add talent.
 **TRADE OUTLOOK** — Buyer, seller, or holding? What should they target vs. deal away?
-**TOP RECOMMENDED MOVES** — 2-3 specific trade targets with what to offer
-**NEGOTIATION PLAYBOOK** — Based on their ${t.dna} DNA profile, how would you approach dealing with this owner?`;
+**TOP RECOMMENDED MOVES** — 2-3 specific, value-balanced trade ideas. For each: name the target, what to offer, why the other owner says yes.
+${negotiationSection}`;
 }
 
 function buildPartnersPrompt(ctx: any): string {
