@@ -817,13 +817,16 @@ async function fetchFantasyCalcValues() {
 
 // Compute an internal value from stats as fallback for IDP/kickers.
 // IDP (DB/DL/LB): ranked by 2025 total season points → tiered values (Elite/T1/T2/T3).
-// INT-tier IDP players (rank > 36) get a rank-based linear scale from the T3 boundary
-// (900) down to INT_FLOOR (50), so production differences within fringe players are
-// reflected rather than collapsing everyone to a single flat 150.
+//   - Tier base value is multiplied by an age curve (ageMultiplier) so younger players
+//     at the same production rank are valued higher, as dynasty markets price in future.
+//   - INT-tier players (rank > T3 boundary) get a rank-based linear gradient from the
+//     T3 boundary value down to INT_FLOOR rather than a single flat number.
+//   - Established IDP vets (years_exp ≥ 3) who scored 0 pts in 2025 (injured/IR) are
+//     included with a floor value based on experience + age, tagged tier 'INJ'.
 // Non-IDP (kickers, etc.): linear percentile scale, capped at 200 in tradeSideValue.
 function buildInternalValues(playersData, statsData, scoring) {
     const INT_FLOOR   = 50;
-    const T3_BOUNDARY = IDP_TIERS.find(t => t.label === 'T3').maxRank; // 36
+    const T3_BOUNDARY = IDP_TIERS.find(t => t.label === 'T3').maxRank; // 50
     const T3_VALUE    = IDP_TIERS.find(t => t.label === 'T3').value;    // 900
 
     const byPos = {};
@@ -843,7 +846,7 @@ function buildInternalValues(playersData, statsData, scoring) {
             const rank = i + 1;
             if (IDP_POSITIONS.has(pos)) {
                 const tier = idpTier(rank);
-                let value;
+                let baseValue;
                 if (tier.label === 'INT') {
                     // Smooth linear gradient within INT group:
                     //   rank T3_BOUNDARY+1 (best INT) → near T3_VALUE
@@ -851,10 +854,14 @@ function buildInternalValues(playersData, statsData, scoring) {
                     const intCount = total - T3_BOUNDARY;
                     const posInInt = rank - T3_BOUNDARY - 1; // 0-indexed
                     const frac = intCount > 1 ? posInInt / (intCount - 1) : 0;
-                    value = Math.round(T3_VALUE * (1 - frac) + INT_FLOOR * frac);
+                    baseValue = Math.round(T3_VALUE * (1 - frac) + INT_FLOOR * frac);
                 } else {
-                    value = tier.value;
+                    baseValue = tier.value;
                 }
+                // Apply dynasty age curve — same production rank at 23 is worth
+                // significantly more than at 30 in a keeper/dynasty context.
+                const mult  = ageMultiplier(getPlayerAge(playersData[id]));
+                const value = Math.max(INT_FLOOR, Math.round(baseValue * mult));
                 idx[id] = { value, trend: 0, rank, posRank: rank, source: 'internal', tier: tier.label };
             } else {
                 // Linear scale for kickers / other non-IDP
@@ -863,6 +870,24 @@ function buildInternalValues(playersData, statsData, scoring) {
             }
         });
     }
+
+    // Established IDP vets who scored 0 pts in 2025 (injured/IR all season).
+    // Give them a floor value based on experience + age so they aren't invisible
+    // in the trade analyzer. Requires years_exp ≥ 3 to filter out unproven players.
+    for (const [id, p] of Object.entries(playersData)) {
+        if (idx[id]) continue; // already valued
+        const np = normPos(p.position);
+        if (!IDP_POSITIONS.has(np)) continue;
+        const yearsExp = p.years_exp;
+        if (yearsExp == null || Number(yearsExp) < 3) continue;
+        const yrs = Number(yearsExp);
+        // Floor based on experience tier, then discounted by age curve
+        const floorBase = yrs >= 7 ? 700 : yrs >= 5 ? 550 : 400;
+        const mult  = ageMultiplier(getPlayerAge(p));
+        const value = Math.max(INT_FLOOR, Math.round(floorBase * mult));
+        idx[id] = { value, trend: 0, rank: 999, posRank: 999, source: 'internal', tier: 'INJ' };
+    }
+
     return idx;
 }
 
@@ -894,17 +919,51 @@ const PICK_COLORS  = { 1:'#D4AF37', 2:'#5DADE2', 3:'#2ECC71', 4:'#BB8FCE', 5:'#9
 const FAAB_RATE = 2.0;
 
 // ─── IDP TIER CONFIG ──────────────────────────────────────────────────────────
-// Tiers are assigned per-position by total season points rank (lower rank = better)
+// Tiers are assigned per-position by total season points rank (lower rank = better).
+// T3 boundary pushed to rank 50 so ~70% of fantasy starters in a 12-team league
+// (72 DB / 84 DL / 72 LB starters) receive an above-INT tiered value.
 const IDP_POSITIONS = new Set(['DB', 'DL', 'LB']);
 const IDP_TIERS = [
     { maxRank:  3, label: 'ELITE', value: 6500 },
     { maxRank: 10, label: 'T1',    value: 4500 },
-    { maxRank: 20, label: 'T2',    value: 2500 },
-    { maxRank: 36, label: 'T3',    value:  900 },
+    { maxRank: 22, label: 'T2',    value: 2500 },
+    { maxRank: 50, label: 'T3',    value:  900 },
     { maxRank: Infinity, label: 'INT', value: 150 },
 ];
 function idpTier(rank) {
     return IDP_TIERS.find(t => rank <= t.maxRank);
+}
+
+// ─── IDP AGE CURVE ────────────────────────────────────────────────────────────
+// Dynasty value is heavily age-dependent. A young player at any tier is worth
+// significantly more than an older player at the same production rank.
+// Multiplier is applied to the base tier value in buildInternalValues.
+function getPlayerAge(player) {
+    if (player.birth_date) {
+        const born  = new Date(player.birth_date);
+        const today = new Date();
+        let age = today.getFullYear() - born.getFullYear();
+        const m = today.getMonth() - born.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < born.getDate())) age--;
+        return age;
+    }
+    // Fallback: estimate from years_exp (average NFL rookie enters at ~22)
+    if (player.years_exp != null) return 22 + Number(player.years_exp);
+    return null;
+}
+
+function ageMultiplier(age) {
+    if (age === null || age === undefined) return 1.0;
+    if (age <= 22) return 1.40;
+    if (age <= 23) return 1.30;
+    if (age <= 24) return 1.20;
+    if (age <= 25) return 1.10;
+    if (age <= 27) return 1.00;
+    if (age <= 28) return 0.88;
+    if (age <= 29) return 0.74;
+    if (age <= 30) return 0.60;
+    if (age <= 31) return 0.48;
+    return 0.36; // 32+
 }
 
 // ─── UTILITIES ───────────────────────────────────────────────────────────────
