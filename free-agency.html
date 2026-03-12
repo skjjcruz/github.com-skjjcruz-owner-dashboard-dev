@@ -911,7 +911,9 @@
                 return Object.entries(playersData)
                     .filter(([id, p]) =>
                         !takenIds.has(id) &&
-                        (p.team || p.active === true) &&
+                        p.active === true &&
+                        p.status !== 'Inactive' &&
+                        p.status !== 'Retired' &&
                         relevantPosSet.has(p.position)
                     )
                     .map(([id, p]) => ({
@@ -1048,17 +1050,23 @@
                     };
                 }).filter(Boolean);
 
-                const topFAs = freeAgents.slice(0, 60).map(fa => {
-                    const s = statsData[fa.id];
-                    const rawPts = calcRawPts(s);
-                    return {
-                        pos: fa.pos, name: fa.name, team: fa.team,
-                        pts: rawPts ? Number(rawPts).toFixed(1) : null,
-                        gp: s?.gp || null,
-                        avg: (rawPts && s?.gp) ? (rawPts / s.gp).toFixed(1) : null,
-                        yrsExp: fa.yrsExp, isRookie: fa.yrsExp === 0,
-                    };
-                });
+                const topFAs = freeAgents
+                    .filter(fa => {
+                        const p = playersData[fa.id];
+                        return p && p.active === true && p.status !== 'Inactive' && p.status !== 'Retired';
+                    })
+                    .slice(0, 60)
+                    .map(fa => {
+                        const s = statsData[fa.id];
+                        const rawPts = calcRawPts(s);
+                        return {
+                            pos: fa.pos, name: fa.name, team: fa.team,
+                            pts: rawPts ? Number(rawPts).toFixed(1) : null,
+                            gp: s?.gp || null,
+                            avg: (rawPts && s?.gp) ? (rawPts / s.gp).toFixed(1) : null,
+                            yrsExp: fa.yrsExp, isRookie: fa.yrsExp === 0,
+                        };
+                    });
 
                 const availableRookies = freeAgents.filter(fa => fa.yrsExp === 0).slice(0, 50).map(fa => ({
                     pos: fa.pos, name: fa.name, team: fa.team || 'UFA',

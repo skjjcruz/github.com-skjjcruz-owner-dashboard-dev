@@ -162,22 +162,32 @@ function buildRookiesPrompt(ctx: any): string {
 
     const rosterPositions = (ctx.rosterPositions || []).filter((p: string) => p !== 'BN' && p !== 'IR').join(', ');
 
-    // Build draft pick summary
-    const ownedPicks: any[] = ctx.myOwnedPicks || [];
-    const tradedPicks: any[] = ctx.myPicksTraded || [];
+    // Build draft pick summary from fully-resolved pick list (same logic as trade-calculator)
+    const myPicks: any[] = ctx.myDraftPicks || [];
+    const standardTotal: number = ctx.standardPickTotal || 21;
+    const totalPicks = myPicks.length;
 
     let pickSummary: string;
-    if (ownedPicks.length === 0 && tradedPicks.length === 0) {
-        pickSummary = 'No traded pick data available — assume this owner holds their own standard picks for current and future rounds.';
-    } else if (ownedPicks.length === 0 && tradedPicks.length > 0) {
-        const tradedStr = tradedPicks.map((p: any) => `${p.season} Rd${p.round}`).join(', ');
-        pickSummary = `⚠️ ZERO DRAFT PICKS — This owner has traded away ALL of their picks (${tradedStr}) and has NOT acquired any picks from other teams. They CANNOT draft any rookies this year or in traded seasons unless they make a trade to acquire picks.`;
+    if (totalPicks === 0) {
+        pickSummary = `⚠️ ZERO DRAFT PICKS — This owner has NO draft picks across any future season. They cannot participate in the rookie draft at all. Acquiring draft capital via trade must be the #1 priority.`;
     } else {
-        const ownedStr = ownedPicks.map((p: any) => `${p.season} Rd${p.round} (from roster #${p.originalOwner})`).join(', ');
-        const tradedStr = tradedPicks.length > 0
-            ? `Picks traded away: ${tradedPicks.map((p: any) => `${p.season} Rd${p.round}`).join(', ')}`
-            : 'No own picks traded away.';
-        pickSummary = `Picks currently owned: ${ownedStr}\n${tradedStr}`;
+        const byYear: Record<string, number[]> = {};
+        for (const p of myPicks) {
+            const yr = String(p.year);
+            if (!byYear[yr]) byYear[yr] = [];
+            byYear[yr].push(p.round);
+        }
+        const pickLines = Object.entries(byYear)
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([yr, rounds]) => `  ${yr}: Rounds ${rounds.sort((a: number, b: number) => a - b).join(', ')}`)
+            .join('\n');
+        const deficit = standardTotal - totalPicks;
+        const statusNote = deficit > 0
+            ? `${totalPicks} of ${standardTotal} standard picks — ${deficit} picks below a full slate.`
+            : totalPicks > standardTotal
+            ? `${totalPicks} picks — ${totalPicks - standardTotal} above the ${standardTotal}-pick baseline (strong capital).`
+            : `${totalPicks} picks — full standard slate.`;
+        pickSummary = `${statusNote}\n${pickLines}`;
     }
 
     return `Provide a rookie draft strategy for **${ctx.myOwner}** in **${ctx.leagueName}**.

@@ -174,9 +174,70 @@
             return _statsCache[season];
         }
 
-        const SEASON    = '2026';
-        const STATS_YEAR = '2025';
+        const SEASON      = '2026';
+        const STATS_YEAR  = '2025';
         const AVAILABLE_YEARS = ['2023','2024','2025','2026'];
+        const DRAFT_ROUNDS  = 7;
+        const PICK_HORIZON  = 3;
+
+        // ─── PICK RESOLUTION (matches trade-calculator logic) ────────────────
+        function detectPickIdMode(rosters, tradedPicks) {
+            const rosterIds = new Set(rosters.map(r => String(r.roster_id)));
+            const userIds   = new Set(rosters.map(r => String(r.owner_id)));
+            let rosterHits = 0, userHits = 0;
+            for (const tp of tradedPicks || []) {
+                const oid = String(tp.owner_id ?? '');
+                if (rosterIds.has(oid)) rosterHits++;
+                if (userIds.has(oid))   userHits++;
+            }
+            return rosterHits >= userHits ? 'roster' : 'user';
+        }
+
+        function buildPicksByOwner(rosters, tradedPicks, leagueSeason) {
+            const PICK_YEARS_INT = Array.from({ length: PICK_HORIZON }, (_, i) => leagueSeason + i);
+            const mode           = detectPickIdMode(rosters, tradedPicks);
+            const rosterById     = {};
+            for (const r of rosters) rosterById[String(r.roster_id)] = r;
+
+            const ownerByKey = {};
+            for (const r of rosters) {
+                const originRosterId = String(r.roster_id);
+                const ownerUserId    = String(r.owner_id);
+                for (const y of PICK_YEARS_INT) {
+                    for (let rd = 1; rd <= DRAFT_ROUNDS; rd++) {
+                        ownerByKey[`${y}-${rd}-${originRosterId}`] = ownerUserId;
+                    }
+                }
+            }
+            for (const tp of tradedPicks || []) {
+                const y  = Number(tp.season);
+                if (!PICK_YEARS_INT.includes(y)) continue;
+                const rd = Number(tp.round);
+                if (!Number.isFinite(rd) || rd < 1 || rd > DRAFT_ROUNDS) continue;
+                const originRosterId = String(tp.roster_id);
+                let newOwnerUserId;
+                if (mode === 'user') {
+                    newOwnerUserId = String(tp.owner_id ?? '');
+                } else {
+                    const r = rosterById[String(tp.owner_id ?? '')];
+                    newOwnerUserId = r?.owner_id ? String(r.owner_id) : null;
+                }
+                if (!newOwnerUserId) continue;
+                const key = `${y}-${rd}-${originRosterId}`;
+                if (key in ownerByKey) ownerByKey[key] = newOwnerUserId;
+            }
+            const picksByOwner = {};
+            for (const [key, ownerUserId] of Object.entries(ownerByKey)) {
+                const parts = key.split('-');
+                const y = Number(parts[0]), rd = Number(parts[1]), fromRosterId = parts[2];
+                if (!picksByOwner[ownerUserId]) picksByOwner[ownerUserId] = [];
+                picksByOwner[ownerUserId].push({ year: y, round: rd, fromRosterId });
+            }
+            for (const oid of Object.keys(picksByOwner)) {
+                picksByOwner[oid].sort((a, b) => a.year - b.year || a.round - b.round);
+            }
+            return picksByOwner;
+        }
 
         const POS_COLORS = { QB:'#FF6B6B', RB:'#4ECDC4', WR:'#45B7D1', TE:'#F7DC6F', K:'#BB8FCE', DEF:'#85929E', LB:'#F0A500', DL:'#E67E22', DB:'#5DADE2', CB:'#5DADE2', S:'#5DADE2' };
         const posColor = p => POS_COLORS[p] || 'var(--silver)';
@@ -413,17 +474,12 @@
                     pos: r.pos, name: r.name, team: r.team || 'UFA',
                 }));
 
-                // Draft pick calculation
-                const currentYear = new Date().getFullYear();
-                const myRosterId = myRoster?.roster_id;
-                // Picks I currently own: traded picks where owner_id matches my roster
-                const myOwnedPicks = tradedPicks.filter(p =>
-                    p.owner_id === myRosterId && Number(p.season) >= currentYear
-                ).map(p => ({ season: p.season, round: p.round, originalOwner: p.roster_id }));
-                // My own picks that I've traded away
-                const myPicksTraded = tradedPicks.filter(p =>
-                    p.roster_id === myRosterId && p.owner_id !== myRosterId && Number(p.season) >= currentYear
-                ).map(p => ({ season: p.season, round: p.round, currentOwner: p.owner_id }));
+                // Draft pick calculation — same logic as trade-calculator
+                const leagueSeason = parseInt(leagueInfo?.season || SEASON);
+                const picksByOwner = buildPicksByOwner(allRosters, tradedPicks, leagueSeason);
+                const myPicks = picksByOwner[String(userId)] || [];
+                // Standard pick count = DRAFT_ROUNDS * PICK_HORIZON if no trades happened
+                const standardTotal = DRAFT_ROUNDS * PICK_HORIZON;
 
                 return {
                     leagueName: leagueInfo?.name || 'Fantasy League',
@@ -431,8 +487,8 @@
                     faabBudget: 0, startingBudget: 0,
                     myRoster: myRosterSummary, rosterPositions,
                     topFreeAgents: [], availableRookies,
-                    myOwnedPicks,
-                    myPicksTraded,
+                    myDraftPicks: myPicks,
+                    standardPickTotal: standardTotal,
                     question: aiChatInput,
                 };
             }
