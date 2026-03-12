@@ -1,6 +1,6 @@
 {
-  "name": "Fantasy Football Owner Dashboard",
-  "short_name": "Owner Dash",
+  "name": "Fantasy War Room",
+  "short_name": "Fantasy War Room",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
