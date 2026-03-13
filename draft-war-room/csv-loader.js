@@ -301,6 +301,32 @@ async function loadPlayersFromCSV() {
       // Calculate rank change for arrows (consensus only - no baseline for fantasy)
       const rankChange = calculateRankChange(rank, enrichment.previousRank);
 
+      // Calculate consensus rank as weighted average of source columns
+      const builtSources = (() => {
+        if (sourceColsFromCSV.length > 0) {
+          const srcs = [];
+          sourceColsFromCSV.forEach(col => {
+            const val = player[col];
+            if (val && val.trim() && val.trim() !== 'N/A' && val.trim() !== '-') {
+              const rankVal = parseInt(val.trim(), 10);
+              if (!isNaN(rankVal)) {
+                srcs.push({ source: col, rank: rankVal, weight: 1.0 });
+              }
+            }
+          });
+          return srcs;
+        }
+        return sourcesMap[hasRankColumn ? rank : (index + 1)] || [];
+      })();
+
+      // Compute weighted average of source rankings (falls back to row rank if no sources)
+      let consensusRank = rank;
+      if (builtSources.length > 0) {
+        const totalWeight = builtSources.reduce((sum, s) => sum + (s.weight || 1.0), 0);
+        const weightedSum = builtSources.reduce((sum, s) => sum + s.rank * (s.weight || 1.0), 0);
+        consensusRank = Math.round((weightedSum / totalWeight) * 10) / 10;
+      }
+
       return {
         id: hasRankColumn ? (parseInt(player.id, 10) || index + 1) : (index + 1),
         name: name,
@@ -315,30 +341,14 @@ async function loadPlayersFromCSV() {
         rank: rank,
         previousRank: enrichment.previousRank || null,
         rankChange: rankChange, // Positive = moved up, negative = moved down
-        consensusRank: rank, // In simple mode, consensus = current rank
+        consensusRank: consensusRank, // Weighted average of all source rankings
         fantasyRank: fantasyRank,
-        sourceCount: hasRankColumn ? (parseInt(player.sourceCount, 10) || 1) : 1,
+        sourceCount: builtSources.length || (hasRankColumn ? (parseInt(player.sourceCount, 10) || 1) : 1),
         grade: grade,
         isGenerational: generational,
         fantasyMultiplier: fantasyMultiplier,
         draftScore: draftScore,
-        sources: (() => {
-          // Build sources from player.csv source columns if present, else fall back to player-sources.csv
-          if (sourceColsFromCSV.length > 0) {
-            const srcs = [];
-            sourceColsFromCSV.forEach(col => {
-              const val = player[col];
-              if (val && val.trim() && val.trim() !== 'N/A' && val.trim() !== '-') {
-                const rankVal = parseInt(val.trim(), 10);
-                if (!isNaN(rankVal)) {
-                  srcs.push({ source: col, rank: rankVal, weight: 1.0 });
-                }
-              }
-            });
-            return srcs;
-          }
-          return sourcesMap[hasRankColumn ? rank : (index + 1)] || [];
-        })(),
+        sources: builtSources,
         highlightUrl: getHighlightUrl(name, school),
         initials: getInitials(name),
         photoUrl: getPhotoUrl(name, enrichment),

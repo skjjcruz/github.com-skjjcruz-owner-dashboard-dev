@@ -300,8 +300,9 @@
     </div>
 </div>
 
+<script src="csv-loader.js"></script>
 <script>
-    // Get player ID from URL parameter
+    // Get player name from URL parameter
     const urlParams = new URLSearchParams(window.location.search);
     const playerName = urlParams.get('player');
 
@@ -309,15 +310,14 @@
         window.location.href = 'index.html';
     }
 
-    // Load player data
+    // Load player data using csv-loader (live data with averaged consensus rankings)
     async function loadPlayerData() {
         try {
-            const response = await fetch('players-final.json');
-            const players = await response.json();
-            
-            // Find the player
+            const players = await loadPlayersFromCSV();
+
+            // Find the player by name
             const player = players.find(p => p.name === playerName);
-            
+
             if (!player) {
                 alert('Player not found!');
                 window.location.href = 'index.html';
@@ -332,36 +332,26 @@
             document.getElementById('playerHeight').textContent = player.size || '-';
             document.getElementById('playerWeight').textContent = player.weight ? `${player.weight} lbs` : '-';
             document.getElementById('player40Time').textContent = player.speed ? `${player.speed}s` : '-';
-            document.getElementById('playerRank').textContent = `#${player.rank}`;
+            // Show consensus rank (averaged across sources) next to overall rank
+            const rankDisplay = player.sources && player.sources.length > 1
+                ? `#${player.consensusRank} (avg)`
+                : `#${player.rank}`;
+            document.getElementById('playerRank').textContent = rankDisplay;
 
             // Player photo
-            if (player.photoURL) {
-                const photoEl = document.getElementById('playerPhoto');
-                const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=ca8a04&color=1e293b&size=128&bold=true`;
-                photoEl.innerHTML = `<img src="${player.photoURL}" alt="${player.name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;" onerror="this.onerror=null;this.src='${fallbackUrl}'">`;
-            }
+            const photoEl = document.getElementById('playerPhoto');
+            const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=ca8a04&color=1e293b&size=128&bold=true`;
+            photoEl.innerHTML = `<img src="${player.photoUrl}" alt="${player.name}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;" onerror="this.onerror=null;this.src='${fallbackUrl}'">`;
 
             // Player summary
-            if (player.remarks && player.remarks.trim()) {
-                document.getElementById('playerSummary').textContent = player.remarks;
+            if (player.summary && player.summary.trim()) {
+                document.getElementById('playerSummary').textContent = player.summary;
             } else {
                 document.getElementById('summarySection').style.display = 'none';
             }
 
-            // YouTube video
-            if (player.youtube) {
-                const videoId = extractYouTubeID(player.youtube);
-                if (videoId) {
-                    document.getElementById('videoContainer').innerHTML = `
-                        <iframe src="https://www.youtube.com/embed/${videoId}" 
-                                allowfullscreen 
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
-                        </iframe>
-                    `;
-                }
-            } else {
-                document.getElementById('videoSection').style.display = 'none';
-            }
+            // No embedded video in csv-loader data — hide section
+            document.getElementById('videoSection').style.display = 'none';
 
             // Source rankings
             displaySourceRankings(player);
@@ -372,17 +362,10 @@
         }
     }
 
-    // Extract YouTube video ID from URL
-    function extractYouTubeID(url) {
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-        const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
-    }
-
-    // Display source rankings
+    // Display source rankings with consensus average row
     function displaySourceRankings(player) {
         const tableBody = document.getElementById('rankingsTableBody');
-        
+
         if (!player.sources || player.sources.length === 0) {
             tableBody.innerHTML = '<tr><td colspan="2" class="no-data">No source rankings available.</td></tr>';
             return;
@@ -391,12 +374,22 @@
         // Sort sources by rank
         const sortedSources = [...player.sources].sort((a, b) => a.rank - b.rank);
 
-        tableBody.innerHTML = sortedSources.map(source => `
+        const sourceRows = sortedSources.map(source => `
             <tr>
                 <td>${source.source}</td>
                 <td><span class="rank-badge">#${source.rank}</span></td>
             </tr>
         `).join('');
+
+        // Add consensus average row at the bottom
+        const avgRow = `
+            <tr style="border-top: 2px solid #eab308;">
+                <td style="font-weight:700; color:#eab308;">Consensus Average</td>
+                <td><span class="rank-badge" style="background:#1e293b; color:#eab308; border: 2px solid #eab308;">#${player.consensusRank}</span></td>
+            </tr>
+        `;
+
+        tableBody.innerHTML = sourceRows + avgRow;
     }
 
     // Load data on page load
