@@ -17,6 +17,8 @@
   <script src="./supabase-config.js"></script>
   <!-- Draft board + mock draft Supabase helpers -->
   <script src="./supabase-draft-client.js"></script>
+  <!-- Draft DNA: historical pick analysis -->
+  <script src="../draft-history.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -230,12 +232,14 @@
       const [aiChatInput, setAiChatInput] = useState('');
 
       // Mock Draft state
-      const [mockMySlot,      setMockMySlot]      = useState(1);
-      const [mockResults,     setMockResults]     = useState(null);
-      const [mockCurrentPick, setMockCurrentPick] = useState(0);
-      const [mockIsPlaying,   setMockIsPlaying]   = useState(false);
-      const [mockLoading,     setMockLoading]     = useState(false);
-      const [mockError,       setMockError]       = useState(null);
+      const [mockMySlot,       setMockMySlot]       = useState(1);
+      const [mockResults,      setMockResults]      = useState(null);
+      const [mockCurrentPick,  setMockCurrentPick]  = useState(0);
+      const [mockIsPlaying,    setMockIsPlaying]    = useState(false);
+      const [mockLoading,      setMockLoading]      = useState(false);
+      const [mockError,        setMockError]        = useState(null);
+      const [draftDnaSyncing,  setDraftDnaSyncing]  = useState(false);
+      const [draftDnaSyncMsg,  setDraftDnaSyncMsg]  = useState(null);
       const preMockPicksRef = React.useRef(null); // saves real picks before mock overwrites board
 
       // Auto-load on mount if we have URL params
@@ -384,6 +388,11 @@
           
           // Load picks for this draft (pass fresh rosters/users/leagueId before React state settles)
           await loadDraftPicks(mostRecent.draft_id, rostersData, usersData, leagueId);
+
+          // Auto-sync draft DNA in the background — no spinner, no blocking
+          if (window.DraftHistory) {
+            window.DraftHistory.syncDraftDNA(leagueId).catch(() => {});
+          }
           
         } catch (err) {
           console.error('Error loading drafts:', err);
@@ -716,9 +725,12 @@
         // Detect IDP league: Sleeper sets player_type=1 for IDP drafts
         const isIDP = (selectedDraft?.settings?.player_type === 1);
 
-        // Load DNA from localStorage (same store as trade-calculator)
+        // Load trade DNA from localStorage (same store as trade-calculator)
         let ownerDnaMap = {};
         try { ownerDnaMap = JSON.parse(localStorage.getItem(`od_owner_dna_v1_${leagueId}`) || '{}'); } catch(e) {}
+
+        // Load draft DNA from localStorage (synced via Sync Draft History button)
+        const draftDnaMap = window.DraftHistory?.loadDraftDNA(leagueId) || {};
 
         // Build userId → roster position counts (requires sleeperPlayers to be loaded)
         const userPosCounts = {};
@@ -765,9 +777,15 @@
         for (let slot = 1; slot <= numTeamCount; slot++) {
           const ownerInfo = draftSlotOwners[`1_${slot}`];
           if (!ownerInfo) continue; // skip missing slots, don't break
-          const dnaKey    = ownerDnaMap[ownerInfo.userId] || 'NONE';
-          const archetype = DNA_TO_ARCHETYPE[dnaKey] || 'Unknown';
-          draftSlots.push({ slot, name: ownerInfo.displayName, dna: archetype, needs: computeNeeds(ownerInfo.userId) });
+          const dnaKey      = ownerDnaMap[ownerInfo.userId] || 'NONE';
+          const archetype   = DNA_TO_ARCHETYPE[dnaKey] || 'Unknown';
+          const draftDna    = draftDnaMap[ownerInfo.userId] || null;
+          draftSlots.push({
+            slot, name: ownerInfo.displayName, dna: archetype,
+            draftDna: draftDna?.label || null,
+            draftTendency: draftDna?.tendency || null,
+            needs: computeNeeds(ownerInfo.userId),
+          });
           if (ownerInfo.userId === sleeperUserId) detectedMySlot = slot;
         }
 
@@ -776,10 +794,16 @@
         if (draftSlots.length < 2 && leagueUsers.length) {
           draftSlots.length = 0; // clear partial results
           leagueUsers.forEach((u, i) => {
-            const slot      = i + 1;
-            const dnaKey    = ownerDnaMap[u.user_id] || 'NONE';
-            const archetype = DNA_TO_ARCHETYPE[dnaKey] || 'Unknown';
-            draftSlots.push({ slot, name: u.display_name || u.username, dna: archetype, needs: computeNeeds(u.user_id) });
+            const slot       = i + 1;
+            const dnaKey     = ownerDnaMap[u.user_id] || 'NONE';
+            const archetype  = DNA_TO_ARCHETYPE[dnaKey] || 'Unknown';
+            const draftDna   = draftDnaMap[u.user_id] || null;
+            draftSlots.push({
+              slot, name: u.display_name || u.username, dna: archetype,
+              draftDna: draftDna?.label || null,
+              draftTendency: draftDna?.tendency || null,
+              needs: computeNeeds(u.user_id),
+            });
             if (u.user_id === sleeperUserId) detectedMySlot = slot;
           });
         }
@@ -1306,20 +1330,24 @@
                   const leagueId     = selectedLeague?.id;
                   let ownerDnaMap = {};
                   try { ownerDnaMap = JSON.parse(localStorage.getItem(`od_owner_dna_v1_${leagueId}`) || '{}'); } catch(e) {}
+                  const draftDnaMap  = window.DraftHistory?.loadDraftDNA(leagueId) || {};
+                  const hasDraftDna  = Object.keys(draftDnaMap).length > 0;
 
                   const previewSlots = [];
                   for (let slot = 1; slot <= numTeamCount; slot++) {
                     const ownerInfo = draftSlotOwners[`1_${slot}`];
                     if (!ownerInfo) break;
-                    const dnaKey    = ownerDnaMap[ownerInfo.userId] || 'NONE';
-                    const archetype = DNA_TO_ARCHETYPE[dnaKey] || 'Unknown';
-                    previewSlots.push({ slot, name: ownerInfo.displayName, archetype, isMe: ownerInfo.userId === sleeperUserId });
+                    const dnaKey      = ownerDnaMap[ownerInfo.userId] || 'NONE';
+                    const archetype   = DNA_TO_ARCHETYPE[dnaKey] || 'Unknown';
+                    const draftDna    = draftDnaMap[ownerInfo.userId];
+                    previewSlots.push({ slot, name: ownerInfo.displayName, archetype, draftDnaLabel: draftDna?.label || null, isMe: ownerInfo.userId === sleeperUserId });
                   }
                   // Fallback to leagueUsers if slot owners not ready
                   if (!previewSlots.length && leagueUsers.length) {
                     leagueUsers.forEach((u, i) => {
                       const dnaKey    = ownerDnaMap[u.user_id] || 'NONE';
-                      previewSlots.push({ slot: i+1, name: u.display_name || u.username, archetype: DNA_TO_ARCHETYPE[dnaKey] || 'Unknown', isMe: u.user_id === sleeperUserId });
+                      const draftDna  = draftDnaMap[u.user_id];
+                      previewSlots.push({ slot: i+1, name: u.display_name || u.username, archetype: DNA_TO_ARCHETYPE[dnaKey] || 'Unknown', draftDnaLabel: draftDna?.label || null, isMe: u.user_id === sleeperUserId });
                     });
                   }
 
@@ -1343,14 +1371,23 @@
                           </div>
 
                           {/* Owner DNA preview */}
-                          <div className="text-[9px] text-silver mb-1.5 uppercase tracking-wider opacity-40 font-bold">Owner DNA (from your profiles)</div>
-                          <div className="space-y-0.5 mb-4 max-h-56 overflow-y-auto scroll-container">
-                            {previewSlots.map(({ slot, name, archetype, isMe }) => (
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="text-[9px] text-silver uppercase tracking-wider opacity-40 font-bold">
+                              Owner DNA {hasDraftDna && <span className="text-indigo-400 opacity-80">+ Draft History</span>}
+                            </div>
+                          </div>
+                          <div className="space-y-0.5 mb-3 max-h-56 overflow-y-auto scroll-container">
+                            {previewSlots.map(({ slot, name, archetype, draftDnaLabel, isMe }) => (
                               <div key={slot} className={`flex items-center gap-1.5 py-0.5 px-1.5 rounded text-[9px] ${isMe ? 'bg-gold/10 border border-gold/30' : ''}`}>
                                 <span className="w-5 text-silver opacity-40 font-mono text-center flex-shrink-0">{slot}</span>
                                 <span className={`flex-1 truncate ${isMe ? 'text-gold font-bold' : 'text-white'}`}>
                                   {name}{isMe && ' ★'}
                                 </span>
+                                {draftDnaLabel && (
+                                  <span className="text-[8px] px-1 py-0 rounded border border-indigo-500/40 text-indigo-300 flex-shrink-0">
+                                    {draftDnaLabel}
+                                  </span>
+                                )}
                                 <span className={`text-[8px] px-1 py-0 rounded border flex-shrink-0 ${archetype === 'Unknown' ? 'border-gold/20 text-silver opacity-40' : 'border-gold/40 text-gold'}`}>
                                   {archetype}
                                 </span>
@@ -1360,6 +1397,35 @@
                               <div className="text-silver opacity-40 text-[9px] py-2">Loading owners…</div>
                             )}
                           </div>
+
+                          {/* Sync Draft History */}
+                          <button
+                            onClick={async () => {
+                              if (!leagueId) return;
+                              setDraftDnaSyncing(true);
+                              setDraftDnaSyncMsg(null);
+                              try {
+                                const map = await window.DraftHistory.syncDraftDNA(leagueId);
+                                const n = Object.keys(map).length;
+                                setDraftDnaSyncMsg(`✓ Draft DNA synced for ${n} owners (3 seasons)`);
+                              } catch (e) {
+                                setDraftDnaSyncMsg(`⚠ ${e.message}`);
+                              } finally {
+                                setDraftDnaSyncing(false);
+                              }
+                            }}
+                            disabled={draftDnaSyncing || !leagueId}
+                            className="w-full text-[9px] px-2 py-1.5 border border-indigo-500/30 text-indigo-300 rounded hover:bg-indigo-500/10 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 mb-2 font-oswald tracking-wide"
+                          >
+                            {draftDnaSyncing
+                              ? <><span style={{display:'inline-block',width:'8px',height:'8px',border:'1.5px solid rgba(165,180,252,0.3)',borderTopColor:'#a5b4fc',borderRadius:'50%',animation:'ai-spin 0.75s linear infinite'}} /> Syncing Draft History...</>
+                              : `↻ Sync Draft History ${hasDraftDna ? '(synced)' : '(3 seasons)'}`}
+                          </button>
+                          {draftDnaSyncMsg && (
+                            <div className={`text-[9px] mb-2 ${draftDnaSyncMsg.startsWith('✓') ? 'text-green-400' : 'text-amber-400'}`}>
+                              {draftDnaSyncMsg}
+                            </div>
+                          )}
 
                           <button onClick={runMockDraft} disabled={mockLoading}
                             className="w-full px-4 py-2 border border-gold text-gold bg-gold/10 hover:bg-gold/20 disabled:opacity-40 disabled:cursor-not-allowed rounded text-xs font-bold font-oswald tracking-widest uppercase flex items-center justify-center gap-2">

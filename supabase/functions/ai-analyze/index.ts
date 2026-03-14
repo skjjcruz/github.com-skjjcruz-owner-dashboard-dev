@@ -253,9 +253,13 @@ Provide:
 function buildMockDraftPrompt(ctx: any): string {
     const isIDP = ctx.isIDP === true;
 
-    const slotsStr = (ctx.draftSlots || []).map((o: any) =>
-        `Slot ${o.slot}: ${o.name} | DNA: ${o.dna}${o.needs?.length ? ` | Needs: ${o.needs.join(', ')}` : ''}`
-    ).join('\n');
+    const slotsStr = (ctx.draftSlots || []).map((o: any) => {
+        let line = `Slot ${o.slot}: ${o.name} | Trade DNA: ${o.dna}`;
+        if (o.draftDna)      line += ` | Draft DNA: ${o.draftDna}`;
+        if (o.draftTendency) line += ` (${o.draftTendency})`;
+        if (o.needs?.length) line += ` | Needs: ${o.needs.join(', ')}`;
+        return line;
+    }).join('\n');
 
     const playersStr = (ctx.players || []).map((p: any, i: number) =>
         `${i + 1}. ${p.name} | ${p.pos} | Tier ${p.tier}`
@@ -273,8 +277,19 @@ function buildMockDraftPrompt(ctx: any): string {
 
 DRAFT TYPE: ${draftTypeLabel}
 
-OWNER PROFILES (slot → name → DNA archetype → roster needs):
+OWNER PROFILES (slot → name → Trade DNA → Draft DNA from history → roster needs):
 ${slotsStr}
+
+DRAFT DNA LABELS (observed over 3 seasons of actual picks):
+• QB-Hunter     → Has taken QB in round 1 historically
+• QB-Hungry     → >15% of picks are QB
+• RB-Heavy      → >38% of picks are RB
+• WR-First      → >38% of picks are WR
+• TE-Premium    → >15% of picks are TE
+• DEF-Drafter   → >25% defensive picks (IDP league)
+• QB-Avoider    → Never or rarely drafts QB before round 4
+• Balanced      → No strong positional bias
+When Draft DNA conflicts with current Needs, current Needs take priority for critical gaps (0 starters at a position).
 
 AVAILABLE PLAYERS (consensus ranked — highest priority at top):
 ${playersStr}

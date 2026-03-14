@@ -540,6 +540,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="supabase-client.js"></script>
+<script src="draft-history.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1713,7 +1714,10 @@ function TradeCalculator() {
 
     const [activeTab,    setActiveTab]    = useState('guide');
     const [myRosterId,   setMyRosterId]   = useState(null);
-    const [ownerDna,     setOwnerDna]     = useState({});   // { ownerId: DNA_TYPE_KEY }
+    const [ownerDna,      setOwnerDna]      = useState({});   // { ownerId: DNA_TYPE_KEY }
+    const [ownerDraftDna, setOwnerDraftDna] = useState({});  // { ownerId: { label, tendency, ... } }
+    const [draftDnaSyncing, setDraftDnaSyncing] = useState(false);
+    const [draftDnaSyncMsg, setDraftDnaSyncMsg] = useState(null);
     const [sortMode,     setSortMode]     = useState('health'); // health | panic | record
     const [tierFilter,   setTierFilter]   = useState('ALL');
 
@@ -1821,6 +1825,13 @@ function TradeCalculator() {
 
             // Load saved DNA profiles + grudge log (Supabase-backed, falls back to localStorage)
             setOwnerDna(await window.OD.loadDNA(leagueId));
+            setOwnerDraftDna(window.DraftHistory?.loadDraftDNA(leagueId) || {});
+            // Auto-refresh draft DNA in background; update state when done
+            if (window.DraftHistory) {
+                window.DraftHistory.syncDraftDNA(leagueId)
+                    .then(map => setOwnerDraftDna(map))
+                    .catch(() => {});
+            }
             setGrudges(loadGrudges(leagueId));
         } catch(e) {
             console.error(e);
@@ -2730,12 +2741,50 @@ function TradeCalculator() {
                 <div style={{ fontSize:'0.65rem', color:'var(--silver)', opacity:0.55, marginBottom:'0.75rem', lineHeight:1.5 }}>
                     Profile each owner's behavioral DNA. This unlocks psychological tax calculations in the Trade Analyzer — telling you <em>how</em> to approach each deal, not just whether to make it. Profiles are saved locally.
                 </div>
+
+                {/* Sync Draft History */}
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1rem', flexWrap:'wrap' }}>
+                    <button
+                        onClick={async () => {
+                            if (!leagueId) return;
+                            setDraftDnaSyncing(true);
+                            setDraftDnaSyncMsg(null);
+                            try {
+                                const map = await window.DraftHistory.syncDraftDNA(leagueId);
+                                setOwnerDraftDna(map);
+                                setDraftDnaSyncMsg(`✓ Draft DNA synced for ${Object.keys(map).length} owners (3 seasons)`);
+                            } catch(e) {
+                                setDraftDnaSyncMsg(`⚠ ${e.message}`);
+                            } finally {
+                                setDraftDnaSyncing(false);
+                            }
+                        }}
+                        disabled={draftDnaSyncing || !leagueId}
+                        style={{ fontSize:'0.65rem', padding:'0.3rem 0.75rem', border:'1px solid rgba(165,180,252,0.35)', color:'#a5b4fc', background:'transparent', borderRadius:'4px', cursor:'pointer', opacity: (draftDnaSyncing||!leagueId) ? 0.4 : 1, display:'flex', alignItems:'center', gap:'0.35rem' }}
+                    >
+                        {draftDnaSyncing
+                            ? <><span style={{display:'inline-block',width:'8px',height:'8px',border:'1.5px solid rgba(165,180,252,0.3)',borderTopColor:'#a5b4fc',borderRadius:'50%',animation:'ai-spin 0.75s linear infinite'}} /> Syncing...</>
+                            : `↻ Sync Draft History (3 seasons)`}
+                    </button>
+                    {draftDnaSyncMsg && (
+                        <span style={{ fontSize:'0.6rem', color: draftDnaSyncMsg.startsWith('✓') ? '#4ade80' : '#fbbf24' }}>
+                            {draftDnaSyncMsg}
+                        </span>
+                    )}
+                    {Object.keys(ownerDraftDna).length > 0 && !draftDnaSyncMsg && (
+                        <span style={{ fontSize:'0.6rem', color:'#a5b4fc', opacity:0.6 }}>
+                            Draft DNA loaded — {Object.keys(ownerDraftDna).length} owners profiled
+                        </span>
+                    )}
+                </div>
+
                 <div className="dna-grid">
                     {assessments.map(a => {
-                        const dnaKey     = ownerDna[a.ownerId] || 'NONE';
-                        const dna        = DNA_TYPES[dnaKey];
-                        const isMyTeam   = a.rosterId === myRosterId;
-                        const avatarSrc  = avatarUrl(a.avatar);
+                        const dnaKey      = ownerDna[a.ownerId] || 'NONE';
+                        const dna         = DNA_TYPES[dnaKey];
+                        const isMyTeam    = a.rosterId === myRosterId;
+                        const avatarSrc   = avatarUrl(a.avatar);
+                        const draftDna    = ownerDraftDna[a.ownerId] || null;
                         return (
                             <div key={a.rosterId} className={`dna-card${dnaKey && dnaKey!=='NONE'?' dna-set':''}`}>
                                 {/* Owner header */}
@@ -2818,6 +2867,18 @@ function TradeCalculator() {
                                         <div className="dna-taxes" style={{ marginTop:'0.4rem' }}>
                                             {dna.taxes?.map((t,i) => <span key={i} className="tax-chip">{t}</span>)}
                                         </div>
+                                    </div>
+                                )}
+
+                                {/* Draft DNA from historical picks */}
+                                {draftDna && (
+                                    <div style={{ background:'rgba(99,102,241,0.06)', border:'1px solid rgba(99,102,241,0.2)', borderRadius:'6px', padding:'0.4rem 0.6rem' }}>
+                                        <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.2rem' }}>
+                                            <span style={{ fontSize:'0.55rem', color:'var(--silver)', opacity:0.5, textTransform:'uppercase', letterSpacing:'0.06em' }}>Draft DNA</span>
+                                            <span style={{ fontSize:'0.65rem', fontWeight:700, color:'#a5b4fc', fontFamily:'Oswald,sans-serif', letterSpacing:'0.03em' }}>{draftDna.label}</span>
+                                            <span style={{ fontSize:'0.55rem', color:'var(--silver)', opacity:0.4, marginLeft:'auto' }}>{draftDna.seasons} · {draftDna.picksAnalyzed} picks</span>
+                                        </div>
+                                        <div style={{ fontSize:'0.6rem', color:'var(--silver)', opacity:0.55, fontStyle:'italic' }}>{draftDna.tendency}</div>
                                     </div>
                                 )}
 
