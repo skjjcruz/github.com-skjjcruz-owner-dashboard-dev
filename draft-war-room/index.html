@@ -387,6 +387,11 @@
           
           // Load picks for this draft (pass fresh rosters/users/leagueId before React state settles)
           await loadDraftPicks(mostRecent.draft_id, rostersData, usersData, leagueId);
+
+          // Auto-sync draft DNA in the background — no spinner, no blocking
+          if (window.DraftHistory) {
+            window.DraftHistory.syncDraftDNA(leagueId).catch(() => {});
+          }
           
         } catch (err) {
           console.error('Error loading drafts:', err);

@@ -1744,6 +1744,12 @@ function TradeCalculator() {
             // Load saved DNA profiles + grudge log (Supabase-backed, falls back to localStorage)
             setOwnerDna(await window.OD.loadDNA(leagueId));
             setOwnerDraftDna(window.DraftHistory?.loadDraftDNA(leagueId) || {});
+            // Auto-refresh draft DNA in background; update state when done
+            if (window.DraftHistory) {
+                window.DraftHistory.syncDraftDNA(leagueId)
+                    .then(map => setOwnerDraftDna(map))
+                    .catch(() => {});
+            }
             setGrudges(loadGrudges(leagueId));
         } catch(e) {
             console.error(e);
