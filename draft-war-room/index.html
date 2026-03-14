@@ -701,9 +701,51 @@
         const roundCount    = selectedDraft?.settings?.rounds || 3;
         const leagueId      = selectedLeague?.id;
 
+        // Detect IDP league: Sleeper sets player_type=1 for IDP drafts
+        const isIDP = (selectedDraft?.settings?.player_type === 1);
+
         // Load DNA from localStorage (same store as trade-calculator)
         let ownerDnaMap = {};
         try { ownerDnaMap = JSON.parse(localStorage.getItem(`od_owner_dna_v1_${leagueId}`) || '{}'); } catch(e) {}
+
+        // Build userId → roster position counts (requires sleeperPlayers to be loaded)
+        const userPosCounts = {};
+        if (sleeperPlayers && leagueRosters.length) {
+          leagueRosters.forEach(roster => {
+            if (!roster.owner_id) return;
+            const counts = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, LB: 0, DL: 0, DB: 0 };
+            (roster.players || []).forEach(pid => {
+              const p = sleeperPlayers[pid];
+              if (!p) return;
+              const rawPos = p.fantasy_positions?.[0] || p.position || '';
+              // Normalize to fantasy slot
+              const pos = ['QB','RB','WR','TE','K'].includes(rawPos) ? rawPos
+                        : ['LB','OLB','ILB','MLB'].includes(rawPos) ? 'LB'
+                        : ['DE','DT','NT','DL'].includes(rawPos) ? 'DL'
+                        : ['CB','S','SS','FS','DB'].includes(rawPos) ? 'DB'
+                        : null;
+              if (pos && counts[pos] !== undefined) counts[pos]++;
+            });
+            userPosCounts[roster.owner_id] = counts;
+          });
+        }
+
+        // Compute positional needs from roster counts; fall back to common dynasty needs
+        function computeNeeds(userId) {
+          const c = userPosCounts[userId];
+          if (!c) return ['QB', 'RB', 'WR']; // sensible default
+          const needs = [];
+          if (c.QB < 2)  needs.push('QB');
+          if (c.RB < 4)  needs.push('RB');
+          if (c.WR < 4)  needs.push('WR');
+          if (c.TE < 2)  needs.push('TE');
+          if (isIDP) {
+            if (c.LB < 3) needs.push('LB');
+            if (c.DL < 2) needs.push('DL');
+            if (c.DB < 2) needs.push('DB');
+          }
+          return needs.slice(0, 4); // cap at 4 to keep prompt tight
+        }
 
         // Build slot list + detect my slot — prefer draftSlotOwners (round 1), fall back to leagueUsers
         const draftSlots = [];
@@ -713,7 +755,7 @@
           if (!ownerInfo) continue; // skip missing slots, don't break
           const dnaKey    = ownerDnaMap[ownerInfo.userId] || 'NONE';
           const archetype = DNA_TO_ARCHETYPE[dnaKey] || 'Unknown';
-          draftSlots.push({ slot, name: ownerInfo.displayName, dna: archetype, needs: [] });
+          draftSlots.push({ slot, name: ownerInfo.displayName, dna: archetype, needs: computeNeeds(ownerInfo.userId) });
           if (ownerInfo.userId === sleeperUserId) detectedMySlot = slot;
         }
 
@@ -725,7 +767,7 @@
             const slot      = i + 1;
             const dnaKey    = ownerDnaMap[u.user_id] || 'NONE';
             const archetype = DNA_TO_ARCHETYPE[dnaKey] || 'Unknown';
-            draftSlots.push({ slot, name: u.display_name || u.username, dna: archetype, needs: [] });
+            draftSlots.push({ slot, name: u.display_name || u.username, dna: archetype, needs: computeNeeds(u.user_id) });
             if (u.user_id === sleeperUserId) detectedMySlot = slot;
           });
         }
@@ -739,6 +781,7 @@
           numRounds:  roundCount,
           draftType:  'snake',
           mySlot:     detectedMySlot,
+          isIDP,
           draftSlots,
           players:    topPlayers,
           leagueName: selectedLeague?.name || 'Mock Draft',

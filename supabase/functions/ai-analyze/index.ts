@@ -251,6 +251,8 @@ Provide:
 }
 
 function buildMockDraftPrompt(ctx: any): string {
+    const isIDP = ctx.isIDP === true;
+
     const slotsStr = (ctx.draftSlots || []).map((o: any) =>
         `Slot ${o.slot}: ${o.name} | DNA: ${o.dna}${o.needs?.length ? ` | Needs: ${o.needs.join(', ')}` : ''}`
     ).join('\n');
@@ -263,31 +265,61 @@ function buildMockDraftPrompt(ctx: any): string {
         ? 'SNAKE (odd rounds pick left→right, even rounds pick right→left)'
         : 'LINEAR (same slot order every round)';
 
+    const idpNote = isIDP
+        ? `• This IS an IDP (Individual Defensive Player) league — LB, DL, DB are valid picks at any round IF the owner has a confirmed Need for that position.`
+        : `• This is a STANDARD fantasy league (NOT IDP). Defensive positions (LB, DL, DB, S, CB, EDGE) score zero or near-zero fantasy points and are NEVER drafted in rounds 1-3. They are fringe late-round picks only. Picking a defensive player in round 1 is a catastrophic fantasy mistake.`;
+
     return `Simulate a complete ${ctx.numRounds}-round rookie draft with ${ctx.numTeams} teams in ${ctx.leagueName || 'the league'}.
 
 DRAFT TYPE: ${draftTypeLabel}
 
-OWNER PROFILES (slot → name → DNA archetype):
+OWNER PROFILES (slot → name → DNA archetype → roster needs):
 ${slotsStr}
 
 AVAILABLE PLAYERS (consensus ranked — highest priority at top):
 ${playersStr}
 
-DNA DRAFT BEHAVIOR (every pick MUST reflect the owner's DNA, not generic BPA):
-• Win Now       → Avoids projects. Takes immediate starters. Prioritizes positions where they're weakest now.
-• Rebuilder     → Ceiling > floor. Loves raw upside. Comfortable with developmental Tier 1-2 players at any position.
-• Value Drafter → Strict BPA. Trusts the rankings regardless of team needs. Never reaches for positional fit.
-• Need Drafter  → Fills roster gaps first. Will reach 3-5 spots for a critical positional need.
-• Contrarian    → Regularly picks players ranked 8-15 spots below expectations. Fades popular consensus picks.
-• Risk Averse   → Avoids injury history, boom-or-bust profiles, small players. Prefers safe, proven college producers.
-• Aggressive    → Comfortable reaching 3-8 spots for high-upside plays. Takes swings early and often.
-• Unknown       → Balanced BPA with mild positional awareness.
+═══════════════════════════════════════════════════
+FANTASY FOOTBALL POSITIONAL RULES — READ FIRST
+═══════════════════════════════════════════════════
+This is a FANTASY FOOTBALL draft, not an NFL evaluation. Fantasy points come from OFFENSE only.
+
+FANTASY SCORING POSITIONS (pick these):
+  QB — Most scarce asset in dynasty. A team with no QB starter MUST address QB early.
+  RB — Highest volume fantasy scorers. Always premium picks in rounds 1-2.
+  WR — Deep receiver rooms needed. Strong round 1-3 value.
+  TE — Premium TEs are elite assets; depth TEs are late picks.
+
+NON-SCORING POSITIONS IN STANDARD LEAGUES (avoid early):
+  LB, DL, DB, S, CB, EDGE, DEF — contribute NOTHING to fantasy scores in standard leagues.
+${idpNote}
+
+POSITIONAL DRAFT PRIORITY (strictly enforce unless DNA says otherwise):
+  Round 1: QB / RB / WR — always. Never a defensive player in a standard league.
+  Round 2: QB / RB / WR / TE — premium skill positions.
+  Round 3+: TE depth, then positional needs, then long shots.
+
+ROSTER NEEDS override DNA only when a position is flagged as a critical need:
+  • If an owner's Needs include QB and a QB is available in the top 5 available players, they WILL take the QB unless their DNA (Value Drafter / Contrarian) specifically overrides it.
+  • Never take a non-scoring position to fill a "need" — fantasy teams don't "need" LBs.
+
+DNA DRAFT BEHAVIOR (apply AFTER positional rules above):
+• Win Now       → Offensive starters only. Takes immediate contributors at QB/RB/WR who can start this season.
+• Rebuilder     → Ceiling over floor. Comfortable with raw upside at any OFFENSIVE position.
+• Value Drafter → Strict BPA among offensive players. Trusts rankings regardless of positional fit.
+• Need Drafter  → Fills offensive roster gaps first. Will reach 3-5 spots for a critical QB/RB/WR need.
+• Contrarian    → Picks offensive players ranked 8-15 spots below expectations. Fades popular consensus.
+• Risk Averse   → Safe, proven college producers at skill positions. No boom-or-bust gambles.
+• Aggressive    → Reaches 3-8 spots for high-upside offensive plays. Swings big on upside.
+• Unknown       → Balanced BPA among offensive players with mild positional awareness.
 
 CRITICAL SIMULATION RULES:
 1. Each player can only be selected ONCE — track every pick and never repeat a player name
 2. Process picks in the correct draft order based on DRAFT TYPE above
-3. EVERY pick must reflect that specific owner's DNA profile — not what's "optimal"
-4. The "reason" field must be 10-15 words and explicitly reference their DNA behavior or team need
+3. EVERY pick must reflect that specific owner's DNA profile applied WITHIN positional rules
+4. Round 1 picks must ALWAYS be QB, RB, WR, or TE — no exceptions in standard leagues
+5. A team with QB listed as a Need gets the top available QB within their DNA-adjusted range
+6. The "reason" field must be 10-15 words referencing DNA behavior, positional need, or roster fit
 
 Output ONLY a valid JSON array with no extra text, no markdown, no backticks:
 [{"pick":1,"round":1,"slot":1,"owner":"Name","player":"Exact Player Name","pos":"WR","tier":1,"reason":"DNA-driven reason in exactly 10-15 words"},...]`;
