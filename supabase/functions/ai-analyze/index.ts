@@ -266,8 +266,8 @@ function buildMockDraftPrompt(ctx: any): string {
         return line;
     }).join('\n');
 
-    const playersStr = (ctx.players || []).map((p: any, i: number) =>
-        `${i + 1}. ${p.name} | ${p.pos} | Tier ${p.tier}`
+    const playersStr = (ctx.players || []).map((p: any) =>
+        `${p.fantasyRank}. ${p.name} | ${p.pos} | Tier ${p.tier}`
     ).join('\n');
 
     const draftTypeLabel = ctx.draftType === 'snake'
@@ -297,7 +297,10 @@ DRAFT DNA LABELS (derived from real owner pick history):
 The "Round splits" line shows what each owner ACTUALLY drafts by round group across 3 seasons.
 When Draft DNA conflicts with current Needs, current Needs take priority for critical gaps (0 starters at a position).
 
-AVAILABLE PLAYERS (consensus ranked — highest priority at top):
+AVAILABLE PLAYERS (fantasy-ranked — #1 = highest fantasy value, defenders already deprioritized):
+Players are ordered by fantasy scoring potential, not NFL draft consensus.
+QB/RB/WR float to the top; EDGE/LB/CB/S sink to the bottom of the pool.
+Pick from this list in order — #1 is the top remaining fantasy asset:
 ${playersStr}
 
 ═══════════════════════════════════════════════════════
