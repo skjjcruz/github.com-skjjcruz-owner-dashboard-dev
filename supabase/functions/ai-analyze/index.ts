@@ -394,9 +394,9 @@ Deno.serve(async (req) => {
         const isMockDraft = type === 'mock_draft';
         const message = await anthropic.messages.create({
             model: 'claude-haiku-4-5-20251001', // dev mode — switch to claude-sonnet-4-6 pre-launch
-            max_tokens: isMockDraft ? 6000 : 1200,
+            max_tokens: isMockDraft ? 8000 : 1200,
             system: isMockDraft
-                ? 'You are a dynasty fantasy football draft simulator. Output ONLY valid JSON arrays exactly as instructed. No prose, no markdown fences, no backticks. Never repeat a player. Track all prior picks carefully so each player is selected at most once.'
+                ? 'You are a dynasty fantasy football draft simulator. Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no prose before or after. Start your response with [ and end with ]. Never repeat a player. Track all prior picks carefully so each player is selected at most once.'
                 : buildSystemPrompt(),
             messages: [{ role: 'user', content: userPrompt }],
         });
@@ -406,10 +406,15 @@ Deno.serve(async (req) => {
         // For mock_draft, parse the JSON picks array from the AI response
         let picks: any[] | undefined;
         if (isMockDraft) {
+            // Strip markdown code fences if the AI wrapped the response despite instructions
+            let cleanAnalysis = analysis.trim();
+            if (cleanAnalysis.startsWith('```')) {
+                cleanAnalysis = cleanAnalysis.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+            }
             try {
-                picks = JSON.parse(analysis);
+                picks = JSON.parse(cleanAnalysis);
             } catch {
-                const match = analysis.match(/\[[\s\S]*\]/);
+                const match = cleanAnalysis.match(/\[[\s\S]*\]/);
                 if (match) {
                     try { picks = JSON.parse(match[0]); } catch { /* leave undefined */ }
                 }
