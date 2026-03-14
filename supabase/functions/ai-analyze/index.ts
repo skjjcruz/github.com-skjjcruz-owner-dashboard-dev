@@ -359,6 +359,9 @@ CRITICAL SIMULATION RULES:
 5. Round 2: QB, RB, WR, or TE only — still no defenders in standard leagues
 6. Use each owner's "Round splits" data as the primary guide for when they take each position type
 7. The "reason" field must be 10-15 words referencing DNA behavior, positional need, or roster fit
+8. QB NEED IS ABSOLUTE: If an owner's Needs include QB, their FIRST pick IS the best available QB.
+   No exceptions. No DNA override. No "BPA instead." Dynasty owners without a QB starter always
+   take the first available QB — that is universally what every owner does in this situation.
 
 Output ONLY a valid JSON array with no extra text, no markdown, no backticks:
 [{"pick":1,"round":1,"slot":1,"owner":"Name","player":"Exact Player Name","pos":"WR","tier":1,"reason":"DNA-driven reason in exactly 10-15 words"},...]`;
