@@ -1798,26 +1798,28 @@ function TradeCalculator() {
         setAllRosters([]); setLeagueUsers([]); setPlayersData({}); setStatsData({});
         setTradeIds({ A:[], B:[] }); setTradePickIds({ A:[], B:[] }); setTradeFaab({ A:0, B:0 }); setSearchText({ A:'', B:'' }); setShowSearch({ A:false, B:false });
         try {
-            const [rosters, info, users, players, stats, fc, tPicks] = await Promise.all([
+            const [rosters, info, users, stats, fc, tPicks] = await Promise.all([
                 fetchRosters(leagueId),
                 fetchLeagueInfo(leagueId),
                 fetchLeagueUsers(leagueId),
-                fetchPlayers(),
                 fetchSeasonStats(STATS_YEAR),
                 fetchFantasyCalcValues(),
                 fetchTradedPicks(leagueId),
             ]);
-            const resolvedPlayers = players || {};
-            const resolvedStats   = stats   || {};
+            const resolvedStats = stats || {};
             const scoring = info?.scoring_settings;
             setAllRosters(rosters || []);
             setLeagueInfo(info);
             setLeagueUsers(users || []);
-            setPlayersData(resolvedPlayers);
             setStatsData(resolvedStats);
             setTradedPicks(tPicks || []);
             setFcValues(fc);
-            setInternalVals(buildInternalValues(resolvedPlayers, resolvedStats, scoring));
+            // Load player names + build internal values in background — large payload, non-blocking
+            fetchPlayers().then(players => {
+                const resolvedPlayers = players || {};
+                setPlayersData(resolvedPlayers);
+                setInternalVals(buildInternalValues(resolvedPlayers, resolvedStats, scoring));
+            }).catch(() => {});
 
             // Find my roster
             const mine = (rosters || []).find(r => r.owner_id === userId);
@@ -1835,6 +1837,8 @@ function TradeCalculator() {
             setGrudges(loadGrudges(leagueId));
         } catch(e) {
             console.error(e);
+            setErrMsg('Failed to load league data. Check your connection and try again.');
+            setPhase('error');
         } finally {
             setLoading(false);
         }
