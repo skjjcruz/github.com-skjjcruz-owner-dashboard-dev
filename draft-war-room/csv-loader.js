@@ -98,8 +98,8 @@ async function loadPlayersFromCSV() {
       'WR': 1.75,
       'TE': 1.5,
       'K': 0.5,
-      'DE': 0.35, 'EDGE': 0.35,
-      'LB': 0.30, 'ILB': 0.30, 'OLB': 0.30,
+      'DE': 0.35, 'EDGE': 0.35, 'OLB': 0.35,
+      'LB': 0.30, 'ILB': 0.30,
       'DB': 0.25, 'S': 0.25, 'CB': 0.25,
       'DL': 0.2, 'DT': 0.2, 'IDL': 0.2,
       // OL positions have very low fantasy value

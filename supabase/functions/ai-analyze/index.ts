@@ -299,7 +299,8 @@ When Draft DNA conflicts with current Needs, current Needs take priority for cri
 
 AVAILABLE PLAYERS (fantasy-ranked — #1 = highest fantasy value, defenders already deprioritized):
 Players are ordered by fantasy scoring potential, not NFL draft consensus.
-QB/RB/WR float to the top; EDGE/LB/CB/S sink to the bottom of the pool.
+QB/RB/WR float to the top; EDGE/OLB rank above CB/S; CB/S/DL sink to the bottom of the pool.
+Within the defender tier: EDGE = OLB > LB > CB > S > DL. Never pick a CB before a same-tier EDGE or OLB.
 Pick from this list in order — #1 is the top remaining fantasy asset:
 ${playersStr}
 
@@ -335,7 +336,7 @@ NON-SCORING IN STANDARD LEAGUES (almost never draft before round 6):
 ROUND-BY-ROUND POSITIONAL RULES (strictly enforce):
   Round 1: QB / RB / WR only. No defenders. No exceptions in standard leagues.
   Round 2: QB / RB / WR / TE. No defenders. EDGE only if owner is flagged DEF-Early AND it's IDP.
-  Round 3-4: Skill positions. EDGE/OLB may appear if owner's round splits show it.
+  Round 3-4: Skill positions. EDGE/OLB may appear if owner's round splits show it. If a defender IS taken, it must be EDGE or OLB — never CB, S, or DL before round 5.
   Round 5+: Any position is fair game, guided by owner's actual round-split profile.
 
 CRITICAL: If an owner's "Round splits" show their R1-2 picks are 100% skill positions historically,
@@ -359,9 +360,12 @@ CRITICAL SIMULATION RULES:
 5. Round 2: QB, RB, WR, or TE only — still no defenders in standard leagues
 6. Use each owner's "Round splits" data as the primary guide for when they take each position type
 7. The "reason" field must be 10-15 words referencing DNA behavior, positional need, or roster fit
-8. QB NEED RULE: If an owner's Needs include QB AND a QB is ranked in the top 5 of the available
-   player pool, that owner WILL take the QB with their first pick. No DNA override. This reflects
-   real owner behavior — nobody passes on a top-5 QB when they're desperate at the position.
+8. ZERO-QB EMERGENCY RULE (highest priority, overrides everything):
+   If an owner has QB in their Needs AND the #1 or #2 ranked available player is a QB, that owner
+   MUST take the QB — no exceptions, no DNA override, no "but they're WR-First". An owner with
+   zero QBs who skips the top available QB when it's sitting at #1 or #2 is a simulation error.
+   QB NEED RULE: If an owner's Needs include QB AND a QB is ranked in the top 5 of the available
+   player pool, that owner WILL take the QB with their next pick. DNA is secondary to critical need.
 
 Output ONLY a valid JSON array with no extra text, no markdown, no backticks:
 [{"pick":1,"round":1,"slot":1,"owner":"Name","player":"Exact Player Name","pos":"WR","tier":1,"reason":"DNA-driven reason in exactly 10-15 words"},...]`;
