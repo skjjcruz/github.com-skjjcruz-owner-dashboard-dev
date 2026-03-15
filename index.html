@@ -1482,12 +1482,15 @@
     };
 
     // Settings Modal
-    function SettingsModal({ onClose, initDisplayName, onDisplayNameSave }) {
+    function SettingsModal({ onClose, initDisplayName, onDisplayNameSave, leagueMates }) {
         const [pwMsg, setPwMsg] = React.useState('');
         const [currentPw, setCurrentPw] = React.useState('');
         const [newPw, setNewPw] = React.useState('');
         const [confirmPw, setConfirmPw] = React.useState('');
         const [displayName, setDisplayName] = React.useState(initDisplayName || '');
+        const [matesAccess, setMatesAccess] = React.useState(null); // Set of usernames with accounts
+        const [giftLinks, setGiftLinks] = React.useState({}); // { username: { url, password } }
+        const [giftingFor, setGiftingFor] = React.useState(null);
 
         const isGiftedAccount = React.useMemo(() => {
             try {
@@ -1534,6 +1537,36 @@
             }
         }
 
+        // Load leaguemate access status when modal opens
+        React.useEffect(() => {
+            if (!leagueMates || leagueMates.length === 0) return;
+            const usernames = leagueMates.map(m => m.username).filter(Boolean);
+            window.OD.checkUsersAccess(usernames).then(setMatesAccess).catch(() => setMatesAccess(new Set()));
+        }, []);
+
+        async function handleGiftAccess(mate) {
+            const username = mate.username;
+            if (!username) return;
+            setGiftingFor(username);
+            try {
+                // Generate a random 8-char initial password
+                const pw = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+                    .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+                await window.OD.createGiftUser({
+                    sleeperUsername: username,
+                    password: pw,
+                    displayName: mate.display_name || null,
+                });
+                const base = window.location.href.replace(/\/[^/]*$/, '/');
+                const url = `${base}login.html?for=${encodeURIComponent(username)}`;
+                setGiftLinks(prev => ({ ...prev, [username]: { url, password: pw } }));
+                setMatesAccess(prev => new Set([...(prev || []), username]));
+            } catch (e) {
+                console.error('Gift failed:', e);
+            }
+            setGiftingFor(null);
+        }
+
         const sectionStyle = { marginBottom: '1.25rem', padding: '1rem', background: 'rgba(212,175,55,0.07)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px' };
         const sectionTitle = { fontFamily: 'Bebas Neue, cursive', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.12em', marginBottom: '0.75rem' };
         const inputStyle = { width: '100%', padding: '0.55rem 0.75rem', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', color: 'var(--white)', fontFamily: 'Oswald, sans-serif', fontSize: '0.85rem', marginBottom: '0.5rem' };
@@ -1575,12 +1608,54 @@
                         {pwMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.73rem', color: pwMsg.startsWith('✓') ? 'var(--win-green)' : '#E74C3C' }}>{pwMsg}</div>}
                     </div>
 
+                    {/* ── LEAGUEMATES ACCESS ── */}
+                    {leagueMates && leagueMates.length > 0 && (
+                        <div style={sectionStyle}>
+                            <div style={sectionTitle}>LEAGUEMATE ACCESS</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.75rem' }}>
+                                Share the dashboard with your league. Each leaguemate gets their own login with full access to all features including AI Scout.
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '220px', overflowY: 'auto' }}>
+                                {leagueMates.map(mate => {
+                                    const username = mate.username;
+                                    if (!username) return null;
+                                    const hasAccess = matesAccess?.has(username);
+                                    const link = giftLinks[username];
+                                    const isGifting = giftingFor === username;
+                                    return (
+                                        <div key={username} style={{ padding: '0.5rem 0.6rem', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', border: `1px solid ${hasAccess ? 'rgba(46,204,113,0.3)' : 'rgba(212,175,55,0.15)'}` }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: link ? '0.4rem' : 0 }}>
+                                                {mate.avatar
+                                                    ? <img src={`https://sleepercdn.com/avatars/thumbs/${mate.avatar}`} style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0 }} onError={e => { e.target.style.display='none'; }} />
+                                                    : <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(212,175,55,0.3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.65rem', fontWeight:700, flexShrink: 0 }}>{(mate.display_name || username || '?')[0].toUpperCase()}</div>
+                                                }
+                                                <span style={{ flex: 1, fontSize: '0.78rem', color: 'var(--white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {mate.display_name || username}
+                                                </span>
+                                                {matesAccess === null
+                                                    ? <span style={{ fontSize: '0.65rem', color: 'var(--silver)' }}>checking…</span>
+                                                    : hasAccess
+                                                        ? <span style={{ fontSize: '0.65rem', color: 'var(--win-green)', fontWeight: 700 }}>✓ Has access</span>
+                                                        : <button onClick={() => handleGiftAccess(mate)} disabled={isGifting} style={{ padding: '0.2rem 0.55rem', background: 'var(--gold)', border: 'none', borderRadius: '4px', color: 'var(--black)', fontFamily: 'Oswald,sans-serif', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+                                                            {isGifting ? '…' : 'Generate Link'}
+                                                        </button>
+                                                }
+                                            </div>
+                                            {link && (
+                                                <div style={{ fontSize: '0.65rem', color: 'var(--silver)', wordBreak: 'break-all', background: 'rgba(0,0,0,0.4)', padding: '0.3rem 0.4rem', borderRadius: '4px' }}>
+                                                    <div><strong style={{ color: 'var(--gold)' }}>Link:</strong> {link.url}</div>
+                                                    <div><strong style={{ color: 'var(--gold)' }}>Temp password:</strong> {link.password}</div>
+                                                    <div style={{ color: 'rgba(255,255,255,0.4)', marginTop: '0.2rem' }}>Share both — they can change password after login</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     <div style={{ display: 'flex', gap: '0.75rem', flexDirection: 'column' }}>
-                        {sleeperUsername === 'skjjcruz' && (
-                            <button onClick={() => window.location.href = 'gift.html'} style={{ padding: '0.75rem', background: 'linear-gradient(135deg, var(--gold) 0%, #b8922a 100%)', border: 'none', borderRadius: '8px', color: 'var(--black)', fontFamily: 'Oswald, sans-serif', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
-                                🎁 Gift a Dashboard
-                            </button>
-                        )}
                         <button onClick={handleLogout} style={{ padding: '0.75rem', background: 'linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)', border: 'none', borderRadius: '8px', color: 'white', fontFamily: 'Oswald, sans-serif', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                             Logout
                         </button>
@@ -3114,6 +3189,7 @@
                             setCustomDisplayName(name);
                             window.OD.saveDisplayName(name);
                         }}
+                        leagueMates={leagueMates}
                     />
                 )}
 

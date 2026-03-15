@@ -376,6 +376,18 @@ window.OD.createGiftUser = async function({ sleeperUsername, password, displayNa
     if (error) throw error;
 };
 
+// Check which usernames from a list already have dashboard accounts in Supabase.
+// Returns a Set of usernames that have an account row.
+window.OD.checkUsersAccess = async function(usernames) {
+    const db = getClient();
+    if (!db || !isConfigured() || !usernames || usernames.length === 0) return new Set();
+    const { data } = await db
+        .from('users')
+        .select('sleeper_username')
+        .in('sleeper_username', usernames);
+    return new Set((data || []).map(u => u.sleeper_username));
+};
+
 // Check Supabase for a user's password hash (used by login for gifted users)
 window.OD.verifySupabasePassword = async function(username, password) {
     const db = getClient();
