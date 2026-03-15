@@ -574,11 +574,15 @@ const fetchLeagueInfo = id     => apiFetch(`${SLEEPER_BASE}/league/${id}`);
 const fetchLeagueUsers= id     => apiFetch(`${SLEEPER_BASE}/league/${id}/users`);
 const fetchTradedPicks= id     => apiFetch(`${SLEEPER_BASE}/league/${id}/traded_picks`);
 
-let _playersCache = null;
+let _playersCacheData = null;
+let _playersCacheTime = 0;
+const PLAYERS_TTL_MS = 60 * 60 * 1000; // 1 hour — player statuses/injuries change
 async function fetchPlayers() {
-    if (_playersCache) return _playersCache;
-    _playersCache = await apiFetch(`${SLEEPER_BASE}/players/nfl`);
-    return _playersCache;
+    const now = Date.now();
+    if (_playersCacheData && (now - _playersCacheTime) < PLAYERS_TTL_MS) return _playersCacheData;
+    _playersCacheData = await apiFetch(`${SLEEPER_BASE}/players/nfl`);
+    _playersCacheTime = now;
+    return _playersCacheData;
 }
 let _statsCache = {};
 async function fetchSeasonStats(year) {
@@ -595,7 +599,8 @@ async function fetchSeasonStats(year) {
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const SEASON           = '2026';
 const AVAILABLE_YEARS  = ['2023', '2024', '2025', '2026'];
-const STATS_YEAR = '2025';
+// NFL regular season runs Sept–Jan; before Sept, stats year is the prior calendar year
+const STATS_YEAR = (() => { const d = new Date(); return String(d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1); })();
 
 // Psycho League baseline (user-defined)
 const WEEKLY_TARGET = 243;
@@ -825,10 +830,13 @@ function saveDNA(lid, data) {
 // ─── FANTASYCALC MARKET VALUE ENGINE ─────────────────────────────────────────
 // FantasyCalc public API — dynasty, 2QB/SuperFlex, full PPR
 const FC_URL = 'https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&ppr=1&superflex=true';
-let _fcCache = null;
+const FC_TTL_MS = 30 * 60 * 1000; // 30 minutes — values shift daily with news/injuries
+let _fcCacheData = null;
+let _fcCacheTime = 0;
 
 async function fetchFantasyCalcValues() {
-    if (_fcCache) return _fcCache;
+    const now = Date.now();
+    if (_fcCacheData && (now - _fcCacheTime) < FC_TTL_MS) return _fcCacheData;
     try {
         const r = await fetch(FC_URL);
         if (!r.ok) throw new Error(`FC HTTP ${r.status}`);
@@ -839,12 +847,13 @@ async function fetchFantasyCalcValues() {
             const sid = entry.player?.sleeperId || entry.player?.maybeSleeperID;
             if (sid) idx[String(sid)] = { value: entry.value || 0, trend: entry.trend30Day || 0, rank: entry.overallRank || 999, posRank: entry.positionRank || 999, source: 'fc' };
         }
-        _fcCache = idx;
+        _fcCacheData = idx;
+        _fcCacheTime = now;
         return idx;
     } catch(e) {
         console.warn('FantasyCalc fetch failed:', e.message);
-        _fcCache = {};
-        return {};
+        if (!_fcCacheData) _fcCacheData = {};
+        return _fcCacheData;
     }
 }
 
@@ -3331,8 +3340,8 @@ function TradeCalculator() {
                 {/* Source indicator */}
                 <div style={{ fontSize:'0.62rem', color:'var(--silver)', opacity:0.45, marginBottom:'0.75rem', lineHeight:1.5 }}>
                     {fcReady
-                        ? <>Values sourced from <strong style={{ color:'var(--gold)' }}>FantasyCalc</strong> (dynasty 2QB/SF, full PPR). IDP defenders use 2025 total-points tiers <span className="source-badge">ELITE</span><span className="source-badge">T1</span><span className="source-badge">T2</span><span className="source-badge">T3</span>; kickers use percentile rank <span className="source-badge">INT</span>.</>
-                        : <>FantasyCalc unavailable — showing internal stats-based values only. IDP defenders use 2025 total-points tiers <span className="source-badge">ELITE</span><span className="source-badge">T1</span><span className="source-badge">T2</span><span className="source-badge">T3</span>.</>
+                        ? <>Values sourced from <strong style={{ color:'var(--gold)' }}>FantasyCalc</strong> (dynasty 2QB/SF, full PPR). IDP defenders use {STATS_YEAR} total-points tiers <span className="source-badge">ELITE</span><span className="source-badge">T1</span><span className="source-badge">T2</span><span className="source-badge">T3</span>; kickers use percentile rank <span className="source-badge">INT</span>.</>
+                        : <>FantasyCalc unavailable — showing internal stats-based values only. IDP defenders use {STATS_YEAR} total-points tiers <span className="source-badge">ELITE</span><span className="source-badge">T1</span><span className="source-badge">T2</span><span className="source-badge">T3</span>.</>
                     }
                 </div>
 
