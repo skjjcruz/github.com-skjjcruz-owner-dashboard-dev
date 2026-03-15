@@ -29,7 +29,7 @@ Your analysis must be:
 - Psychologically sharp — factor in owner DNA and negotiation leverage
 - Confident and direct — write like a seasoned scout, not a chatbot
 
-Format with **bold headers** for each section. Keep total response under 600 words.`;
+Format with **bold headers** for each section. Keep total response under 1200 words.`;
 }
 
 function formatTeamsForPrompt(teams: any[]): string {
@@ -439,8 +439,8 @@ Deno.serve(async (req) => {
 
         const isMockDraft = type === 'mock_draft';
         const message = await anthropic.messages.create({
-            model: isMockDraft ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001',
-            max_tokens: isMockDraft ? 16000 : 1200,
+            model: 'claude-sonnet-4-6',
+            max_tokens: isMockDraft ? 16000 : 8192,
             system: isMockDraft
                 ? 'You are a dynasty fantasy football draft simulator. Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no prose before or after. Start your response with [ and end with ]. Never repeat a player. Track all prior picks carefully so each player is selected at most once.'
                 : buildSystemPrompt(),
