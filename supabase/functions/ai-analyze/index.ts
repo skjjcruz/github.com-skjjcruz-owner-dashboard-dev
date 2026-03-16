@@ -91,7 +91,11 @@ function buildTeamPrompt(ctx: any): string {
         ? `**MY NEGOTIATION STRATEGY** — I am ${t.owner}. Based on my ${t.dna} DNA and current roster situation, how should I approach trade negotiations? What leverage do I have, what should I lead with, and what traps should I avoid?`
         : `**NEGOTIATION PLAYBOOK** — ${ctx.myOwner ? `I am ${ctx.myOwner} looking to trade with ${t.owner}.` : ''} Based on ${t.owner}'s ${t.dna} DNA profile, how should I approach negotiating with this owner? What buttons to push, what to avoid, how to frame offers?`;
 
-    return `Provide a comprehensive scouting report on **${t.owner}**'s team in ${ctx.leagueName}.${isMyTeam ? ' This is MY OWN team — give me honest self-assessment and first-person strategic advice.' : ''}
+    const tradeMovesSection = isMyTeam
+        ? `**TOP RECOMMENDED MOVES** — 2-3 specific, value-balanced trades I (${t.owner}) should pursue to improve my team. For each: name the player I want to acquire, what I should offer from MY OWN roster in return, and why the other owner says yes.`
+        : `**TOP RECOMMENDED MOVES** — I am ${ctx.myOwner || 'the logged-in owner'}. Give me 2-3 specific players I should target from ${t.owner}'s roster. For each: (1) name the ${t.owner} player I want, (2) describe what I should offer FROM MY OWN ASSETS — NOT ${t.owner}'s players, (3) explain why ${t.owner} would accept. CRITICAL: I am making the offer. Do NOT suggest ${t.owner} trade their own players to themselves.`;
+
+    return `Provide a comprehensive scouting report on **${t.owner}**'s team in ${ctx.leagueName}.${isMyTeam ? ' This is MY OWN team — give me honest self-assessment and first-person strategic advice.' : ` I am ${ctx.myOwner || 'the logged-in owner'} scouting this team for trade opportunities.`}
 
 **TEAM OVERVIEW:** ${t.record} | ${t.tier} | Health: ${t.healthScore}/100 | ${t.weeklyPts} pts/wk | Posture: ${t.posture}
 **OWNER DNA:** ${t.dna}${t.dnaDescription ? ` — ${t.dnaDescription}` : ''}
@@ -104,7 +108,7 @@ function buildTeamPrompt(ctx: any): string {
 ${rosterStr || 'No roster data available'}
 
 **TOP 10 BY VALUE:** ${topValues || 'N/A'}
-${ctx.myOwner && !isMyTeam ? `**I am:** ${ctx.myOwner}\n` : ''}
+${ctx.myOwner && !isMyTeam ? `**MY TEAM (the owner requesting this analysis):** ${ctx.myOwner}\n` : ''}
 
 TRADE RECOMMENDATION RULES (strictly enforce):
 - Values are on a 0-10,000 scale. Only propose trades where combined values are within ~20% of each other.
@@ -112,6 +116,7 @@ TRADE RECOMMENDATION RULES (strictly enforce):
 - Respect positional market rates: elite RBs and QBs command premium return; DBs, LBs, and depth pieces do not.
 - A player with a high value (4,000+) is likely a borderline elite — do not frame them as depth or "cheap filler."
 - Only recommend trades that a reasonable opposing owner would actually accept.
+- When analyzing another owner's team, all trade offers come FROM the requesting owner — never from the team being analyzed.
 
 Provide:
 **TEAM IDENTITY** — What type of contender/rebuilder/pretender is this? (2-3 sentences)
@@ -119,7 +124,7 @@ Provide:
 **CRITICAL WEAKNESSES** — Where are the real gaps? Be brutally honest
 **DRAFT CAPITAL & FAAB** — Zero-pick years are a crisis. Pick-rich years are leverage. Assess accordingly and state what it means for their ability to add talent.
 **TRADE OUTLOOK** — Buyer, seller, or holding? What should they target vs. deal away?
-**TOP RECOMMENDED MOVES** — 2-3 specific, value-balanced trade ideas. For each: name the target, what to offer, why the other owner says yes.
+${tradeMovesSection}
 ${negotiationSection}`;
 }
 

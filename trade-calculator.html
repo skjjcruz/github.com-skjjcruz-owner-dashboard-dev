@@ -1338,6 +1338,7 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
     );
 
     // Health score: 60% scoring + 40% coverage  (kept as a diagnostic 0-100 number)
+    // Projection bonus lifts ELITE teams above CONTENDER teams with equal coverage
     const scoringScore  = Math.min(60, (weeklyPts / WEEKLY_TARGET) * 60);
     let coverageScore   = 0;
     const hasValueData = Object.keys(nflStarterSet).length > 0;
@@ -1349,7 +1350,8 @@ function assessTeam(roster, playersData, statsData, leagueInfo, users, nflStarte
             : Math.min(1, data.actual / data.ideal);
         coverageScore += ratio * ((POS_WEIGHTS[pos]||0) / TOTAL_WEIGHT) * 40;
     }
-    const healthScore = Math.round(scoringScore + coverageScore);
+    const projBonus   = weeklyPts > WEEKLY_TARGET + 10 ? 3 : weeklyPts >= WEEKLY_TARGET ? 1 : 0;
+    const healthScore = Math.min(100, Math.round(scoringScore + coverageScore + projBonus));
 
     // ── Tier classification ─────────────────────────────────────────────────
     // Driven PURELY by weekly scoring vs the 243 target so that deep dynasty
