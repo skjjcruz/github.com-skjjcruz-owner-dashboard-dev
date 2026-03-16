@@ -3796,8 +3796,18 @@ function TradeCalculator() {
                 return { ...base, myTeam: { owner: myAssessment.ownerName, record: `${myAssessment.wins}-${myAssessment.losses}`, tier: myAssessment.tier, healthScore: myAssessment.healthScore, needs: needsToStrings(myAssessment.needs), strengths: myAssessment.strengths, posture: calcOwnerPosture(myAssessment, myDnaKey) }, partners };
             }
 
-            // chat
-            return { ...base, teams: teamSummaries, question: aiChatInput };
+            // chat — include per-team player lists so the AI knows who has who
+            const teamsWithRosters = assessments.map(a => {
+                const summary = teamSummaries.find(s => s.owner === a.ownerName) || {};
+                const players = Object.values(a.posGroups || {}).flat().map(id => {
+                    const p = playersData[id];
+                    if (!p) return null;
+                    const v = getPlayerValue(id, valueIndex);
+                    return `${normPos(p.position)} ${(p.first_name||'')} ${(p.last_name||'')}`.trim() + (v.value > 0 ? ` (val:${v.value})` : '');
+                }).filter(Boolean);
+                return { ...summary, players };
+            });
+            return { ...base, teams: teamsWithRosters, question: aiChatInput };
         }
 
         async function runAnalysis() {

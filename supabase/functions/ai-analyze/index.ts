@@ -398,6 +398,61 @@ ${faStr || 'No FA data'}
 **Question:** ${ctx.question}`;
 }
 
+// ── Live NFL news (ESPN RSS, best-effort) ─────────────────────────────────────
+
+async function fetchLiveNFLNews(): Promise<string> {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const r = await fetch('https://www.espn.com/espn/rss/nfl/news', {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (!r.ok) return '';
+        const xml = await r.text();
+        const items: string[] = [];
+        // Match CDATA and plain <title> tags inside <item> blocks
+        const re = /<item>[\s\S]*?<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(xml)) !== null && items.length < 12) {
+            const t = m[1].replace(/<[^>]+>/g, '').trim();
+            if (t && t.length > 10) items.push(`• ${t}`);
+        }
+        return items.join('\n');
+    } catch {
+        return '';
+    }
+}
+
+// ── General chat prompt ───────────────────────────────────────────────────────
+
+function buildChatPrompt(ctx: any, liveNews: string): string {
+    const teamsStr = (ctx.teams || []).map((t: any) => {
+        const players = (t.players || []).slice(0, 12).join(', ');
+        return `  ${t.owner} (${t.record || '?'}) | ${t.tier || '?'} | Health:${t.healthScore ?? '?'} | Needs:${(t.needs||[]).join(',')||'—'} | Strengths:${(t.strengths||[]).join(',')||'—'}${players ? `\n    Roster: ${players}` : ''}`;
+    }).join('\n');
+
+    const newsSection = liveNews
+        ? `\n**LIVE NFL NEWS (fetched now from ESPN):**\n${liveNews}\n`
+        : '';
+
+    return `You are answering a dynasty fantasy football question for **${ctx.myOwner || 'an owner'}** in **${ctx.leagueName}** (${ctx.season} season).
+
+**ALL TEAMS IN THE LEAGUE:**
+${teamsStr || 'No team data available'}
+${newsSection}
+**QUESTION:** ${ctx.question}
+
+Answer thoroughly and specifically. Reference real players, owners, and league data where relevant.
+- If asking about a specific player: comment on their dynasty value, role, age, and injury status if known from the news above.
+- If asking about trades: factor in both teams' needs, tier, and roster composition from the data above.
+- If asking about targeting a player: identify which team owns them and suggest a realistic offer.
+- If asking about NFL news/injuries: use the live news headlines above.
+- If asking general strategy: tailor advice to the owner's league context.
+Keep the response focused and actionable. Use **bold headers** to organize if the answer is multi-part.`;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -426,15 +481,19 @@ Deno.serve(async (req) => {
 
         const anthropic = new Anthropic({ apiKey });
 
+        // Fetch live NFL news for chat mode (best-effort, non-blocking on failure)
+        const liveNews = type === 'chat' ? await fetchLiveNFLNews() : '';
+
         let userPrompt: string;
         switch (type) {
-            case 'league':     userPrompt = buildLeaguePrompt(context);    break;
-            case 'team':       userPrompt = buildTeamPrompt(context);      break;
-            case 'partners':   userPrompt = buildPartnersPrompt(context);  break;
-            case 'fa_targets': userPrompt = buildFATargetsPrompt(context); break;
-            case 'rookies':    userPrompt = buildRookiesPrompt(context);   break;
-            case 'fa_chat':    userPrompt = buildFAChatPrompt(context);    break;
-            case 'mock_draft': userPrompt = buildMockDraftPrompt(context); break;
+            case 'league':     userPrompt = buildLeaguePrompt(context);           break;
+            case 'team':       userPrompt = buildTeamPrompt(context);             break;
+            case 'partners':   userPrompt = buildPartnersPrompt(context);         break;
+            case 'fa_targets': userPrompt = buildFATargetsPrompt(context);        break;
+            case 'rookies':    userPrompt = buildRookiesPrompt(context);          break;
+            case 'fa_chat':    userPrompt = buildFAChatPrompt(context);           break;
+            case 'mock_draft': userPrompt = buildMockDraftPrompt(context);        break;
+            case 'chat':       userPrompt = buildChatPrompt(context, liveNews);   break;
             default:
                 return new Response(
                     JSON.stringify({ error: `Unknown analysis type: ${type}` }),
