@@ -55,17 +55,28 @@ Deno.serve(async (req) => {
     }
 
     // ── Fetch active subscriptions ────────────────────────────
-    const { data: subs } = await admin
+    const { data: subs, error: subsErr } = await admin
       .from('subscriptions')
       .select('product_slug, tier, status')
       .eq('user_id', user.id)
       .eq('status', 'active');
 
+    if (subsErr) {
+      console.error('fw-signin subscriptions error:', subsErr);
+      return json({ error: `Subscriptions query failed: ${subsErr.message} (${subsErr.code})` }, 500);
+    }
+
     const products = (subs ?? []).map((s) => s.product_slug);
     const tier     = (subs ?? []).some((s) => s.tier === 'pro') ? 'pro' : 'free';
 
     // ── Issue JWT ─────────────────────────────────────────────
-    const token = await mintJWT(user.id, user.email, tier, products);
+    let token: string;
+    try {
+      token = await mintJWT(user.id, user.email, tier, products);
+    } catch (jwtErr) {
+      console.error('fw-signin JWT error:', jwtErr);
+      return json({ error: `JWT minting failed: ${jwtErr instanceof Error ? jwtErr.message : String(jwtErr)}` }, 500);
+    }
 
     return json({
       token,
@@ -80,7 +91,7 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     console.error('fw-signin error:', err);
-    return json({ error: 'Internal server error.' }, 500);
+    return json({ error: `Internal server error: ${err instanceof Error ? err.message : String(err)}` }, 500);
   }
 });
 
