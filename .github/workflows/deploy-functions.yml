@@ -28,6 +28,7 @@ jobs:
 
       - name: Apply database migrations
         run: supabase db push --project-ref sxshiqyxhhifvtfqawbq
+        continue-on-error: true
         env:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
