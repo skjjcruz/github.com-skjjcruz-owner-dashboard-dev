@@ -10,6 +10,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -17,7 +19,14 @@ jobs:
         with:
           version: latest
 
+      - name: Set JWT secret
+        run: supabase secrets set SUPABASE_JWT_SECRET=${{ secrets.SUPABASE_JWT_SECRET }} --project-ref sxshiqyxhhifvtfqawbq
+
+      - name: Deploy get-session-token function
+        run: supabase functions deploy get-session-token --project-ref sxshiqyxhhifvtfqawbq
+
+      - name: Deploy set-password function
+        run: supabase functions deploy set-password --project-ref sxshiqyxhhifvtfqawbq
+
       - name: Deploy ai-analyze function
         run: supabase functions deploy ai-analyze --project-ref sxshiqyxhhifvtfqawbq
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
