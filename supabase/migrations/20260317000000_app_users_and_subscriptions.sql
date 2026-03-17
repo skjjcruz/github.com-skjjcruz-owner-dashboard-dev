@@ -1,5 +1,4 @@
 -- Fantasy Wars: core user account + subscription tables
--- Apply with: supabase db push --project-ref <ref>
 
 -- ── app_users ─────────────────────────────────────────────────
 create table if not exists public.app_users (
@@ -10,19 +9,23 @@ create table if not exists public.app_users (
   created_at    timestamptz not null default now()
 );
 
--- Index for login lookups by email
 create index if not exists app_users_email_idx on public.app_users (email);
 
--- RLS: users can only read/update their own row
 alter table public.app_users enable row level security;
 
-create policy if not exists "Users can read own row"
-  on public.app_users for select
-  using ((auth.jwt() -> 'app_metadata' ->> 'user_id') = id::text);
+do $$ begin
+  create policy "Users can read own row"
+    on public.app_users for select
+    using ((auth.jwt() -> 'app_metadata' ->> 'user_id') = id::text);
+exception when duplicate_object then null;
+end $$;
 
-create policy if not exists "Users can update own row"
-  on public.app_users for update
-  using ((auth.jwt() -> 'app_metadata' ->> 'user_id') = id::text);
+do $$ begin
+  create policy "Users can update own row"
+    on public.app_users for update
+    using ((auth.jwt() -> 'app_metadata' ->> 'user_id') = id::text);
+exception when duplicate_object then null;
+end $$;
 
 -- ── subscriptions ─────────────────────────────────────────────
 create table if not exists public.subscriptions (
@@ -34,11 +37,14 @@ create table if not exists public.subscriptions (
   created_at   timestamptz not null default now()
 );
 
-create index if not exists subscriptions_user_id_idx   on public.subscriptions (user_id);
-create index if not exists subscriptions_status_idx    on public.subscriptions (status);
+create index if not exists subscriptions_user_id_idx on public.subscriptions (user_id);
+create index if not exists subscriptions_status_idx  on public.subscriptions (status);
 
 alter table public.subscriptions enable row level security;
 
-create policy if not exists "Users can read own subscriptions"
-  on public.subscriptions for select
-  using ((auth.jwt() -> 'app_metadata' ->> 'user_id') = user_id::text);
+do $$ begin
+  create policy "Users can read own subscriptions"
+    on public.subscriptions for select
+    using ((auth.jwt() -> 'app_metadata' ->> 'user_id') = user_id::text);
+exception when duplicate_object then null;
+end $$;
