@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fantasy Wars — Choose Your Battle</title>
+  <link rel="icon" href="icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@300;400;600;700&family=Crimson+Text:ital@1&display=swap" rel="stylesheet">
+
+  <style>
+    /* ── Reset & tokens ─────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --gold:       #D4AF37;
+      --dark-gold:  #B8941E;
+      --light-gold: #F0D060;
+      --black:      #0A0A0A;
+      --off-black:  #1A1A1A;
+      --charcoal:   #2A2A2A;
+      --white:      #FFFFFF;
+      --silver:     #C0C0C0;
+      --muted:      rgba(255,255,255,0.45);
+      --red:        #C0392B;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Oswald', sans-serif;
+      background: var(--black);
+      color: var(--white);
+      overflow-x: hidden;
+    }
+
+    /* ── Hero backdrop ───────────────────────────────────────── */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 0 1.5rem 4rem;
+      overflow: hidden;
+    }
+
+    /* Logo used as full-page watermark background */
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 50% 30%, rgba(212,175,55,0.08) 0%, transparent 70%),
+        radial-gradient(ellipse at 50% 80%, rgba(212,175,55,0.04) 0%, transparent 60%);
+      z-index: 0;
+    }
+    .hero-bg::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url('icon-512.png');
+      background-repeat: no-repeat;
+      background-position: center 20%;
+      background-size: clamp(320px, 55vw, 700px);
+      opacity: 0.07;
+      filter: grayscale(100%) contrast(200%);
+    }
+
+    /* Gradient overlay so text stays legible */
+    .hero-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(10,10,10,0.35) 0%,
+        rgba(10,10,10,0.55) 40%,
+        rgba(10,10,10,0.90) 75%,
+        var(--black) 100%
+      );
+      z-index: 1;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      max-width: 960px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Nav bar ─────────────────────────────────────────────── */
+    .nav {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem 0;
+      border-bottom: 1px solid rgba(212,175,55,0.15);
+      margin-bottom: 3rem;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+    .nav-logo img {
+      width: 36px;
+      height: 36px;
+      filter: drop-shadow(0 0 6px rgba(212,175,55,0.5));
+    }
+    .nav-logo-text {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 1.4rem;
+      color: var(--gold);
+      letter-spacing: 0.12em;
+    }
+    .nav-signin {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--silver);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      text-decoration: none;
+      padding: 0.5rem 1.25rem;
+      border: 1px solid rgba(212,175,55,0.35);
+      border-radius: 6px;
+      transition: all 0.25s;
+    }
+    .nav-signin:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+      background: rgba(212,175,55,0.06);
+    }
+
+    /* ── Brand headline ──────────────────────────────────────── */
+    .brand-eyebrow {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 0.75rem;
+    }
+    .brand-title {
+      font-family: 'Bebas Neue', cursive;
+      font-size: clamp(3.5rem, 10vw, 7rem);
+      letter-spacing: 0.12em;
+      color: var(--white);
+      text-align: center;
+      line-height: 0.9;
+      text-shadow: 0 0 60px rgba(212,175,55,0.2);
+    }
+    .brand-title span {
+      color: var(--gold);
+    }
+    .brand-tagline {
+      margin-top: 1.25rem;
+      font-size: clamp(0.9rem, 2vw, 1.1rem);
+      font-weight: 300;
+      color: var(--silver);
+      text-align: center;
+      letter-spacing: 0.06em;
+      max-width: 500px;
+    }
+
+    /* Gold divider */
+    .divider {
+      width: 60px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      margin: 2rem auto;
+    }
+
+    /* ── Product cards ───────────────────────────────────────── */
+    .products-section {
+      width: 100%;
+      margin-top: 1rem;
+    }
+
+    .products-label {
+      text-align: center;
+      font-size: 0.7rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    .products-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .product-card {
+      background: linear-gradient(135deg, rgba(26,26,26,0.95) 0%, rgba(42,42,42,0.85) 100%);
+      border: 2px solid rgba(212,175,55,0.25);
+      border-radius: 16px;
+      padding: 2rem 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+    .product-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .product-card:hover {
+      border-color: rgba(212,175,55,0.55);
+      box-shadow: 0 8px 40px rgba(212,175,55,0.12);
+      transform: translateY(-3px);
+    }
+    .product-card:hover::before {
+      opacity: 1;
+    }
+    .product-card.coming-soon {
+      opacity: 0.55;
+      pointer-events: none;
+      filter: grayscale(30%);
+    }
+
+    .product-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.75rem;
+      border-radius: 20px;
+      align-self: flex-start;
+    }
+    .badge-active {
+      background: rgba(212,175,55,0.15);
+      color: var(--gold);
+      border: 1px solid rgba(212,175,55,0.35);
+    }
+    .badge-soon {
+      background: rgba(192,192,192,0.1);
+      color: var(--silver);
+      border: 1px solid rgba(192,192,192,0.2);
+    }
+
+    .product-icon {
+      font-size: 2.25rem;
+      line-height: 1;
+    }
+    .product-name {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 1.75rem;
+      letter-spacing: 0.1em;
+      color: var(--white);
+      line-height: 1;
+    }
+    .product-tagline {
+      font-size: 0.8rem;
+      font-weight: 300;
+      color: var(--silver);
+      letter-spacing: 0.04em;
+      line-height: 1.5;
+    }
+
+    .product-features {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 0.25rem;
+    }
+    .product-features li {
+      font-size: 0.82rem;
+      color: var(--silver);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .feature-check {
+      color: var(--gold);
+      font-size: 0.7rem;
+      flex-shrink: 0;
+    }
+    .feature-lock {
+      color: var(--muted);
+      font-size: 0.65rem;
+      flex-shrink: 0;
+    }
+    .feature-pro-text {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .product-pricing {
+      margin-top: auto;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+    .price-free {
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      margin-bottom: 0.35rem;
+    }
+    .price-pro {
+      display: flex;
+      align-items: baseline;
+      gap: 0.3rem;
+    }
+    .price-amount {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 2rem;
+      color: var(--gold);
+      letter-spacing: 0.05em;
+    }
+    .price-period {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* ── Sign-up form ────────────────────────────────────────── */
+    .signup-section {
+      width: 100%;
+      max-width: 480px;
+      margin: 3rem auto 0;
+    }
+    .signup-heading {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 1.6rem;
+      letter-spacing: 0.1em;
+      color: var(--white);
+      text-align: center;
+      margin-bottom: 0.4rem;
+    }
+    .signup-sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 1.75rem;
+    }
+
+    .signup-card {
+      background: linear-gradient(135deg, var(--off-black), var(--charcoal));
+      border: 2px solid rgba(212,175,55,0.3);
+      border-radius: 16px;
+      padding: 2rem 1.75rem;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    }
+
+    /* Tab switcher: Sign Up / Sign In */
+    .tab-row {
+      display: flex;
+      background: rgba(0,0,0,0.35);
+      border-radius: 8px;
+      padding: 3px;
+      margin-bottom: 1.5rem;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 0.55rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--muted);
+      transition: all 0.25s;
+    }
+    .tab-btn.active {
+      background: linear-gradient(135deg, var(--gold), var(--dark-gold));
+      color: var(--black);
+    }
+
+    .form-panel { display: none; }
+    .form-panel.active { display: block; }
+
+    .form-field {
+      margin-bottom: 1.1rem;
+    }
+    .form-label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--gold);
+      margin-bottom: 0.4rem;
+    }
+    .form-input {
+      width: 100%;
+      padding: 0.8rem 1rem;
+      background: var(--black);
+      border: 2px solid rgba(212,175,55,0.2);
+      border-radius: 8px;
+      color: var(--white);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.95rem;
+      transition: border-color 0.25s, box-shadow 0.25s;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(212,175,55,0.1);
+    }
+    .form-input::placeholder { color: rgba(255,255,255,0.25); }
+
+    /* Product picker inside signup */
+    .product-picker {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .product-option {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.75rem 0.5rem;
+      border: 2px solid rgba(212,175,55,0.2);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      text-align: center;
+    }
+    .product-option.selected {
+      border-color: var(--gold);
+      background: rgba(212,175,55,0.06);
+    }
+    .product-option.disabled-opt {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .product-option input[type="radio"] { display: none; }
+    .opt-icon { font-size: 1.3rem; }
+    .opt-name {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: var(--white);
+    }
+    .opt-soon {
+      font-size: 0.6rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 0.95rem;
+      background: linear-gradient(135deg, var(--gold), var(--dark-gold));
+      border: none;
+      border-radius: 8px;
+      color: var(--black);
+      font-family: 'Oswald', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      margin-top: 0.5rem;
+      transition: box-shadow 0.25s, transform 0.2s, opacity 0.2s;
+      box-shadow: 0 4px 14px rgba(212,175,55,0.3);
+    }
+    .submit-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 22px rgba(212,175,55,0.5);
+    }
+    .submit-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .form-helper {
+      text-align: center;
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 1rem;
+      line-height: 1.6;
+    }
+    .form-helper a {
+      color: var(--gold);
+      text-decoration: none;
+    }
+
+    /* Alert banners */
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .alert.show { display: block; }
+    .alert-error {
+      background: rgba(192,57,43,0.2);
+      border: 1px solid #C0392B;
+      color: #E74C3C;
+    }
+    .alert-success {
+      background: rgba(39,174,96,0.15);
+      border: 1px solid #27AE60;
+      color: #2ECC71;
+    }
+
+    /* ── Free vs Pro table ───────────────────────────────────── */
+    .compare-section {
+      width: 100%;
+      max-width: 700px;
+      margin: 3.5rem auto 0;
+    }
+    .compare-title {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 1.5rem;
+      letter-spacing: 0.1em;
+      color: var(--white);
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .compare-table th, .compare-table td {
+      padding: 0.75rem 1rem;
+      text-align: center;
+      font-size: 0.82rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .compare-table th {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gold);
+      background: rgba(212,175,55,0.05);
+    }
+    .compare-table td:first-child {
+      text-align: left;
+      color: var(--silver);
+    }
+    .compare-table tr:last-child td {
+      border-bottom: none;
+    }
+    .tick { color: var(--gold); font-size: 1rem; }
+    .cross { color: var(--muted); font-size: 1rem; }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    .page-footer {
+      margin-top: 5rem;
+      padding: 2rem 1.5rem;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      text-align: center;
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.3);
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .products-grid {
+        grid-template-columns: 1fr;
+      }
+      .product-card.coming-soon {
+        display: none; /* hide placeholder on small screens to keep it clean */
+      }
+      .brand-title {
+        font-size: clamp(3rem, 16vw, 5rem);
+      }
+      .signup-card {
+        padding: 1.5rem 1.25rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-overlay"></div>
+
+    <div class="hero-content">
+
+      <!-- Nav -->
+      <nav class="nav">
+        <a class="nav-logo" href="#">
+          <img src="icon-192.png" alt="Fantasy Wars">
+          <span class="nav-logo-text">Fantasy Wars</span>
+        </a>
+        <a class="nav-signin" href="#signup" id="navSignin">Sign In</a>
+      </nav>
+
+      <!-- Brand headline -->
+      <p class="brand-eyebrow">Welcome to the Arena</p>
+      <h1 class="brand-title">FANTASY<br><span>WARS</span></h1>
+      <p class="brand-tagline">Command your league. Dominate the draft. Own every matchup.</p>
+
+      <div class="divider"></div>
+
+      <!-- Product cards -->
+      <section class="products-section">
+        <p class="products-label">Choose Your Battlefield</p>
+
+        <div class="products-grid">
+
+          <!-- Fantasy War Room -->
+          <div class="product-card">
+            <span class="product-badge badge-active">&#9679; Live Now</span>
+            <div class="product-icon">⚔️</div>
+            <div class="product-name">Fantasy War Room</div>
+            <p class="product-tagline">Your multi-platform fantasy command center — pull in leagues from Sleeper, Yahoo, ESPN, DraftKings, MFL, and more. One dashboard, every league.</p>
+
+            <ul class="product-features">
+              <li><span class="feature-check">✦</span> League calendar & scheduling</li>
+              <li><span class="feature-check">✦</span> Earnings & payout tracker</li>
+              <li><span class="feature-check">✦</span> Free agency & FAAB tool</li>
+              <li><span class="feature-check">✦</span> Draft board builder</li>
+              <li><span class="feature-lock">🔒</span> <span class="feature-pro-text">AI trade analysis (Pro)</span></li>
+              <li><span class="feature-lock">🔒</span> <span class="feature-pro-text">Owner DNA profiles (Pro)</span></li>
+              <li><span class="feature-lock">🔒</span> <span class="feature-pro-text">Mock draft simulator (Pro)</span></li>
+            </ul>
+
+            <div class="product-pricing">
+              <p class="price-free">Free tier available — no card required</p>
+              <div class="price-pro">
+                <span class="price-amount">$9.99</span>
+                <span class="price-period">/ month for Pro</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dynast HQ — Coming Soon -->
+          <div class="product-card coming-soon">
+            <span class="product-badge badge-soon">Coming Soon</span>
+            <div class="product-icon">🏛️</div>
+            <div class="product-name">Dynast HQ</div>
+            <p class="product-tagline">Next-generation AI built for every player — from the casual weekend warrior to the hardened fantasy pro. Smarter decisions, every week.</p>
+
+            <ul class="product-features">
+              <li><span class="feature-check">✦</span> Advanced AI decision engine</li>
+              <li><span class="feature-check">✦</span> Real-time matchup intelligence</li>
+              <li><span class="feature-check">✦</span> Predictive roster modeling</li>
+              <li><span class="feature-check">✦</span> AI trade negotiation assistant</li>
+              <li><span class="feature-check">✦</span> Cross-platform analytics</li>
+              <li><span class="feature-check">✦</span> Pro-grade scouting tools</li>
+            </ul>
+
+            <div class="product-pricing">
+              <p class="price-free">Notify me when it launches</p>
+              <div class="price-pro">
+                <span class="price-amount">TBA</span>
+                <span class="price-period">/ month</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Sign Up / Sign In form -->
+      <section class="signup-section" id="signup">
+        <h2 class="signup-heading">Create Your Account</h2>
+        <p class="signup-sub">Start free. Upgrade to Pro anytime.</p>
+
+        <div class="signup-card">
+
+          <!-- Tab switcher -->
+          <div class="tab-row">
+            <button class="tab-btn active" id="tabSignup" onclick="switchTab('signup')">Create Account</button>
+            <button class="tab-btn"        id="tabSignin" onclick="switchTab('signin')">Sign In</button>
+          </div>
+
+          <!-- SIGN UP panel -->
+          <div class="form-panel active" id="panelSignup">
+
+            <div id="alertSignup" class="alert"></div>
+
+            <div class="form-field">
+              <label class="form-label">Display Name</label>
+              <input class="form-input" type="text" id="su-name" placeholder="How you'll appear in the app" autocomplete="name">
+            </div>
+
+            <div class="form-field">
+              <label class="form-label">Email</label>
+              <input class="form-input" type="email" id="su-email" placeholder="you@example.com" autocomplete="email" required>
+            </div>
+
+            <div class="form-field">
+              <label class="form-label">Password</label>
+              <input class="form-input" type="password" id="su-password" placeholder="At least 8 characters" autocomplete="new-password" required>
+            </div>
+
+            <!-- Product selection -->
+            <label class="form-label" style="margin-bottom:0.6rem;">Select Your Product</label>
+            <div class="product-picker">
+
+              <label class="product-option selected" id="optWarRoom" onclick="selectProduct('war_room')">
+                <input type="radio" name="product" value="war_room" checked>
+                <span class="opt-icon">⚔️</span>
+                <span class="opt-name">War Room</span>
+              </label>
+
+              <label class="product-option disabled-opt" id="optDynastHQ">
+                <input type="radio" name="product" value="dynast_hq" disabled>
+                <span class="opt-icon">🏛️</span>
+                <span class="opt-name">Dynast HQ</span>
+                <span class="opt-soon">Coming Soon</span>
+              </label>
+
+            </div>
+
+            <button class="submit-btn" id="btnSignup" onclick="handleSignup()">
+              Create Free Account
+            </button>
+
+            <p class="form-helper">
+              By signing up you agree to our Terms of Service.<br>
+              Free accounts include core tools — no credit card required.
+            </p>
+          </div>
+
+          <!-- SIGN IN panel -->
+          <div class="form-panel" id="panelSignin">
+
+            <div id="alertSignin" class="alert"></div>
+
+            <div class="form-field">
+              <label class="form-label">Email</label>
+              <input class="form-input" type="email" id="si-email" placeholder="you@example.com" autocomplete="email" required>
+            </div>
+
+            <div class="form-field">
+              <label class="form-label">Password</label>
+              <input class="form-input" type="password" id="si-password" placeholder="Your password" autocomplete="current-password" required>
+            </div>
+
+            <button class="submit-btn" id="btnSignin" onclick="handleSignin()">
+              Sign In
+            </button>
+
+            <p class="form-helper">
+              Don't have an account? <a href="#" onclick="switchTab('signup');return false;">Sign up free →</a>
+            </p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Free vs Pro comparison -->
+      <section class="compare-section">
+        <h2 class="compare-title">Free vs Pro</h2>
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Feature</th>
+              <th>Free</th>
+              <th>Pro — $9.99/mo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>League calendar</td>
+              <td><span class="tick">✓</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Earnings tracker</td>
+              <td><span class="tick">✓</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Free agency & FAAB tool</td>
+              <td><span class="tick">✓</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Draft board builder</td>
+              <td><span class="tick">✓</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>AI league & team analysis</td>
+              <td><span class="cross">—</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>AI trade recommendations</td>
+              <td><span class="cross">—</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Owner DNA profiles</td>
+              <td><span class="cross">—</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Mock draft simulator</td>
+              <td><span class="cross">—</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+            <tr>
+              <td>Rookie draft strategy AI</td>
+              <td><span class="cross">—</span></td>
+              <td><span class="tick">✓</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+    </div><!-- /hero-content -->
+  </div><!-- /hero -->
+
+  <footer class="page-footer">
+    &copy; 2026 Fantasy Wars · skjjcruz · All rights reserved
+  </footer>
+
+  <!-- ── Scripts ─────────────────────────────────────────────── -->
+  <script>
+    // ── Config — update SUPABASE_URL when deploying ────────────
+    const FW_API_BASE = 'https://sxshiqyxhhifvtfqawbq.supabase.co/functions/v1';
+    const SESSION_KEY = 'fw_session_v1';
+
+    // ── Redirect if already signed in ─────────────────────────
+    (function checkSession() {
+      try {
+        const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (s?.token && s?.user) {
+          // Redirect to the appropriate app
+          const dest = (s.user.products || []).includes('dynast_hq')
+            ? 'dynast-hq/index.html'
+            : 'index.html';
+          window.location.href = dest;
+        }
+      } catch {}
+    })();
+
+    // ── Tab switching ─────────────────────────────────────────
+    function switchTab(tab) {
+      const isSignup = tab === 'signup';
+      document.getElementById('tabSignup').classList.toggle('active', isSignup);
+      document.getElementById('tabSignin').classList.toggle('active', !isSignup);
+      document.getElementById('panelSignup').classList.toggle('active', isSignup);
+      document.getElementById('panelSignin').classList.toggle('active', !isSignup);
+
+      document.getElementById('navSignin').textContent = isSignup ? 'Sign In' : 'Create Account';
+      document.getElementById('navSignin').onclick = (e) => { e.preventDefault(); switchTab(isSignup ? 'signin' : 'signup'); };
+    }
+
+    // Nav sign in link: scroll to form and switch tab
+    document.getElementById('navSignin').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('signup').scrollIntoView({ behavior: 'smooth' });
+      switchTab('signin');
+    });
+
+    // ── Product picker ────────────────────────────────────────
+    let selectedProduct = 'war_room';
+    function selectProduct(slug) {
+      selectedProduct = slug;
+      document.getElementById('optWarRoom').classList.toggle('selected', slug === 'war_room');
+      document.getElementById('optDynastHQ').classList.toggle('selected', slug === 'dynast_hq');
+    }
+
+    // ── Alerts ────────────────────────────────────────────────
+    function showAlert(panelId, type, message) {
+      const el = document.getElementById('alert' + panelId);
+      el.className = 'alert alert-' + type + ' show';
+      el.textContent = message;
+      if (type !== 'success') setTimeout(() => el.classList.remove('show'), 6000);
+    }
+
+    // ── Sign Up ───────────────────────────────────────────────
+    async function handleSignup() {
+      const email       = document.getElementById('su-email').value.trim();
+      const password    = document.getElementById('su-password').value;
+      const displayName = document.getElementById('su-name').value.trim();
+      const btn         = document.getElementById('btnSignup');
+
+      if (!email || !password) {
+        showAlert('Signup', 'error', 'Email and password are required.');
+        return;
+      }
+      if (password.length < 8) {
+        showAlert('Signup', 'error', 'Password must be at least 8 characters.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Creating account…';
+
+      try {
+        const res  = await fetch(`${FW_API_BASE}/fw-signup`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ email, password, displayName, productSlug: selectedProduct }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showAlert('Signup', 'error', data.error || 'Sign-up failed. Please try again.');
+          btn.disabled = false;
+          btn.textContent = 'Create Free Account';
+          return;
+        }
+
+        // Save session
+        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+
+        showAlert('Signup', 'success', 'Account created! Redirecting…');
+        setTimeout(() => { window.location.href = 'index.html'; }, 1000);
+
+      } catch {
+        showAlert('Signup', 'error', 'Network error. Check your connection and try again.');
+        btn.disabled = false;
+        btn.textContent = 'Create Free Account';
+      }
+    }
+
+    // ── Sign In ───────────────────────────────────────────────
+    async function handleSignin() {
+      const email    = document.getElementById('si-email').value.trim();
+      const password = document.getElementById('si-password').value;
+      const btn      = document.getElementById('btnSignin');
+
+      if (!email || !password) {
+        showAlert('Signin', 'error', 'Email and password are required.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Signing in…';
+
+      try {
+        const res  = await fetch(`${FW_API_BASE}/fw-signin`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showAlert('Signin', 'error', data.error || 'Invalid email or password.');
+          btn.disabled = false;
+          btn.textContent = 'Sign In';
+          return;
+        }
+
+        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        showAlert('Signin', 'success', 'Welcome back! Redirecting…');
+        setTimeout(() => { window.location.href = 'index.html'; }, 800);
+
+      } catch {
+        showAlert('Signin', 'error', 'Network error. Check your connection and try again.');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    }
+
+    // Enter key submits the active form
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      if (document.getElementById('panelSignup').classList.contains('active')) handleSignup();
+      else handleSignin();
+    });
+  </script>
+
+</body>
+</html>
