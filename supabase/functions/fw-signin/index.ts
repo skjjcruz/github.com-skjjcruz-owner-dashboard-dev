@@ -6,13 +6,12 @@
  *
  * Returns: { token, user: { id, email, displayName, tier, products[] } }
  *
- * Required secrets:
- *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+ * Uses Web Crypto PBKDF2 for password verification (no external deps).
+ * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { create, getNumericDate } from 'https://deno.land/x/djwt@v3.0.2/mod.ts';
-import * as bcrypt from 'https://deno.land/x/bcrypt@v0.4.1/mod.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -49,8 +48,8 @@ Deno.serve(async (req) => {
       return json({ error: 'Invalid email or password.' }, 401);
     }
 
-    // ── Verify password ───────────────────────────────────────
-    const valid = await bcrypt.compare(password, user.password_hash);
+    // ── Verify password (PBKDF2) ──────────────────────────────
+    const valid = await verifyPassword(password, user.password_hash);
     if (!valid) {
       return json({ error: 'Invalid email or password.' }, 401);
     }
@@ -63,8 +62,7 @@ Deno.serve(async (req) => {
       .eq('status', 'active');
 
     const products = (subs ?? []).map((s) => s.product_slug);
-    // Highest tier wins: if any sub is 'pro', user is pro
-    const tier = (subs ?? []).some((s) => s.tier === 'pro') ? 'pro' : 'free';
+    const tier     = (subs ?? []).some((s) => s.tier === 'pro') ? 'pro' : 'free';
 
     // ── Issue JWT ─────────────────────────────────────────────
     const token = await mintJWT(user.id, user.email, tier, products);
@@ -85,6 +83,31 @@ Deno.serve(async (req) => {
     return json({ error: 'Internal server error.' }, 500);
   }
 });
+
+// ── Helpers ───────────────────────────────────────────────────
+
+/**
+ * Verify a password against a stored "saltHex:hashHex" string produced by fw-signup.
+ * Uses PBKDF2-SHA256 with the same parameters.
+ */
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  try {
+    const [saltHex, hashHex] = stored.split(':');
+    if (!saltHex || !hashHex) return false;
+    const fromHex = (h: string) => new Uint8Array(h.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+    const salt = fromHex(saltHex);
+    const enc  = new TextEncoder();
+    const key  = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
+      key, 256,
+    );
+    const newHex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return newHex === hashHex;
+  } catch {
+    return false;
+  }
+}
 
 async function mintJWT(
   userId: string,
