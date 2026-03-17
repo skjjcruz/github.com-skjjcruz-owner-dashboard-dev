@@ -12,10 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
           version: latest
 
@@ -32,3 +33,15 @@ jobs:
 
       - name: Deploy ai-analyze function
         run: supabase functions deploy ai-analyze --project-ref sxshiqyxhhifvtfqawbq
+
+      - name: Deploy fw-signup function
+        run: supabase functions deploy fw-signup --project-ref sxshiqyxhhifvtfqawbq
+
+      - name: Deploy fw-signin function
+        run: supabase functions deploy fw-signin --project-ref sxshiqyxhhifvtfqawbq
+
+      - name: Deploy fw-create-checkout function
+        run: supabase functions deploy fw-create-checkout --project-ref sxshiqyxhhifvtfqawbq
+
+      - name: Deploy fw-stripe-webhook function
+        run: supabase functions deploy fw-stripe-webhook --project-ref sxshiqyxhhifvtfqawbq
