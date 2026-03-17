@@ -1,23 +1,22 @@
 /**
- * fw-signup — Fantasy Wars email registration (v2)
+ * fw-signup — Fantasy Wars email registration
  *
  * POST /functions/v1/fw-signup
  * Body: { email, password, displayName?, productSlug? }
  *
  * Returns: { token, user: { id, email, displayName } }
  *
- * Required secrets:
- *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+ * Uses Web Crypto PBKDF2 for password hashing (no external deps).
+ * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { create, getNumericDate } from 'https://deno.land/x/djwt@v3.0.2/mod.ts';
-import * as bcrypt from 'https://deno.land/x/bcrypt@v0.4.1/mod.ts';
 
-const SUPABASE_URL            = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_KEY    = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const JWT_SECRET              = Deno.env.get('SUPABASE_JWT_SECRET')!;
-const TOKEN_TTL_SECONDS       = 60 * 60 * 24 * 7; // 7 days
+const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const JWT_SECRET           = Deno.env.get('SUPABASE_JWT_SECRET')!;
+const TOKEN_TTL_SECONDS    = 60 * 60 * 24 * 7; // 7 days
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -56,8 +55,9 @@ Deno.serve(async (req) => {
       return json({ error: 'An account with this email already exists.' }, 409);
     }
 
-    // ── Hash password + create user ───────────────────────────
-    const passwordHash = await bcrypt.hash(password, 12);
+    // ── Hash password (PBKDF2 via Web Crypto — no external deps) ─
+    const passwordHash = await hashPassword(password);
+
     const { data: newUser, error: insertErr } = await admin
       .from('app_users')
       .insert({
@@ -102,6 +102,19 @@ Deno.serve(async (req) => {
 });
 
 // ── Helpers ───────────────────────────────────────────────────
+
+/** PBKDF2-SHA256 with a random 16-byte salt. Stored as "saltHex:hashHex". */
+async function hashPassword(password: string): Promise<string> {
+  const enc  = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key  = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
+    key, 256,
+  );
+  const toHex = (buf: Uint8Array) => Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `${toHex(salt)}:${toHex(new Uint8Array(bits))}`;
+}
 
 async function mintJWT(
   userId: string,
