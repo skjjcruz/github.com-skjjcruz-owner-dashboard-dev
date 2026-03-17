@@ -20,7 +20,9 @@ jobs:
           version: latest
 
       - name: Set JWT secret
-        run: supabase secrets set SUPABASE_JWT_SECRET=${{ secrets.SUPABASE_JWT_SECRET }} --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase secrets set SUPABASE_JWT_SECRET="$SUPABASE_JWT_SECRET" --project-ref sxshiqyxhhifvtfqawbq
+        env:
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
 
       - name: Deploy get-session-token function
         run: supabase functions deploy get-session-token --project-ref sxshiqyxhhifvtfqawbq
