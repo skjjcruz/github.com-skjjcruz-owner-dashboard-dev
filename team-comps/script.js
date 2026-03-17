@@ -446,7 +446,7 @@ function playerThumbImg(playerId, size) {
   return img;
 }
 
-function buildPlayerCellEl(nameText, url, phoneLines = [], playerId = "") {
+function buildPlayerCellEl(nameText, url, phoneLines = [], playerId = "", nflTeam = "") {
   // phoneLines: array of strings (already formatted) to show under the name
   const wrap = document.createElement("div");
   wrap.style.display = "flex";
@@ -454,7 +454,7 @@ function buildPlayerCellEl(nameText, url, phoneLines = [], playerId = "") {
   wrap.style.gap = "4px";
   wrap.style.minWidth = "0";
 
-  // Name row: headshot + anchor side-by-side
+  // Name row: headshot + (name + team stacked) side-by-side
   const nameRow = document.createElement("div");
   nameRow.style.display = "flex";
   nameRow.style.alignItems = "center";
@@ -462,6 +462,12 @@ function buildPlayerCellEl(nameText, url, phoneLines = [], playerId = "") {
   nameRow.style.minWidth = "0";
 
   if (playerId) nameRow.appendChild(playerThumbImg(playerId, 24));
+
+  const textCol = document.createElement("div");
+  textCol.style.display = "flex";
+  textCol.style.flexDirection = "column";
+  textCol.style.overflow = "hidden";
+  textCol.style.minWidth = "0";
 
   const a = document.createElement("a");
   a.textContent = nameText || "";
@@ -476,8 +482,17 @@ function buildPlayerCellEl(nameText, url, phoneLines = [], playerId = "") {
   a.style.overflow = "hidden";
   a.style.textOverflow = "ellipsis";
   a.style.whiteSpace = "nowrap";
+  textCol.appendChild(a);
 
-  nameRow.appendChild(a);
+  if (nflTeam) {
+    const teamSpan = document.createElement("span");
+    teamSpan.textContent = nflTeam;
+    teamSpan.style.fontSize = "10px";
+    teamSpan.style.opacity = "0.5";
+    textCol.appendChild(teamSpan);
+  }
+
+  nameRow.appendChild(textCol);
   wrap.appendChild(nameRow);
 
   if (phoneLines.length) {
@@ -885,7 +900,7 @@ function renderSingleRoster(tbody, roster, ownerId, placeholderText) {
         : [];
 
       const playerEl = phone
-        ? buildPlayerCellEl(nameText, url, phoneLines, p.player_id)
+        ? buildPlayerCellEl(nameText, url, phoneLines, p.player_id, p.team || "")
         : (() => {
             const wrap = document.createElement("div");
             wrap.style.display = "flex";
@@ -895,6 +910,12 @@ function renderSingleRoster(tbody, roster, ownerId, placeholderText) {
             wrap.style.overflow = "hidden";
 
             wrap.appendChild(playerThumbImg(p.player_id, 24));
+
+            const textWrap = document.createElement("div");
+            textWrap.style.display = "flex";
+            textWrap.style.flexDirection = "column";
+            textWrap.style.overflow = "hidden";
+            textWrap.style.minWidth = "0";
 
             const a = document.createElement("a");
             a.textContent = nameText;
@@ -908,7 +929,17 @@ function renderSingleRoster(tbody, roster, ownerId, placeholderText) {
             a.style.overflow = "hidden";
             a.style.textOverflow = "ellipsis";
             a.style.whiteSpace = "nowrap";
-            wrap.appendChild(a);
+            textWrap.appendChild(a);
+
+            if (p.team) {
+              const teamSpan = document.createElement("span");
+              teamSpan.textContent = p.team;
+              teamSpan.style.fontSize = "11px";
+              teamSpan.style.opacity = "0.5";
+              textWrap.appendChild(teamSpan);
+            }
+
+            wrap.appendChild(textWrap);
             return wrap;
           })();
 
