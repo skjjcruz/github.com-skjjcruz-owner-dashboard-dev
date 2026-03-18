@@ -21,6 +21,9 @@ jobs:
         with:
           version: latest
 
+      - name: Set JWT secret
+        run: supabase secrets set SUPABASE_JWT_SECRET="${{ secrets.SUPABASE_JWT_SECRET }}" --project-ref sxshiqyxhhifvtfqawbq
+
       - name: Apply database migrations
         # Applies migration via Supabase Management API.
         # continue-on-error keeps function deploys running even if migration

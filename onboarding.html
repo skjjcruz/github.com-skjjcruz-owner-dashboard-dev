@@ -804,16 +804,11 @@
     // ═══════════════════════════════════════════════════════
     // CONFIG
     // ─────────────────────────────────────────────────────
-    // To enable real Stripe payments:
-    //   1. Go to stripe.com → Products → create recurring prices:
-    //        Standard: $9.95/mo  →  STRIPE_STANDARD_LINK
-    //        Pro:     $14.95/mo  →  STRIPE_PRO_LINK
-    //   2. Go to Payment Links → create a link for each price
-    //   3. Set the success URL to: https://YOUR_SITE/onboarding.html?payment=success
-    //   4. Replace the placeholders below with your Payment Link URLs
+    // Stripe payments are handled via the fw-create-checkout
+    // Supabase Edge Function. Set these secrets in Supabase:
+    //   STRIPE_SECRET_KEY
+    //   STRIPE_PRICE_DYNAST_HQ_PRO   (price_... from Stripe Dashboard)
     // ═══════════════════════════════════════════════════════
-    const STRIPE_STANDARD_LINK = 'YOUR_STRIPE_STANDARD_LINK_HERE';
-    const STRIPE_PRO_LINK      = 'YOUR_STRIPE_PRO_LINK_HERE';
 
     // ── State ──────────────────────────────────────────────
     let selectedPlan = null;
@@ -843,6 +838,12 @@
         selectedPlan = savedPlan;
         patchProfile({ tier: savedPlan });
         showStep('2b'); // optional AI key step after payment
+        return;
+      }
+      if (params.get('payment') === 'cancel') {
+        selectedPlan = 'pro';
+        patchProfile({ tier: 'pro' });
+        showStep(2);
         return;
       }
 
@@ -943,29 +944,54 @@
       showStep(2);
     }
 
-    // ── Payment ────────────────────────────────────────────
-    function goToStripe() {
+    // ── Payment (Pro) ──────────────────────────────────────
+    async function goToStripe() {
       const alertEl = document.getElementById('alertPayment');
-      const link = selectedPlan === 'pro' ? STRIPE_PRO_LINK : STRIPE_STANDARD_LINK;
-      const isConfigured = link && !link.includes('YOUR_STRIPE');
+      const btn     = document.getElementById('stripeBtn');
 
-      if (!isConfigured) {
-        // Stripe not yet configured — grant beta access and move on
-        alertEl.className = 'alert alert-info show';
-        alertEl.textContent = '⚡ Payment gateway coming soon — your access is activated in beta. Enjoy full access while we finalise billing.';
-        patchProfile({ tier: selectedPlan, betaAccess: true });
-        document.getElementById('stripeBtn').disabled = true;
-        setTimeout(() => showStep('2b'), 2200);
+      // Get JWT from the new email-based session
+      let token;
+      try {
+        const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        token = session?.token;
+      } catch {}
+
+      if (!token) {
+        alertEl.className = 'alert alert-error show';
+        alertEl.textContent = 'Session expired. Please sign in again.';
         return;
       }
 
-      // Redirect to Stripe Payment Link
-      const username = getUsername();
-      const returnUrl = encodeURIComponent(
-        window.location.origin + window.location.pathname + '?payment=success'
-      );
-      window.location.href =
-        `${link}?client_reference_id=${encodeURIComponent(username)}&success_url=${returnUrl}`;
+      btn.disabled    = true;
+      btn.textContent = 'Redirecting to Checkout…';
+      alertEl.className = 'alert';
+
+      try {
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/fw-create-checkout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type':  'application/json',
+          },
+          body: JSON.stringify({
+            productSlug: 'dynast_hq',
+            successUrl:  window.location.origin + window.location.pathname + '?payment=success',
+            cancelUrl:   window.location.origin + window.location.pathname + '?payment=cancel',
+          }),
+        });
+
+        const data = await resp.json();
+        if (!resp.ok || !data.checkoutUrl) {
+          throw new Error(data.error || 'Failed to create checkout session.');
+        }
+
+        window.location.href = data.checkoutUrl;
+      } catch (err) {
+        alertEl.className = 'alert alert-error show';
+        alertEl.textContent = err.message || 'Something went wrong. Please try again.';
+        btn.disabled    = false;
+        btn.textContent = 'Proceed to Secure Checkout →';
+      }
     }
 
     function skipToAI() {
