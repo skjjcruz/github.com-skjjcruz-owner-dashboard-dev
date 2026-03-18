@@ -510,7 +510,7 @@
                 <span style="font-size:0.68rem;font-weight:600;color:var(--white);">War Room</span>
                 <span style="font-size:0.58rem;color:var(--gold);">Live Now</span>
               </label>
-              <label id="spDynastyHQ" onclick="selectStandardProduct('dynasty_hq')" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:0.25rem;padding:0.5rem 0.4rem;border:2px solid rgba(192,192,192,0.15);border-radius:8px;cursor:not-allowed;opacity:0.45;">
+              <label id="spDynastyHQ" onclick="selectStandardProduct('dynast_hq')" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:0.25rem;padding:0.5rem 0.4rem;border:2px solid rgba(192,192,192,0.15);border-radius:8px;cursor:not-allowed;opacity:0.45;">
                 <span style="font-size:1.1rem;">🏛️</span>
                 <span style="font-size:0.68rem;font-weight:600;color:var(--white);">Dynasty HQ</span>
                 <span style="font-size:0.58rem;color:var(--muted);">Coming Soon</span>
@@ -930,7 +930,7 @@
     }
 
     function selectStandardProduct(product) {
-      if (product === 'dynasty_hq') return; // Coming Soon — not selectable
+      if (product === 'dynast_hq') return; // Coming Soon — not selectable
       selectedStandardProduct = product;
       document.getElementById('spWarRoom').style.borderColor = product === 'war_room' ? 'var(--gold)' : 'rgba(212,175,55,0.35)';
       document.getElementById('spWarRoom').style.background  = product === 'war_room' ? 'rgba(212,175,55,0.12)' : 'rgba(212,175,55,0.06)';
@@ -974,7 +974,7 @@
             'Content-Type':  'application/json',
           },
           body: JSON.stringify({
-            productSlug: 'dynast_hq',
+            productSlug: selectedPlan === 'pro' ? 'bundle' : selectedStandardProduct,
             successUrl:  window.location.origin + window.location.pathname + '?payment=success',
             cancelUrl:   window.location.origin + window.location.pathname + '?payment=cancel',
           }),

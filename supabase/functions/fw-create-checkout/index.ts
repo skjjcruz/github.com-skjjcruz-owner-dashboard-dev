@@ -8,15 +8,16 @@
  * Returns: { checkoutUrl }
  *
  * Required secrets:
- *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+ *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
  *   STRIPE_SECRET_KEY
- *   STRIPE_PRICE_WAR_ROOM_PRO   (Stripe Price ID for War Room Pro)
- *   STRIPE_PRICE_BUNDLE_PRO     (Stripe Price ID for the Bundle, optional)
+ *   STRIPE_PRICE_WAR_ROOM         (Fantasy War Room — price_1TCSAPBzhLLVa13Q3A2l8DP2)
+ *   STRIPE_PRICE_DYNASTY_HQ       (Dynasty HQ      — price_1TCSJZBzhLLVa13Qitxwr8sh)
+ *   STRIPE_PRICE_FANTASY_WARS_PRO (Pro Bundle       — price_1TCSNSBzhLLVa13QnT3hsQLC)
  *
- * To get Stripe Price IDs:
- *   1. Create products in Stripe Dashboard → Products
- *   2. Copy the Price ID (price_...) for each monthly price
- *   3. Run: supabase secrets set STRIPE_PRICE_WAR_ROOM_PRO=price_...
+ * To set Price IDs:
+ *   supabase secrets set STRIPE_PRICE_WAR_ROOM=price_...
+ *   supabase secrets set STRIPE_PRICE_DYNASTY_HQ=price_...
+ *   supabase secrets set STRIPE_PRICE_FANTASY_WARS_PRO=price_...
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';

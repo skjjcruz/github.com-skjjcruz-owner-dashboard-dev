@@ -124,9 +124,9 @@ create trigger trg_subscriptions_updated_at
 --        supabase secrets set STRIPE_SECRET_KEY=sk_live_...
 --        supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
 --   2. Set Stripe Price IDs (from Stripe Dashboard → Products):
---        supabase secrets set STRIPE_PRICE_WAR_ROOM_PRO=price_...   ($9.99/mo)
---        supabase secrets set STRIPE_PRICE_DYNAST_HQ_PRO=price_...  ($9.99/mo, when live)
---        supabase secrets set STRIPE_PRICE_BUNDLE_PRO=price_...
+--        supabase secrets set STRIPE_PRICE_WAR_ROOM=price_1TCSAPBzhLLVa13Q3A2l8DP2
+--        supabase secrets set STRIPE_PRICE_DYNASTY_HQ=price_1TCSJZBzhLLVa13Qitxwr8sh
+--        supabase secrets set STRIPE_PRICE_FANTASY_WARS_PRO=price_1TCSNSBzhLLVa13QnT3hsQLC
 --   3. Deploy new Edge Functions:
 --        supabase functions deploy fw-signup
 --        supabase functions deploy fw-signin

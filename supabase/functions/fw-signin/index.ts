@@ -65,7 +65,12 @@ Deno.serve(async (req) => {
       return json({ error: `Subscriptions query failed: ${subsErr.message} (${subsErr.code})` }, 500);
     }
 
-    const products = (subs ?? []).map((s) => s.product_slug);
+    // Expand 'bundle' → both individual products so app access checks work
+    const products = [...new Set(
+      (subs ?? []).flatMap((s) =>
+        s.product_slug === 'bundle' ? ['war_room', 'dynast_hq'] : [s.product_slug]
+      )
+    )];
     const tier     = (subs ?? []).some((s) => s.tier === 'pro') ? 'pro' : 'free';
 
     // ── Issue JWT ─────────────────────────────────────────────
