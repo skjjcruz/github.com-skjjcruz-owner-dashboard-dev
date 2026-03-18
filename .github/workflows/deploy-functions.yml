@@ -22,9 +22,7 @@ jobs:
           version: latest
 
       - name: Set JWT secret
-        run: supabase secrets set SUPABASE_JWT_SECRET="$SUPABASE_JWT_SECRET" --project-ref sxshiqyxhhifvtfqawbq
-        env:
-          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+        run: supabase secrets set SUPABASE_JWT_SECRET="${{ secrets.SUPABASE_JWT_SECRET }}" --project-ref sxshiqyxhhifvtfqawbq
 
       - name: Apply database migrations
         run: supabase db push --project-ref sxshiqyxhhifvtfqawbq
