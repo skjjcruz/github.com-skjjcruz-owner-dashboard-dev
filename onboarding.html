@@ -472,8 +472,9 @@
       <div class="step-dot" data-step="2"></div>
       <div class="step-dot" data-step="3"></div>
       <div class="step-dot" data-step="4"></div>
+      <div class="step-dot" data-step="5"></div>
     </div>
-    <div class="step-label" id="stepLabel">Step 1 of 4</div>
+    <div class="step-label" id="stepLabel">Step 1 of 5</div>
   </header>
 
   <main class="page-wrap">
@@ -482,7 +483,7 @@
          STEP 1 — CHOOSE YOUR PLAN
     ═══════════════════════════════════════════════════════ -->
     <div class="step-panel active" id="step1">
-      <p class="step-eyebrow">Step 1 of 4</p>
+      <p class="step-eyebrow">Step 1 of 5</p>
       <h1 class="step-heading">Choose Your<br><span style="color:var(--gold)">Arsenal</span></h1>
       <p class="step-sub">Pick the plan that fits how you play. You can upgrade anytime from your settings.</p>
 
@@ -543,7 +544,7 @@
          STEP 2a — PAYMENT (Pro)
     ═══════════════════════════════════════════════════════ -->
     <div class="step-panel" id="step2pay">
-      <p class="step-eyebrow">Step 2 of 4</p>
+      <p class="step-eyebrow">Step 2 of 5</p>
       <h1 class="step-heading">Unlock<br><span style="color:var(--gold)">Dynasty HQ Pro</span></h1>
       <p class="step-sub">Full AI suite powered by Claude on our servers. No API key needed — we handle everything.</p>
 
@@ -567,7 +568,7 @@
          STEP 2b — CLAUDE API TOKEN (Power)
     ═══════════════════════════════════════════════════════ -->
     <div class="step-panel" id="step2token">
-      <p class="step-eyebrow">Step 2 of 4</p>
+      <p class="step-eyebrow">Step 2 of 5</p>
       <h1 class="step-heading">Connect Your<br><span style="color:var(--gold)">AI Engine</span></h1>
       <p class="step-sub">Dynasty HQ Power runs on your own Claude API key — giving you full control and zero subscription fees.</p>
 
@@ -615,7 +616,7 @@
          STEP 3 — FANTASY PLATFORMS
     ═══════════════════════════════════════════════════════ -->
     <div class="step-panel" id="step3">
-      <p class="step-eyebrow">Step 3 of 4</p>
+      <p class="step-eyebrow">Step 3 of 5</p>
       <h1 class="step-heading">Your<br><span style="color:var(--gold)">Battlegrounds</span></h1>
       <p class="step-sub">Which fantasy platforms do you play on? We'll prioritize pulling in your leagues from these sites.</p>
 
@@ -712,10 +713,58 @@
 
 
     <!-- ═══════════════════════════════════════════════════════
-         STEP 4 — ALL SET
+         STEP 4 — SLEEPER CREDENTIALS
+    ═══════════════════════════════════════════════════════ -->
+    <div class="step-panel" id="step4creds">
+      <p class="step-eyebrow">Step 4 of 5</p>
+      <h1 class="step-heading">Connect<br><span style="color:var(--gold)">Sleeper</span></h1>
+      <p class="step-sub">Enter your Sleeper username so we can pull in your leagues and historical data.</p>
+
+      <div class="token-card">
+        <div class="token-perks">
+          <div class="token-perk">
+            <span class="token-perk-icon">😴</span>
+            <span><strong style="color:var(--white)">Your Leagues</strong> — we'll automatically import all your active and past Sleeper leagues.</span>
+          </div>
+          <div class="token-perk">
+            <span class="token-perk-icon">📊</span>
+            <span><strong style="color:var(--white)">Historical Data</strong> — past drafts, trades, and standings to power your War Room analytics.</span>
+          </div>
+          <div class="token-perk">
+            <span class="token-perk-icon">🔒</span>
+            <span><strong style="color:var(--white)">Read-Only &amp; Passwordless</strong> — Sleeper's public API only needs your username. No password required.</span>
+          </div>
+        </div>
+
+        <label class="form-label" for="sleeperUsernameInput">Sleeper Username</label>
+        <input
+          class="form-input"
+          type="text"
+          id="sleeperUsernameInput"
+          placeholder="Your Sleeper username"
+          autocomplete="username"
+          spellcheck="false"
+        >
+        <p class="token-hint">
+          This is your <strong>username</strong> on <a href="https://sleeper.com" target="_blank" rel="noopener">Sleeper</a> — not your email address.<br>
+          We use Sleeper's public API to read your league data.
+        </p>
+        <div class="security-note">
+          🔒 <span>Your Sleeper data is fetched directly from Sleeper's public API. We never store your Sleeper password.</span>
+        </div>
+      </div>
+
+      <div id="alertSleeper" class="alert"></div>
+      <button class="cta-btn" id="sleeperBtn" onclick="saveSleeper()">Connect Sleeper →</button>
+      <span class="skip-link" onclick="skipSleeper()">Skip — I'll connect later in Settings</span>
+    </div>
+
+
+    <!-- ═══════════════════════════════════════════════════════
+         STEP 5 — ALL SET
     ═══════════════════════════════════════════════════════ -->
     <div class="step-panel" id="step4">
-      <p class="step-eyebrow">Step 4 of 4</p>
+      <p class="step-eyebrow">Step 5 of 5</p>
       <div class="done-icon">⚔️</div>
       <h1 class="step-heading">You're In<br><span style="color:var(--gold)">The War Room</span></h1>
       <p class="step-sub">Your command center is ready. Here's your loadout — you can change everything anytime from Settings.</p>
@@ -811,8 +860,10 @@
           showStep(3);
           return;
         }
+      } else if (n === 4) {
+        document.getElementById('step4creds').classList.add('active');
       } else {
-        const panelMap = { 1: 'step1', 3: 'step3', 4: 'step4' };
+        const panelMap = { 1: 'step1', 3: 'step3', 5: 'step4' };
         const panel = panelMap[n];
         if (panel) document.getElementById(panel).classList.add('active');
       }
@@ -821,13 +872,13 @@
     }
 
     function updateProgress(n) {
-      const dotIndex = (n === 2) ? 1 : (n - 1);
+      const dotIndex = n - 1;
       document.querySelectorAll('.step-dot').forEach((d, i) => {
         d.classList.remove('active', 'done');
-        if (i < dotIndex)      d.classList.add('done');
+        if (i < dotIndex)        d.classList.add('done');
         else if (i === dotIndex) d.classList.add('active');
       });
-      const labels = { 1: 'Step 1 of 4', 2: 'Step 2 of 4', 3: 'Step 3 of 4', 4: 'Step 4 of 4' };
+      const labels = { 1: 'Step 1 of 5', 2: 'Step 2 of 5', 3: 'Step 3 of 5', 4: 'Step 4 of 5', 5: 'Step 5 of 5' };
       document.getElementById('stepLabel').textContent = labels[n] || labels[1];
     }
 
@@ -921,8 +972,68 @@
 
     function goStep4() {
       patchProfile({ platforms: Array.from(selectedPlatforms) });
-      buildSummary();
+      // Pre-fill Sleeper username if already saved
+      const saved = getProfile();
+      if (saved.sleeperUsername) {
+        document.getElementById('sleeperUsernameInput').value = saved.sleeperUsername;
+      }
       showStep(4);
+    }
+
+    // ── Sleeper credentials ────────────────────────────────
+    async function saveSleeper() {
+      const username = document.getElementById('sleeperUsernameInput').value.trim();
+      const alertEl  = document.getElementById('alertSleeper');
+      const btn      = document.getElementById('sleeperBtn');
+
+      if (!username) {
+        alertEl.className = 'alert alert-error show';
+        alertEl.textContent = 'Please enter your Sleeper username.';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Verifying…';
+
+      try {
+        const resp = await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(username)}`);
+        const data = resp.ok ? await resp.json() : null;
+
+        if (!data || !data.user_id) {
+          alertEl.className = 'alert alert-error show';
+          alertEl.textContent = 'Sleeper username not found. Check spelling and try again.';
+          btn.disabled = false;
+          btn.textContent = 'Connect Sleeper →';
+          return;
+        }
+
+        // Save for app compatibility
+        localStorage.setItem('od_locked_username_v2', username);
+        const existingAuth = JSON.parse(localStorage.getItem('od_auth_v1') || '{}');
+        localStorage.setItem('od_auth_v1', JSON.stringify({
+          ...existingAuth, username, createdAt: new Date().toISOString()
+        }));
+        patchProfile({ sleeperUsername: username, sleeperUserId: data.user_id });
+
+        alertEl.className = 'alert alert-success show';
+        alertEl.textContent = `✓ Connected as ${username}!`;
+        setTimeout(() => goStep5(), 800);
+
+      } catch {
+        alertEl.className = 'alert alert-error show';
+        alertEl.textContent = 'Network error. Check your connection and try again.';
+        btn.disabled = false;
+        btn.textContent = 'Connect Sleeper →';
+      }
+    }
+
+    function skipSleeper() {
+      goStep5();
+    }
+
+    function goStep5() {
+      buildSummary();
+      showStep(5);
     }
 
     // ── Summary ────────────────────────────────────────────
@@ -942,6 +1053,7 @@
         .join(', ');
 
       const tokenSaved = !!localStorage.getItem('od_claude_token');
+      const sleeperUser = profile.sleeperUsername || null;
 
       let html = `
         <div class="summary-card">
@@ -955,6 +1067,10 @@
         <div class="summary-card">
           <div class="summary-label">Platforms Selected</div>
           <div class="summary-value" style="font-size:0.82rem">${escHtml(platformList)}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">Sleeper Account</div>
+          <div class="summary-value ${sleeperUser ? '' : 'muted'}">${sleeperUser ? escHtml(sleeperUser) + ' ✓' : 'Not connected — add in Settings'}</div>
         </div>
       `;
 
