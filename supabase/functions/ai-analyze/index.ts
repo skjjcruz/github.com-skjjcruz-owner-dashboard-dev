@@ -322,6 +322,12 @@ function buildMockDraftPrompt(ctx: any): string {
     const slotsStr = (ctx.draftSlots || []).map((o: any) => {
         let line = `Slot ${o.slot}: ${o.name} | Trade DNA: ${o.dna}`;
         if (o.draftDna)       line += ` | Draft Label: ${o.draftDna}`;
+        // Show QB roster count explicitly — 0 QBs is a franchise emergency
+        if (o.qbCount !== null && o.qbCount !== undefined) {
+            line += o.qbCount === 0
+                ? ` | 🚨 QBs on roster: 0 — QB IS A FRANCHISE EMERGENCY`
+                : ` | QBs on roster: ${o.qbCount}`;
+        }
         if (o.roundProfile)   line += `\n         Round splits: ${o.roundProfile}`;
         else if (o.draftTendency) line += ` (${o.draftTendency})`;
         // Flag if they have unusually high early-round defensive picks
@@ -419,18 +425,22 @@ DNA DRAFT BEHAVIOR (apply AFTER positional rules above):
 • Unknown       → Balanced BPA among offensive players with mild positional awareness.
 
 CRITICAL SIMULATION RULES:
-1. ★ QB EMERGENCY OVERRIDE — evaluated BEFORE every single pick, overrides ALL other rules:
-   Step 1: Does this owner have QB listed in their Needs?
-   Step 2: If YES → scan the top 5 available players. Is any of them a QB?
-   Step 3: If YES → the owner MUST select that QB, EVEN IF a higher-ranked RB or WR is available.
+1. ★ QB FRANCHISE EMERGENCY — check this FIRST before every pick, overrides everything else:
+   Look at the owner profile above. Does it say "🚨 QBs on roster: 0 — QB IS A FRANCHISE EMERGENCY"?
+   OR does their Needs list include "QB(CRITICAL-0)"?
+   If EITHER is true → this owner has ZERO quarterbacks. That is a dynasty-ending hole.
 
-   EXACT SCENARIO THIS RULE COVERS (simulate this correctly):
-     Owner picking #1 overall has 0 QBs. Available pool: #1 Ashton Jeanty (RB), #2 Shedeur Sanders (QB).
-     ✅ CORRECT: Owner takes Shedeur Sanders (QB) — takes the #2 player over the #1 ranked RB.
-     ❌ WRONG:   Owner takes Ashton Jeanty (RB) — skipping the top QB is a catastrophic dynasty mistake.
-   The #1 ranked player being a non-QB does NOT exempt the owner from this rule.
-   DNA labels like "RB-Heavy" or "WR-First" do NOT override this rule when QB is a critical Need.
-   An owner with 0 QBs who passes on a top-5 QB is making a franchise-destroying error — simulate smart owners.
+   RULE: An owner with 0 QBs MUST take the best available QB if one is ranked #1–5 in the current pool.
+   This is NOT optional. It is NOT overridden by DNA. "RB-Heavy" DNA describes historical preference,
+   not a license to skip the only position that cannot be ignored in dynasty.
+
+   EXACT FAILING SCENARIO (you must get this right):
+     Slot 1 owner: "🚨 QBs on roster: 0 — QB IS A FRANCHISE EMERGENCY"
+     Available pool: #1 Ashton Jeanty (RB, Tier 1) | #2 Shedeur Sanders (QB, Tier 1)
+     ✅ CORRECT pick: Shedeur Sanders (QB) — takes #2 over #1 because 0 QBs = emergency
+     ❌ WRONG pick:   Ashton Jeanty (RB) — ignoring a zero-QB roster is a simulation failure
+   The same owner then picks again at slot 2 (snake). With QB secured, they take the best remaining skill player.
+   DNA and BPA apply normally to every pick AFTER the QB need is resolved.
 
 2. Each player can only be selected ONCE — track every pick and never repeat a player name
 3. Process picks in the correct draft order based on DRAFT TYPE above
