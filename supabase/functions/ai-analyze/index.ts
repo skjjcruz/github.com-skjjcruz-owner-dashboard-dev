@@ -616,40 +616,43 @@ Deno.serve(async (req) => {
 
         const isMockDraft = type === 'mock_draft';
 
-        // mock_draft must return structured JSON for pick parsing — use non-streaming path.
-        // All other types stream tokens so the UI can render progressively.
+        // mock_draft streams tokens like all other types so the connection stays
+        // alive and the browser never times out. The client collects the full
+        // stream and parses the JSON array once the stream closes.
         if (isMockDraft) {
-            const message = await anthropic.messages.create({
+            const stream = await anthropic.messages.stream({
                 model: 'claude-opus-4-6',
-                max_tokens: 16000,
+                max_tokens: 8192,
                 system: 'You are a dynasty fantasy football draft simulator. Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no prose before or after. Start your response with [ and end with ]. Never repeat a player. Track all prior picks carefully so each player is selected at most once.',
                 messages: [{ role: 'user', content: userPrompt }],
             });
-            const analysis = (message.content[0] as any).text as string;
-            const stopReason = (message as any).stop_reason;
-            if (stopReason === 'max_tokens') {
-                return new Response(
-                    JSON.stringify({ error: 'Draft simulation response was too long and got cut off. Try reducing the number of rounds or owners.' }),
-                    { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-                );
-            }
-            let cleanAnalysis = analysis.trim();
-            if (cleanAnalysis.startsWith('```')) {
-                cleanAnalysis = cleanAnalysis.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-            }
-            let picks: any[] | undefined;
-            try {
-                picks = JSON.parse(cleanAnalysis);
-            } catch {
-                const match = cleanAnalysis.match(/\[[\s\S]*\]/);
-                if (match) {
-                    try { picks = JSON.parse(match[0]); } catch { /* leave undefined */ }
-                }
-            }
-            return new Response(
-                JSON.stringify({ analysis, ...(picks ? { picks } : {}) }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
+
+            const encoder = new TextEncoder();
+            const readable = new ReadableStream({
+                async start(controller) {
+                    try {
+                        for await (const chunk of stream) {
+                            if (
+                                chunk.type === 'content_block_delta' &&
+                                chunk.delta.type === 'text_delta'
+                            ) {
+                                controller.enqueue(encoder.encode(chunk.delta.text));
+                            }
+                        }
+                    } finally {
+                        controller.close();
+                    }
+                },
+            });
+
+            return new Response(readable, {
+                headers: {
+                    ...corsHeaders,
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'X-Accel-Buffering': 'no',
+                    'Cache-Control': 'no-cache',
+                },
+            });
         }
 
         // Streaming path — tokens arrive at the client as they are generated.

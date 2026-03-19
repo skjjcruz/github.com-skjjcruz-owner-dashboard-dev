@@ -971,14 +971,22 @@
             body: JSON.stringify({ type: 'mock_draft', context: ctx }),
           });
           if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error || `HTTP ${resp.status}`); }
-          const result = await resp.json();
-          const picks = result.picks || (() => {
-            let raw = (result.analysis || '').trim();
-            if (raw.startsWith('```')) raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-            try { return JSON.parse(raw); }
-            catch { const m = raw.match(/\[[\s\S]*\]/); return m ? JSON.parse(m[0]) : null; }
-          })();
-          if (!picks?.length) throw new Error(`Draft simulation failed — AI response: "${String(result.analysis || '').slice(0, 120)}"`);
+          // Stream the response so the connection stays alive during long Opus generation.
+          // Collect all tokens into a single string, then parse the JSON array.
+          const reader = resp.body.getReader();
+          const decoder = new TextDecoder();
+          let raw = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            raw += decoder.decode(value, { stream: true });
+          }
+          raw = raw.trim();
+          if (raw.startsWith('```')) raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+          let picks = null;
+          try { picks = JSON.parse(raw); }
+          catch { const m = raw.match(/\[[\s\S]*\]/); if (m) { try { picks = JSON.parse(m[0]); } catch {} } }
+          if (!picks?.length) throw new Error(`Draft simulation failed — AI response: "${raw.slice(0, 120)}"`);
           // Clear the board and start fresh for mock
           setDraftPicks({});
           setMockResults(picks);
