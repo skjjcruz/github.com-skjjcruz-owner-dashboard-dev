@@ -833,9 +833,10 @@
         // Compute positional needs from roster counts; fall back to common dynasty needs
         function computeNeeds(userId) {
           const c = userPosCounts[userId];
-          if (!c) return ['QB', 'RB', 'WR']; // sensible default
+          if (!c) return ['QB(CRITICAL-0)', 'RB', 'WR']; // sensible default
           const needs = [];
-          if (c.QB < 2)  needs.push('QB');
+          if (c.QB === 0)     needs.push('QB(CRITICAL-0)');
+          else if (c.QB < 2) needs.push('QB');
           if (c.RB < 4)  needs.push('RB');
           if (c.WR < 4)  needs.push('WR');
           if (c.TE < 2)  needs.push('TE');
@@ -844,7 +845,7 @@
             if (c.DL < 2) needs.push('DL');
             if (c.DB < 2) needs.push('DB');
           }
-          return needs.slice(0, 4); // cap at 4 to keep prompt tight
+          return needs.slice(0, 5); // cap at 5 to keep prompt tight
         }
 
         // Build slot list + detect my slot — prefer draftSlotOwners (round 1), fall back to leagueUsers
@@ -863,6 +864,7 @@
             roundProfile:   draftDna?.roundProfile || null,
             earlyDefPct:    draftDna?.earlyDefPct ?? null,
             overallDefPct:  draftDna?.overallDefPct ?? null,
+            qbCount:        userPosCounts[ownerInfo.userId]?.QB ?? null,
             needs: computeNeeds(ownerInfo.userId),
           });
           if (ownerInfo.userId === sleeperUserId) detectedMySlot = slot;
@@ -884,6 +886,7 @@
               roundProfile:   draftDna?.roundProfile || null,
               earlyDefPct:    draftDna?.earlyDefPct ?? null,
               overallDefPct:  draftDna?.overallDefPct ?? null,
+              qbCount:        userPosCounts[u.user_id]?.QB ?? null,
               needs: computeNeeds(u.user_id),
             });
             if (u.user_id === sleeperUserId) detectedMySlot = slot;
