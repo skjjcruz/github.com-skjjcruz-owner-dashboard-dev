@@ -954,10 +954,59 @@ function getPlayerValue(pid, valueIndex) {
 // Max value for bar scale (top player ~9500 in FC)
 const MAX_VALUE = 10000;
 
-// Dynasty pick values by round (SuperFlex/2QB, 12-team)
-// These are representative mid-round values — a 1st is the most valuable non-player asset.
-const PICK_VALUES = { 1:5500, 2:2800, 3:1500, 4:900, 5:500, 6:250, 7:150 };
+// Dynasty pick values by round (SuperFlex/2QB) — fallback for picks with unknown slot.
+// Used when draft order hasn't been set yet (future picks, pre-season).
+const PICK_VALUES = { 1:5300, 2:1500, 3:565, 4:270, 5:150, 6:90, 7:55 };
 const PICK_COLORS  = { 1:'#D4AF37', 2:'#5DADE2', 3:'#2ECC71', 4:'#BB8FCE', 5:'#95A5A6', 6:'#7F8C8D', 7:'#6C7A7D' };
+
+// Slot-specific dynasty pick values (112-pick draft: 16 teams × 7 rounds).
+// Calibrated to historical dynasty production rates in 2QB/SuperFlex format.
+// Geometric decay within each round; each round opens just below the previous round's close.
+// Overall slot = (round - 1) * numTeams + slotInRound.
+const PICK_VALUES_BY_SLOT = {
+    //  R1 — elite prospects; 1.01 ≈ franchise-altering QB or top WR
+     1:9500,  2:8690,  3:7950,  4:7270,  5:6650,  6:6080,  7:5560,  8:5090,
+     9:4650, 10:4260, 11:3890, 12:3560, 13:3260, 14:2980, 15:2730, 16:2490,
+    //  R2 — solid depth prospects; 2.01 ≈ good starter upside
+    17:2380, 18:2220, 19:2080, 20:1940, 21:1810, 22:1690, 23:1580, 24:1470,
+    25:1380, 26:1280, 27:1200, 28:1120, 29:1050, 30: 980, 31: 910, 32: 850,
+    //  R3 — developmental prospects; high ceiling, uncertain floor
+    33: 815, 34: 770, 35: 730, 36: 695, 37: 660, 38: 625, 39: 595, 40: 560,
+    41: 535, 42: 505, 43: 480, 44: 455, 45: 430, 46: 410, 47: 390, 48: 370,
+    //  R4 — speculative; late-round value
+    49: 355, 50: 340, 51: 330, 52: 315, 53: 305, 54: 290, 55: 280, 56: 270,
+    57: 260, 58: 250, 59: 240, 60: 230, 61: 220, 62: 210, 63: 205, 64: 195,
+    //  R5 — roster filler / handcuff territory
+    65: 188, 66: 182, 67: 176, 68: 170, 69: 165, 70: 160, 71: 155, 72: 150,
+    73: 145, 74: 140, 75: 136, 76: 132, 77: 128, 78: 124, 79: 120, 80: 116,
+    //  R6 — near-minimum value
+    81: 111, 82: 108, 83: 105, 84: 102, 85:  99, 86:  96, 87:  93, 88:  90,
+    89:  87, 90:  85, 91:  82, 92:  80, 93:  78, 94:  76, 95:  74, 96:  72,
+    //  R7 — minimum dynasty value
+    97:  68, 98:  66, 99:  64,100:  62,101:  60,102:  58,103:  56,104:  54,
+   105:  52,106:  50,107:  48,108:  46,109:  44,110:  43,111:  41,112:  40,
+};
+
+// Given a pick's round and origin roster ID, compute the overall draft slot (1–N).
+// Uses waiver_position as draft-order proxy: position 1 = worst record = picks first.
+// Returns null if slot cannot be determined.
+function getPickOverallSlot(round, fromRosterId, allRosters) {
+    if (!allRosters || !allRosters.length || !fromRosterId) return null;
+    const numTeams = allRosters.length;
+    const roster = allRosters.find(r => String(r.roster_id) === String(fromRosterId));
+    if (!roster) return null;
+    const slotInRound = roster.settings?.waiver_position;
+    if (!slotInRound || slotInRound < 1 || slotInRound > numTeams) return null;
+    return (round - 1) * numTeams + slotInRound;
+}
+
+// Returns { value, slot } — slot is the overall pick number if determinable, else null.
+// Falls back to round-average value when slot is unknown.
+function resolvePickValue(round, fromRosterId, allRosters) {
+    const slot = getPickOverallSlot(round, fromRosterId, allRosters);
+    if (slot && PICK_VALUES_BY_SLOT[slot]) return { value: PICK_VALUES_BY_SLOT[slot], slot };
+    return { value: PICK_VALUES[round] || 100, slot: null };
+}
 
 // FAAB: dynasty value per $1 of FAAB budget remaining.
 // Full $1000 budget ≈ a mid 3rd-round pick (1500), so $1 ≈ 1.5 pts.
@@ -1956,11 +2005,14 @@ function TradeCalculator() {
             return sum + val;
         }, 0);
         const pickSum = pickIds.reduce((sum, pkId) => {
-            const round = Number(pkId.split('-')[2]); // "PICK-year-round-rosterId"
-            return sum + (PICK_VALUES[round] || 100);
+            const parts = pkId.split('-'); // "PICK-year-round-rosterId"
+            const round = Number(parts[2]);
+            const fromRosterId = parts[3];
+            const { value } = resolvePickValue(round, fromRosterId, allRosters);
+            return sum + value;
         }, 0);
         return playerSum + pickSum + Math.round(faab * FAAB_RATE);
-    }, [valueIndex, playersData]);
+    }, [valueIndex, playersData, allRosters]);
 
     // Sorted + filtered assessments for audit tab
     const sortedAssessments = useMemo(() => {
@@ -3236,7 +3288,10 @@ function TradeCalculator() {
                     {pickIds.map(pkId => {
                         const parts = pkId.split('-');
                         const yr = parts[1], rd = Number(parts[2]), fromRid = parts[3];
-                        const val = PICK_VALUES[rd] || 100;
+                        const { value: val, slot } = resolvePickValue(rd, fromRid, allRosters);
+                        const numTeams = allRosters.length || 16;
+                        const slotInRound = slot ? slot - (rd - 1) * numTeams : null;
+                        const slotLabel = slotInRound ? `${rd}.${String(slotInRound).padStart(2,'0')}` : null;
                         const pct = Math.round((val / MAX_VALUE) * 100);
                         const pickColor = PICK_COLORS[rd] || 'var(--silver)';
                         const via = ownerNameForRosterId(fromRid);
@@ -3247,6 +3302,7 @@ function TradeCalculator() {
                                 <span className="ta-pos-dot" style={{ background: pickColor }} />
                                 <span className="ta-player-name" style={{ flex:1, fontSize:'0.82rem', fontWeight:600 }}>
                                     {yr} {pickLabel(rd)}
+                                    {slotLabel && <span style={{ fontSize:'0.68rem', color: pickColor, opacity:0.85, marginLeft:'0.3rem' }}>({slotLabel})</span>}
                                     {!isOwn && via && <span style={{ fontSize:'0.65rem', color:'var(--silver)', opacity:0.6, marginLeft:'0.3rem' }}>via {via}</span>}
                                 </span>
                                 <div className="ta-val-col" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
@@ -3276,7 +3332,10 @@ function TradeCalculator() {
                                         {ownerPicks.map(({ year, round, fromRosterId }) => {
                                             const pkId = makePickId(year, round, fromRosterId);
                                             const added = pickIds.includes(pkId);
-                                            const val   = PICK_VALUES[round] || 100;
+                                            const { value: val, slot } = resolvePickValue(round, fromRosterId, allRosters);
+                                            const numTeams = allRosters.length || 16;
+                                            const slotInRound = slot ? slot - (round - 1) * numTeams : null;
+                                            const slotLabel = slotInRound ? `${round}.${String(slotInRound).padStart(2,'0')}` : null;
                                             const pickColor = PICK_COLORS[round] || 'var(--silver)';
                                             const via   = ownerNameForRosterId(fromRosterId);
                                             const r = allRosters.find(x => x.owner_id === ownerId);
@@ -3286,6 +3345,7 @@ function TradeCalculator() {
                                                     <span className="ta-pos-dot" style={{ background: pickColor }} />
                                                     <span style={{ flex:1, fontWeight:600, fontSize:'0.8rem' }}>
                                                         {year} {pickLabel(round)}
+                                                        {slotLabel && <span style={{ fontSize:'0.65rem', color: pickColor, opacity:0.85, marginLeft:'0.3rem' }}>({slotLabel})</span>}
                                                         {!isOwn && via && <span style={{ fontSize:'0.62rem', color:'var(--silver)', opacity:0.6, marginLeft:'0.3rem' }}>via {via}</span>}
                                                     </span>
                                                     <span className="ta-player-val" style={{ color: pickColor }}>{val.toLocaleString()}</span>
