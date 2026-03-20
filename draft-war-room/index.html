@@ -840,8 +840,9 @@
           const c = userPosCounts[userId];
           if (!c) return ['QB(CRITICAL-0)', 'RB', 'WR']; // sensible default
           const needs = [];
-          if (c.QB === 0)     needs.push('QB(CRITICAL-0)');
-          else if (c.QB < 2) needs.push('QB');
+          if (c.QB === 0)      needs.push('QB(CRITICAL-0)');
+          else if (c.QB === 1) needs.push('QB(CRITICAL-1)');
+          else if (c.QB < 3)   needs.push('QB');
           if (c.RB < 4)  needs.push('RB');
           if (c.WR < 4)  needs.push('WR');
           if (c.TE < 2)  needs.push('TE');
@@ -868,12 +869,18 @@
             // Prefer DB value (from AI-run team deep dive); fall back to live roster count
             const qbCount  = intel?.qb_count ?? rawQb;
             const aiNeeds  = intel?.needs?.length > 0 ? intel.needs : null;
-            // Escalate QB → QB(CRITICAL-0) when:
-            //   a) qbCount is definitively 0, OR
-            //   b) qbCount unknown but aiNeeds marks QB as a deficit (QB*)
-            const hasQbDeficit = qbCount === 0 || (qbCount === null && aiNeeds?.some(n => n === 'QB*'));
+            // Escalate QB need level:
+            //   CRITICAL-0: 0 QBs (franchise emergency)
+            //   CRITICAL-1: 1 QB (critically thin — must grab a top QB early)
+            //   unknown qbCount: escalate if aiNeeds marks QB as deficit (QB*)
+            const hasQbCritical0 = qbCount === 0 || (qbCount === null && aiNeeds?.some(n => n === 'QB*'));
+            const hasQbCritical1 = qbCount === 1;
             const needs    = aiNeeds
-              ? aiNeeds.map(n => (n === 'QB' || n === 'QB*') && hasQbDeficit ? 'QB(CRITICAL-0)' : n)
+              ? aiNeeds.map(n => {
+                  if ((n === 'QB' || n === 'QB*') && hasQbCritical0) return 'QB(CRITICAL-0)';
+                  if ((n === 'QB' || n === 'QB*') && hasQbCritical1) return 'QB(CRITICAL-1)';
+                  return n;
+                })
               : computeNeeds(ownerInfo.userId);
             draftSlots.push({
               slot, name: ownerInfo.displayName, dna: archetype,
@@ -906,9 +913,14 @@
               const rawQb   = userPosCounts[u.user_id]?.QB ?? null;
               const qbCount = intel?.qb_count ?? rawQb;
               const aiNeeds = intel?.needs?.length > 0 ? intel.needs : null;
-              const hasQbDeficit = qbCount === 0 || (qbCount === null && aiNeeds?.some(n => n === 'QB*'));
+              const hasQbCritical0 = qbCount === 0 || (qbCount === null && aiNeeds?.some(n => n === 'QB*'));
+              const hasQbCritical1 = qbCount === 1;
               const needs   = aiNeeds
-                ? aiNeeds.map(n => (n === 'QB' || n === 'QB*') && hasQbDeficit ? 'QB(CRITICAL-0)' : n)
+                ? aiNeeds.map(n => {
+                    if ((n === 'QB' || n === 'QB*') && hasQbCritical0) return 'QB(CRITICAL-0)';
+                    if ((n === 'QB' || n === 'QB*') && hasQbCritical1) return 'QB(CRITICAL-1)';
+                    return n;
+                  })
                 : computeNeeds(u.user_id);
               draftSlots.push({
                 slot, name: u.display_name || u.username, dna: archetype,

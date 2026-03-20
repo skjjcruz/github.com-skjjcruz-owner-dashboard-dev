@@ -329,11 +329,13 @@ function buildMockDraftPrompt(ctx: any): string {
         // Tier and posture from AI Scout (league intelligence layer)
         if (o.tier)           line += ` | Tier: ${o.tier}`;
         if (o.posture)        line += ` | Posture: ${o.posture}`;
-        // QB roster count — 0 QBs is a franchise emergency, stated explicitly
+        // QB roster count — 0 or 1 QBs both require urgent QB selection
         if (o.qbCount !== null && o.qbCount !== undefined) {
             line += o.qbCount === 0
                 ? ` | 🚨 QBs on roster: 0 — QB IS A FRANCHISE EMERGENCY`
-                : ` | QBs on roster: ${o.qbCount}`;
+                : o.qbCount === 1
+                    ? ` | ⚠️ QBs on roster: 1 — QB IS CRITICALLY THIN`
+                    : ` | QBs on roster: ${o.qbCount}`;
         }
         if (o.roundProfile)   line += `\n         Round splits: ${o.roundProfile}`;
         else if (o.draftTendency) line += ` (${o.draftTendency})`;
@@ -359,16 +361,51 @@ function buildMockDraftPrompt(ctx: any): string {
         ? `• This IS an IDP (Individual Defensive Player) league — LB, DL, DB are valid picks at any round IF the owner has a confirmed Need for that position.`
         : `• This is a STANDARD fantasy league (NOT IDP). Defensive positions (LB, DL, DB, S, CB, EDGE) score ZERO fantasy points and are almost never drafted early.`;
 
-    // Pre-compute which slots have a QB emergency so we can flag them at the top
-    const qbEmergencySlots = (ctx.draftSlots || [])
-        .filter((o: any) => o.qbCount === 0 || (o.needs || []).includes('QB(CRITICAL-0)'))
-        .map((o: any) => `Slot ${o.slot} (${o.name})`);
-    const qbEmergencyWarning = qbEmergencySlots.length > 0
-        ? `\n⚠️ QB FRANCHISE EMERGENCY — APPLIES TO: ${qbEmergencySlots.join(', ')}\nThese owners have ZERO QBs. They MUST select the highest-ranked QB in the remaining pool instead of any other position, regardless of DNA or round splits. This is not optional.\n`
+    // Pre-compute which slots have a QB emergency or critical shortage
+    const qbCritical0Slots = (ctx.draftSlots || [])
+        .filter((o: any) => o.qbCount === 0 || (o.needs || []).includes('QB(CRITICAL-0)'));
+    const qbCritical1Slots = (ctx.draftSlots || [])
+        .filter((o: any) => o.qbCount === 1 || (o.needs || []).includes('QB(CRITICAL-1)'));
+
+    // Pre-lock QB picks for critical owners in round 1 (removes AI discretion entirely)
+    // Process slots in pick order so each QB is only claimed once
+    const lockedPickPool = [...(ctx.players || [])];
+    const lockedPickUsed = new Set<string>();
+    const lockedPicks: Array<{slot: number, owner: string, player: string, pos: string, tier: number, level: string}> = [];
+
+    const numTeams = ctx.numTeams || 12;
+    for (let slot = 1; slot <= numTeams; slot++) {
+        const owner = (ctx.draftSlots || []).find((o: any) => o.slot === slot);
+        if (!owner) continue;
+        const isCrit0 = qbCritical0Slots.some((o: any) => o.slot === slot);
+        const isCrit1 = qbCritical1Slots.some((o: any) => o.slot === slot);
+        if (!isCrit0 && !isCrit1) continue;
+
+        // For CRITICAL-0: take QB if in top 5. For CRITICAL-1: take QB if in top 3.
+        const searchDepth = isCrit0 ? 5 : 3;
+        const remaining = lockedPickPool.filter((p: any) => !lockedPickUsed.has(p.name));
+        const topN = remaining.slice(0, searchDepth);
+        const bestQb = topN.find((p: any) => p.pos === 'QB');
+        if (bestQb) {
+            lockedPicks.push({ slot, owner: owner.name, player: bestQb.name, pos: bestQb.pos, tier: bestQb.tier, level: isCrit0 ? 'CRITICAL-0' : 'CRITICAL-1' });
+            lockedPickUsed.add(bestQb.name);
+        }
+    }
+
+    const lockedPicksStr = lockedPicks.length > 0
+        ? `\n🔒 PRE-LOCKED PICKS (mandatory — these are already decided, include them exactly as shown):\n${lockedPicks.map(lp => `  Round 1, Slot ${lp.slot} (${lp.owner}): ${lp.player} | ${lp.pos} | Tier ${lp.tier} — LOCKED: ${lp.level === 'CRITICAL-0' ? '0 QBs = franchise emergency' : '1 QB = critically thin roster'}`).join('\n')}\nStart your simulation from the pick AFTER the last locked pick above. Do not re-assign these picks.\n`
+        : '';
+
+    const allQbCriticalSlots = [
+        ...qbCritical0Slots.map((o: any) => `Slot ${o.slot} (${o.name}) — 0 QBs`),
+        ...qbCritical1Slots.map((o: any) => `Slot ${o.slot} (${o.name}) — 1 QB`),
+    ];
+    const qbEmergencyWarning = allQbCriticalSlots.length > 0
+        ? `\n⚠️ QB EMERGENCY / CRITICAL SHORTAGE — APPLIES TO: ${allQbCriticalSlots.join(', ')}\n• 0 QBs (CRITICAL-0): Must take best available QB if one is in the top 5 remaining.\n• 1 QB (CRITICAL-1): Must take best available QB if one is in the top 3 remaining.\nNeither rule is overridden by DNA, round splits, or BPA. This is not optional.\n`
         : '';
 
     return `Simulate a complete ${ctx.numRounds}-round rookie draft with ${ctx.numTeams} teams in ${ctx.leagueName || 'the league'}.
-${qbEmergencyWarning}
+${qbEmergencyWarning}${lockedPicksStr}
 DRAFT TYPE: ${draftTypeLabel}
 
 OWNER PROFILES (slot → name → Trade DNA → Draft DNA from 3 seasons of real picks → round splits → needs):
@@ -442,22 +479,26 @@ DNA DRAFT BEHAVIOR (apply AFTER positional rules above):
 • Unknown       → Balanced BPA among offensive players with mild positional awareness.
 
 CRITICAL SIMULATION RULES:
-1. ★ QB FRANCHISE EMERGENCY — check this FIRST before every pick, overrides everything else:
-   Look at the owner profile above. Does it say "🚨 QBs on roster: 0 — QB IS A FRANCHISE EMERGENCY"?
-   OR does their Needs list include "QB(CRITICAL-0)"?
-   If EITHER is true → this owner has ZERO quarterbacks. That is a dynasty-ending hole.
+1. ★ QB EMERGENCY / CRITICAL SHORTAGE — check this FIRST before every pick, overrides everything else:
 
-   RULE: An owner with 0 QBs MUST take the best available QB if one is ranked #1–5 in the current pool.
-   This is NOT optional. It is NOT overridden by DNA. "RB-Heavy" DNA describes historical preference,
-   not a license to skip the only position that cannot be ignored in dynasty.
+   CRITICAL-0 (0 QBs — franchise emergency):
+     Profile says "🚨 QBs on roster: 0" OR needs include "QB(CRITICAL-0)"
+     → MUST take the best QB available if one is ranked #1–5 in the remaining pool.
 
-   EXACT FAILING SCENARIO (you must get this right):
-     Slot 1 owner: "🚨 QBs on roster: 0 — QB IS A FRANCHISE EMERGENCY"
-     Available pool: #1 Ashton Jeanty (RB, Tier 1) | #2 Shedeur Sanders (QB, Tier 1)
-     ✅ CORRECT pick: Shedeur Sanders (QB) — takes #2 over #1 because 0 QBs = emergency
-     ❌ WRONG pick:   Ashton Jeanty (RB) — ignoring a zero-QB roster is a simulation failure
-   The same owner then picks again at slot 2 (snake). With QB secured, they take the best remaining skill player.
-   DNA and BPA apply normally to every pick AFTER the QB need is resolved.
+   CRITICAL-1 (1 QB — critically thin):
+     Profile says "⚠️ QBs on roster: 1" OR needs include "QB(CRITICAL-1)"
+     → MUST take the best QB available if one is ranked #1–3 in the remaining pool.
+
+   Neither rule is overridden by DNA, round splits, or BPA. Dynasty franchises with 0–1 QBs
+   cannot afford to skip a top QB when one is available that early in the draft.
+
+   EXACT SCENARIOS (you must get these right):
+     Owner with QB(CRITICAL-0): Pool has #1 RB, #2 QB → takes the QB. Zero debate.
+     Owner with QB(CRITICAL-1): Pool has #1 RB, #2 QB → takes the QB. One QB is not enough.
+     Owner with QB(CRITICAL-1): Pool has #1 RB, #2 WR, #3 RB, #4 QB → takes #1 RB (QB outside top 3).
+   After the QB need is resolved, DNA and BPA apply normally to every subsequent pick.
+
+   NOTE: If a locked pick above already covers this owner's QB need, skip this rule for their next pick.
 
 2. Each player can only be selected ONCE — track every pick and never repeat a player name
 3. Process picks in the correct draft order based on DRAFT TYPE above
