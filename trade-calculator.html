@@ -2102,7 +2102,7 @@ function TradeCalculator() {
     if (phase === 'error') return (
         <div className="center-screen">
             <div style={{ color:'var(--loss-red)', fontSize:'0.9rem', textAlign:'center', padding:'0 1rem' }}>{errMsg}</div>
-            <button className="back-btn" onClick={() => window.location.href='index.html'}>← Back to Dashboard</button>
+            <button className="back-btn" onClick={() => window.location.href='index.html'}>← Home</button>
         </div>
     );
 
@@ -4111,7 +4111,7 @@ function TradeCalculator() {
         <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh' }}>
             {/* Header */}
             <div className="page-header">
-                <button className="back-btn" onClick={() => window.location.href='index.html'}>← Dashboard</button>
+                <button className="back-btn" onClick={() => window.location.href='index.html'}>← Home</button>
                 <div className="page-title">Trade Calculator</div>
                 <select
                     value={selectedYear}
