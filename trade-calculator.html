@@ -1808,7 +1808,12 @@ function TradeCalculator() {
     const [draftSlotMaps,  setDraftSlotMaps]  = useState({}); // { year: { rosterId: slotNum } }
     const [loading,     setLoading]     = useState(false);
 
-    const [activeTab,    setActiveTab]    = useState(() => sessionStorage.getItem('tc_activeTab') || 'guide');
+    const [activeTab,    setActiveTab]    = useState(() => {
+        const urlTab = new URLSearchParams(window.location.search).get('tab');
+        const validTabs = ['guide', 'audit', 'dna', 'analyzer', 'ai'];
+        if (urlTab && validTabs.includes(urlTab)) return urlTab;
+        return sessionStorage.getItem('tc_activeTab') || 'guide';
+    });
     const [myRosterId,   setMyRosterId]   = useState(null);
     const [ownerDna,      setOwnerDna]      = useState({});   // { ownerId: DNA_TYPE_KEY }
     const [ownerDraftDna, setOwnerDraftDna] = useState({});  // { ownerId: { label, tendency, ... } }
