@@ -2177,7 +2177,8 @@
         ];
 
         const navItems = [
-            { id: 'home',       label: 'Home',        action: null },
+            { id: 'dashboard',   label: 'Dashboard',   action: () => onBack() },
+            { id: 'home',        label: 'Home',        action: null },
             { id: 'myteam',     label: 'My Team',     action: () => { setShowRoster(true); setActiveNav('myteam'); } },
             { id: 'teamcomps',  label: 'Team Comps',  action: () => window.open('team-comps/', '_blank') },
             { id: 'analytics',   label: 'Analytics',         action: null },
@@ -2192,7 +2193,7 @@
         if (showRoster) {
             return <LeagueDetail
                 league={currentLeague}
-                onBack={() => { setShowRoster(false); setActiveNav('home'); }}
+                onBack={onBack}
                 sleeperUserId={sleeperUserId}
             />;
         }
