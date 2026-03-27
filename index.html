@@ -1957,6 +1957,7 @@
         const [activeNav, setActiveNav] = useState('home');
         const [syncing, setSyncing] = useState(false);
         const [showRoster, setShowRoster] = useState(false);
+        const [showLeagueRosters, setShowLeagueRosters] = useState(false);
 
         useEffect(() => { loadData(); }, [currentLeague]);
 
@@ -2180,7 +2181,8 @@
             { id: 'dashboard',   label: 'Dashboard',   action: () => onBack() },
             { id: 'home',        label: 'Home',        action: null },
             { id: 'myteam',     label: 'My Team',     action: () => { setShowRoster(true); setActiveNav('myteam'); } },
-            { id: 'teamcomps',  label: 'Team Comps',  action: () => { sessionStorage.setItem('tdp_return_league_id', currentLeague.id); window.open('team-comps/', '_blank'); } },
+            { id: 'teamcomps',      label: 'Team Comps',     action: () => { sessionStorage.setItem('tdp_return_league_id', currentLeague.id); window.open('team-comps/', '_blank'); } },
+            { id: 'leaguerosters',  label: 'League Rosters', action: () => { setShowLeagueRosters(true); setActiveNav('leaguerosters'); } },
             { id: 'analytics',   label: 'Analytics',         action: null },
             { id: 'rosteraudit', label: 'League Roster Audit', action: () => { sessionStorage.setItem('tdp_return_league_id', currentLeague.id); window.location.href = 'trade-calculator.html?tab=audit'; } },
             { id: 'ownerdna',    label: 'Owner DNA',           action: () => { sessionStorage.setItem('tdp_return_league_id', currentLeague.id); window.location.href = 'trade-calculator.html?tab=dna'; } },
@@ -2195,6 +2197,14 @@
                 league={currentLeague}
                 onBack={() => { setShowRoster(false); setActiveNav('home'); }}
                 sleeperUserId={sleeperUserId}
+            />;
+        }
+
+        if (showLeagueRosters) {
+            return <LeagueDetail
+                league={currentLeague}
+                onBack={() => { setShowLeagueRosters(false); setActiveNav('home'); }}
+                sleeperUserId={null}
             />;
         }
 
