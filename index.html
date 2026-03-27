@@ -2099,8 +2099,9 @@
             const addEntries = Object.entries(adds);
             const dropEntries = Object.entries(drops);
 
-            function ownerName(userId) {
-                const user = (currentLeague.users || []).find(u => u.user_id === userId);
+            function ownerName(rosterId) {
+                const roster = (currentLeague.rosters || []).find(r => r.roster_id === Number(rosterId));
+                const user = (currentLeague.users || []).find(u => u.user_id === roster?.owner_id);
                 return user?.display_name || user?.username || 'Unknown';
             }
             function playerName(pid) {
