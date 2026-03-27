@@ -2096,14 +2096,66 @@
         function formatTxn(txn) {
             const adds = txn.adds || {};
             const drops = txn.drops || {};
-            const rosterOwners = (txn.roster_ids || []).map(rid => {
-                const r = (currentLeague.rosters || []).find(ro => ro.roster_id === rid);
-                const u = (currentLeague.users || []).find(u => u.user_id === r?.owner_id);
-                return u?.display_name || u?.username || 'Unknown';
-            });
-            const addNames = Object.keys(adds).map(id => playersData[id]?.full_name || `Player ${id}`);
-            const dropNames = Object.keys(drops).map(id => playersData[id]?.full_name || `Player ${id}`);
-            return { rosterOwners, addNames, dropNames };
+            const addEntries = Object.entries(adds);
+            const dropEntries = Object.entries(drops);
+
+            function ownerName(userId) {
+                const user = (currentLeague.users || []).find(u => u.user_id === userId);
+                return user?.display_name || user?.username || 'Unknown';
+            }
+            function playerName(pid) {
+                return playersData[pid]?.full_name || null;
+            }
+
+            if (txn.type === 'trade') {
+                // Group received players by the receiving owner
+                const byReceiver = {};
+                addEntries.forEach(([pid, uid]) => {
+                    if (!byReceiver[uid]) byReceiver[uid] = [];
+                    byReceiver[uid].push(pid);
+                });
+                const receiverIds = Object.keys(byReceiver);
+                if (receiverIds.length >= 2) {
+                    const [r1, r2] = receiverIds;
+                    const totalMoved = addEntries.length;
+                    if (totalMoved === 2) {
+                        const sentToR1 = byReceiver[r1][0];
+                        const sentToR2 = byReceiver[r2][0];
+                        const p1 = playerName(sentToR1);
+                        const p2 = playerName(sentToR2);
+                        if (p1 && p2) return `${ownerName(r2)} traded ${p1} to ${ownerName(r1)} for ${p2}`;
+                    }
+                    const sentToR1 = byReceiver[r1];
+                    const firstPlayer = playerName(sentToR1[0]);
+                    const extra = sentToR1.length > 1 ? ` + ${sentToR1.length - 1} more` : '';
+                    if (firstPlayer) return `${ownerName(r2)} traded ${firstPlayer}${extra} to ${ownerName(r1)}`;
+                    return `${ownerName(r1)} & ${ownerName(r2)} completed a trade`;
+                }
+                return 'Trade completed';
+            }
+
+            // Free agent or waiver
+            const bid = txn.type === 'waiver' && txn.settings?.waiver_bid
+                ? ` ($${txn.settings.waiver_bid})` : '';
+            if (addEntries.length > 0 && dropEntries.length > 0) {
+                const [addPid, addUid] = addEntries[0];
+                const [dropPid] = dropEntries[0];
+                const pAdd = playerName(addPid);
+                const pDrop = playerName(dropPid);
+                if (pAdd && pDrop) return `${ownerName(addUid)} added ${pAdd}, dropped ${pDrop}${bid}`;
+                if (pAdd) return `${ownerName(addUid)} added ${pAdd}${bid}`;
+            }
+            if (addEntries.length > 0) {
+                const [addPid, addUid] = addEntries[0];
+                const p = playerName(addPid);
+                if (p) return `${ownerName(addUid)} added ${p}${bid}`;
+            }
+            if (dropEntries.length > 0) {
+                const [dropPid, dropUid] = dropEntries[0];
+                const p = playerName(dropPid);
+                if (p) return `${ownerName(dropUid)} dropped ${p}`;
+            }
+            return null;
         }
 
         const kpiCards = [
@@ -2332,28 +2384,18 @@
                                 <div style={{ color: 'var(--silver)', fontSize: '0.78rem', opacity: 0.5, textAlign: 'center', padding: '1rem 0' }}>No recent transactions</div>
                             ) : (
                                 transactions.map((txn, i) => {
-                                    const { rosterOwners, addNames, dropNames } = formatTxn(txn);
-                                    const typeLabel = txn.type === 'trade' ? 'TRADE' : txn.type === 'waiver' ? 'WAIVER' : 'FA';
+                                    const sentence = formatTxn(txn);
+                                    if (!sentence) return null;
                                     const typeColor = txn.type === 'trade' ? 'var(--gold)' : txn.type === 'waiver' ? '#4ECDC4' : '#85C1E9';
                                     return (
-                                        <div key={i} style={{ display: 'flex', gap: '0.55rem', padding: '0.4rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)', alignItems: 'flex-start' }}>
-                                            <span style={{ fontSize: '0.57rem', color: 'var(--silver)', opacity: 0.55, flexShrink: 0, minWidth: '30px', paddingTop: '2px' }}>
+                                        <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', padding: '0.38rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                            <span style={{ fontSize: '0.57rem', color: 'var(--silver)', opacity: 0.5, flexShrink: 0, minWidth: '28px' }}>
                                                 {timeAgo(txn.created)}
                                             </span>
-                                            <span style={{ fontSize: '0.58rem', fontWeight: '700', padding: '1px 5px', borderRadius: '3px', background: typeColor, color: 'var(--black)', flexShrink: 0, marginTop: '1px' }}>
-                                                {typeLabel}
+                                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: typeColor, flexShrink: 0, marginBottom: '1px' }} />
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--white)', lineHeight: 1.4 }}>
+                                                {sentence}
                                             </span>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontSize: '0.72rem', color: 'var(--white)', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '0.1rem' }}>
-                                                    {rosterOwners[0] || 'Unknown'}
-                                                </div>
-                                                {addNames.map((name, j) => (
-                                                    <div key={`a${j}`} style={{ fontSize: '0.68rem', color: 'var(--win-green)' }}>+{name}</div>
-                                                ))}
-                                                {dropNames.map((name, j) => (
-                                                    <div key={`d${j}`} style={{ fontSize: '0.68rem', color: '#E74C3C' }}>-{name}</div>
-                                                ))}
-                                            </div>
                                         </div>
                                     );
                                 })
