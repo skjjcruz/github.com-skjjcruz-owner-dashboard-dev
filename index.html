@@ -999,6 +999,7 @@
 
 <script type="text/babel">
     // ===== AUTHENTICATION CHECK =====
+    // DEV BYPASS: auth redirects temporarily disabled
     const AUTH_KEY    = 'od_auth_v1';
     const SESSION_KEY = 'fw_session_v1';
 
@@ -1006,9 +1007,9 @@
     const newSession   = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } })();
     const isAuthed     = !!(legacyAuth || newSession?.token);
 
-    if (!isAuthed) {
-        window.location.href = 'landing.html';
-    }
+    // if (!isAuthed) {
+    //     window.location.href = 'landing.html';
+    // }
 
     let sleeperUsername = '';
     try {
@@ -1022,7 +1023,7 @@
         }
     } catch (e) {
         localStorage.removeItem(AUTH_KEY);
-        if (!newSession?.token) window.location.href = 'landing.html';
+        // if (!newSession?.token) window.location.href = 'landing.html';
     }
 
     const { useState, useEffect, useRef } = React;
@@ -1526,7 +1527,7 @@
         const tierBg    = { free: 'rgba(192,192,192,0.12)', pro: 'rgba(212,175,55,0.12)', power: 'rgba(168,85,247,0.12)' };
 
         function goToManagePlan() {
-            window.location.href = 'onboarding.html?manage=true';
+            // DEV BYPASS: window.location.href = 'onboarding.html?manage=true';
         }
 
         function handleCancelPlan() {
