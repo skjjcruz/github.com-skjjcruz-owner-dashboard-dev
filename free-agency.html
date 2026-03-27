@@ -517,15 +517,16 @@
         const { useState, useEffect, useMemo, useRef } = React;
 
         // ===== AUTH =====
+        // DEV BYPASS: auth redirects temporarily disabled
         const AUTH_KEY = 'od_auth_v1';
         const authRaw = localStorage.getItem(AUTH_KEY);
-        if (!authRaw) window.location.href = 'login.html';
+        // if (!authRaw) window.location.href = 'login.html';
         let sleeperUsername = '';
         try {
             sleeperUsername = JSON.parse(authRaw).username || '';
         } catch (e) {
             localStorage.removeItem(AUTH_KEY);
-            window.location.href = 'login.html';
+            // window.location.href = 'login.html';
         }
 
         // ===== SLEEPER API =====
