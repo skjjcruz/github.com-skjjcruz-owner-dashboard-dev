@@ -2515,6 +2515,11 @@
 
                 setStandings(standingsData);
 
+                // When no user is logged in (e.g. League Rosters view), default to first team
+                if (!sleeperUserId && standingsData.length > 0) {
+                    setViewingOwnerId(standingsData[0].userId);
+                }
+
                 const [stats, projections, s2025] = await Promise.all([
                     fetchSeasonStats(currentLeague.season),
                     fetchSeasonProjections(currentLeague.season),
@@ -3044,10 +3049,10 @@
                         {/* CENTER COLUMN - Roster (changes when owner clicked) */}
                         <div style={{ background: 'var(--black)', border: '2px solid rgba(212, 175, 55, 0.3)', borderRadius: '12px', padding: '1.25rem' }}>
                             <h3 style={{ color: 'var(--gold)', fontFamily: 'Bebas Neue, cursive', fontSize: '1.5rem', letterSpacing: '0.1em', marginBottom: '0.75rem', textAlign: 'center', paddingBottom: '0.5rem', borderBottom: '1px solid rgba(212, 175, 55, 0.3)', flexShrink: 0 }}>
-                                {isViewingMyTeam ? 'MY ROSTER' : (viewingOwner?.displayName || 'TEAM') + "'S ROSTER"}
+                                {sleeperUserId && isViewingMyTeam ? 'MY ROSTER' : (viewingOwner?.displayName || 'TEAM') + "'S ROSTER"}
                             </h3>
                             <div className="league-detail-scroll">
-                                {!isViewingMyTeam && (
+                                {sleeperUserId && !isViewingMyTeam && (
                                     <div
                                         onClick={() => setViewingOwnerId(sleeperUserId)}
                                         style={{ textAlign: 'center', marginBottom: '0.75rem', cursor: 'pointer', fontSize: '0.7rem', color: 'var(--gold)', opacity: 0.7, transition: 'opacity 0.2s' }}
