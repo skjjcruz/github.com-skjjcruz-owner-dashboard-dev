@@ -1955,6 +1955,7 @@
         const [loading, setLoading] = useState(true);
         const [activeNav, setActiveNav] = useState('home');
         const [syncing, setSyncing] = useState(false);
+        const [showRoster, setShowRoster] = useState(false);
 
         useEffect(() => { loadData(); }, [currentLeague]);
 
@@ -2123,7 +2124,7 @@
 
         const navItems = [
             { id: 'home',       label: 'Home',        action: null },
-            { id: 'myteam',     label: 'My Team',     action: () => window.open('team-comps/', '_blank') },
+            { id: 'myteam',     label: 'My Team',     action: () => { setShowRoster(true); setActiveNav('myteam'); } },
             { id: 'matchup',    label: 'Matchup',     action: () => window.open(`https://sleeper.com/leagues/${currentLeague.id}/matchup`, '_blank') },
             { id: 'league',     label: 'League',      action: null },
             { id: 'analytics',  label: 'Analytics',   action: null },
@@ -2132,6 +2133,14 @@
             { id: 'draft',      label: 'Draft',       action: () => window.location.href = 'draft-war-room/index.html' },
             { id: 'settings',   label: 'Settings',    action: null },
         ];
+
+        if (showRoster) {
+            return <LeagueDetail
+                league={currentLeague}
+                onBack={() => { setShowRoster(false); setActiveNav('home'); }}
+                sleeperUserId={sleeperUserId}
+            />;
+        }
 
         return (
             <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--black)' }}>
