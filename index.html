@@ -1399,6 +1399,14 @@
         }
     }
 
+    async function fetchLeagueTransactions(leagueId, round) {
+        try {
+            return await fetchJSON(`${SLEEPER_BASE_URL}/league/${leagueId}/transactions/${round}`);
+        } catch (e) {
+            return [];
+        }
+    }
+
     let _playersCache = null;
     async function fetchAllPlayers() {
         if (_playersCache) return _playersCache;
@@ -1932,6 +1940,463 @@
                             })}
                         </div>
                     )}
+                </div>
+            </div>
+        );
+    }
+
+    // ===== TEAM DETAIL PAGE =====
+    function TeamDetailPage({ league, onBack, sleeperUserId }) {
+        const [currentLeague, setCurrentLeague] = useState(league);
+        const [activeYear, setActiveYear] = useState(league.season);
+        const [standings, setStandings] = useState([]);
+        const [transactions, setTransactions] = useState([]);
+        const [playersData, setPlayersData] = useState({});
+        const [loading, setLoading] = useState(true);
+        const [activeNav, setActiveNav] = useState('home');
+        const [syncing, setSyncing] = useState(false);
+
+        useEffect(() => { loadData(); }, [currentLeague]);
+
+        async function loadData() {
+            setLoading(true);
+            const standingsData = (currentLeague.rosters || []).map(roster => {
+                const user = (currentLeague.users || []).find(u => u.user_id === roster.owner_id);
+                const fpts = (roster.settings?.fpts || 0) + (roster.settings?.fpts_decimal || 0) / 100;
+                return {
+                    rosterId: roster.roster_id,
+                    userId: roster.owner_id,
+                    displayName: user?.display_name || user?.username || 'Unknown',
+                    avatar: user?.avatar,
+                    wins: roster.settings?.wins || 0,
+                    losses: roster.settings?.losses || 0,
+                    ties: roster.settings?.ties || 0,
+                    pointsFor: fpts,
+                };
+            }).sort((a, b) => {
+                if (b.wins !== a.wins) return b.wins - a.wins;
+                return b.pointsFor - a.pointsFor;
+            });
+            setStandings(standingsData);
+
+            try {
+                const [t1, t2, t3] = await Promise.all([
+                    fetchLeagueTransactions(currentLeague.id, 1),
+                    fetchLeagueTransactions(currentLeague.id, 2),
+                    fetchLeagueTransactions(currentLeague.id, 3),
+                ]);
+                const all = [...(t1||[]), ...(t2||[]), ...(t3||[])]
+                    .filter(Boolean)
+                    .sort((a, b) => (b.created || 0) - (a.created || 0))
+                    .slice(0, 20);
+                setTransactions(all);
+            } catch(e) { setTransactions([]); }
+
+            setLoading(false);
+            fetchAllPlayers().then(p => setPlayersData(p)).catch(() => {});
+        }
+
+        async function handleRefresh() {
+            setSyncing(true);
+            await loadData();
+            setSyncing(false);
+        }
+
+        async function switchYear(year) {
+            if (year === activeYear) return;
+            setLoading(true);
+            setActiveYear(year);
+            try {
+                const targetYear = parseInt(year);
+                const currentYear = parseInt(activeYear);
+                let targetLeagueId = null;
+
+                if (targetYear < currentYear) {
+                    let leagueId = currentLeague.id;
+                    for (let y = currentYear; y > targetYear && leagueId; y--) {
+                        const info = await fetchLeagueInfo(leagueId);
+                        leagueId = info?.previous_league_id || null;
+                    }
+                    targetLeagueId = leagueId;
+                } else {
+                    const userLeagues = await fetchUserLeagues(sleeperUserId, year);
+                    for (const lg of userLeagues) {
+                        let checkId = lg.previous_league_id;
+                        let steps = targetYear - currentYear;
+                        while (steps > 1 && checkId) {
+                            const info = await fetchLeagueInfo(checkId);
+                            checkId = info?.previous_league_id || null;
+                            steps--;
+                        }
+                        if (checkId === currentLeague.id) { targetLeagueId = lg.league_id; break; }
+                    }
+                    if (!targetLeagueId) {
+                        const nameMatch = userLeagues.find(l => l.name === currentLeague.name);
+                        targetLeagueId = nameMatch ? nameMatch.league_id : (userLeagues[0]?.league_id || null);
+                    }
+                }
+
+                if (!targetLeagueId) { setLoading(false); return; }
+
+                const [leagueInfo, rosters, users] = await Promise.all([
+                    fetchLeagueInfo(targetLeagueId),
+                    fetchLeagueRosters(targetLeagueId),
+                    fetchLeagueUsers(targetLeagueId)
+                ]);
+                setCurrentLeague({
+                    id: targetLeagueId,
+                    name: leagueInfo.name,
+                    season: year,
+                    scoring_settings: leagueInfo.scoring_settings || {},
+                    roster_positions: leagueInfo.roster_positions || [],
+                    settings: leagueInfo.settings || {},
+                    rosters,
+                    users
+                });
+            } catch(e) {
+                console.error('Year switch failed:', e);
+                setLoading(false);
+            }
+        }
+
+        const myTeam = standings.find(t => t.userId === sleeperUserId);
+        const myRank = standings.findIndex(t => t.userId === sleeperUserId) + 1;
+        const leader = standings[0];
+
+        const scoringType = currentLeague.scoring_settings?.rec === 0.5 ? 'Half PPR'
+            : currentLeague.scoring_settings?.rec === 1 ? 'Full PPR' : 'Standard';
+        const teamCount = (currentLeague.rosters || []).length;
+
+        const faabBudget = currentLeague.settings?.waiver_budget || 0;
+        const myRoster = (currentLeague.rosters || []).find(r => r.owner_id === sleeperUserId);
+        const faabUsed = myRoster?.settings?.waiver_budget_used || 0;
+        const faabRemaining = faabBudget - faabUsed;
+        const hasFAAB = faabBudget > 0;
+
+        function buildNarrative() {
+            if (!leader) return 'Loading league data...';
+            const leaderName = leader.displayName;
+            const myRecord = myTeam ? `${myTeam.wins}-${myTeam.losses}` : '0-0';
+            const myPts = myTeam ? myTeam.pointsFor.toFixed(0) : '0';
+            const rankText = myRank > 0 ? `#${myRank}` : '#—';
+            return `${leaderName} leads the power rankings with a ${leader.wins}-${leader.losses} record and ${leader.pointsFor.toFixed(0)} total points. You sit at ${rankText} (${myRecord}) with ${myPts} total points.`;
+        }
+
+        function timeAgo(ts) {
+            if (!ts) return '';
+            const diff = Date.now() - ts;
+            const days = Math.floor(diff / 86400000);
+            const hours = Math.floor(diff / 3600000);
+            if (days > 0) return `${days}d ago`;
+            if (hours > 0) return `${hours}h ago`;
+            return 'Just now';
+        }
+
+        function formatTxn(txn) {
+            const adds = txn.adds || {};
+            const drops = txn.drops || {};
+            const rosterOwners = (txn.roster_ids || []).map(rid => {
+                const r = (currentLeague.rosters || []).find(ro => ro.roster_id === rid);
+                const u = (currentLeague.users || []).find(u => u.user_id === r?.owner_id);
+                return u?.display_name || u?.username || 'Unknown';
+            });
+            const addNames = Object.keys(adds).map(id => playersData[id]?.full_name || `Player ${id}`);
+            const dropNames = Object.keys(drops).map(id => playersData[id]?.full_name || `Player ${id}`);
+            return { rosterOwners, addNames, dropNames };
+        }
+
+        const kpiCards = [
+            {
+                label: 'ROSTER',
+                value: myTeam ? `${myTeam.wins}-${myTeam.losses}` : '—',
+                sub: myRank > 0 ? `#${myRank} in league` : 'Not yet started',
+            },
+            { label: 'DRAFT', value: '—', sub: 'Draft hit rate' },
+            {
+                label: 'WAIVERS',
+                value: hasFAAB ? `$${faabRemaining}` : '—',
+                sub: hasFAAB ? `$${faabRemaining} remaining` : 'No FAAB',
+            },
+            { label: 'TRADES', value: '—', sub: 'Net value/trade' },
+            { label: 'PROJECTION', value: '—', sub: 'Compete window' },
+        ];
+
+        const navItems = [
+            { id: 'home',       label: 'Home',        action: null },
+            { id: 'myteam',     label: 'My Team',     action: () => window.open('team-comps/', '_blank') },
+            { id: 'matchup',    label: 'Matchup',     action: () => window.open(`https://sleeper.com/leagues/${currentLeague.id}/matchup`, '_blank') },
+            { id: 'league',     label: 'League',      action: null },
+            { id: 'analytics',  label: 'Analytics',   action: null },
+            { id: 'trades',     label: 'Trades',      action: () => window.location.href = 'trade-calculator.html' },
+            { id: 'freeagency', label: 'Free Agency', action: () => window.location.href = 'free-agency.html' },
+            { id: 'draft',      label: 'Draft',       action: () => window.location.href = 'draft-war-room/index.html' },
+            { id: 'settings',   label: 'Settings',    action: null },
+        ];
+
+        return (
+            <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--black)' }}>
+                <style dangerouslySetInnerHTML={{ __html: `
+                    .tdp-sidebar {
+                        width: 150px;
+                        flex-shrink: 0;
+                        background: var(--off-black);
+                        border-right: 2px solid rgba(212,175,55,0.2);
+                        display: flex;
+                        flex-direction: column;
+                        position: sticky;
+                        top: 0;
+                        height: 100vh;
+                        overflow-y: auto;
+                    }
+                    .tdp-main { flex: 1; overflow-x: hidden; padding-bottom: 60px; }
+                    .tdp-kpi-grid {
+                        display: grid;
+                        grid-template-columns: repeat(5, 1fr);
+                        gap: 0.75rem;
+                        padding: 1rem 1.5rem;
+                    }
+                    .tdp-two-col {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 1rem;
+                        padding: 0 1.5rem 1.5rem;
+                    }
+                    @media (max-width: 767px) {
+                        .tdp-sidebar { width: 110px; }
+                        .tdp-kpi-grid { grid-template-columns: repeat(3, 1fr); padding: 0.6rem; gap: 0.4rem; }
+                        .tdp-two-col { grid-template-columns: 1fr; padding: 0 0.6rem 0.6rem; }
+                    }
+                    @media (max-width: 480px) {
+                        .tdp-sidebar { width: 90px; }
+                        .tdp-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+                    }
+                ` }} />
+
+                {/* LEFT SIDEBAR */}
+                <div className="tdp-sidebar">
+                    <div style={{ padding: '1rem 0.75rem', borderBottom: '1px solid rgba(212,175,55,0.2)' }}>
+                        <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.08em' }}>WAR ROOM 🏆</div>
+                    </div>
+
+                    <div style={{ padding: '0.6rem 0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--charcoal)', border: '1px solid rgba(212,175,55,0.25)', borderRadius: '6px', padding: '0.35rem 0.5rem', cursor: 'pointer' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--white)', fontWeight: '600' }}>Alerts</span>
+                            <span style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '3px', padding: '0 0.3rem', fontSize: '0.65rem', color: 'var(--silver)' }}>0</span>
+                        </div>
+                    </div>
+
+                    <nav style={{ flex: 1, padding: '0.25rem 0' }}>
+                        {navItems.map(item => (
+                            <div
+                                key={item.id}
+                                onClick={() => item.action ? item.action() : setActiveNav(item.id)}
+                                style={{
+                                    padding: '0.55rem 0.75rem',
+                                    cursor: 'pointer',
+                                    background: activeNav === item.id ? 'rgba(212,175,55,0.12)' : 'transparent',
+                                    borderLeft: activeNav === item.id ? '3px solid var(--gold)' : '3px solid transparent',
+                                    color: activeNav === item.id ? 'var(--gold)' : 'var(--white)',
+                                    fontSize: '0.8rem',
+                                    fontWeight: activeNav === item.id ? '700' : '400',
+                                    transition: 'all 0.15s',
+                                    letterSpacing: '0.02em',
+                                }}
+                                onMouseEnter={e => { if (activeNav !== item.id) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                                onMouseLeave={e => { if (activeNav !== item.id) e.currentTarget.style.background = 'transparent'; }}
+                            >
+                                {item.label}
+                            </div>
+                        ))}
+                    </nav>
+
+                    <div style={{ padding: '0.75rem', borderTop: '1px solid rgba(212,175,55,0.15)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                            <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: syncing ? 'var(--gold)' : 'var(--win-green)', flexShrink: 0 }} />
+                            <span style={{ fontSize: '0.65rem', color: 'var(--silver)' }}>{syncing ? 'Syncing…' : 'Synced'}</span>
+                        </div>
+                        <div onClick={handleRefresh} style={{ fontSize: '0.65rem', color: 'var(--gold)', cursor: 'pointer', opacity: syncing ? 0.4 : 1 }}>
+                            Refresh Data
+                        </div>
+                    </div>
+                </div>
+
+                {/* MAIN CONTENT */}
+                <div className="tdp-main">
+
+                    {/* Sub-header */}
+                    <div style={{ padding: '0.6rem 1.5rem', textAlign: 'center', background: 'var(--off-black)', borderBottom: '1px solid rgba(212,175,55,0.15)' }}>
+                        <div style={{ fontFamily: 'Bebas Neue, cursive', color: 'var(--gold)', fontSize: '0.9rem', letterSpacing: '0.18em' }}>
+                            {currentLeague.name.toUpperCase()}
+                        </div>
+                        <div style={{ fontFamily: 'Oswald, sans-serif', color: 'var(--gold)', fontSize: '1.2rem', fontWeight: '700', letterSpacing: '0.05em' }}>
+                            {activeYear} SEASON
+                        </div>
+                    </div>
+
+                    {/* Year tabs + meta bar */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', padding: '0.45rem 1rem', background: 'var(--black)', borderBottom: '2px solid rgba(212,175,55,0.15)', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', background: 'var(--off-black)', borderRadius: '6px', padding: '0.15rem', border: '1px solid rgba(212,175,55,0.2)' }}>
+                            {['2023','2024','2025','2026'].map(year => (
+                                <div key={year} onClick={() => switchYear(year)} style={{
+                                    padding: '0.2rem 0.55rem', borderRadius: '4px', fontSize: '0.68rem',
+                                    fontWeight: '700', fontFamily: 'Oswald, sans-serif',
+                                    color: year === activeYear ? 'var(--black)' : 'var(--silver)',
+                                    background: year === activeYear ? 'var(--gold)' : 'transparent',
+                                    cursor: year === activeYear ? 'default' : 'pointer',
+                                    opacity: year === activeYear ? 1 : 0.5,
+                                    transition: 'all 0.2s',
+                                }}>{year}</div>
+                            ))}
+                        </div>
+                        <span style={{ color: 'rgba(212,175,55,0.35)', fontSize: '0.8rem' }}>|</span>
+                        <span style={{ color: 'var(--silver)', fontSize: '0.68rem', fontFamily: 'Oswald, sans-serif', opacity: 0.75 }}>
+                            {scoringType} · {teamCount} Teams
+                        </span>
+                    </div>
+
+                    {/* KPI Cards */}
+                    <div className="tdp-kpi-grid">
+                        {kpiCards.map(kpi => (
+                            <div key={kpi.label} style={{
+                                background: 'var(--off-black)',
+                                border: '1px solid rgba(212,175,55,0.2)',
+                                borderRadius: '10px',
+                                padding: '0.85rem 1rem',
+                                position: 'relative',
+                                minHeight: '90px',
+                            }}>
+                                <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', opacity: 0.25 }}>
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                                        <path d="M7 17L17 7M17 7H7M17 7v10" stroke="var(--gold)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                </div>
+                                <div style={{ fontSize: '0.62rem', fontWeight: '700', color: 'var(--gold)', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
+                                    {kpi.label}
+                                </div>
+                                <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1.5rem', color: 'var(--white)', lineHeight: 1 }}>
+                                    {kpi.value}
+                                </div>
+                                <div style={{ fontSize: '0.6rem', color: 'var(--silver)', marginTop: '0.3rem', opacity: 0.75, lineHeight: 1.3 }}>
+                                    {kpi.sub}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* This Week section */}
+                    <div style={{ margin: '0 1.5rem 1rem', background: 'rgba(212,175,55,0.03)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '10px', padding: '0.85rem 1.1rem' }}>
+                        <div style={{ fontSize: '0.6rem', fontWeight: '700', color: 'var(--gold)', letterSpacing: '0.14em', marginBottom: '0.6rem' }}>
+                            THIS WEEK IN {currentLeague.name.toUpperCase()}
+                        </div>
+                        <div style={{ color: 'var(--white)', fontSize: '0.88rem', lineHeight: 1.65, marginBottom: '0.7rem' }}>
+                            {buildNarrative()}
+                        </div>
+                        <button style={{
+                            padding: '0.35rem 0.8rem',
+                            background: 'var(--gold)',
+                            border: 'none',
+                            borderRadius: '4px',
+                            color: 'var(--black)',
+                            fontFamily: 'Oswald, sans-serif',
+                            fontSize: '0.7rem',
+                            fontWeight: '700',
+                            letterSpacing: '0.07em',
+                            cursor: 'pointer',
+                            textTransform: 'uppercase',
+                        }}>
+                            REWRITE WITH AI
+                        </button>
+                    </div>
+
+                    {/* Transaction Ticker + Power Rankings */}
+                    <div className="tdp-two-col">
+
+                        {/* Transaction Ticker */}
+                        <div style={{ background: 'var(--off-black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', padding: '1rem' }}>
+                            <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.14em', marginBottom: '0.65rem', paddingBottom: '0.45rem', borderBottom: '1px solid rgba(212,175,55,0.2)' }}>
+                                TRANSACTION TICKER
+                            </div>
+                            {loading ? (
+                                <div style={{ color: 'var(--silver)', fontSize: '0.78rem', opacity: 0.5, textAlign: 'center', padding: '1rem 0' }}>Loading…</div>
+                            ) : transactions.length === 0 ? (
+                                <div style={{ color: 'var(--silver)', fontSize: '0.78rem', opacity: 0.5, textAlign: 'center', padding: '1rem 0' }}>No recent transactions</div>
+                            ) : (
+                                transactions.map((txn, i) => {
+                                    const { rosterOwners, addNames, dropNames } = formatTxn(txn);
+                                    const typeLabel = txn.type === 'trade' ? 'TRADE' : txn.type === 'waiver' ? 'WAIVER' : 'FA';
+                                    const typeColor = txn.type === 'trade' ? 'var(--gold)' : txn.type === 'waiver' ? '#4ECDC4' : '#85C1E9';
+                                    return (
+                                        <div key={i} style={{ display: 'flex', gap: '0.55rem', padding: '0.4rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)', alignItems: 'flex-start' }}>
+                                            <span style={{ fontSize: '0.57rem', color: 'var(--silver)', opacity: 0.55, flexShrink: 0, minWidth: '30px', paddingTop: '2px' }}>
+                                                {timeAgo(txn.created)}
+                                            </span>
+                                            <span style={{ fontSize: '0.58rem', fontWeight: '700', padding: '1px 5px', borderRadius: '3px', background: typeColor, color: 'var(--black)', flexShrink: 0, marginTop: '1px' }}>
+                                                {typeLabel}
+                                            </span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--white)', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '0.1rem' }}>
+                                                    {rosterOwners[0] || 'Unknown'}
+                                                </div>
+                                                {addNames.map((name, j) => (
+                                                    <div key={`a${j}`} style={{ fontSize: '0.68rem', color: 'var(--win-green)' }}>+{name}</div>
+                                                ))}
+                                                {dropNames.map((name, j) => (
+                                                    <div key={`d${j}`} style={{ fontSize: '0.68rem', color: '#E74C3C' }}>-{name}</div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* Power Rankings */}
+                        <div style={{ background: 'var(--off-black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', padding: '1rem' }}>
+                            <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.14em', marginBottom: '0.65rem', paddingBottom: '0.45rem', borderBottom: '1px solid rgba(212,175,55,0.2)' }}>
+                                POWER RANKINGS
+                            </div>
+                            {loading ? (
+                                <div style={{ color: 'var(--silver)', fontSize: '0.78rem', opacity: 0.5, textAlign: 'center', padding: '1rem 0' }}>Loading…</div>
+                            ) : (
+                                standings.map((team, idx) => {
+                                    const isMe = team.userId === sleeperUserId;
+                                    const maxPts = standings[0]?.pointsFor || 1;
+                                    const barPct = maxPts > 0 ? Math.round((team.pointsFor / maxPts) * 100) : 0;
+                                    return (
+                                        <div key={team.rosterId} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.38rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                            <span style={{ width: '18px', color: 'var(--gold)', fontWeight: '700', fontSize: '0.75rem', textAlign: 'center', flexShrink: 0 }}>
+                                                {idx + 1}
+                                            </span>
+                                            {team.avatar ? (
+                                                <img src={`https://sleepercdn.com/avatars/thumbs/${team.avatar}`} alt="" style={{ width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0 }} onError={e => { e.target.style.display='none'; }} />
+                                            ) : (
+                                                <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: 'var(--charcoal)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: 'var(--silver)' }}>
+                                                    {team.displayName.charAt(0)}
+                                                </div>
+                                            )}
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '0.78rem', color: isMe ? 'var(--gold)' : 'var(--white)', fontWeight: isMe ? '700' : '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {team.displayName}{isMe ? ' 🏆' : ''}
+                                                </div>
+                                                <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.65 }}>
+                                                    {team.wins}-{team.losses} · {team.pointsFor.toFixed(0)} pts
+                                                </div>
+                                            </div>
+                                            <div style={{ width: '36px', flexShrink: 0 }}>
+                                                <div style={{ height: '3px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                    <div style={{ height: '100%', width: `${barPct}%`, background: isMe ? 'var(--gold)' : 'rgba(192,192,192,0.5)', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                                                </div>
+                                            </div>
+                                            <span style={{ fontSize: '0.7rem', color: isMe ? 'var(--gold)' : 'var(--silver)', fontWeight: '700', flexShrink: 0, minWidth: '20px', textAlign: 'right' }}>
+                                                {team.wins + team.losses > 0 ? team.wins : '—'}
+                                            </span>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                    </div>
                 </div>
             </div>
         );
@@ -2958,9 +3423,9 @@
             }
         }
 
-        // Show league detail if selected
+        // Show team detail page if league selected
         if (selectedLeague) {
-            return <LeagueDetail
+            return <TeamDetailPage
                 league={selectedLeague}
                 onBack={() => setSelectedLeague(null)}
                 sleeperUserId={sleeperUser?.user_id}
