@@ -2205,6 +2205,7 @@
                 league={currentLeague}
                 onBack={() => { setShowLeagueRosters(false); setActiveNav('home'); }}
                 sleeperUserId={null}
+                initialTab="league"
             />;
         }
 
@@ -2468,7 +2469,7 @@
     }
 
     // League Detail Component
-    function LeagueDetail({ league, onBack, sleeperUserId }) {
+    function LeagueDetail({ league, onBack, sleeperUserId, initialTab }) {
         const [loading, setLoading] = useState(true);
         const [error, setError] = useState(null);
         const [playersData, setPlayersData] = useState({});
@@ -2480,6 +2481,13 @@
         const [stats2025Data, setStats2025Data] = useState({});
         const [currentLeague, setCurrentLeague] = useState(league);
         const [activeYear, setActiveYear] = useState(league.season);
+        const [activeTab, setActiveTab] = useState(initialTab || 'roster');
+        const [leagueSelectedTeam, setLeagueSelectedTeam] = useState(null);
+        const [leagueSort, setLeagueSort] = useState('wins');
+        const [leagueViewMode, setLeagueViewMode] = useState('roster');
+        const [leagueSubView, setLeagueSubView] = useState('teams');
+        const [lpSort, setLpSort] = useState({ key: 'dhq', dir: 1 });
+        const [lpFilter, setLpFilter] = useState('');
 
         useEffect(() => {
             loadLeagueDetails();
@@ -2873,12 +2881,418 @@
         // Nav buttons
         const navButtons = [
             { label: '← Home', action: onBack },
+            { label: activeTab === 'league' ? 'ROSTER VIEW' : 'LEAGUE ROSTERS', action: () => { setActiveTab(t => t === 'league' ? 'roster' : 'league'); setLeagueSelectedTeam(null); }, isLeagueToggle: true },
             { label: 'Team Comps', url: 'team-comps/' },
             { label: 'Matchup', url: `https://sleeper.com/leagues/${currentLeague.id}/matchup` },
             { label: 'Draft War Room', url: 'draft-war-room/' },
             { label: 'Trade Calculator', url: 'trade-calculator.html' },
             { label: 'Free Agent Tracker', action: () => window.location.href = 'free-agency.html' }
         ];
+
+        function renderLeagueTab() {
+            const normPos = (pos) => {
+                if (!pos) return pos;
+                if (pos === 'DB') return 'CB';
+                if (pos === 'DL') return 'DE';
+                if (pos === 'LB') return 'LB';
+                return pos;
+            };
+
+            const scores = window.App?.LI?.playerScores || {};
+            const champs = window.App?.LI?.championships || [];
+            const leagueUsersHistory = window.App?.LI?.leagueUsersHistory || {};
+
+            function getRosterDHQ(roster) {
+                if (!roster) return 0;
+                return (roster.players || []).reduce((sum, pid) => sum + (scores[pid] || 0), 0);
+            }
+
+            const sortedStandings = [...standings].sort((a, b) => {
+                if (leagueSort === 'dhq') {
+                    const rA = currentLeague.rosters.find(r => r.owner_id === a.userId);
+                    const rB = currentLeague.rosters.find(r => r.owner_id === b.userId);
+                    return getRosterDHQ(rB) - getRosterDHQ(rA);
+                }
+                if (leagueSort === 'champs') {
+                    const cA = champs.filter(c => c === a.userId).length;
+                    const cB = champs.filter(c => c === b.userId).length;
+                    if (cB !== cA) return cB - cA;
+                }
+                if (b.wins !== a.wins) return b.wins - a.wins;
+                return b.pointsFor - a.pointsFor;
+            });
+
+            // All rostered players for ALL PLAYERS tab
+            const allRosteredPlayers = [];
+            currentLeague.rosters.forEach(roster => {
+                const owner = standings.find(t => t.userId === roster.owner_id);
+                (roster.players || []).forEach(pid => {
+                    const dhq = scores[pid] || 0;
+                    const s = stats2025Data[pid] || statsData[pid];
+                    const rawPts = calcRawPts(s);
+                    const gp = s?.gp || 0;
+                    const ppg = (rawPts !== null && gp > 0) ? rawPts / gp : 0;
+                    allRosteredPlayers.push({ pid, owner, dhq, ppg });
+                });
+            });
+
+            const sortedPlayers = [...allRosteredPlayers].sort((a, b) => {
+                const dir = lpSort.dir;
+                if (lpSort.key === 'ppg') return (b.ppg - a.ppg) * dir;
+                return (b.dhq - a.dhq) * dir;
+            });
+
+            const filteredPlayers = lpFilter
+                ? sortedPlayers.filter(({ pid }) => {
+                    const name = getPlayerName(pid).toLowerCase();
+                    const pos = getPlayerPosition(pid).toLowerCase();
+                    return name.includes(lpFilter.toLowerCase()) || pos.includes(lpFilter.toLowerCase());
+                })
+                : sortedPlayers;
+
+            const leagueSeason = parseInt(currentLeague.season);
+            const tradedPicks = window.S?.tradedPicks || [];
+
+            const tabBtnStyle = (active) => ({
+                padding: '6px 16px',
+                background: active ? 'var(--gold)' : 'transparent',
+                color: active ? 'var(--black)' : 'var(--gold)',
+                border: '1.5px solid var(--gold)',
+                borderRadius: '4px',
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: '0.75rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                letterSpacing: '0.05em'
+            });
+
+            const sortBtnStyle = (active) => ({
+                padding: '4px 10px',
+                background: active ? 'rgba(212,175,55,0.2)' : 'transparent',
+                color: active ? 'var(--gold)' : 'var(--silver)',
+                border: '1px solid rgba(212,175,55,0.3)',
+                borderRadius: '4px',
+                fontFamily: 'Oswald, sans-serif',
+                fontSize: '0.68rem',
+                fontWeight: '700',
+                cursor: 'pointer'
+            });
+
+            if (leagueSelectedTeam) {
+                return renderTeamRosterDetail(leagueSelectedTeam, tabBtnStyle);
+            }
+
+            return (
+                <div style={{ padding: '16px', maxWidth: '1600px', margin: '0 auto' }}>
+                    {/* Header row */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1.8rem', color: 'var(--gold)', letterSpacing: '0.1em' }}>LEAGUE ROSTERS</div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            {[['teams', 'TEAMS'], ['players', 'ALL PLAYERS'], ['picks', 'DRAFT PICKS']].map(([v, label]) => (
+                                <button key={v} style={tabBtnStyle(leagueSubView === v)} onClick={() => setLeagueSubView(v)}>{label}</button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* TEAMS sort controls */}
+                    {leagueSubView === 'teams' && (
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center' }}>
+                            <span style={{ color: 'var(--silver)', fontSize: '0.68rem', fontFamily: 'Oswald, sans-serif', marginRight: '4px' }}>SORT:</span>
+                            {[['wins', 'WINS'], ['dhq', 'DHQ'], ['champs', 'CHAMPS']].map(([s, label]) => (
+                                <button key={s} style={sortBtnStyle(leagueSort === s)} onClick={() => setLeagueSort(s)}>{label}</button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* TEAMS tab — card grid */}
+                    {leagueSubView === 'teams' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                            {sortedStandings.map((team, idx) => {
+                                const roster = currentLeague.rosters.find(r => r.owner_id === team.userId);
+                                const players = roster?.players || [];
+                                const totalDHQ = players.reduce((sum, pid) => sum + (scores[pid] || 0), 0);
+                                const champCount = champs.filter(c => c === team.userId).length;
+                                const userHist = leagueUsersHistory[team.userId] || {};
+                                const yearsInLeague = userHist.years || null;
+                                const top3 = [...players].sort((a, b) => (scores[b] || 0) - (scores[a] || 0)).slice(0, 3);
+                                const posGroups = {};
+                                players.forEach(pid => {
+                                    const pos = normPos(getPlayerPosition(pid));
+                                    if (pos && pos !== '??') posGroups[pos] = (posGroups[pos] || 0) + (scores[pid] || 0);
+                                });
+                                const needPositions = totalDHQ > 0
+                                    ? Object.entries(posGroups).filter(([, dhq]) => dhq / totalDHQ < 0.1).map(([pos]) => pos)
+                                    : [];
+
+                                return (
+                                    <div
+                                        key={team.rosterId}
+                                        onClick={() => setLeagueSelectedTeam({ ...team, roster })}
+                                        style={{ background: 'var(--black)', border: '2px solid rgba(212,175,55,0.3)', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s' }}
+                                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(212,175,55,0.2)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(212,175,55,0.3)'; e.currentTarget.style.boxShadow = 'none'; }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                {team.avatar
+                                                    ? <img src={`https://sleepercdn.com/avatars/thumbs/${team.avatar}`} alt="" style={{ width: '44px', height: '44px', borderRadius: '50%', border: '2px solid var(--gold)' }} />
+                                                    : <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--charcoal)', border: '2px solid var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', color: 'var(--silver)' }}>{team.displayName.charAt(0)}</div>
+                                                }
+                                                {champCount > 0 && (
+                                                    <div style={{ position: 'absolute', top: '-4px', right: '-4px', background: 'var(--gold)', color: 'var(--black)', fontSize: '0.55rem', fontWeight: '700', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        {champCount > 1 ? champCount : '★'}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ color: 'var(--gold)', fontFamily: 'Oswald, sans-serif', fontSize: '1rem', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {team.displayName}
+                                                    {champCount > 0 && <span style={{ marginLeft: '6px', fontSize: '0.6rem', color: 'rgba(212,175,55,0.7)' }}>{champCount}x CHAMP</span>}
+                                                </div>
+                                                <div style={{ color: 'var(--silver)', fontSize: '0.75rem' }}>
+                                                    {team.wins}-{team.losses}
+                                                    {totalDHQ > 0 ? ` · ${(totalDHQ / 1000).toFixed(1)}k DHQ` : ''}
+                                                </div>
+                                            </div>
+                                            <div style={{ color: 'var(--silver)', fontSize: '0.75rem', opacity: 0.4, flexShrink: 0 }}>#{idx + 1}</div>
+                                        </div>
+
+                                        {yearsInLeague > 1 && (
+                                            <div style={{ fontSize: '0.68rem', color: 'var(--silver)', marginBottom: '8px', opacity: 0.6 }}>{yearsInLeague} yrs in league</div>
+                                        )}
+
+                                        {needPositions.length > 0 && (
+                                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' }}>
+                                                <span style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.6 }}>NEEDS:</span>
+                                                {needPositions.map(pos => (
+                                                    <span key={pos} style={{ fontSize: '0.62rem', color: getPositionColor(pos), border: `1px solid ${getPositionColor(pos)}`, borderRadius: '3px', padding: '1px 5px', fontFamily: 'Oswald, sans-serif', fontWeight: '700' }}>{pos}</span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {top3.length > 0 && (
+                                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '8px' }}>
+                                                {top3.map((pid, i) => (
+                                                    <div key={pid} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                                        <span style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.4, width: '10px' }}>{i + 1}</span>
+                                                        <img src={`https://sleepercdn.com/content/nfl/players/thumb/${pid}.jpg`} alt="" onError={e => { e.target.style.display = 'none'; }} style={{ width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0 }} />
+                                                        <span style={{ flex: 1, fontSize: '0.78rem', color: 'var(--white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(pid)}</span>
+                                                        <span style={{ fontSize: '0.68rem', color: 'var(--gold)', fontWeight: '700' }}>{scores[pid] ? `${(scores[pid] / 1000).toFixed(1)}k` : '—'}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* ALL PLAYERS tab */}
+                    {leagueSubView === 'players' && (
+                        <div>
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <input
+                                    value={lpFilter}
+                                    onChange={e => setLpFilter(e.target.value)}
+                                    placeholder="Filter by name or position..."
+                                    style={{ background: 'var(--off-black)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '4px', padding: '6px 10px', color: 'var(--white)', fontSize: '0.8rem', flex: 1, minWidth: '180px', outline: 'none' }}
+                                />
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                    {[['dhq', 'DHQ'], ['ppg', 'PPG']].map(([key, label]) => (
+                                        <button
+                                            key={key}
+                                            style={sortBtnStyle(lpSort.key === key)}
+                                            onClick={() => setLpSort(prev => ({ key, dir: prev.key === key ? -prev.dir : 1 }))}
+                                        >
+                                            {label} {lpSort.key === key ? (lpSort.dir === 1 ? '↓' : '↑') : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '28px 32px 1fr 46px 34px 58px 56px 1fr', gap: '4px', padding: '6px 8px', borderBottom: '2px solid rgba(212,175,55,0.3)', marginBottom: '4px' }}>
+                                {['#', '', 'PLAYER', 'POS', 'AGE', 'DHQ', 'PPG', 'OWNER'].map((h, i) => (
+                                    <span key={i} style={{ fontSize: '0.6rem', color: 'var(--gold)', fontWeight: '700', fontFamily: 'Oswald, sans-serif', letterSpacing: '0.05em', textAlign: (i === 0 || i >= 4) ? 'center' : 'left' }}>{h}</span>
+                                ))}
+                            </div>
+                            {filteredPlayers.slice(0, 250).map(({ pid, owner, dhq, ppg }, idx) => {
+                                const pos = getPlayerPosition(pid);
+                                const player = playersData[pid];
+                                const age = player?.age || '—';
+                                return (
+                                    <div key={pid} style={{ display: 'grid', gridTemplateColumns: '28px 32px 1fr 46px 34px 58px 56px 1fr', gap: '4px', padding: '5px 8px', borderBottom: '1px solid rgba(255,255,255,0.04)', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '0.65rem', color: 'var(--silver)', opacity: 0.4, textAlign: 'center' }}>{idx + 1}</span>
+                                        <img src={`https://sleepercdn.com/content/nfl/players/thumb/${pid}.jpg`} alt="" onError={e => { e.target.style.display = 'none'; }} style={{ width: '24px', height: '24px', borderRadius: '50%' }} />
+                                        <span style={{ fontSize: '0.82rem', color: 'var(--white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(pid)}</span>
+                                        <span style={{ fontSize: '0.62rem', color: getPositionColor(pos), border: `1px solid ${getPositionColor(pos)}`, borderRadius: '3px', padding: '1px 4px', textAlign: 'center', fontWeight: '700' }}>{pos}</span>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--silver)', textAlign: 'center' }}>{age}</span>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--gold)', fontWeight: '700', textAlign: 'center' }}>{dhq ? `${(dhq / 1000).toFixed(1)}k` : '—'}</span>
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--silver)', textAlign: 'center' }}>{ppg > 0 ? ppg.toFixed(1) : '—'}</span>
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--silver)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{owner?.displayName || '—'}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* DRAFT PICKS tab */}
+                    {leagueSubView === 'picks' && (
+                        <div>
+                            {[leagueSeason, leagueSeason + 1, leagueSeason + 2].map(yr => {
+                                const yearPicks = tradedPicks.filter(p => String(p.season) === String(yr));
+                                return (
+                                    <div key={yr} style={{ marginBottom: '28px' }}>
+                                        <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1.2rem', color: 'var(--gold)', letterSpacing: '0.1em', marginBottom: '10px', paddingBottom: '5px', borderBottom: '1px solid rgba(212,175,55,0.3)' }}>
+                                            {yr} PICKS
+                                        </div>
+                                        {yearPicks.length === 0 ? (
+                                            <div style={{ color: 'var(--silver)', fontSize: '0.8rem', opacity: 0.5, fontStyle: 'italic' }}>No traded picks on record for {yr}</div>
+                                        ) : (
+                                            yearPicks.map((pick, i) => {
+                                                const currentOwner = standings.find(t => t.rosterId === pick.owner_id || t.userId === pick.owner_id);
+                                                const originalOwner = standings.find(t => t.rosterId === pick.previous_owner_id || t.userId === pick.previous_owner_id || t.rosterId === pick.roster_id);
+                                                const isTrade = pick.owner_id !== pick.previous_owner_id;
+                                                return (
+                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.05)', background: isTrade ? 'rgba(212,175,55,0.04)' : 'transparent', borderRadius: '4px', marginBottom: '2px' }}>
+                                                        <span style={{ color: 'var(--gold)', fontWeight: '700', fontSize: '0.8rem', fontFamily: 'Oswald, sans-serif', width: '44px', flexShrink: 0 }}>RD {pick.round || '?'}</span>
+                                                        <div style={{ flex: 1 }}>
+                                                            <div style={{ fontSize: '0.82rem', color: 'var(--white)' }}>
+                                                                {currentOwner?.displayName || `Team ${pick.owner_id}`}
+                                                            </div>
+                                                            {isTrade && originalOwner && originalOwner.userId !== currentOwner?.userId && (
+                                                                <div style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.6 }}>via {originalOwner.displayName}</div>
+                                                            )}
+                                                        </div>
+                                                        {isTrade && <span style={{ fontSize: '0.6rem', color: '#F39C12', border: '1px solid #F39C12', borderRadius: '3px', padding: '1px 6px', fontFamily: 'Oswald, sans-serif', fontWeight: '700' }}>TRADED</span>}
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                );
+                            })}
+                            {tradedPicks.length === 0 && (
+                                <div style={{ color: 'var(--silver)', fontSize: '0.85rem', opacity: 0.6, textAlign: 'center', padding: '32px' }}>
+                                    Draft pick trade data requires the DHQ engine (window.S.tradedPicks).
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+
+            function renderTeamRosterDetail(team, tabBtnStyle) {
+                const roster = team.roster;
+                const players = roster?.players || [];
+                const champCount = champs.filter(c => c === team.userId).length;
+
+                return (
+                    <div style={{ padding: '16px', maxWidth: '1600px', margin: '0 auto' }}>
+                        {/* Back + header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                            <button
+                                onClick={() => setLeagueSelectedTeam(null)}
+                                style={{ background: 'transparent', border: '1.5px solid var(--gold)', borderRadius: '4px', color: 'var(--gold)', padding: '6px 12px', fontFamily: 'Oswald, sans-serif', fontSize: '0.8rem', cursor: 'pointer', fontWeight: '700' }}
+                            >
+                                ← BACK
+                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                                {team.avatar
+                                    ? <img src={`https://sleepercdn.com/avatars/thumbs/${team.avatar}`} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%', border: '2px solid var(--gold)', flexShrink: 0 }} />
+                                    : null}
+                                <div>
+                                    <div style={{ color: 'var(--gold)', fontFamily: 'Bebas Neue, cursive', fontSize: '1.4rem', letterSpacing: '0.05em' }}>{team.displayName}</div>
+                                    <div style={{ color: 'var(--silver)', fontSize: '0.75rem' }}>
+                                        {team.wins}-{team.losses}{team.ties > 0 ? `-${team.ties}` : ''} · {champCount > 0 ? `${champCount}x Champion` : 'No Championships'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                {[['roster', 'ROSTER'], ['history', 'HISTORY']].map(([mode, label]) => (
+                                    <button
+                                        key={mode}
+                                        onClick={() => setLeagueViewMode(mode)}
+                                        style={{
+                                            padding: '5px 12px',
+                                            background: leagueViewMode === mode ? 'var(--gold)' : 'transparent',
+                                            color: leagueViewMode === mode ? 'var(--black)' : 'var(--gold)',
+                                            border: '1.5px solid var(--gold)',
+                                            borderRadius: '4px',
+                                            fontFamily: 'Oswald, sans-serif',
+                                            fontSize: '0.72rem',
+                                            fontWeight: '700',
+                                            cursor: 'pointer'
+                                        }}
+                                    >{label}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* ROSTER view */}
+                        {leagueViewMode === 'roster' && (
+                            <div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 56px 56px', gap: '6px', padding: '5px 8px', borderBottom: '2px solid rgba(212,175,55,0.3)', marginBottom: '6px' }}>
+                                    {['POS', 'PLAYER', 'DHQ', 'PPG'].map((h, i) => (
+                                        <span key={i} style={{ fontSize: '0.6rem', color: 'var(--gold)', fontWeight: '700', fontFamily: 'Oswald, sans-serif', letterSpacing: '0.05em', textAlign: i >= 2 ? 'center' : 'left' }}>{h}</span>
+                                    ))}
+                                </div>
+                                {players
+                                    .slice()
+                                    .sort((a, b) => (scores[b] || 0) - (scores[a] || 0))
+                                    .map(pid => {
+                                        const pos = getPlayerPosition(pid);
+                                        const s = stats2025Data[pid] || statsData[pid];
+                                        const rawPts = calcRawPts(s);
+                                        const gp = s?.gp || 0;
+                                        const ppg = rawPts !== null && gp > 0 ? (rawPts / gp).toFixed(1) : '—';
+                                        const dhq = scores[pid] || 0;
+                                        const isStarter = (roster?.starters || []).includes(pid);
+                                        const isIR = (roster?.reserve || []).includes(pid);
+                                        const isTaxi = (roster?.taxi || []).includes(pid);
+                                        const accentColor = isStarter ? 'var(--gold)' : isIR ? '#E74C3C' : isTaxi ? '#3498DB' : null;
+                                        return (
+                                            <div key={pid} style={{ display: 'grid', gridTemplateColumns: '36px 1fr 56px 56px', gap: '6px', padding: '5px 8px', borderBottom: '1px solid rgba(255,255,255,0.04)', alignItems: 'center', borderLeft: accentColor ? `3px solid ${accentColor}` : '3px solid transparent' }}>
+                                                <span style={{ fontSize: '0.62rem', color: getPositionColor(pos), border: '1.5px solid var(--gold)', borderRadius: '3px', padding: '2px 0', textAlign: 'center', fontWeight: '700', background: 'rgba(212,175,55,0.08)' }}>{pos}</span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                                    <img src={`https://sleepercdn.com/content/nfl/players/thumb/${pid}.jpg`} alt="" onError={e => { e.target.style.display = 'none'; }} style={{ width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0 }} />
+                                                    <span style={{ fontSize: '0.82rem', color: 'var(--white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(pid)}</span>
+                                                </div>
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--gold)', fontWeight: '700', textAlign: 'center' }}>{dhq ? `${(dhq / 1000).toFixed(1)}k` : '—'}</span>
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--silver)', textAlign: 'center' }}>{ppg}</span>
+                                            </div>
+                                        );
+                                    })
+                                }
+                            </div>
+                        )}
+
+                        {/* HISTORY view */}
+                        {leagueViewMode === 'history' && (
+                            <div style={{ display: 'grid', gap: '12px', maxWidth: '600px' }}>
+                                {champCount > 0 && (
+                                    <div style={{ background: 'rgba(212,175,55,0.1)', border: '1px solid var(--gold)', borderRadius: '8px', padding: '14px' }}>
+                                        <div style={{ color: 'var(--gold)', fontFamily: 'Oswald, sans-serif', fontSize: '0.8rem', fontWeight: '700', letterSpacing: '0.1em', marginBottom: '6px' }}>CHAMPIONSHIPS</div>
+                                        <div style={{ fontSize: '1.4rem', fontFamily: 'Bebas Neue, cursive', color: 'var(--gold)' }}>★ {champCount}x CHAMPION</div>
+                                    </div>
+                                )}
+                                <div style={{ background: 'var(--off-black)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '14px' }}>
+                                    <div style={{ color: 'var(--silver)', fontFamily: 'Oswald, sans-serif', fontSize: '0.8rem', fontWeight: '700', letterSpacing: '0.1em', marginBottom: '6px' }}>SEASON RECORD</div>
+                                    <div style={{ fontSize: '1rem', color: 'var(--white)' }}>
+                                        {team.wins}-{team.losses}{team.ties > 0 ? `-${team.ties}` : ''}
+                                        <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: 'var(--silver)', opacity: 0.7 }}>{team.pointsFor.toFixed(1)} PF</span>
+                                    </div>
+                                </div>
+                                {!window.App?.LI && (
+                                    <div style={{ padding: '12px', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.25)', borderRadius: '8px', fontSize: '0.78rem', color: 'rgba(231,76,60,0.8)' }}>
+                                        Full history (playoff record, draft grades, rivalries) requires the DHQ engine loaded in the full WarRoom app.
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+        }
 
         return (
             <div className="app-container" style={{ paddingBottom: '60px' }}>
@@ -2906,10 +3320,10 @@
                             onClick={() => btn.action ? btn.action() : window.open(btn.url, '_blank')}
                             style={{
                                 padding: '0.3rem 0.65rem',
-                                background: btn.label === 'Dashboard' ? 'var(--gold)' : 'var(--black)',
+                                background: (btn.isLeagueToggle && activeTab === 'league') ? 'var(--gold)' : 'var(--black)',
                                 border: '1.5px solid var(--gold)',
                                 borderRadius: '4px',
-                                color: btn.label === 'Dashboard' ? 'var(--black)' : 'var(--gold)',
+                                color: (btn.isLeagueToggle && activeTab === 'league') ? 'var(--black)' : 'var(--gold)',
                                 fontFamily: 'Oswald, sans-serif',
                                 fontSize: '0.68rem',
                                 fontWeight: '700',
@@ -2919,16 +3333,19 @@
                                 transition: 'all 0.2s ease',
                                 whiteSpace: 'nowrap'
                             }}
-                            onMouseEnter={e => { if (btn.label !== 'Dashboard') { e.target.style.background = 'rgba(212,175,55,0.15)'; }}}
-                            onMouseLeave={e => { if (btn.label !== 'Dashboard') { e.target.style.background = 'var(--black)'; }}}
+                            onMouseEnter={e => { if (!(btn.isLeagueToggle && activeTab === 'league')) { e.target.style.background = 'rgba(212,175,55,0.15)'; }}}
+                            onMouseLeave={e => { if (!(btn.isLeagueToggle && activeTab === 'league')) { e.target.style.background = 'var(--black)'; }}}
                         >
                             {btn.label}
                         </button>
                     ))}
                 </div>
 
-                {/* Year / Stats Toggle Bar */}
-                <div style={{
+                {/* League tab content */}
+                {activeTab === 'league' && renderLeagueTab()}
+
+                {/* Roster view: year switcher + 3-column layout */}
+                {activeTab !== 'league' && <React.Fragment><div style={{
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
@@ -3124,6 +3541,7 @@
 
                     </div>
                 </div>
+                </React.Fragment>}
             </div>
         );
     }
