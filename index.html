@@ -3510,9 +3510,64 @@
                                         <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: 'var(--silver)', opacity: 0.7 }}>{team.pointsFor.toFixed(1)} PF</span>
                                     </div>
                                 </div>
-                                {!window.App?.LI && (
-                                    <div style={{ padding: '12px', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.25)', borderRadius: '8px', fontSize: '0.78rem', color: 'rgba(231,76,60,0.8)' }}>
-                                        Full history (playoff record, draft grades, rivalries) requires the DHQ engine loaded in the full WarRoom app.
+                                {dhqReady ? (() => {
+                                    const LI = window.App?.LI || {};
+                                    const myPicks = (LI.draftOutcomes || []).filter(d => d.roster_id === team.rosterId);
+                                    const hitRate = myPicks.length ? Math.round(myPicks.filter(d => d.isStarter).length / myPicks.length * 100) : null;
+                                    const eliteHits = myPicks.filter(d => d.isHit).length;
+                                    const profile = (LI.ownerProfiles || {})[team.rosterId];
+                                    return (
+                                        <React.Fragment>
+                                            {myPicks.length > 0 && (
+                                                <div style={{ background: 'var(--off-black)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '14px' }}>
+                                                    <div style={{ color: 'var(--silver)', fontFamily: 'Oswald, sans-serif', fontSize: '0.8rem', fontWeight: '700', letterSpacing: '0.1em', marginBottom: '10px' }}>DRAFT GRADE</div>
+                                                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                                                        <div>
+                                                            <div style={{ fontSize: '1.6rem', fontFamily: 'Bebas Neue, cursive', color: hitRate >= 50 ? '#4ECDC4' : hitRate >= 30 ? 'var(--gold)' : 'var(--silver)' }}>{hitRate !== null ? `${hitRate}%` : '—'}</div>
+                                                            <div style={{ fontSize: '0.65rem', color: 'var(--silver)', opacity: 0.7 }}>Starter Hit Rate</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontSize: '1.6rem', fontFamily: 'Bebas Neue, cursive', color: 'var(--gold)' }}>{myPicks.length}</div>
+                                                            <div style={{ fontSize: '0.65rem', color: 'var(--silver)', opacity: 0.7 }}>Picks Analyzed</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontSize: '1.6rem', fontFamily: 'Bebas Neue, cursive', color: '#E5C55B' }}>{eliteHits}</div>
+                                                            <div style={{ fontSize: '0.65rem', color: 'var(--silver)', opacity: 0.7 }}>Elite Hits</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {profile && (
+                                                <div style={{ background: 'var(--off-black)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '14px' }}>
+                                                    <div style={{ color: 'var(--silver)', fontFamily: 'Oswald, sans-serif', fontSize: '0.8rem', fontWeight: '700', letterSpacing: '0.1em', marginBottom: '10px' }}>TRADE DNA</div>
+                                                    <div style={{ fontSize: '1rem', color: 'var(--gold)', fontFamily: 'Oswald, sans-serif', fontWeight: '700', marginBottom: '8px' }}>{profile.dna || 'Unknown'}</div>
+                                                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                                                        <div>
+                                                            <div style={{ fontSize: '1.4rem', fontFamily: 'Bebas Neue, cursive', color: 'var(--white)' }}>{profile.trades || 0}</div>
+                                                            <div style={{ fontSize: '0.65rem', color: 'var(--silver)', opacity: 0.7 }}>Total Trades</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontSize: '1.4rem', fontFamily: 'Bebas Neue, cursive', color: '#4ECDC4' }}>{profile.tradesWon || 0}</div>
+                                                            <div style={{ fontSize: '0.65rem', color: 'var(--silver)', opacity: 0.7 }}>Won</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontSize: '1.4rem', fontFamily: 'Bebas Neue, cursive', color: '#E74C3C' }}>{profile.tradesLost || 0}</div>
+                                                            <div style={{ fontSize: '0.65rem', color: 'var(--silver)', opacity: 0.7 }}>Lost</div>
+                                                        </div>
+                                                        {profile.targetPos && (
+                                                            <div>
+                                                                <div style={{ fontSize: '1.4rem', fontFamily: 'Bebas Neue, cursive', color: 'var(--gold)' }}>{profile.targetPos}</div>
+                                                                <div style={{ fontSize: '0.65rem', color: 'var(--silver)', opacity: 0.7 }}>Target Pos</div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </React.Fragment>
+                                    );
+                                })() : (
+                                    <div style={{ padding: '12px', background: 'rgba(78,205,196,0.06)', border: '1px solid rgba(78,205,196,0.2)', borderRadius: '8px', fontSize: '0.78rem', color: 'rgba(78,205,196,0.8)' }}>
+                                        DHQ engine loading... Draft grades and trade DNA will appear shortly.
                                     </div>
                                 )}
                             </div>
