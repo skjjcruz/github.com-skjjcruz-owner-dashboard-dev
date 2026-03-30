@@ -3124,7 +3124,10 @@
             };
 
             const scores = dhqReady ? (window.App?.LI?.playerScores || {}) : {};
-            const champs = dhqReady ? (window.App?.LI?.championships || []) : [];
+            // championships is { season: { champion: rosterId, ... } } — flatten to array of rosterId
+            const champRosterIds = dhqReady
+                ? Object.values(window.App?.LI?.championships || {}).map(c => c.champion).filter(Boolean)
+                : [];
             const leagueUsersHistory = dhqReady ? (window.App?.LI?.leagueUsersHistory || {}) : {};
 
             function getRosterDHQ(roster) {
@@ -3139,8 +3142,8 @@
                     return getRosterDHQ(rB) - getRosterDHQ(rA);
                 }
                 if (leagueSort === 'champs') {
-                    const cA = champs.filter(c => c === a.userId).length;
-                    const cB = champs.filter(c => c === b.userId).length;
+                    const cA = champRosterIds.filter(c => c === a.rosterId).length;
+                    const cB = champRosterIds.filter(c => c === b.rosterId).length;
                     if (cB !== cA) return cB - cA;
                 }
                 if (b.wins !== a.wins) return b.wins - a.wins;
@@ -3236,7 +3239,7 @@
                                 const roster = currentLeague.rosters.find(r => r.owner_id === team.userId);
                                 const players = roster?.players || [];
                                 const totalDHQ = players.reduce((sum, pid) => sum + (scores[pid] || 0), 0);
-                                const champCount = champs.filter(c => c === team.userId).length;
+                                const champCount = champRosterIds.filter(c => c === team.rosterId).length;
                                 const userHist = leagueUsersHistory[team.userId] || {};
                                 const yearsInLeague = userHist.years || null;
                                 const top3 = [...players].sort((a, b) => (scores[b] || 0) - (scores[a] || 0)).slice(0, 3);
@@ -3409,7 +3412,7 @@
             function renderTeamRosterDetail(team, tabBtnStyle) {
                 const roster = team.roster;
                 const players = roster?.players || [];
-                const champCount = champs.filter(c => c === team.userId).length;
+                const champCount = champRosterIds.filter(c => c === team.rosterId).length;
 
                 return (
                     <div style={{ padding: '16px', maxWidth: '1600px', margin: '0 auto' }}>
