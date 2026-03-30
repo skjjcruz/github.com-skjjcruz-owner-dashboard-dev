@@ -2695,6 +2695,7 @@
         const [leagueSubView, setLeagueSubView] = useState('teams');
         const [lpSort, setLpSort] = useState({ key: 'dhq', dir: 1 });
         const [lpFilter, setLpFilter] = useState('');
+        const [dhqReady, setDhqReady] = useState(() => !!(window.App?.LI_LOADED));
 
         useEffect(() => {
             loadLeagueDetails();
@@ -2703,7 +2704,7 @@
         // Initialize DHQ engine once player data is available
         useEffect(() => {
             if (!Object.keys(playersData).length) return;
-            if (window.App?.LI_LOADED) return;
+            if (window.App?.LI_LOADED) { if (!dhqReady) setDhqReady(true); return; }
             if (window._liLoading) return;
             if (typeof window.App?.loadLeagueIntel !== 'function') return;
             window.App = window.App || {};
@@ -2714,8 +2715,8 @@
                 rosters: currentLeague.rosters || [],
                 players: playersData,
             };
-            window.App.loadLeagueIntel().catch(() => {});
-        }, [playersData, currentLeague.league_id || currentLeague.id]);
+            window.App.loadLeagueIntel().then(() => setDhqReady(true)).catch(() => {});
+        }, [playersData]);
 
         async function loadLeagueDetails() {
             try {
@@ -3122,9 +3123,9 @@
                 return pos;
             };
 
-            const scores = window.App?.LI?.playerScores || {};
-            const champs = window.App?.LI?.championships || [];
-            const leagueUsersHistory = window.App?.LI?.leagueUsersHistory || {};
+            const scores = dhqReady ? (window.App?.LI?.playerScores || {}) : {};
+            const champs = dhqReady ? (window.App?.LI?.championships || []) : [];
+            const leagueUsersHistory = dhqReady ? (window.App?.LI?.leagueUsersHistory || {}) : {};
 
             function getRosterDHQ(roster) {
                 if (!roster) return 0;
