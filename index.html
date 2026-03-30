@@ -794,6 +794,11 @@
         animation-play-state: paused;
     }
 
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+
     @keyframes scroll-ticker {
         0% {
             transform: translateX(var(--ticker-start, 100vw));
@@ -996,6 +1001,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="shared/dhq-engine.js"></script>
 
 <script type="text/babel">
     // ===== AUTHENTICATION CHECK =====
@@ -1958,8 +1964,31 @@
         const [syncing, setSyncing] = useState(false);
         const [showRoster, setShowRoster] = useState(false);
         const [showLeagueRosters, setShowLeagueRosters] = useState(false);
+        const [dhqReady, setDhqReady] = useState(() => !!(window.App?.LI_LOADED));
+        const [dhqLoading, setDhqLoading] = useState(false);
 
         useEffect(() => { loadData(); }, [currentLeague]);
+
+        // Init DHQ engine once player data is loaded
+        useEffect(() => {
+            if (!Object.keys(playersData).length) return;
+            if (window.App?.LI_LOADED) { if (!dhqReady) setDhqReady(true); return; }
+            if (window._liLoading) return;
+            if (typeof window.App?.loadLeagueIntel !== 'function') return;
+            window.App = window.App || {};
+            window.App.S = {
+                currentLeagueId: currentLeague.id,
+                season: currentLeague.season,
+                leagues: [{ league_id: currentLeague.id, scoring_settings: currentLeague.scoring_settings || {}, roster_positions: currentLeague.roster_positions || [] }],
+                rosters: currentLeague.rosters || [],
+                players: playersData,
+            };
+            setDhqLoading(true);
+            window.App.loadLeagueIntel().then(() => {
+                setDhqReady(true);
+                setDhqLoading(false);
+            }).catch(() => setDhqLoading(false));
+        }, [playersData, currentLeague.id]);
 
         async function loadData() {
             setLoading(true);
@@ -2161,21 +2190,189 @@
             return null;
         }
 
+        // DHQ-powered KPI data
+        const LI_data = dhqReady ? (window.App?.LI || {}) : {};
+        const liScores = LI_data.playerScores || {};
+        const myRosterId = myRoster?.roster_id;
+        const myRosterPlayers = myRoster?.players || [];
+
+        const myDhqTotal = dhqReady ? myRosterPlayers.reduce((s, pid) => s + (liScores[pid] || 0), 0) : 0;
+        const myDhqRank = dhqReady ? (() => {
+            const totals = (currentLeague.rosters || [])
+                .map(r => ({ id: r.roster_id, total: (r.players || []).reduce((s, pid) => s + (liScores[pid] || 0), 0) }))
+                .sort((a, b) => b.total - a.total);
+            return totals.findIndex(r => r.id === myRosterId) + 1;
+        })() : 0;
+
+        const myDraftPicks = dhqReady ? (LI_data.draftOutcomes || []).filter(d => d.roster_id === myRosterId) : [];
+        const myHitRate = myDraftPicks.length ? Math.round(myDraftPicks.filter(d => d.isStarter).length / myDraftPicks.length * 100) : null;
+
+        const myAvgAge = dhqReady && myRosterPlayers.length ? (() => {
+            const ages = myRosterPlayers.map(pid => LI_data.playerMeta?.[pid]?.age || 0).filter(a => a > 0);
+            return ages.length ? (ages.reduce((s, a) => s + a, 0) / ages.length).toFixed(1) : null;
+        })() : null;
+
         const kpiCards = [
             {
-                label: 'ROSTER',
+                label: 'RECORD',
                 value: myTeam ? `${myTeam.wins}-${myTeam.losses}` : '—',
                 sub: myRank > 0 ? `#${myRank} in league` : 'Not yet started',
             },
-            { label: 'DRAFT', value: '—', sub: 'Draft hit rate' },
+            {
+                label: 'DHQ RANK',
+                value: dhqReady && myDhqRank ? `#${myDhqRank}` : '—',
+                sub: dhqLoading ? 'Building...' : dhqReady ? `${myDhqTotal > 0 ? (myDhqTotal/1000).toFixed(0)+'k pts' : 'No data'}` : 'Loading DHQ...',
+            },
+            {
+                label: 'DRAFT HITS',
+                value: myHitRate !== null ? `${myHitRate}%` : '—',
+                sub: myDraftPicks.length ? `${myDraftPicks.length} picks analyzed` : dhqLoading ? 'Analyzing...' : 'Needs DHQ',
+            },
             {
                 label: 'WAIVERS',
                 value: hasFAAB ? `$${faabRemaining}` : '—',
-                sub: hasFAAB ? `$${faabRemaining} remaining` : 'No FAAB',
+                sub: hasFAAB ? `of $${faabBudget} budget` : 'No FAAB league',
             },
-            { label: 'TRADES', value: '—', sub: 'Net value/trade' },
-            { label: 'PROJECTION', value: '—', sub: 'Compete window' },
+            {
+                label: 'AVG AGE',
+                value: myAvgAge ? `${myAvgAge}` : '—',
+                sub: myAvgAge ? 'Roster avg age' : dhqLoading ? 'Building...' : 'Needs DHQ',
+            },
         ];
+
+        // Analytics view rendered when activeNav === 'analytics'
+        function renderAnalytics() {
+            if (!dhqReady || !window.App?.LI?.playerScores) {
+                return (
+                    <div style={{ padding: '2rem 1.5rem', textAlign: 'center' }}>
+                        {dhqLoading ? (
+                            <>
+                                <div style={{ fontSize: '1.2rem', fontFamily: 'Bebas Neue, cursive', color: 'var(--gold)', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>BUILDING LEAGUE INTELLIGENCE...</div>
+                                <div style={{ fontSize: '0.82rem', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.6 }}>
+                                    First run takes ~15 seconds.<br/>Analyzing 5 years of stats, drafts &amp; trades.
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div style={{ fontSize: '1.1rem', fontFamily: 'Bebas Neue, cursive', color: 'var(--gold)', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>DHQ ENGINE NOT READY</div>
+                                <div style={{ fontSize: '0.82rem', color: 'var(--silver)', opacity: 0.6 }}>Waiting for player data to finish loading...</div>
+                            </>
+                        )}
+                    </div>
+                );
+            }
+            const LI = window.App.LI;
+            const scores = LI.playerScores || {};
+            const rosters = currentLeague.rosters || [];
+
+            // Build team DHQ totals
+            const teamDHQ = rosters.map(r => {
+                const owner = standings.find(t => t.userId === r.owner_id);
+                const total = (r.players || []).reduce((s, pid) => s + (scores[pid] || 0), 0);
+                const picks = (LI.draftOutcomes || []).filter(d => d.roster_id === r.roster_id);
+                const hitRate = picks.length ? Math.round(picks.filter(d => d.isStarter).length / picks.length * 100) : null;
+                const profile = LI.ownerProfiles?.[r.roster_id];
+                return { ...owner, rosterId: r.roster_id, total, hitRate, picks: picks.length, profile };
+            }).sort((a, b) => b.total - a.total);
+            const maxDHQ = teamDHQ[0]?.total || 1;
+
+            // Championships map (roster_id → seasons won)
+            const champsByRoster = {};
+            Object.values(LI.championships || {}).forEach(c => {
+                if (c.champion) champsByRoster[c.champion] = (champsByRoster[c.champion] || 0) + 1;
+            });
+
+            return (
+                <div style={{ padding: '0 1.5rem 1.5rem' }}>
+
+                    {/* DHQ Power Rankings */}
+                    <div style={{ background: 'var(--off-black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
+                        <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.14em', marginBottom: '0.65rem', paddingBottom: '0.45rem', borderBottom: '1px solid rgba(212,175,55,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>DHQ POWER RANKINGS</span>
+                            <span style={{ fontSize: '0.62rem', fontFamily: 'Oswald, sans-serif', color: 'var(--silver)', opacity: 0.7 }}>Dynasty Value Score</span>
+                        </div>
+                        {teamDHQ.map((team, idx) => {
+                            const isMe = team?.userId === sleeperUserId;
+                            const barPct = maxDHQ > 0 ? Math.round((team.total / maxDHQ) * 100) : 0;
+                            const champCount = champsByRoster[team?.rosterId] || 0;
+                            return (
+                                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                    <span style={{ width: '18px', color: 'var(--gold)', fontWeight: '700', fontSize: '0.75rem', textAlign: 'center', flexShrink: 0 }}>{idx + 1}</span>
+                                    {team?.avatar ? (
+                                        <img src={`https://sleepercdn.com/avatars/thumbs/${team.avatar}`} alt="" style={{ width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0 }} onError={e => { e.target.style.display='none'; }} />
+                                    ) : (
+                                        <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--charcoal)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.62rem', color: 'var(--silver)' }}>{team?.displayName?.charAt(0)}</div>
+                                    )}
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '0.78rem', color: isMe ? 'var(--gold)' : 'var(--white)', fontWeight: isMe ? '700' : '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {team?.displayName}{champCount > 0 ? ` ${'★'.repeat(champCount)}` : ''}
+                                        </div>
+                                        <div style={{ height: '3px', background: 'rgba(255,255,255,0.07)', borderRadius: '2px', overflow: 'hidden', marginTop: '4px' }}>
+                                            <div style={{ height: '100%', width: `${barPct}%`, background: isMe ? 'var(--gold)' : '#4ECDC4', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right', flexShrink: 0, minWidth: '52px' }}>
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--gold)', fontWeight: '700' }}>{team.total > 0 ? `${(team.total/1000).toFixed(0)}k` : '—'}</div>
+                                        {team.hitRate !== null && <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.6 }}>{team.hitRate}% hit</div>}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Draft Intelligence by Round */}
+                    {Object.keys(LI.hitRateByRound || {}).length > 0 && (
+                        <div style={{ background: 'var(--off-black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
+                            <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.14em', marginBottom: '0.65rem', paddingBottom: '0.45rem', borderBottom: '1px solid rgba(212,175,55,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>DRAFT INTELLIGENCE</span>
+                                <span style={{ fontSize: '0.62rem', fontFamily: 'Oswald, sans-serif', color: 'var(--silver)', opacity: 0.7 }}>{LI.totalPicks || 0} picks · {(LI.draftMeta||[]).length} drafts</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '0.5rem' }}>
+                                {Object.entries(LI.hitRateByRound).slice(0, 7).map(([rd, data]) => (
+                                    <div key={rd} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '6px', padding: '0.65rem', textAlign: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', fontWeight: '700', letterSpacing: '0.08em', marginBottom: '4px' }}>ROUND {rd}</div>
+                                        <div style={{ fontSize: '1.2rem', fontFamily: 'Bebas Neue, cursive', color: data.rate >= 50 ? '#4ECDC4' : data.rate >= 30 ? 'var(--gold)' : 'var(--silver)' }}>{data.rate}%</div>
+                                        <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.6, marginTop: '2px' }}>{data.starters}/{data.total} hits</div>
+                                        {data.bestPos?.[0] && <div style={{ fontSize: '0.58rem', color: 'var(--gold)', marginTop: '3px' }}>↑ {data.bestPos[0].pos}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Owner Trade DNA */}
+                    {Object.keys(LI.ownerProfiles || {}).length > 0 && (
+                        <div style={{ background: 'var(--off-black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', padding: '1rem' }}>
+                            <div style={{ fontFamily: 'Bebas Neue, cursive', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.14em', marginBottom: '0.65rem', paddingBottom: '0.45rem', borderBottom: '1px solid rgba(212,175,55,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>OWNER TRADE DNA</span>
+                                <span style={{ fontSize: '0.62rem', fontFamily: 'Oswald, sans-serif', color: 'var(--silver)', opacity: 0.7 }}>{LI.leagueTradeTendencies?.totalTrades || 0} total trades</span>
+                            </div>
+                            {standings.map(team => {
+                                const roster = rosters.find(r => r.owner_id === team.userId);
+                                const profile = roster ? LI.ownerProfiles?.[roster.roster_id] : null;
+                                if (!profile) return null;
+                                const isMe = team.userId === sleeperUserId;
+                                const tradeBalance = profile.tradesWon - profile.tradesLost;
+                                return (
+                                    <div key={team.userId} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: '0.78rem', color: isMe ? 'var(--gold)' : 'var(--white)', fontWeight: isMe ? '700' : '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{team.displayName}</div>
+                                            <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.65, marginTop: '1px' }}>{profile.dna}</div>
+                                        </div>
+                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                            <div style={{ fontSize: '0.7rem', fontWeight: '700', color: tradeBalance > 0 ? '#4ECDC4' : tradeBalance < 0 ? '#E74C3C' : 'var(--silver)' }}>
+                                                {profile.tradesWon}W–{profile.tradesLost}L
+                                            </div>
+                                            <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.6 }}>{profile.trades} trades</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        }
 
         const navItems = [
             { id: 'dashboard',   label: 'Dashboard',   action: () => onBack() },
@@ -2183,7 +2380,7 @@
             { id: 'myteam',     label: 'My Team',     action: () => { setShowRoster(true); setActiveNav('myteam'); } },
             { id: 'teamcomps',      label: 'Team Comps',     action: () => { sessionStorage.setItem('tdp_return_league_id', currentLeague.id); window.open('team-comps/', '_blank'); } },
             { id: 'leaguerosters',  label: 'League Rosters', action: () => { setShowLeagueRosters(true); setActiveNav('leaguerosters'); } },
-            { id: 'analytics',   label: 'Analytics',         action: null },
+            { id: 'analytics',   label: 'Analytics',         action: () => setActiveNav('analytics') },
             { id: 'rosteraudit', label: 'League Roster Audit', action: () => { sessionStorage.setItem('tdp_return_league_id', currentLeague.id); window.location.href = 'trade-calculator.html?tab=audit'; } },
             { id: 'ownerdna',    label: 'Owner DNA',           action: () => { sessionStorage.setItem('tdp_return_league_id', currentLeague.id); window.location.href = 'trade-calculator.html?tab=dna'; } },
             { id: 'tradeanalyzer', label: 'Trade Analyzer',    action: () => { sessionStorage.setItem('tdp_return_league_id', currentLeague.id); window.location.href = 'trade-calculator.html?tab=analyzer'; } },
@@ -2290,6 +2487,10 @@
                             <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: syncing ? 'var(--gold)' : 'var(--win-green)', flexShrink: 0 }} />
                             <span style={{ fontSize: '0.65rem', color: 'var(--silver)' }}>{syncing ? 'Syncing…' : 'Synced'}</span>
                         </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                            <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: dhqReady ? '#4ECDC4' : dhqLoading ? 'var(--gold)' : 'rgba(255,255,255,0.2)', flexShrink: 0, animation: dhqLoading ? 'pulse 1.2s infinite' : 'none' }} />
+                            <span style={{ fontSize: '0.65rem', color: 'var(--silver)' }}>{dhqReady ? 'DHQ Ready' : dhqLoading ? 'DHQ Loading…' : 'DHQ Pending'}</span>
+                        </div>
                         <div onClick={handleRefresh} style={{ fontSize: '0.65rem', color: 'var(--gold)', cursor: 'pointer', opacity: syncing ? 0.4 : 1 }}>
                             Refresh Data
                         </div>
@@ -2329,6 +2530,10 @@
                             {scoringType} · {teamCount} Teams
                         </span>
                     </div>
+
+                    {activeNav === 'analytics' && renderAnalytics()}
+
+                    {activeNav !== 'analytics' && <React.Fragment>
 
                     {/* KPI Cards */}
                     <div className="tdp-kpi-grid">
@@ -2463,6 +2668,8 @@
                         </div>
 
                     </div>
+
+                    </React.Fragment>}
                 </div>
             </div>
         );
@@ -2492,6 +2699,23 @@
         useEffect(() => {
             loadLeagueDetails();
         }, [currentLeague]);
+
+        // Initialize DHQ engine once player data is available
+        useEffect(() => {
+            if (!Object.keys(playersData).length) return;
+            if (window.App?.LI_LOADED) return;
+            if (window._liLoading) return;
+            if (typeof window.App?.loadLeagueIntel !== 'function') return;
+            window.App = window.App || {};
+            window.App.S = {
+                currentLeagueId: currentLeague.league_id || currentLeague.id,
+                season: currentLeague.season,
+                leagues: [{ league_id: currentLeague.league_id || currentLeague.id, scoring_settings: currentLeague.scoring_settings || {}, roster_positions: currentLeague.roster_positions || [] }],
+                rosters: currentLeague.rosters || [],
+                players: playersData,
+            };
+            window.App.loadLeagueIntel().catch(() => {});
+        }, [playersData, currentLeague.league_id || currentLeague.id]);
 
         async function loadLeagueDetails() {
             try {
