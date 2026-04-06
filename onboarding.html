@@ -663,11 +663,11 @@
           <div class="platform-status live">Primary · Live</div>
         </div>
 
-        <div class="platform-card" id="plat-yahoo" onclick="togglePlatform('yahoo')">
-          <div class="platform-check"></div>
+        <div class="platform-card" id="plat-yahoo" onclick="connectYahoo()">
+          <div class="platform-check" id="yahoo-check"></div>
           <div class="platform-icon">🔮</div>
           <div class="platform-name">Yahoo Fantasy</div>
-          <div class="platform-status">Coming soon</div>
+          <div class="platform-status" id="yahoo-status">Connect via OAuth</div>
         </div>
 
         <div class="platform-card" id="plat-espn" onclick="togglePlatform('espn')">
@@ -833,6 +833,21 @@
         const p = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
         if (!isManaging && p && p.onboardingComplete) { window.location.href = 'index.html'; return; }
       } catch {}
+      // Handle return from Yahoo OAuth callback
+      if (params.get('yahoo_connected') === '1') {
+        selectedPlatforms.add('yahoo');
+        const yahooCard = document.getElementById('plat-yahoo');
+        if (yahooCard) {
+          yahooCard.classList.add('selected');
+          document.getElementById('yahoo-check').textContent = '✓';
+          document.getElementById('yahoo-status').textContent = 'Connected ✓';
+          document.getElementById('yahoo-status').style.color = 'var(--green)';
+        }
+        // Clean up URL so refreshing doesn't re-trigger
+        const cleanUrl = location.pathname + (params.get('manage') ? '?manage=true' : '');
+        history.replaceState({}, '', cleanUrl);
+      }
+
       if (params.get('payment') === 'success') {
         const savedPlan = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')?.tier || 'standard';
         selectedPlan = savedPlan;
@@ -1063,6 +1078,42 @@
         if (x) document.getElementById('xai-key-in').value = x;
         updateProviderHint();
       } catch (e) {}
+    }
+
+    // ── Yahoo OAuth ────────────────────────────────────────
+    function connectYahoo() {
+      const card = document.getElementById('plat-yahoo');
+
+      // If already connected, toggle it off like other platforms
+      if (selectedPlatforms.has('yahoo')) {
+        selectedPlatforms.delete('yahoo');
+        card.classList.remove('selected');
+        document.getElementById('yahoo-check').textContent = '';
+        document.getElementById('yahoo-status').textContent = 'Connect via OAuth';
+        document.getElementById('yahoo-status').style.color = '';
+        return;
+      }
+
+      // Get user_id from the active session (fw_session_v1)
+      let userId = '';
+      try {
+        const session = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
+        userId = session?.user?.id || '';
+      } catch {}
+
+      // Build the OAuth start URL on the Supabase edge function
+      const returnTo = location.href.split('?')[0]; // current page without params
+      const startUrl = `${SUPABASE_URL}/functions/v1/yahoo-oauth?action=start` +
+        `&user_id=${encodeURIComponent(userId)}` +
+        `&return_to=${encodeURIComponent(returnTo + (location.search.includes('manage') ? '?manage=true' : ''))}`;
+
+      // Update card to show loading state
+      document.getElementById('yahoo-status').textContent = 'Opening Yahoo…';
+      card.style.opacity = '0.7';
+      card.style.pointerEvents = 'none';
+
+      // Redirect to Yahoo OAuth (comes back via edge function callback)
+      window.location.href = startUrl;
     }
 
     // ── Platform selection ─────────────────────────────────
