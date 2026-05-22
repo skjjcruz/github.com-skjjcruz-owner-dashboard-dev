@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dynasty HQ — Admin</title>
+  <link rel="icon" href="icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --gold:      #D4AF37;
+      --dark-gold: #B8941E;
+      --black:     #0A0A0A;
+      --off-black: #1A1A1A;
+      --charcoal:  #2A2A2A;
+      --white:     #FFFFFF;
+      --silver:    #C0C0C0;
+      --muted:     rgba(255,255,255,0.45);
+      --green:     #2ECC71;
+      --red:       #E74C3C;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--black);
+      color: var(--white);
+      min-height: 100vh;
+    }
+
+    /* ── Gate ─────────────────────────────────────────────── */
+    #gate {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 1.5rem;
+      padding: 2rem;
+    }
+
+    #gate h1 {
+      font-family: 'Inter', sans-serif;
+      font-size: 2.5rem;
+      color: var(--gold);
+      letter-spacing: 0.15em;
+    }
+
+    #gate p { color: var(--muted); font-size: 0.9rem; }
+
+    .field {
+      width: 100%;
+      max-width: 360px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .field label {
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      color: var(--silver);
+      text-transform: uppercase;
+    }
+
+    .field input {
+      background: var(--charcoal);
+      border: 1px solid rgba(212,175,55,0.3);
+      border-radius: 4px;
+      padding: 0.75rem 1rem;
+      color: var(--white);
+      font-family: 'Inter', sans-serif;
+      font-size: 1rem;
+      outline: none;
+      width: 100%;
+    }
+    .field input:focus { border-color: var(--gold); }
+
+    .btn-gold {
+      width: 100%;
+      max-width: 360px;
+      padding: 0.85rem;
+      background: linear-gradient(135deg, var(--gold), var(--dark-gold));
+      border: none;
+      border-radius: 4px;
+      color: var(--black);
+      font-family: 'Inter', sans-serif;
+      font-size: 1.2rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+    }
+    .btn-gold:hover { filter: brightness(1.15); }
+    .btn-gold:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg {
+      color: var(--red);
+      font-size: 0.85rem;
+      text-align: center;
+      min-height: 1.2em;
+    }
+
+    /* ── Dashboard ────────────────────────────────────────── */
+    #dashboard { display: none; }
+
+    .header {
+      background: linear-gradient(135deg, var(--black), var(--off-black));
+      border-bottom: 3px solid var(--gold);
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .header-title {
+      font-family: 'Inter', sans-serif;
+      font-size: 1.5rem;
+      color: var(--gold);
+      letter-spacing: 0.15em;
+    }
+
+    .header-controls {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #search-input {
+      background: var(--charcoal);
+      border: 1px solid rgba(212,175,55,0.3);
+      border-radius: 4px;
+      padding: 0.5rem 0.75rem;
+      color: var(--white);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      width: 220px;
+      outline: none;
+    }
+    #search-input:focus { border-color: var(--gold); }
+
+    .btn-sm {
+      padding: 0.5rem 1rem;
+      background: var(--charcoal);
+      border: 1px solid rgba(212,175,55,0.4);
+      border-radius: 4px;
+      color: var(--gold);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-sm:hover { background: var(--off-black); border-color: var(--gold); }
+
+    .stat-bar {
+      display: flex;
+      gap: 2rem;
+      padding: 1rem 1.5rem;
+      background: var(--off-black);
+      border-bottom: 1px solid rgba(212,175,55,0.15);
+      flex-wrap: wrap;
+    }
+
+    .stat { display: flex; flex-direction: column; gap: 0.15rem; }
+    .stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+    .stat-value { font-family: 'Inter', sans-serif; font-size: 1.6rem; color: var(--gold); letter-spacing: 0.05em; }
+
+    .table-wrap {
+      overflow-x: auto;
+      padding: 1.5rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 0.6rem 1rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--gold);
+      border-bottom: 2px solid rgba(212,175,55,0.3);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      transition: background 0.15s;
+    }
+    tbody tr:hover { background: rgba(212,175,55,0.05); }
+
+    tbody td {
+      padding: 0.65rem 1rem;
+      color: var(--silver);
+      vertical-align: middle;
+    }
+
+    .email-cell { color: var(--white); font-weight: 400; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-pro  { background: rgba(212,175,55,0.2); color: var(--gold); border: 1px solid rgba(212,175,55,0.4); }
+    .badge-free { background: rgba(192,192,192,0.1); color: var(--silver); border: 1px solid rgba(192,192,192,0.2); }
+
+    .products-cell { font-size: 0.8rem; color: var(--muted); }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      padding: 1.5rem;
+      border-top: 1px solid rgba(212,175,55,0.15);
+    }
+    .pagination span { color: var(--muted); font-size: 0.85rem; }
+
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      letter-spacing: 0.05em;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 3rem;
+      color: var(--muted);
+    }
+    .empty strong { display: block; font-family: 'Inter', sans-serif; font-size: 1.5rem; color: var(--silver); margin-bottom: 0.5rem; letter-spacing: 0.1em; }
+  </style>
+</head>
+<body>
+
+<!-- ── Login gate ──────────────────────────────────────── -->
+<div id="gate">
+  <h1>Admin Panel</h1>
+  <p>Dynasty HQ — User Management</p>
+  <div class="field">
+    <label>Admin Secret</label>
+    <input type="password" id="secret-input" placeholder="Enter admin secret" autocomplete="current-password">
+  </div>
+  <button class="btn-gold" id="login-btn">Unlock</button>
+  <div class="error-msg" id="gate-error"></div>
+</div>
+
+<!-- ── Dashboard ─────────────────────────────────────────── -->
+<div id="dashboard">
+  <div class="header">
+    <span class="header-title">User Accounts</span>
+    <div class="header-controls">
+      <input type="search" id="search-input" placeholder="Search by email…">
+      <button class="btn-sm" id="refresh-btn">Refresh</button>
+      <button class="btn-sm" id="export-btn">Export CSV</button>
+      <button class="btn-sm" id="logout-btn">Log Out</button>
+    </div>
+  </div>
+
+  <div class="stat-bar">
+    <div class="stat">
+      <span class="stat-label">Total Users</span>
+      <span class="stat-value" id="stat-total">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Pro</span>
+      <span class="stat-value" id="stat-pro">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Free</span>
+      <span class="stat-value" id="stat-free">—</span>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div id="table-loading" class="loading">Loading…</div>
+    <table id="users-table" style="display:none">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Display Name</th>
+          <th>Tier</th>
+          <th>Products</th>
+          <th>Joined</th>
+        </tr>
+      </thead>
+      <tbody id="users-tbody"></tbody>
+    </table>
+    <div id="table-empty" class="empty" style="display:none">
+      <strong>No Users Found</strong>
+      <span id="empty-sub">No accounts have been created yet.</span>
+    </div>
+  </div>
+
+  <div class="pagination" id="pagination" style="display:none">
+    <button class="btn-sm" id="prev-btn">← Prev</button>
+    <span id="page-info"></span>
+    <button class="btn-sm" id="next-btn">Next →</button>
+  </div>
+</div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────
+  const SUPABASE_PROJECT = 'sxshiqyxhhifvtfqawbq';
+  const FN_BASE = `https://${SUPABASE_PROJECT}.supabase.co/functions/v1`;
+  const PAGE_SIZE = 50;
+
+  // ── State ───────────────────────────────────────────────────
+  let adminSecret = sessionStorage.getItem('fw_admin_secret') ?? '';
+  let currentPage = 0;
+  let currentSearch = '';
+  let allUsersCache = [];   // holds current page rows for CSV export
+  let totalCount = 0;
+
+  // ── Gate ────────────────────────────────────────────────────
+  if (adminSecret) showDashboard();
+
+  document.getElementById('secret-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('login-btn').click();
+  });
+
+  document.getElementById('login-btn').addEventListener('click', async () => {
+    const secret = document.getElementById('secret-input').value.trim();
+    if (!secret) return;
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+
+    try {
+      const res = await fetchUsers(secret, 0, '');
+      if (res.status === 401) {
+        document.getElementById('gate-error').textContent = 'Invalid admin secret.';
+      } else if (!res.ok) {
+        document.getElementById('gate-error').textContent = 'Server error — try again.';
+      } else {
+        adminSecret = secret;
+        sessionStorage.setItem('fw_admin_secret', secret);
+        showDashboard(res);
+      }
+    } catch {
+      document.getElementById('gate-error').textContent = 'Network error — check connection.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Unlock';
+    }
+  });
+
+  // ── Dashboard controls ───────────────────────────────────────
+  let searchTimer;
+  document.getElementById('search-input').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      currentSearch = e.target.value.trim();
+      currentPage = 0;
+      loadUsers();
+    }, 350);
+  });
+
+  document.getElementById('refresh-btn').addEventListener('click', () => loadUsers());
+  document.getElementById('prev-btn').addEventListener('click', () => { if (currentPage > 0) { currentPage--; loadUsers(); } });
+  document.getElementById('next-btn').addEventListener('click', () => {
+    if ((currentPage + 1) * PAGE_SIZE < totalCount) { currentPage++; loadUsers(); }
+  });
+
+  document.getElementById('logout-btn').addEventListener('click', () => {
+    sessionStorage.removeItem('fw_admin_secret');
+    adminSecret = '';
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('gate').style.display = 'flex';
+    document.getElementById('secret-input').value = '';
+  });
+
+  document.getElementById('export-btn').addEventListener('click', exportCSV);
+
+  // ── Core ────────────────────────────────────────────────────
+  function showDashboard(preloadedRes) {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    if (preloadedRes) {
+      preloadedRes.json().then(data => renderTable(data));
+    } else {
+      loadUsers();
+    }
+  }
+
+  async function fetchUsers(secret, page, search) {
+    const params = new URLSearchParams({ page, limit: PAGE_SIZE });
+    if (search) params.set('search', search);
+    return fetch(`${FN_BASE}/admin-list-users?${params}`, {
+      headers: { 'Authorization': `Bearer ${secret}` },
+    });
+  }
+
+  async function loadUsers() {
+    document.getElementById('table-loading').style.display = 'block';
+    document.getElementById('users-table').style.display = 'none';
+    document.getElementById('table-empty').style.display = 'none';
+    document.getElementById('pagination').style.display = 'none';
+
+    try {
+      const res = await fetchUsers(adminSecret, currentPage, currentSearch);
+      if (res.status === 401) { alert('Session expired — please log in again.'); return; }
+      const data = await res.json();
+      renderTable(data);
+    } catch (e) {
+      document.getElementById('table-loading').textContent = 'Failed to load. Check network.';
+    }
+  }
+
+  function renderTable(data) {
+    const { users = [], total = 0 } = data;
+    totalCount = total;
+    allUsersCache = users;
+
+    document.getElementById('table-loading').style.display = 'none';
+
+    // Stats
+    const proCount  = users.filter(u => u.tier === 'pro').length;
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-pro').textContent   = proCount;
+    document.getElementById('stat-free').textContent  = total - proCount;
+
+    if (users.length === 0) {
+      document.getElementById('table-empty').style.display = 'block';
+      document.getElementById('empty-sub').textContent =
+        currentSearch ? `No accounts matching "${currentSearch}".` : 'No accounts have been created yet.';
+      return;
+    }
+
+    // Table rows
+    const tbody = document.getElementById('users-tbody');
+    tbody.innerHTML = users.map(u => `
+      <tr>
+        <td class="email-cell">${esc(u.email)}</td>
+        <td>${esc(u.displayName ?? '—')}</td>
+        <td><span class="badge badge-${u.tier}">${u.tier}</span></td>
+        <td class="products-cell">${u.products.length ? u.products.map(p => esc(p)).join(', ') : '—'}</td>
+        <td>${formatDate(u.createdAt)}</td>
+      </tr>
+    `).join('');
+
+    document.getElementById('users-table').style.display = 'table';
+
+    // Pagination
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    if (totalPages > 1) {
+      document.getElementById('page-info').textContent = `Page ${currentPage + 1} of ${totalPages}`;
+      document.getElementById('prev-btn').disabled = currentPage === 0;
+      document.getElementById('next-btn').disabled = (currentPage + 1) >= totalPages;
+      document.getElementById('pagination').style.display = 'flex';
+    }
+  }
+
+  function exportCSV() {
+    if (!allUsersCache.length) return;
+    const headers = ['Email', 'Display Name', 'Tier', 'Products', 'Joined'];
+    const rows = allUsersCache.map(u => [
+      csvCell(u.email),
+      csvCell(u.displayName ?? ''),
+      csvCell(u.tier),
+      csvCell(u.products.join('; ')),
+      csvCell(formatDate(u.createdAt)),
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `fw-users-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function csvCell(s) {
+    const str = String(s);
+    return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g,'""')}"` : str;
+  }
+  function formatDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+supabase/.temp/
+node_modules/
+dist-preview/
+reconai-shared/
+ios/
+android/
+icon.PNG
+.claude/worktrees/
+.DS_Store
+**/.DS_Store

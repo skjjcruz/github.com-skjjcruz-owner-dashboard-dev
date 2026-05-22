@@ -1,0 +1,52 @@
+{
+  "name": "fantasy-war-room",
+  "version": "1.0.0",
+  "description": "Fantasy football owner dashboard — draft war room, earnings tracking, free agent targets",
+  "main": "index.html",
+  "scripts": {
+    "test": "node tests/run.js && npm run test:regression && npm run test:ai && npm run test:rookies",
+    "test:core": "node tests/run.js",
+    "test:regression": "npm run build:preview && node tests/regression.js",
+    "test:ai": "node tests/ai-routing.js",
+    "test:rookies": "node tests/rookie-data.js",
+    "test:browser": "npm run build:preview && node tests/browser-qa.js",
+    "sync:shared": "node scripts/sync-reconai-shared.cjs",
+    "verify:deploy": "node ../reconai/scripts/verify-deploy-readiness.cjs",
+    "build:preview": "npm run sync:shared && node scripts/build-preview.cjs",
+    "preview:prod": "npm run build:preview && node scripts/serve-static.cjs --port=3002",
+    "cap:sync": "npx cap sync",
+    "cap:ios": "npx cap open ios",
+    "cap:android": "npx cap open android",
+    "cap:build:android": "npx cap build android",
+    "prepare": "husky",
+    "start": "npm run sync:shared && node scripts/serve-static.cjs --port=3001",
+    "dev": "npm run sync:shared && node scripts/serve-static.cjs --port=3001"
+  },
+  "keywords": [
+    "fantasy",
+    "football",
+    "dashboard"
+  ],
+  "author": "skjjcruz",
+  "license": "SEE LICENSE IN LICENSE",
+  "dependencies": {
+    "@babel/standalone": "^7.29.2",
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/ios": "^8.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.59.1",
+    "eslint": "^10.2.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "eslint"
+    ]
+  }
+}
