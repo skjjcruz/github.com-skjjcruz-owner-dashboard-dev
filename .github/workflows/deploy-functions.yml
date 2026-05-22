@@ -36,7 +36,7 @@ jobs:
               sys.exit(0)
           sql = open('supabase/migrations/20260317000000_app_users_and_subscriptions.sql').read()
           req = urllib.request.Request(
-              'https://api.supabase.com/v1/projects/sxshiqyxhhifvtfqawbq/database/query',
+              'https://api.supabase.com/v1/projects/hovnqztlbsgsywrbidbh/database/query',
               data=json.dumps({'query': sql}).encode(),
               headers={
                   'Authorization': f'Bearer {token}',
@@ -54,25 +54,25 @@ jobs:
           PYEOF
 
       - name: Deploy get-session-token function
-        run: supabase functions deploy get-session-token --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase functions deploy get-session-token --project-ref hovnqztlbsgsywrbidbh
 
       - name: Deploy set-password function
-        run: supabase functions deploy set-password --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase functions deploy set-password --project-ref hovnqztlbsgsywrbidbh
 
       - name: Deploy ai-analyze function
-        run: supabase functions deploy ai-analyze --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase functions deploy ai-analyze --project-ref hovnqztlbsgsywrbidbh
 
       - name: Deploy fw-signup function
-        run: supabase functions deploy fw-signup --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase functions deploy fw-signup --project-ref hovnqztlbsgsywrbidbh
 
       - name: Deploy fw-signin function
-        run: supabase functions deploy fw-signin --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase functions deploy fw-signin --project-ref hovnqztlbsgsywrbidbh
 
       - name: Deploy fw-create-checkout function
-        run: supabase functions deploy fw-create-checkout --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase functions deploy fw-create-checkout --project-ref hovnqztlbsgsywrbidbh
 
       - name: Deploy fw-stripe-webhook function
-        run: supabase functions deploy fw-stripe-webhook --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase functions deploy fw-stripe-webhook --project-ref hovnqztlbsgsywrbidbh
 
       - name: Deploy admin-list-users function
-        run: supabase functions deploy admin-list-users --project-ref sxshiqyxhhifvtfqawbq
+        run: supabase functions deploy admin-list-users --project-ref hovnqztlbsgsywrbidbh
