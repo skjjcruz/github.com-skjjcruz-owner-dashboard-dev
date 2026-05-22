@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dynasty HQ — Dynasty Fantasy Intelligence</title>
+  <link rel="icon" href="icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    :root{--gold:#D4AF37;--dark-gold:#B8941E;--light-gold:#F0D060;--bg:#0A0A0A;--bg2:#141414;--bg3:#1E1E1E;--panel:#101214;--border:rgba(255,255,255,.1);--border2:rgba(212,175,55,.28);--white:#FFFFFF;--silver:#C0C0C0;--muted:rgba(255,255,255,.5);--green:#34d399;--blue:#60a5fa;--red:#f87171;--r:10px}
+    html,body{min-height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--white);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+    body *{letter-spacing:0;text-decoration:none}
+    button{font-family:inherit}
+
+    /* Nav */
+    .nav{position:relative;z-index:5;max-width:1180px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:18px 24px}
+    .nav-brand{display:flex;align-items:center;gap:10px}
+    .nav-logo{width:38px;height:38px;border-radius:9px;box-shadow:0 2px 12px rgba(212,175,55,.24)}
+    .nav-title{font-size:14px;font-weight:800;letter-spacing:0;color:var(--gold)}
+    .nav-links{display:flex;gap:8px}
+    .nav-btn{font-size:13px;font-weight:700;padding:8px 15px;border-radius:8px;border:1px solid var(--border);background:rgba(10,10,10,.66);color:var(--silver);cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+    .nav-btn:hover{border-color:var(--gold);color:var(--gold)}
+    .nav-btn-primary{background:var(--gold);color:#0a0a0a;border-color:var(--gold)}
+    .nav-btn-primary:hover{background:var(--light-gold);color:#0a0a0a}
+
+    /* Hero */
+    .hero{position:relative;min-height:min(690px,calc(100vh - 106px));padding:64px 24px 50px;display:flex;align-items:center;overflow:hidden;border-bottom:1px solid rgba(255,255,255,.07)}
+    .hero::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.86) 0%,rgba(0,0,0,.72) 38%,rgba(0,0,0,.48) 62%,rgba(0,0,0,.58) 100%);pointer-events:none}
+    .hero-scene{position:absolute;inset:0;overflow:hidden;background:#090909}
+    .hero-field{position:absolute;inset:-10% -5%;opacity:.23;background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px);background-size:72px 72px;transform:rotate(-5deg) scale(1.08)}
+    .hero-dashboard{position:absolute;right:max(24px,calc((100vw - 1180px)/2));top:34px;width:min(680px,58vw);height:560px;border:1px solid rgba(212,175,55,.22);border-radius:18px;background:#111;box-shadow:0 28px 80px rgba(0,0,0,.5);transform:perspective(1200px) rotateY(-11deg) rotateX(3deg);transform-origin:center;overflow:hidden}
+    .dash-top{height:48px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:#151515}
+    .dash-brand{font-size:11px;font-weight:800;letter-spacing:0;color:var(--gold)}
+    .dash-pill{font-size:10px;font-weight:700;color:var(--green);border:1px solid rgba(52,211,153,.28);border-radius:999px;padding:4px 9px}
+    .dash-body{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;padding:14px}
+    .dash-panel{min-height:112px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:#171717;padding:13px}
+    .dash-panel.tall{min-height:228px}
+    .dash-label{font-size:10px;font-weight:800;color:rgba(255,255,255,.38);letter-spacing:0;text-transform:uppercase;margin-bottom:8px}
+    .dash-headline{font-size:18px;font-weight:800;letter-spacing:0;margin-bottom:6px}
+    .dash-copy{font-size:12px;line-height:1.45;color:rgba(255,255,255,.58)}
+    .dash-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)}
+    .dash-row:first-of-type{border-top:0}
+    .dash-row strong{font-size:13px}
+    .dash-row span{font-size:11px;color:var(--muted)}
+    .dash-score{font-size:22px;font-weight:800;color:var(--gold)}
+    .dash-bar{height:8px;border-radius:999px;background:#262626;margin-top:10px;overflow:hidden}
+    .dash-bar span{display:block;height:100%;background:var(--gold);border-radius:999px}
+    .phone-preview{position:absolute;right:calc(max(24px,(100vw - 1180px)/2) + 90px);bottom:46px;width:180px;height:336px;border:1px solid rgba(255,255,255,.14);border-radius:26px;background:#101010;box-shadow:0 20px 70px rgba(0,0,0,.55);padding:12px;transform:rotate(-5deg);opacity:.82}
+    .phone-screen{height:100%;border-radius:18px;background:#151515;padding:12px;overflow:hidden}
+    .phone-kicker{font-size:9px;font-weight:800;letter-spacing:0;color:var(--gold);margin-bottom:10px}
+    .phone-card{border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:10px;margin-bottom:8px;background:#1b1b1b}
+    .phone-card strong{display:block;font-size:13px;margin-bottom:4px}
+    .phone-card span{display:block;font-size:10px;color:rgba(255,255,255,.54);line-height:1.35}
+    .hero-content{position:relative;z-index:2;width:min(560px,100%);max-width:1180px;margin-left:max(24px,calc((100vw - 1180px)/2));margin-right:auto}
+    .hero-eyebrow{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0;color:var(--gold);margin-bottom:14px}
+    .hero h1{font-size:76px;font-weight:800;letter-spacing:0;line-height:.96;margin-bottom:18px}
+    .hero-sub{font-size:20px;color:rgba(255,255,255,.78);line-height:1.55;max-width:560px;margin-bottom:28px}
+    .hero-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .hero-cta{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 24px;background:var(--gold);color:#0a0a0a;font-size:15px;font-weight:800;border-radius:10px;border:none;cursor:pointer;box-shadow:0 10px 30px rgba(212,175,55,.26);transition:transform .18s,box-shadow .18s}
+    .hero-cta:hover{transform:translateY(-2px);box-shadow:0 16px 42px rgba(212,175,55,.34)}
+    .hero-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:rgba(0,0,0,.38);color:var(--white);font-size:14px;font-weight:700;cursor:pointer}
+    .hero-free{font-size:13px;color:rgba(255,255,255,.58);margin-top:14px}
+
+    /* Sections */
+    .section{max-width:1180px;margin:0 auto;padding:74px 24px}
+    .section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:26px}
+    .section-kicker{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0;color:var(--gold);margin-bottom:8px}
+    .section-title{font-size:36px;font-weight:800;letter-spacing:0;line-height:1.05}
+    .section-sub{max-width:430px;font-size:14px;color:var(--muted);line-height:1.55}
+
+    /* Product strip */
+    .product-strip{max-width:1180px;margin:-1px auto 0;padding:18px 24px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;position:relative;z-index:3}
+    .product-chip{border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#111;padding:14px 16px;display:flex;align-items:center;gap:12px}
+    .product-chip svg{width:20px;height:20px;stroke:var(--gold);flex-shrink:0}
+    .product-chip strong{display:block;font-size:13px;margin-bottom:2px}
+    .product-chip span{display:block;font-size:12px;color:var(--muted)}
+
+    /* Surfaces */
+    .surfaces-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .surface-card{border:1px solid var(--border);border-radius:12px;background:var(--bg2);padding:24px;min-height:210px}
+    .surface-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .surface-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(212,175,55,.24);background:#171717;color:var(--gold);font-weight:800}
+    .surface-device{font-size:11px;font-weight:800;color:var(--gold);letter-spacing:0;text-transform:uppercase}
+    .surface-name{font-size:22px;font-weight:800;margin-bottom:8px}
+    .surface-desc{font-size:14px;color:var(--silver);line-height:1.58;max-width:440px}
+
+    /* Differentiators */
+    .diff-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
+    .diff-card{border:1px solid var(--border);border-radius:12px;background:#111;padding:24px;min-height:210px}
+    .diff-card.primary{background:#151515;border-color:rgba(212,175,55,.28)}
+    .diff-kicker{font-size:11px;font-weight:800;color:var(--gold);text-transform:uppercase;margin-bottom:10px}
+    .diff-title{font-size:24px;font-weight:800;line-height:1.1;margin-bottom:10px}
+    .diff-copy{font-size:14px;color:var(--silver);line-height:1.58;max-width:560px}
+    .diff-list{display:grid;gap:10px;margin-top:18px}
+    .diff-row{display:grid;grid-template-columns:118px 1fr;gap:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}
+    .diff-row strong{font-size:13px;color:var(--white)}
+    .diff-row span{font-size:13px;color:var(--muted);line-height:1.45}
+
+    /* Features */
+    .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .feat-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:18px;min-height:150px}
+    .feat-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#202020;color:var(--gold);font-size:15px;font-weight:800;margin-bottom:12px}
+    .feat-name{font-size:14px;font-weight:800;margin-bottom:6px}
+    .feat-desc{font-size:13px;color:var(--muted);line-height:1.52}
+
+    /* Pricing */
+    .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:stretch}
+    .price-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px 20px;position:relative;display:flex;flex-direction:column}
+    .price-card-pop{border-color:var(--gold);box-shadow:0 0 34px rgba(212,175,55,.11)}
+    .price-badge{position:absolute;top:-10px;left:18px;background:var(--gold);color:#0a0a0a;font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:0;font-weight:800;margin-bottom:6px}
+    .price-amount{font-size:30px;font-weight:800;letter-spacing:0;margin-bottom:2px}
+    .price-amount span{font-size:14px;font-weight:600;color:var(--silver)}
+    .price-note{font-size:12px;color:var(--muted);margin-bottom:16px;min-height:30px}
+    .price-features{list-style:none;margin-bottom:22px;display:flex;flex-direction:column;gap:8px}
+    .price-features li{font-size:13px;color:var(--silver);line-height:1.35;display:flex;align-items:flex-start;gap:8px}
+    .price-features li::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--gold);flex-shrink:0;margin-top:6px}
+    .price-btn{width:100%;min-height:42px;margin-top:auto;font-size:14px;font-weight:800;border-radius:9px;border:1px solid var(--border);background:var(--bg3);color:var(--white);cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s}
+    .price-btn:hover{border-color:var(--gold);color:var(--gold)}
+    .price-btn-gold{background:var(--gold);color:#0a0a0a;border:none;box-shadow:0 5px 20px rgba(212,175,55,.2)}
+    .price-btn-gold:hover{color:#0a0a0a;box-shadow:0 9px 28px rgba(212,175,55,.28)}
+
+    /* Platforms */
+    .platforms{max-width:1180px;margin:0 auto;padding:0 24px 76px}
+    .platform-band{border:1px solid var(--border);border-radius:12px;background:#111;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+    .platforms-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0;color:var(--muted);margin-bottom:4px}
+    .platforms-copy{font-size:14px;color:var(--silver);line-height:1.5}
+    .platforms-list{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+    .platforms-list span{font-size:13px;font-weight:800;color:var(--silver);padding:8px 12px;border:1px solid var(--border);border-radius:8px;white-space:nowrap}
+    .platforms-list span.live{color:#0a0a0a;background:var(--gold);border-color:var(--gold)}
+
+    /* Auth */
+    .auth{max-width:440px;margin:0 auto;padding:0 24px 80px}
+    .auth-title{text-align:center;font-size:20px;font-weight:700;margin-bottom:24px}
+    .auth-tabs{display:flex;gap:0;margin-bottom:24px;background:var(--bg2);border-radius:10px;padding:3px;border:1px solid var(--border)}
+    .auth-tab{flex:1;padding:10px;font-size:13px;font-weight:600;text-align:center;border-radius:8px;cursor:pointer;color:var(--muted);background:transparent;border:none;font-family:inherit;transition:all .15s}
+    .auth-tab.active{background:var(--bg3);color:var(--white)}
+    .auth-panel{display:none}
+    .auth-panel.active{display:block}
+    .auth-input{width:100%;padding:12px 14px;font-size:14px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:inherit;margin-bottom:10px;outline:none;transition:border-color .15s}
+    .auth-input:focus{border-color:var(--gold)}
+    .auth-input::placeholder{color:var(--muted)}
+    .auth-submit{width:100%;padding:13px;font-size:14px;font-weight:700;border-radius:10px;border:none;background:linear-gradient(135deg,var(--gold),var(--dark-gold));color:#0a0a0a;cursor:pointer;font-family:inherit;margin-top:4px;transition:all .15s}
+    .auth-submit:hover{box-shadow:0 4px 16px rgba(212,175,55,.3)}
+    .alert{font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:12px;display:none}
+    .alert.show{display:block}
+    .alert-error{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+    .alert-success{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2)}
+
+    /* Footer */
+    .footer{text-align:center;padding:24px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
+    @media(max-width:1040px){
+      .hero-dashboard{right:-110px;width:640px;opacity:.7}
+      .phone-preview{display:none}
+      .pricing-grid{grid-template-columns:repeat(2,1fr)}
+    }
+    @media(max-width:780px){
+      .hero{align-items:flex-end;padding:96px 20px 46px;min-height:min(640px,calc(100vh - 98px))}
+      .hero-dashboard{right:-260px;top:46px;width:560px;height:460px;opacity:.46}
+      .hero-content{width:100%;margin-left:0}
+      .dash-body{grid-template-columns:1fr 1fr}
+      .dash-panel{min-height:96px}
+      .dash-panel.tall{min-height:184px}
+      .hero h1{font-size:56px}
+      .hero-sub{font-size:17px}
+      .product-strip{grid-template-columns:1fr}
+      .section{padding:58px 20px}
+      .section-head{display:block}
+      .section-title{font-size:30px;margin-bottom:12px}
+      .surfaces-grid,.features-grid,.diff-grid{grid-template-columns:1fr}
+      .diff-row{grid-template-columns:1fr}
+      .platform-band{align-items:flex-start;flex-direction:column}
+      .platforms-list{justify-content:flex-start}
+    }
+    @media(max-width:520px){
+      .nav{padding:14px 16px}
+      .nav-logo{width:32px;height:32px}
+      .nav-title{font-size:13px}
+      .nav-btn{padding:8px 11px;font-size:12px}
+      .hero{padding:82px 16px 42px}
+      .hero::after{background:rgba(0,0,0,.76)}
+      .hero-dashboard{right:-330px;width:540px;opacity:.22}
+      .hero h1{font-size:46px}
+      .hero-sub{font-size:16px}
+      .hero-actions{align-items:stretch;flex-direction:column}
+      .hero-cta,.hero-secondary{width:100%}
+      .product-strip,.platforms{padding-left:16px;padding-right:16px}
+      .section{padding-left:16px;padding-right:16px}
+      .pricing-grid{grid-template-columns:1fr}
+      .price-note{min-height:0}
+      .auth{padding-left:16px;padding-right:16px}
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-brand">
+      <img src="icon-192.png" alt="Dynasty HQ" class="nav-logo">
+      <span class="nav-title">DYNASTY HQ</span>
+    </div>
+    <div class="nav-links">
+      <button class="nav-btn" id="navSignin" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'})">Sign In</button>
+      <button class="nav-btn nav-btn-primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Get Started</button>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-scene" aria-hidden="true">
+      <div class="hero-field"></div>
+      <div class="hero-dashboard">
+        <div class="dash-top">
+          <div class="dash-brand">DYNASTY HQ</div>
+          <div class="dash-pill">Sleeper live</div>
+        </div>
+        <div class="dash-body">
+          <div class="dash-panel tall">
+            <div class="dash-label">DHQ Model</div>
+            <div class="dash-headline">Values built from this league</div>
+            <p class="dash-copy">Roster settings, scoring, draft history, and market context feed every player and pick value.</p>
+            <div class="dash-bar"><span style="width:72%"></span></div>
+          </div>
+          <div class="dash-panel">
+            <div class="dash-label">Edge Score</div>
+            <div class="dash-score">82</div>
+            <p class="dash-copy">Actionable roster leverage</p>
+          </div>
+          <div class="dash-panel">
+            <div class="dash-label">Owner DNA</div>
+            <div class="dash-row"><strong>Pick Hoarder</strong><span>Trade picks last</span></div>
+            <div class="dash-row"><strong>Panic Seller</strong><span>Act after losses</span></div>
+          </div>
+          <div class="dash-panel tall">
+            <div class="dash-label">History Engine</div>
+            <div class="dash-row"><strong>Draft ROI</strong><span>4 seasons mapped</span></div>
+            <div class="dash-row"><strong>Trade memory</strong><span>Owner patterns saved</span></div>
+            <div class="dash-row"><strong>Trophy Room</strong><span>League scoped</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-preview">
+        <div class="phone-screen">
+          <div class="phone-kicker">SCOUT</div>
+          <div class="phone-card"><strong>Ask the move</strong><span>Get a direct answer from current league context.</span></div>
+          <div class="phone-card"><strong>Save the read</strong><span>Decision notes travel with the player.</span></div>
+          <div class="phone-card"><strong>Open the board</strong><span>Continue deeper in War Room.</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="hero-content">
+      <div class="hero-eyebrow">League-specific dynasty intelligence</div>
+      <h1>Dynasty HQ</h1>
+      <p class="hero-sub">Most tools stop at player rankings. Dynasty HQ turns your Sleeper league into the model: DHQ values, owner tendencies, draft history, trade memory, and Scout decisions in one operating system.</p>
+      <div class="hero-actions">
+        <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Start free with Sleeper</button>
+        <button class="hero-secondary" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">View plans</button>
+      </div>
+      <p class="hero-free">Free forever for one Sleeper league. No credit card.</p>
+    </div>
+  </section>
+
+  <section class="product-strip" aria-label="Dynasty HQ product summary">
+    <div class="product-chip">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
+      <span><strong>League-specific DHQ</strong><span>Values tuned to your format</span></span>
+    </div>
+    <div class="product-chip">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M7 3h10v18H7z"/><path d="M10 17h4"/></svg>
+      <span><strong>Owner DNA</strong><span>Manager behavior, not guesses</span></span>
+    </div>
+    <div class="product-chip">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 5h18v12H3z"/><path d="M8 21h8M12 17v4"/></svg>
+      <span><strong>Scout to War Room</strong><span>Quick answer to full board</span></span>
+    </div>
+  </section>
+
+  <!-- Differentiators -->
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <div class="section-kicker">Why it is different</div>
+        <h2 class="section-title">Dynasty advice gets useful when it knows your league.</h2>
+      </div>
+      <p class="section-sub">Generic ranks can tell you who is good. Dynasty HQ tells you what matters inside this room: your scoring, your owners, your history, your roster window.</p>
+    </div>
+    <div class="diff-grid">
+      <div class="diff-card primary">
+        <div class="diff-kicker">DHQ Engine</div>
+        <div class="diff-title">Values built from your league, not a public list.</div>
+        <p class="diff-copy">DHQ values every player and pick against the rules that actually decide your league: scoring settings, roster structure, age windows, positional scarcity, draft outcomes, and market context.</p>
+        <div class="diff-list">
+          <div class="diff-row"><strong>Scoring aware</strong><span>Superflex, TE premium, IDP, bench depth, and custom formats change the math.</span></div>
+          <div class="diff-row"><strong>Pick aware</strong><span>Draft capital is tied to your league history and slot-specific outcomes, not flat round labels.</span></div>
+          <div class="diff-row"><strong>Window aware</strong><span>Roster decisions account for build, peak, decline, and value windows by position.</span></div>
+        </div>
+      </div>
+      <div class="diff-card">
+        <div class="diff-kicker">Owner DNA</div>
+        <div class="diff-title">The trade partner matters as much as the trade chart.</div>
+        <p class="diff-copy">Dynasty HQ tracks owner tendencies: who hoards picks, who overreacts after losses, who buys name value, and which roster pressures create real leverage.</p>
+        <div class="diff-list">
+          <div class="diff-row"><strong>Trade fit</strong><span>Find the managers with both need and motivation.</span></div>
+          <div class="diff-row"><strong>Timing</strong><span>Know when to hold the line and when to send the offer.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <div class="section-kicker">Product advantages</div>
+        <h2 class="section-title">The pieces compound because they share the same context.</h2>
+      </div>
+      <p class="section-sub">Scout, War Room, Trophy Room, and the trade tools are not separate widgets. They all read from the same league memory.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feat-card"><div class="feat-icon">S</div><div class="feat-name">Scout is the fast layer</div><p class="feat-desc">Ask a lineup, waiver, trade, or roster question on mobile and get an answer using your current Sleeper league context.</p></div>
+      <div class="feat-card"><div class="feat-icon">WR</div><div class="feat-name">War Room is the deep layer</div><p class="feat-desc">Turn quick reads into trade boards, roster plans, draft strategy, and owner-specific negotiation paths.</p></div>
+      <div class="feat-card"><div class="feat-icon">TM</div><div class="feat-name">Trade memory</div><p class="feat-desc">Completed trades, manager habits, and saved targets stay connected so advice improves with league history.</p></div>
+      <div class="feat-card"><div class="feat-icon">TR</div><div class="feat-name">Trophy Room history</div><p class="feat-desc">Championships, draft results, owner records, Hall of Fame entries, and chronicles stay scoped to the active league.</p></div>
+      <div class="feat-card"><div class="feat-icon">AI</div><div class="feat-name">AI with real context</div><p class="feat-desc">Alex answers with your roster, scoring, history, values, owner profiles, and current league state in the prompt.</p></div>
+      <div class="feat-card"><div class="feat-icon">DB</div><div class="feat-name">Decision backlog</div><p class="feat-desc">Save tags, notes, targets, and trade ideas so today&apos;s thought is still there when you return at the deadline.</p></div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section class="section pricing" id="pricing">
+    <div class="section-head">
+      <div>
+        <div class="section-kicker">Plans</div>
+        <h2 class="section-title">Start with one league. Upgrade when the board gets bigger.</h2>
+      </div>
+      <p class="section-sub">Live plans are Sleeper-first while additional platform connectors stay in beta.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-name">Free</div>
+        <div class="price-amount">$0</div>
+        <div class="price-note">One league, forever</div>
+        <ul class="price-features">
+          <li>One Sleeper league</li>
+          <li>League-specific DHQ values</li>
+          <li>Player cards with age curves</li>
+          <li>Team diagnosis</li>
+          <li>1 AI query per day</li>
+        </ul>
+        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Get started</button>
+      </div>
+      <div class="price-card price-card-pop">
+        <div class="price-badge">Most Popular</div>
+        <div class="price-name">Dynasty HQ</div>
+        <div class="price-amount">$9.99 <span>/mo</span></div>
+        <div class="price-note">Unlimited Sleeper leagues. Cancel anytime.</div>
+        <ul class="price-features">
+          <li>Everything in Free</li>
+          <li>Unlimited Sleeper leagues</li>
+          <li>Unlimited AI analysis</li>
+          <li>Owner DNA profiles</li>
+          <li>Trade memory + finder</li>
+          <li>Draft command + pick values</li>
+          <li>Scout + War Room access</li>
+        </ul>
+        <button class="price-btn price-btn-gold" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Start free trial</button>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Pro</div>
+        <div class="price-amount">$12.99 <span>/mo</span></div>
+        <div class="price-note">Multi-league command center.</div>
+        <ul class="price-features">
+          <li>Everything in Dynasty HQ</li>
+          <li>Global dashboard for Sleeper leagues</li>
+          <li>Cross-league AI advice</li>
+          <li>Player exposure tracking</li>
+          <li>Unified Trophy Room</li>
+          <li>Season recap generator</li>
+        </ul>
+        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Start free trial</button>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Dynasty HQ Annual</div>
+        <div class="price-amount">$79.99 <span>/yr</span></div>
+        <div class="price-note">Save 33% — $6.67/mo</div>
+        <ul class="price-features">
+          <li>Everything in monthly</li>
+          <li>Locked-in annual rate</li>
+          <li>Priority feature access</li>
+          <li>Unlimited Sleeper leagues</li>
+        </ul>
+        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Start free trial</button>
+      </div>
+    </div>
+    <p style="text-align:center;font-size:13px;color:var(--muted);margin-top:24px">
+      <strong style="color:var(--gold)">League Pass</strong> — Get your whole league on Dynasty HQ at a group discount. <a href="mailto:fantasywarsapp@gmail.com" style="color:var(--gold)">Contact us</a>
+    </p>
+  </section>
+
+  <!-- Platforms -->
+  <section class="platforms">
+    <div class="platform-band">
+      <div>
+        <div class="platforms-title">Platform status</div>
+        <p class="platforms-copy">Live versions are Sleeper-only. Additional connectors remain in sandbox beta until they are ready.</p>
+      </div>
+      <div class="platforms-list">
+        <span class="live">Sleeper live</span>
+        <span>More in beta</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Auth -->
+  <section class="auth" id="auth">
+    <img src="icon-192.png" alt="Dynasty HQ" style="display:block;width:56px;height:56px;border-radius:14px;margin:0 auto 16px;box-shadow:0 4px 20px rgba(212,175,55,.2)">
+    <h2 class="auth-title">Get Dynasty HQ</h2>
+
+    <!-- OAuth sign-in buttons (Google & Apple) -->
+    <button id="btnGoogle" onclick="handleOAuthGoogle()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:10px;border:1px solid #dadce0;background:#fff;color:#3c4043;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;box-sizing:border-box;font-family:inherit;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,.18)'" onmouseout="this.style.boxShadow='none'">
+      <svg viewBox="0 0 24 24" width="18" height="18" style="flex-shrink:0"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Continue with Google
+    </button>
+    <button id="btnApple" onclick="handleOAuthApple()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:10px;border:none;background:#000;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:16px;box-sizing:border-box;font-family:inherit;transition:opacity .15s" onmouseover="this.style.opacity='.82'" onmouseout="this.style.opacity='1'">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="#fff" style="flex-shrink:0"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      Continue with Apple
+    </button>
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div style="flex:1;height:1px;background:rgba(255,255,255,.12)"></div>
+      <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.4);white-space:nowrap;text-transform:uppercase;letter-spacing:0">or</span>
+      <div style="flex:1;height:1px;background:rgba(255,255,255,.12)"></div>
+    </div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabSignup" onclick="switchTab('signup')">Create Account</button>
+      <button class="auth-tab" id="tabSignin" onclick="switchTab('signin')">Sign In</button>
+    </div>
+    <div class="auth-panel active" id="panelSignup">
+      <div class="alert" id="alertSignup"></div>
+      <input class="auth-input" type="text" id="su-name" placeholder="Display name (optional)">
+      <input class="auth-input" type="email" id="su-email" placeholder="Email">
+      <input class="auth-input" type="password" id="su-password" placeholder="Password (8+ characters)">
+      <button class="auth-submit" id="btnSignup" onclick="handleSignup()">Create Free Account</button>
+    </div>
+    <div class="auth-panel" id="panelSignin">
+      <div class="alert" id="alertSignin"></div>
+      <input class="auth-input" type="email" id="si-email" placeholder="Email">
+      <input class="auth-input" type="password" id="si-password" placeholder="Password">
+      <button class="auth-submit" id="btnSignin" onclick="handleSignin()">Sign In</button>
+    </div>
+  </section>
+
+  <footer class="footer">&copy; 2026 Dynasty HQ &middot; All rights reserved</footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"></script>
+  <script>
+    const FW_API_BASE = 'https://sxshiqyxhhifvtfqawbq.supabase.co/functions/v1';
+    const FW_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4c2hpcXl4aGhpZnZ0ZnFhd2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MTExMzAsImV4cCI6MjA4ODI4NzEzMH0.zJi9W986ZLaANiZN6pt6ReFwaQU6yPeidsERIWo2ibI';
+    const SUPABASE_URL = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
+    const SESSION_KEY = 'fw_session_v1';
+    const SCOUT_URL = 'https://jcc100218.github.io/ReconAI/';
+
+    // ── OAuth sign-in helpers ────────────────────────────────────
+    // Providers must be enabled in Supabase Dashboard:
+    //   Settings → Authentication → Providers
+    //   Google: Client ID + Secret from Google Cloud Console
+    //   Apple:  Service ID + Secret Key from Apple Developer Portal
+    let _sbClient = null;
+    function getSbClient() {
+      if (!_sbClient && window.supabase) {
+        _sbClient = window.supabase.createClient(SUPABASE_URL, FW_ANON_KEY);
+      }
+      return _sbClient;
+    }
+
+    function handleOAuthGoogle() {
+      const db = getSbClient();
+      if (!db) return;
+      const btn = document.getElementById('btnGoogle');
+      if (btn) { btn.disabled = true; btn.textContent = 'Redirecting\u2026'; }
+      db.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin + window.location.pathname },
+      });
+    }
+
+    function handleOAuthApple() {
+      const db = getSbClient();
+      if (!db) return;
+      const btn = document.getElementById('btnApple');
+      if (btn) { btn.disabled = true; btn.textContent = 'Redirecting\u2026'; }
+      db.auth.signInWithOAuth({
+        provider: 'apple',
+        options: { redirectTo: window.location.origin + window.location.pathname },
+      });
+    }
+
+    // Handle OAuth redirect: if Supabase returns a session via hash, store it and redirect
+    (async function handleOAuthCallback() {
+      try {
+        const db = getSbClient();
+        if (!db) return;
+        const { data } = await db.auth.getSession();
+        if (data?.session) {
+          // Store in fw_session_v1 format so existing redirect logic works
+          const user = data.session.user;
+          const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+          if (!existing?.token) {
+            localStorage.setItem(SESSION_KEY, JSON.stringify({
+              token: data.session.access_token,
+              user: { email: user.email, displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email },
+            }));
+          }
+          const profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
+          const dest = (!profile || !profile.onboardingComplete) ? 'onboarding.html'
+            : (localStorage.getItem('fw_preferred_view') === 'scout' ? SCOUT_URL : WARROOM_URL);
+          window.location.href = dest;
+        }
+      } catch (e) { console.warn('[WR] OAuth callback error:', e); }
+    })();
+    const WARROOM_URL = 'index.html';
+
+    // Redirect if already signed in
+    (function checkSession() {
+      try {
+        const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (s?.token && s?.user) {
+          const profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
+          if (!profile || !profile.onboardingComplete) {
+            window.location.href = 'onboarding.html';
+          } else {
+            // Device-aware routing with preference override
+            const pref = localStorage.getItem('fw_preferred_view');
+            if (pref === 'scout') { window.location.href = SCOUT_URL; return; }
+            if (pref === 'warroom') { window.location.href = WARROOM_URL; return; }
+            // Default: mobile -> Scout, desktop -> War Room
+            if (window.innerWidth < 768) { window.location.href = SCOUT_URL; }
+            else { window.location.href = WARROOM_URL; }
+          }
+        }
+      } catch {}
+    })();
+
+    function switchTab(tab) {
+      const isSignup = tab === 'signup';
+      document.getElementById('tabSignup').classList.toggle('active', isSignup);
+      document.getElementById('tabSignin').classList.toggle('active', !isSignup);
+      document.getElementById('panelSignup').classList.toggle('active', isSignup);
+      document.getElementById('panelSignin').classList.toggle('active', !isSignup);
+    }
+
+    function showAlert(panelId, type, message) {
+      const el = document.getElementById('alert' + panelId);
+      el.className = 'alert alert-' + type + ' show';
+      el.textContent = message;
+      if (type !== 'success') setTimeout(() => el.classList.remove('show'), 6000);
+    }
+
+    async function handleSignup() {
+      const email = document.getElementById('su-email').value.trim();
+      const password = document.getElementById('su-password').value;
+      const displayName = document.getElementById('su-name').value.trim();
+      const btn = document.getElementById('btnSignup');
+      if (!email || !password) { showAlert('Signup', 'error', 'Email and password are required.'); return; }
+      if (password.length < 8) { showAlert('Signup', 'error', 'Password must be at least 8 characters.'); return; }
+      btn.disabled = true; btn.textContent = 'Creating account\u2026';
+      try {
+        const res = await fetch(`${FW_API_BASE}/fw-signup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
+          body: JSON.stringify({ email, password, displayName, productSlug: 'war-room' }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showAlert('Signup', 'error', data.error || 'Sign-up failed.'); btn.disabled = false; btn.textContent = 'Create Free Account'; return; }
+        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        showAlert('Signup', 'success', 'Account created! Setting up Dynasty HQ\u2026');
+        setTimeout(() => { window.location.href = 'onboarding.html'; }, 1000);
+      } catch (err) {
+        showAlert('Signup', 'error', 'Network error: ' + (err?.message || String(err)));
+        btn.disabled = false; btn.textContent = 'Create Free Account';
+      }
+    }
+
+    async function handleSignin() {
+      const email = document.getElementById('si-email').value.trim();
+      const password = document.getElementById('si-password').value;
+      const btn = document.getElementById('btnSignin');
+      if (!email || !password) { showAlert('Signin', 'error', 'Email and password are required.'); return; }
+      btn.disabled = true; btn.textContent = 'Signing in\u2026';
+      try {
+        const res = await fetch(`${FW_API_BASE}/fw-signin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showAlert('Signin', 'error', data.error || 'Invalid email or password.'); btn.disabled = false; btn.textContent = 'Sign In'; return; }
+        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        showAlert('Signin', 'success', 'Welcome back! Redirecting\u2026');
+        const pref = localStorage.getItem('fw_preferred_view');
+        let dest = WARROOM_URL;
+        if (pref === 'scout') dest = SCOUT_URL;
+        else if (!pref && window.innerWidth < 768) dest = SCOUT_URL;
+        setTimeout(() => { window.location.href = dest; }, 800);
+      } catch (err) {
+        showAlert('Signin', 'error', 'Network error: ' + (err?.message || String(err)));
+        btn.disabled = false; btn.textContent = 'Sign In';
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      if (document.getElementById('panelSignup').classList.contains('active')) handleSignup();
+      else handleSignin();
+    });
+  </script>
+</body>
+</html>
