@@ -85,11 +85,13 @@ function buildCtx() {
     encodeURIComponent, decodeURIComponent,
     URLSearchParams,
     Set, Map, Promise, Error,
+    CustomEvent: function CustomEvent(type, init) { this.type = type; this.detail = init && init.detail; },
     // Stubs for async / UI calls
     setTimeout:   fn => { if (typeof fn === 'function') fn(); return 0; },
     clearTimeout: () => {},
     fetch:        async () => ({ ok: true, json: async () => ({}) }),
     confirm:      () => false,
+    dispatchEvent: () => true,
   };
   ctx.location   = loc;
   ctx.window     = ctx;   // window === global in browser
@@ -127,6 +129,10 @@ process.stdout.write('  Loading core.js … ');
 loadScript(ctx, 'js/core.js');
 process.stdout.write('OK\n');
 
+process.stdout.write('  Loading league-skin.js … ');
+loadScript(ctx, 'js/league-skin.js');
+process.stdout.write('OK\n');
+
 process.stdout.write('  Loading player-value.js … ');
 loadScript(ctx, 'js/utils/player-value.js');
 process.stdout.write('OK\n');
@@ -148,12 +154,29 @@ process.stdout.write('OK\n\n');
 
 // ── Grab references from context ──────────────────────────────────
 const { normPos, calcRawPts, calcPPG }                         = ctx.App;
+const LeagueSkin                                               = ctx.App.LeagueSkin;
 const { getPickValue, projectPlayerValue, PICK_VALUES }        = ctx.App.PlayerValue;
 const computeWeightedDNA                                       = ctx.computeWeightedDNA;
 const buildEmpirePortfolioModel                                = ctx.buildEmpirePortfolioModel;
 // getUserTier / canAccess are top-level function declarations in core.js
 const getUserTier = ctx.getUserTier;
 const canAccess   = ctx.canAccess;
+
+function resetTierState() {
+  ls.clear();
+  ctx.App._productTier = null;
+  delete ctx.getTier;
+  ctx.window.getTier = undefined;
+  ctx.location.search = '';
+  ctx.location.hostname = 'test.warroom';
+}
+
+function setServerProductTier(productTier) {
+  ls.clear();
+  ctx.getTier = () => 'paid';
+  ctx.window.getTier = ctx.getTier;
+  ctx.App._productTier = productTier;
+}
 
 // ══════════════════════════════════════════════════════════════════
 // 1. normPos
@@ -186,7 +209,85 @@ test('RB passthrough',          () => eq(normPos('RB'),      'RB'));
 test('WR passthrough',          () => eq(normPos('WR'),      'WR'));
 test('TE passthrough',          () => eq(normPos('TE'),      'TE'));
 test('K  passthrough',          () => eq(normPos('K'),       'K'));
+test('DEF passthrough',         () => eq(normPos('DEF'),     'DEF'));
+test('DST → DEF',               () => eq(normPos('DST'),     'DEF'));
+test('D/ST → DEF',              () => eq(normPos('D/ST'),    'DEF'));
 test('unknown passthrough',     () => eq(normPos('UNKNOWN'), 'UNKNOWN'));
+
+// ══════════════════════════════════════════════════════════════════
+// 1b. LeagueSkin
+// ══════════════════════════════════════════════════════════════════
+group('league skin');
+test('redraft pre-draft empty rosters get the draft-prep skin', () => {
+  const league = {
+    id: 'redraft-1',
+    name: 'Redraft Test',
+    status: 'pre_draft',
+    settings: { type: 0, num_teams: 12 },
+    roster_positions: ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DEF', 'BN'],
+    rosters: [{ roster_id: 1, players: [] }, { roster_id: 2, players: [] }],
+  };
+  const skin = LeagueSkin.build({ league, rosters: league.rosters, myRoster: league.rosters[0], draft: { status: 'pre_draft' } });
+  eq(skin.type, 'redraft', 'type');
+  eq(skin.phase, 'pre_draft', 'phase');
+  ok(skin.state.isPreDraftRosterEmpty, 'pre-draft empty roster flag');
+  eq(skin.features.showTaxi, false, 'redraft without taxi hides taxi');
+  eq(skin.features.showIDP, false, 'redraft without IDP hides IDP');
+  eq(skin.vocabulary.appLabel, 'Dynasty HQ War Room', 'skin preserves app brand');
+  eq(skin.vocabulary.valueLabel, 'Format Value', 'redraft value vocabulary');
+  eq(skin.vocabulary.valueShortLabel, 'Value', 'redraft short value vocabulary');
+  eq(skin.theme.id, 'war-room-default', 'redraft skin theme');
+  eq(skin.theme.className, 'wr-league-skin-default', 'redraft skin class');
+  eq(LeagueSkin.getModuleMode(skin, 'myteam').state, 'alternate', 'myteam alternate mode');
+  eq(LeagueSkin.getModuleMode(skin, 'draft').surface, 'draft:pre_draft', 'draft surface');
+
+	  const rosterState = ctx.App.getRosterDataState({
+	    roster: league.rosters[0],
+	    currentLeague: league,
+	    rosters: league.rosters,
+	    draft: { status: 'pre_draft' },
+	  });
+	  eq(rosterState.reason, 'pre-draft-rosters-empty', 'roster guard reason');
+	  ok(rosterState.detail.includes('draft prep'), 'redraft pre-draft copy');
+	  LeagueSkin.setCurrent(skin);
+	  const hydratedLeagueWithoutStatus = { ...league, status: '' };
+	  const inheritedState = ctx.App.getRosterDataState({
+	    roster: hydratedLeagueWithoutStatus.rosters[0],
+	    currentLeague: hydratedLeagueWithoutStatus,
+	    rosters: hydratedLeagueWithoutStatus.rosters,
+	  });
+	  eq(inheritedState.reason, 'pre-draft-rosters-empty', 'roster guard should inherit active skin');
+		});
+test('redraft draft rounds resolve from full roster size, not rookie draft settings', () => {
+  const league = {
+    id: 'redraft-rounds',
+    season: '2026',
+    status: 'pre_draft',
+    settings: { type: 0, num_teams: 12, draft_rounds: 3 },
+    roster_positions: ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DEF', 'BN', 'BN', 'BN', 'BN', 'BN', 'BN'],
+    rosters: [{ roster_id: 1, players: [] }],
+  };
+  const skin = LeagueSkin.build({ league, rosters: league.rosters, draft: { status: 'pre_draft' } });
+  eq(LeagueSkin.resolveDraftRounds({ league, leagueSkin: skin, fallbackRounds: league.settings.draft_rounds }), 15, 'redraft rounds use draftable roster slots');
+});
+	test('dynasty skin keeps long-term feature flags active', () => {
+  const league = {
+    id: 'dynasty-1',
+    name: 'Dynasty Test',
+    status: 'in_season',
+    settings: { type: 2, taxi_slots: 4, num_teams: 12 },
+    roster_positions: ['QB', 'RB', 'WR', 'TE', 'SUPER_FLEX', 'DL', 'LB', 'DB', 'BN'],
+    rosters: [{ roster_id: 1, players: ['100', '101'] }],
+  };
+  const skin = LeagueSkin.build({ league, rosters: league.rosters, myRoster: league.rosters[0] });
+  eq(skin.type, 'dynasty', 'type');
+  eq(skin.phase, 'in_season', 'phase');
+  ok(skin.features.showTaxi, 'dynasty taxi flag');
+  ok(skin.features.showIDP, 'dynasty IDP flag');
+  ok(skin.features.showFuturePicks, 'future picks flag');
+  ok(skin.features.showDynastyValue, 'dynasty value flag');
+  eq(LeagueSkin.getModuleMode(skin, 'trades').state, 'active', 'trades active');
+});
 
 // ══════════════════════════════════════════════════════════════════
 // 2. calcRawPts
@@ -244,51 +345,51 @@ test('16-game season: 320 pts → 20 PPG',
 // ══════════════════════════════════════════════════════════════════
 group('getUserTier');
 test('no profile → free',
-  () => { ls.clear(); eq(getUserTier(), 'free'); });
-test('tier = warroom → warroom',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'warroom' })); eq(getUserTier(), 'warroom'); ls.clear(); });
-test('tier = commissioner → commissioner',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'commissioner' })); eq(getUserTier(), 'commissioner'); ls.clear(); });
-test('tier = power → pro',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'power' })); eq(getUserTier(), 'pro'); ls.clear(); });
-test('tier = pro → pro',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'pro' })); eq(getUserTier(), 'pro'); ls.clear(); });
-test('tier = scout → scout',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'scout' })); eq(getUserTier(), 'scout'); ls.clear(); });
-test('tier = reconai → scout (legacy rename)',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'reconai' })); eq(getUserTier(), 'scout'); ls.clear(); });
+  () => { resetTierState(); eq(getUserTier(), 'free'); });
+test('localStorage tier does not grant War Room access',
+  () => { resetTierState(); ls.setItem('od_profile_v1', JSON.stringify({ tier: 'warroom' })); eq(getUserTier(), 'free'); resetTierState(); });
+test('server product tier = warroom → warroom',
+  () => { resetTierState(); setServerProductTier('warroom'); eq(getUserTier(), 'warroom'); resetTierState(); });
+test('server product tier = commissioner → commissioner',
+  () => { resetTierState(); setServerProductTier('commissioner'); eq(getUserTier(), 'commissioner'); resetTierState(); });
+test('server product tier = pro → pro',
+  () => { resetTierState(); setServerProductTier('pro'); eq(getUserTier(), 'pro'); resetTierState(); });
+test('server product tier = scout → scout',
+  () => { resetTierState(); setServerProductTier('scout'); eq(getUserTier(), 'scout'); resetTierState(); });
+test('server paid with unknown product tier → scout minimum',
+  () => { resetTierState(); ctx.getTier = () => 'paid'; ctx.window.getTier = ctx.getTier; eq(getUserTier(), 'scout'); resetTierState(); });
 test('malformed JSON profile → free',
-  () => { ls.setItem('od_profile_v1', '{bad json{{'); eq(getUserTier(), 'free'); ls.clear(); });
+  () => { resetTierState(); ls.setItem('od_profile_v1', '{bad json{{'); eq(getUserTier(), 'free'); resetTierState(); });
 
 group('canAccess');
 test('free: my-roster-basic accessible',
-  () => { ls.clear(); ok(canAccess('my-roster-basic')); });
+  () => { resetTierState(); ok(canAccess('my-roster-basic')); });
 test('free: draft-rankings accessible',
-  () => { ls.clear(); ok(canAccess('draft-rankings')); });
+  () => { resetTierState(); ok(canAccess('draft-rankings')); });
 test('free: ai-unlimited blocked',
-  () => { ls.clear(); ok(!canAccess('ai-unlimited')); });
+  () => { resetTierState(); ok(!canAccess('ai-unlimited')); });
 test('free: trade-finder blocked',
-  () => { ls.clear(); ok(!canAccess('trade-finder')); });
+  () => { resetTierState(); ok(!canAccess('trade-finder')); });
 test('free: owner-dna blocked',
-  () => { ls.clear(); ok(!canAccess('owner-dna')); });
+  () => { resetTierState(); ok(!canAccess('owner-dna')); });
 test('scout: ai-unlimited accessible',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'scout' })); ok(canAccess('ai-unlimited')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('scout'); ok(canAccess('ai-unlimited')); resetTierState(); });
 test('scout: waiver-targets accessible',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'scout' })); ok(canAccess('waiver-targets')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('scout'); ok(canAccess('waiver-targets')); resetTierState(); });
 test('scout: trade-finder blocked',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'scout' })); ok(!canAccess('trade-finder')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('scout'); ok(!canAccess('trade-finder')); resetTierState(); });
 test('scout: owner-dna blocked',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'scout' })); ok(!canAccess('owner-dna')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('scout'); ok(!canAccess('owner-dna')); resetTierState(); });
 test('warroom: trade-finder accessible',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'warroom' })); ok(canAccess('trade-finder')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('trade-finder')); resetTierState(); });
 test('warroom: owner-dna accessible',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'warroom' })); ok(canAccess('owner-dna')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('owner-dna')); resetTierState(); });
 test('warroom: projections accessible',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'warroom' })); ok(canAccess('projections')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('projections')); resetTierState(); });
 test('warroom: analytics-full accessible',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'warroom' })); ok(canAccess('analytics-full')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('analytics-full')); resetTierState(); });
 test('warroom: intelligence-full accessible',
-  () => { ls.setItem('od_profile_v1', JSON.stringify({ tier: 'warroom' })); ok(canAccess('intelligence-full')); ls.clear(); });
+  () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('intelligence-full')); resetTierState(); });
 
 // ══════════════════════════════════════════════════════════════════
 // 5. getPickValue

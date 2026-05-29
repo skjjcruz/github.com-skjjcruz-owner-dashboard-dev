@@ -12,45 +12,60 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { SignJWT } from 'npm:jose';
+import {
+  auditEvent,
+  checkRateLimit,
+  clearRateLimit,
+  clientIp,
+  handleOptions,
+  json,
+  normalizeEmail,
+} from '../_shared/security.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const JWT_SECRET           = Deno.env.get('JWT_SECRET')!;
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  const options = handleOptions(req);
+  if (options) return options;
 
   try {
     const { email, password } = await req.json();
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!email || !password) {
-      return json({ error: 'Email and password are required.' }, 400);
+    if (!normalizedEmail || !password) {
+      return json(req, { error: 'Email and password are required.' }, 400);
     }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const ipLimit = await checkRateLimit(admin, 'fw-signin:ip', clientIp(req), { limit: 30, windowSeconds: 900, lockoutSeconds: 900 });
+    const emailLimit = await checkRateLimit(admin, 'fw-signin:email', normalizedEmail, { limit: 8, windowSeconds: 900, lockoutSeconds: 900 });
+    if (!ipLimit.allowed || !emailLimit.allowed) {
+      await auditEvent(admin, req, 'fw_signin_rate_limited', 'blocked', { email: normalizedEmail }, {
+        ipRetryAfter: ipLimit.retryAfterSeconds || null,
+        emailRetryAfter: emailLimit.retryAfterSeconds || null,
+      });
+      return json(req, { error: 'Too many sign-in attempts. Try again later.' }, 429);
+    }
 
     // ── Look up user ──────────────────────────────────────────
     const { data: user } = await admin
       .from('app_users')
-      .select('id, email, display_name, password_hash')
-      .eq('email', email.toLowerCase().trim())
+      .select('id, email, display_name, password_hash, session_version')
+      .eq('email', normalizedEmail)
       .maybeSingle();
 
     if (!user) {
-      return json({ error: 'Invalid email or password.' }, 401);
+      await auditEvent(admin, req, 'fw_signin', 'failure', { email: normalizedEmail }, { reason: 'unknown_email' });
+      return json(req, { error: 'Invalid email or password.' }, 401);
     }
 
     // ── Verify password (PBKDF2) ──────────────────────────────
     const valid = await verifyPassword(password, user.password_hash);
     if (!valid) {
-      return json({ error: 'Invalid email or password.' }, 401);
+      await auditEvent(admin, req, 'fw_signin', 'failure', { userId: user.id, email: normalizedEmail }, { reason: 'bad_password' });
+      return json(req, { error: 'Invalid email or password.' }, 401);
     }
 
     // ── Fetch active subscriptions ────────────────────────────
@@ -62,7 +77,7 @@ Deno.serve(async (req) => {
 
     if (subsErr) {
       console.error('fw-signin subscriptions error:', subsErr);
-      return json({ error: `Subscriptions query failed: ${subsErr.message} (${subsErr.code})` }, 500);
+      return json(req, { error: `Subscriptions query failed: ${subsErr.message} (${subsErr.code})` }, 500);
     }
 
     // Expand 'bundle' → both individual products so app access checks work
@@ -76,13 +91,17 @@ Deno.serve(async (req) => {
     // ── Issue JWT ─────────────────────────────────────────────
     let token: string;
     try {
-      token = await mintJWT(user.id, user.email, tier, products);
+      token = await mintJWT(user.id, user.email, tier, products, user.session_version || 1);
     } catch (jwtErr) {
       console.error('fw-signin JWT error:', jwtErr);
-      return json({ error: `JWT minting failed: ${jwtErr instanceof Error ? jwtErr.message : String(jwtErr)}` }, 500);
+      return json(req, { error: `JWT minting failed: ${jwtErr instanceof Error ? jwtErr.message : String(jwtErr)}` }, 500);
     }
 
-    return json({
+    await admin.from('app_users').update({ last_sign_in_at: new Date().toISOString() }).eq('id', user.id);
+    await clearRateLimit(admin, 'fw-signin:email', normalizedEmail);
+    await auditEvent(admin, req, 'fw_signin', 'success', { userId: user.id, email: normalizedEmail }, { tier, products });
+
+    return json(req, {
       token,
       user: {
         id:          user.id,
@@ -95,7 +114,7 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     console.error('fw-signin error:', err);
-    return json({ error: `Internal server error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    return json(req, { error: `Internal server error: ${err instanceof Error ? err.message : String(err)}` }, 500);
   }
 });
 
@@ -129,20 +148,14 @@ async function mintJWT(
   email: string,
   tier: string,
   products: string[],
+  sessionVersion: number,
 ): Promise<string> {
   const secret = new TextEncoder().encode(JWT_SECRET);
-  return new SignJWT({ role: 'authenticated', app_metadata: { user_id: userId, email, tier, products } })
+  return new SignJWT({ role: 'authenticated', app_metadata: { user_id: userId, email, tier, products, session_version: sessionVersion } })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuer(SUPABASE_URL + '/auth/v1')
     .setSubject(userId)
     .setIssuedAt()
     .setExpirationTime('7d')
     .sign(secret);
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
 }

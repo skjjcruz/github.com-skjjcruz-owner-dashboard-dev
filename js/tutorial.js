@@ -1,188 +1,122 @@
-// ══════════════════════════════════════════════════════════════════
-// js/tutorial.js — War Room First-Time Tutorial
-// Guides new users through: Alex persona setup → GM strategy →
-// app walkthrough (dashboard, trades, roster, league, draft).
-// Completion stored in localStorage — only shows once.
-// ══════════════════════════════════════════════════════════════════
+// ============================================================================
+// js/tutorial.js - War Room first-launch GM briefing config.
+// Shared engine lives in ReconAI shared/assistant-tutorial.js.
+// ============================================================================
 
-const WR_TUTORIAL_KEY = 'wr_tutorial_done_v1';
+const WR_TUTORIAL_CONFIG = {
+    productKey: 'warroom',
+    version: 'gm-brief-v1',
+    legacyKeys: ['wr_tutorial_done_v1'],
+    accent: '#D4AF37',
+    alexPicker: true,
+    title: 'Welcome to the GM Room',
+    kicker: 'Alex Ingram / War Room Briefing',
+    intro: 'I am Alex Ingram, your GM chief of staff. War Room is the full football office: roster board, trade desk, waiver desk, draft command, and league ops in one place.',
+    openingChips: ['90-second brief', 'War Room map', 'Replay in settings'],
+    openingBoard: {
+        label: 'Mission',
+        title: 'Run the room',
+        body: 'I will point you to the desks that matter, then stay available when a move needs a second set of eyes.',
+    },
+    steps: [
+        {
+            key: 'command-center',
+            tabToOpen: 'dashboard',
+            target: '[data-tab="dashboard"],.sidebar-item:first-child',
+            title: 'Command Center',
+            desc: 'Home is your operating board. Alex briefings, team pressure, pinned widgets, and the signals you want to monitor all start here.',
+            kicker: 'Main Board',
+            chips: ['briefing', 'widgets', 'priorities'],
+            board: {
+                label: 'GM Habit',
+                title: 'Start with signal',
+                body: 'Open here first, then move to the desk that matches the problem.',
+            },
+        },
+        {
+            key: 'roster-room',
+            tabToOpen: 'myteam',
+            target: '[data-tab="myteam"]',
+            title: 'Roster Room',
+            desc: 'This is your personnel department. DHQ values, age and value windows, depth, tags, and player detail give every asset a job on the board.',
+            kicker: 'Personnel',
+            chips: ['DHQ values', 'age windows', 'depth'],
+            board: {
+                label: 'Read',
+                title: 'Value is contextual',
+                body: 'A player only matters in relation to your roster window, position room, and league market.',
+            },
+        },
+        {
+            key: 'deal-room',
+            tabToOpen: 'trades',
+            target: '[data-tab="trades"]',
+            title: 'Deal Room',
+            desc: 'Trade Center is where we model the room. Owner DNA, partner fit, deal analysis, and negotiation prep help you find the trade before it becomes obvious.',
+            kicker: 'Negotiation Desk',
+            chips: ['owner DNA', 'partner fit', 'deal checks'],
+            board: {
+                label: 'Leverage',
+                title: 'Trade the owner, not just the player',
+                body: 'The best deal usually comes from matching your surplus to their pressure point.',
+            },
+        },
+        {
+            key: 'waiver-desk',
+            tabToOpen: 'fa',
+            target: '[data-tab="fa"]',
+            title: 'Waiver Desk',
+            desc: 'Free Agency turns waiver chaos into a bid plan. Use FAAB context, target tiers, and league scoring to decide who deserves real budget.',
+            kicker: 'Acquisition Desk',
+            chips: ['FAAB', 'targets', 'bid plan'],
+            board: {
+                label: 'Rule',
+                title: 'Budget is leverage',
+                body: 'Spend when the player changes your weekly ceiling or protects a fragile roster room.',
+            },
+        },
+        {
+            key: 'draft-league-ops',
+            tabToOpen: 'draft',
+            target: '[data-tab="draft"]',
+            title: 'Draft And League Ops',
+            desc: 'Draft Command, League Map, Analytics, and Trophy Room are the long-game offices. Use them to understand market history, pick value, owner tendencies, and league legacy.',
+            kicker: 'Season Office',
+            chips: ['draft command', 'league map', 'analytics'],
+            board: {
+                label: 'Long Game',
+                title: 'Know the league memory',
+                body: 'Draft capital and owner behavior compound. This is where we keep that context visible.',
+            },
+        },
+    ],
+    finishTitle: 'War Room Is Ready',
+    finishText: 'You have the office map. Start at Home, move to the right desk, and bring me in before a high-leverage decision leaves the building.',
+    finishChips: ['Home first', 'Desk second', 'Alex before action'],
+    finishBoard: {
+        label: 'First Call',
+        title: 'Ask for the board',
+        body: 'Ask: What are the three moves this roster should consider before the rest of the league catches up?',
+    },
+};
 
-const WR_TUTORIAL_STEPS = [
-    {
-        title: 'Welcome to War Room',
-        desc: 'This is your dynasty command center. Let\'s get you set up — first, pick your AI advisor\'s coaching style.',
-        position: 'center',
-        alexPicker: true, // Show persona picker in this step
-    },
-    {
-        target: '[data-tab="dashboard"],.sidebar-item:first-child',
-        tabToOpen: 'dashboard',
-        title: 'Home',
-        desc: "Your home base. Alex's intelligence briefing sits at the top — daily team diagnosis, waiver targets, trade opportunities. Below it, drag and resize KPI widgets to track exactly what matters to you. Star any card across the app to pin it here.",
-        position: 'right',
-    },
-    {
-        target: '[data-tab="myteam"]',
-        tabToOpen: 'myteam',
-        title: 'My Roster',
-        desc: 'Your full roster with DHQ values, trade verdicts, age curves, and positional depth. Every player is clickable for deep analysis.',
-        position: 'right',
-    },
-    {
-        target: '[data-tab="trades"]',
-        tabToOpen: 'trades',
-        title: 'Trade Center',
-        desc: 'Owner DNA profiles, behavioral trade modeling, deal analyzer, and trade finder. The system understands how each owner in your league actually trades.',
-        position: 'right',
-    },
-    {
-        target: '[data-tab="fa"]',
-        tabToOpen: 'fa',
-        title: 'Free Agency',
-        desc: 'FAAB decision engine with tiered targets, bid recommendations, and waiver wire analysis powered by your league\'s scoring settings.',
-        position: 'right',
-    },
-    {
-        target: '[data-tab="draft"]',
-        tabToOpen: 'draft',
-        title: 'Draft Command',
-        desc: 'Custom big boards, prospect tiers, mock drafts with AI opponents, and live pick tracking. Your full draft war room.',
-        position: 'right',
-    },
-    {
-        target: '[data-tab="league"]',
-        tabToOpen: 'league',
-        title: 'League Map',
-        desc: 'Every team in your league — competitive tiers, roster composition, trade targets, and franchise scouting reports.',
-        position: 'right',
-    },
-    {
-        target: '[data-tab="trophies"]',
-        tabToOpen: 'trophies',
-        title: 'Trophy Room',
-        desc: 'League history, championship timeline, all-time records, and your personal trophy case. Import your commissioner\'s historical data for the full picture.',
-        position: 'right',
-    },
-    {
-        title: 'You\'re Ready',
-        desc: 'Your War Room is set up. Head to your home dashboard — Alex has your first report ready at the top.',
-        position: 'center',
-        tabToOpen: 'dashboard',
-    },
-];
-
-let _wrTutStep = 0;
-let _wrTutOverlay = null;
-
-function shouldShowWRTutorial() {
-    return !localStorage.getItem(WR_TUTORIAL_KEY);
-}
-
-function startWRTutorial() {
-    if (!shouldShowWRTutorial()) return;
-    _wrTutStep = 0;
-    _showWRStep();
-}
-
-function _showWRStep() {
-    if (_wrTutStep >= WR_TUTORIAL_STEPS.length) {
-        _endWRTutorial();
-        return;
+async function shouldShowWRTutorial() {
+    if (window.App?.AssistantTutorial?.shouldShow) {
+        return window.App.AssistantTutorial.shouldShow(WR_TUTORIAL_CONFIG);
     }
-
-    const step = WR_TUTORIAL_STEPS[_wrTutStep];
-
-    // Navigate to the tab this step is about so user sees the actual module
-    if (step.tabToOpen) {
-        const tabBtn = document.querySelector('[data-tab="' + step.tabToOpen + '"]');
-        if (tabBtn) tabBtn.click();
-    }
-
-    // Small delay to let tab render before positioning tooltip
-    setTimeout(() => {
-        const target = step.target ? document.querySelector(step.target) : null;
-
-        if (_wrTutOverlay) _wrTutOverlay.remove();
-
-        _wrTutOverlay = document.createElement('div');
-        _wrTutOverlay.id = 'wr-tutorial-overlay';
-        _wrTutOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;pointer-events:all';
-
-        const backdrop = document.createElement('div');
-        backdrop.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7)';
-        backdrop.onclick = () => _nextWRStep();
-        _wrTutOverlay.appendChild(backdrop);
-
-        const tooltip = document.createElement('div');
-        tooltip.style.cssText = 'position:absolute;max-width:420px;background:#0a0a0a;border:2px solid rgba(212,175,55,0.5);border-radius:16px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.6);z-index:10000;pointer-events:all';
-
-        if (step.position === 'center' || !target) {
-            tooltip.style.top = '50%';
-            tooltip.style.left = '50%';
-            tooltip.style.transform = 'translate(-50%, -50%)';
-        } else {
-            const rect = target.getBoundingClientRect();
-            tooltip.style.top = Math.max(20, rect.top) + 'px';
-            tooltip.style.left = (rect.right + 16) + 'px';
-            if (parseInt(tooltip.style.left) > window.innerWidth - 440) {
-                tooltip.style.left = 'auto';
-                tooltip.style.right = '20px';
-            }
-            target.style.position = target.style.position || 'relative';
-            target.style.zIndex = '10001';
-            target.style.outline = '2px solid rgba(212,175,55,0.6)';
-            target.style.outlineOffset = '2px';
-        }
-
-        // Build Alex persona picker HTML if this step needs it
-        let alexPickerHTML = '';
-        if (step.alexPicker) {
-            const styles = { default: 'Default', general: 'The General', enthusiast: 'The Enthusiast', bayou: 'The Bayou', wit: 'The Wit', closer: 'The Closer', strategist: 'The Strategist' };
-            const current = localStorage.getItem('wr_alex_style') || 'default';
-            alexPickerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">' +
-                Object.entries(styles).map(([key, name]) =>
-                    `<button onclick="localStorage.setItem('wr_alex_style','${key}');document.querySelectorAll('.tut-alex-btn').forEach(b=>{b.style.border='1px solid rgba(255,255,255,0.12)';b.style.background='rgba(255,255,255,0.03)';b.style.color='rgba(255,255,255,0.7)'});this.style.border='2px solid #D4AF37';this.style.background='rgba(212,175,55,0.1)';this.style.color='#D4AF37'" class="tut-alex-btn" style="padding:6px 12px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:0.78rem;font-weight:600;${key === current ? 'border:2px solid #D4AF37;background:rgba(212,175,55,0.1);color:#D4AF37' : 'border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.7)'}">${name}</button>`
-                ).join('') + '</div>';
-        }
-
-        tooltip.innerHTML = `
-            <div style="font-size:0.65rem;font-weight:700;color:rgba(212,175,55,0.8);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Step ${_wrTutStep + 1} of ${WR_TUTORIAL_STEPS.length}</div>
-            <div style="font-size:1.1rem;font-weight:800;color:#fff;margin-bottom:8px;letter-spacing:0">${step.title}</div>
-            <div style="font-size:0.85rem;color:rgba(255,255,255,0.7);line-height:1.6;margin-bottom:${step.alexPicker ? '12px' : '20px'}">${step.desc}</div>
-            ${alexPickerHTML}
-            <div style="display:flex;gap:8px;align-items:center">
-                <button onclick="window._nextWRStep()" style="flex:1;padding:10px;font-size:0.85rem;font-weight:700;background:linear-gradient(135deg,#D4AF37,#b8941f);color:#000;border:none;border-radius:10px;cursor:pointer;font-family:inherit">${_wrTutStep < WR_TUTORIAL_STEPS.length - 1 ? 'Next' : 'Start Exploring'}</button>
-                <button onclick="window._endWRTutorial()" style="padding:10px 14px;font-size:0.82rem;color:rgba(255,255,255,0.5);background:none;border:none;cursor:pointer;font-family:inherit">Skip</button>
-            </div>
-        `;
-
-        _wrTutOverlay.appendChild(tooltip);
-        document.body.appendChild(_wrTutOverlay);
-    }, step.tabToOpen ? 150 : 0);
+    return !localStorage.getItem('wr_tutorial_done_v1');
 }
 
-function _nextWRStep() {
-    const prevStep = WR_TUTORIAL_STEPS[_wrTutStep];
-    if (prevStep?.target) {
-        const el = document.querySelector(prevStep.target);
-        if (el) { el.style.zIndex = ''; el.style.outline = ''; el.style.outlineOffset = ''; }
-    }
-    _wrTutStep++;
-    _showWRStep();
+function startWRTutorial(options) {
+    if (!window.App?.AssistantTutorial?.start) return false;
+    return window.App.AssistantTutorial.start(WR_TUTORIAL_CONFIG, options || {});
 }
 
-function _endWRTutorial() {
-    WR_TUTORIAL_STEPS.forEach(step => {
-        if (step.target) {
-            const el = document.querySelector(step.target);
-            if (el) { el.style.zIndex = ''; el.style.outline = ''; el.style.outlineOffset = ''; }
-        }
-    });
-    if (_wrTutOverlay) { _wrTutOverlay.remove(); _wrTutOverlay = null; }
-    localStorage.setItem(WR_TUTORIAL_KEY, '1');
+function replayWRTutorial() {
+    return startWRTutorial({ force: true });
 }
 
-window._nextWRStep = _nextWRStep;
-window._endWRTutorial = _endWRTutorial;
+window.WR_TUTORIAL_CONFIG = WR_TUTORIAL_CONFIG;
 window.startWRTutorial = startWRTutorial;
 window.shouldShowWRTutorial = shouldShowWRTutorial;
+window.replayWRTutorial = replayWRTutorial;

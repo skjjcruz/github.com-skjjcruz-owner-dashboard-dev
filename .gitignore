@@ -2,9 +2,14 @@ supabase/.temp/
 node_modules/
 dist-preview/
 reconai-shared/
+output/
+.env
+.env.local
+.env.*.local
 ios/
 android/
 icon.PNG
 .claude/worktrees/
+.playwright-cli/
 .DS_Store
 **/.DS_Store

@@ -18,6 +18,21 @@
 
     const LS_KEY = 'wr_dashboard_theme';
     const DYNAMIC_STYLE_ID = 'wr-theme-dynamic';
+    const SANDBOX_ONLY_THEMES = new Set(['light']);
+
+    function isSandboxThemeMode() {
+        const host = String(window.location.hostname || '').toLowerCase();
+        const params = new URLSearchParams(window.location.search || '');
+        return host.includes('sandbox') || params.has('dev') || params.get('mode') === 'sandbox' || params.get('sandbox') === 'true';
+    }
+
+    function isThemeAllowed(id) {
+        return !!THEMES[id] && (!SANDBOX_ONLY_THEMES.has(id) || isSandboxThemeMode());
+    }
+
+    function normalizeThemeId(id) {
+        return isThemeAllowed(id) ? id : 'default';
+    }
 
     // ── Theme definitions ─────────────────────────────────────────
     const THEMES = {
@@ -236,6 +251,91 @@
 `;
         }
 
+        if (themeId === 'light') {
+            css += `
+[data-wr-theme="light"] .wr-content-frame,
+[data-wr-theme="light"] .wr-content-frame > div,
+[data-wr-theme="light"] .wr-module-strip,
+[data-wr-theme="light"] .wr-glass,
+[data-wr-theme="light"] .tc-trade-root,
+[data-wr-theme="light"] .tc-dhq-shell,
+[data-wr-theme="light"] .analytics-shell {
+    color: ${c.text} !important;
+}
+
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(160deg, rgba(26,26,26"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(160deg,rgba(26,26,26"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(160deg, rgba(35,36,42"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(160deg,rgba(35,36,42"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg, rgba(35,36,42"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg,rgba(35,36,42"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg, rgba(22,22,29"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg,rgba(22,22,29"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg, rgba(18,18,24"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg,rgba(18,18,24"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg, #201d12"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(90deg, #14130f"],
+[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(90deg, #201d12"],
+[data-wr-theme="light"] .wr-content-frame [style*="background: rgba(20,20,26"],
+[data-wr-theme="light"] .wr-content-frame [style*="background:rgba(20,20,26"],
+[data-wr-theme="light"] .wr-content-frame [style*="background: rgba(12,12,17"],
+[data-wr-theme="light"] .wr-content-frame [style*="background:rgba(12,12,17"],
+[data-wr-theme="light"] .wr-content-frame [style*="background: #111318"],
+[data-wr-theme="light"] .wr-content-frame [style*="background:#111318"],
+[data-wr-theme="light"] .wr-content-frame [style*="background: #121217"],
+[data-wr-theme="light"] .wr-content-frame [style*="background:#121217"],
+[data-wr-theme="light"] .wr-content-frame [style*="background: #16171d"],
+[data-wr-theme="light"] .wr-content-frame [style*="background:#16171d"],
+[data-wr-theme="light"] .wr-content-frame [style*="background: #1a1a1a"],
+[data-wr-theme="light"] .wr-content-frame [style*="background:#1a1a1a"],
+[data-wr-theme="light"] .tc-dhq-shell,
+[data-wr-theme="light"] .tc-dhq-shell [class*="tc-dhq-"],
+[data-wr-theme="light"] .tc-trade-root [class*="tc-card"],
+[data-wr-theme="light"] .tc-trade-root [class*="tc-panel"],
+[data-wr-theme="light"] .tc-trade-root [class*="tc-package"],
+[data-wr-theme="light"] .tc-trade-root [class*="tc-partner"],
+[data-wr-theme="light"] .draft-gm-command,
+[data-wr-theme="light"] .draft-hq-panel,
+[data-wr-theme="light"] .draft-hq-action-card,
+[data-wr-theme="light"] .draft-rec-card,
+[data-wr-theme="light"] .draft-run-list div,
+[data-wr-theme="light"] .mock-draftcast-rail,
+[data-wr-theme="light"] .mock-cast-clock,
+[data-wr-theme="light"] .mock-cast-controls div,
+[data-wr-theme="light"] .mock-status-row div,
+[data-wr-theme="light"] .mock-panel,
+[data-wr-theme="light"] .mock-opponent-shell,
+[data-wr-theme="light"] .mock-trade-card {
+    background: ${c.card} !important;
+    color: ${c.text} !important;
+    border-color: ${c.border} !important;
+    box-shadow: ${t.card.shadow} !important;
+}
+
+[data-wr-theme="light"] .wr-content-frame [style*="color: var(--white)"],
+[data-wr-theme="light"] .wr-content-frame [style*="color:var(--white)"],
+[data-wr-theme="light"] .wr-content-frame [style*="color: var(--text-primary)"],
+[data-wr-theme="light"] .wr-content-frame [style*="color:var(--text-primary)"] {
+    color: ${c.text} !important;
+}
+
+[data-wr-theme="light"] .wr-content-frame [style*="color: var(--silver)"],
+[data-wr-theme="light"] .wr-content-frame [style*="color:var(--silver)"],
+[data-wr-theme="light"] .wr-content-frame [style*="color: var(--text-secondary)"],
+[data-wr-theme="light"] .wr-content-frame [style*="color:var(--text-secondary)"] {
+    color: ${c.textMuted} !important;
+    opacity: 1 !important;
+}
+
+[data-wr-theme="light"] .wr-content-frame table,
+[data-wr-theme="light"] .wr-content-frame tr,
+[data-wr-theme="light"] .wr-content-frame td,
+[data-wr-theme="light"] .wr-content-frame th {
+    color: ${c.text} !important;
+}
+`;
+        }
+
 
         if (t.effects.scanlines) {
             css += `
@@ -289,23 +389,39 @@
 
         /** Get the active theme object */
         get: function() {
-            return THEMES[this.current] || THEMES.default;
+            return THEMES[normalizeThemeId(this.current)] || THEMES.default;
         },
 
         /** Switch theme by ID, persist, apply CSS */
         set: function(id) {
             if (!THEMES[id]) return;
-            this.current = id;
-            try { localStorage.setItem(LS_KEY, id); } catch (e) {}
-            document.documentElement.setAttribute('data-wr-theme', id);
-            injectDynamicCSS(id);
+            const nextId = normalizeThemeId(id);
+            this.current = nextId;
+            try { localStorage.setItem(LS_KEY, nextId); } catch (e) {}
+            document.documentElement.setAttribute('data-wr-theme', nextId);
+            injectDynamicCSS(nextId);
             // Dispatch event so React components can re-render
-            window.dispatchEvent(new CustomEvent('wr_theme_changed', { detail: { theme: id } }));
+            window.dispatchEvent(new CustomEvent('wr_theme_changed', { detail: { theme: nextId } }));
         },
 
         /** List available theme IDs */
         list: function() {
+            return Object.keys(THEMES).filter(themeId => isThemeAllowed(themeId));
+        },
+
+        /** List every registered theme, including sandbox-only repair themes. */
+        listAll: function() {
             return Object.keys(THEMES);
+        },
+
+        /** Whether a theme is available in the current runtime. */
+        isAvailable: function(id) {
+            return isThemeAllowed(id);
+        },
+
+        /** Whether the current runtime can expose sandbox-only themes. */
+        isSandboxMode: function() {
+            return isSandboxThemeMode();
         },
 
         // ── Convenience accessors ────────────────────────────────
@@ -360,7 +476,8 @@
     try {
         const saved = localStorage.getItem(LS_KEY);
         if (saved && THEMES[saved]) {
-            WrTheme.current = saved;
+            WrTheme.current = normalizeThemeId(saved);
+            if (WrTheme.current !== saved) localStorage.setItem(LS_KEY, WrTheme.current);
         }
     } catch (e) {}
 

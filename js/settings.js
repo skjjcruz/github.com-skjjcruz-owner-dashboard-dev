@@ -60,6 +60,11 @@
                 })}
             </div>
         </div>
+        <div style={sectionStyle}>
+            <div style={sectionTitle}>GM BRIEFING</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.45 }}>Replay the first-launch War Room briefing any time you want to re-orient the room.</div>
+            <button onClick={() => { if (window.replayWRTutorial) window.replayWRTutorial(); }} style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.35)', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>Replay GM Briefing</button>
+        </div>
         </>);
     }
 
@@ -143,7 +148,7 @@
         </>);
     }
 
-    function SettingsModal({ onClose, initDisplayName, onDisplayNameSave, leagueMates }) {
+    function SettingsContent({ onClose, initDisplayName, onDisplayNameSave, leagueMates, mode = 'modal' }) {
         const [settingsTab, setSettingsTab] = React.useState('account');
         const [pwMsg, setPwMsg] = React.useState('');
         const [currentPw, setCurrentPw] = React.useState('');
@@ -164,30 +169,27 @@
         const currentTier = React.useMemo(() => {
             try {
                 const p = JSON.parse(localStorage.getItem('od_profile_v1') || '{}');
-                return p.tier || 'free';
+                const appTier = typeof window.getUserTier === 'function' ? window.getUserTier() : null;
+                return appTier || p.tier || 'free';
             } catch { return 'free'; }
         }, []);
 
-        const tierLabel = { free: 'War Room Free', pro: 'Dynasty HQ Pro', power: 'Dynasty HQ Power' };
-        const tierColor = { free: 'var(--silver)', pro: 'var(--gold)', power: '#A855F7' };
-        const tierBg    = { free: 'rgba(192,192,192,0.12)', pro: 'rgba(212,175,55,0.12)', power: 'rgba(168,85,247,0.12)' };
+        const tierLabel = { free: 'War Room Free', trial: 'War Room Trial', scout: 'Scout', warroom: 'War Room', pro: 'Dynasty HQ Pro', power: 'Dynasty HQ Power', paid: 'Paid' };
+        const tierColor = { free: 'var(--silver)', trial: 'var(--silver)', scout: 'var(--silver)', warroom: 'var(--gold)', pro: 'var(--gold)', power: '#A855F7', paid: 'var(--gold)' };
+        const tierBg    = { free: 'rgba(192,192,192,0.12)', trial: 'rgba(192,192,192,0.12)', scout: 'rgba(192,192,192,0.12)', warroom: 'rgba(212,175,55,0.12)', pro: 'rgba(212,175,55,0.12)', power: 'rgba(168,85,247,0.12)', paid: 'rgba(212,175,55,0.12)' };
 
         function goToManagePlan() {
             window.location.href = 'onboarding.html?manage=true';
         }
 
         function handleCancelPlan() {
-            if (!confirm('Cancel your subscription? You will be moved to the War Room Free plan.')) return;
-            try {
-                const profile = JSON.parse(localStorage.getItem('od_profile_v1') || '{}');
-                localStorage.setItem('od_profile_v1', JSON.stringify({ ...profile, tier: 'free' }));
-                alert('Subscription cancelled. You are now on the War Room Free plan.');
-                onClose();
-            } catch { alert('Failed to cancel. Please try again.'); }
+            if (!confirm('Open plan management to cancel or change your plan?')) return;
+            goToManagePlan();
         }
 
         function handleDisplayNameSave() {
-            onDisplayNameSave(displayName);
+            if (typeof onDisplayNameSave === 'function') onDisplayNameSave(displayName);
+            else localStorage.setItem('od_display_name', displayName);
         }
 
         async function handleChangePassword() {
@@ -259,11 +261,171 @@
         const inputStyle = { width: '100%', padding: '0.55rem 0.75rem', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.85rem', marginBottom: '0.5rem' };
         const btnPrimary = { flex: 1, padding: '0.6rem', background: 'var(--gold)', border: 'none', borderRadius: '6px', color: 'var(--black)', fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' };
         const btnOutline = { flex: 1, padding: '0.6rem', background: 'transparent', border: '1px solid var(--gold)', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' };
+        const isModule = mode === 'module';
+        const shellStyle = isModule
+            ? { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid rgba(212,175,55,0.24)', borderRadius: '10px', padding: '1.1rem', width: '100%', boxSizing: 'border-box', boxShadow: '0 12px 28px rgba(0,0,0,0.22)' }
+            : { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '3px solid var(--gold)', borderRadius: '12px', padding: '1.5rem', maxWidth: 'min(720px, calc(100vw - 48px))', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', maxHeight: '90vh', overflowY: 'auto' };
+
+        if (isModule) {
+            const moduleSectionStyle = { ...sectionStyle, marginBottom: '0.7rem', background: 'rgba(255,255,255,0.025)' };
+            const moduleGridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'start' };
+            const moduleColumnStyle = { minWidth: 0 };
+            return (
+                <div className="wr-settings-module-screen" style={{ width: '100%' }}>
+                    <div className="wr-module-strip" style={{ marginBottom: '12px' }}>
+                        <div>
+                            <span>Settings</span>
+                            <strong>Account and app controls</strong>
+                            <em>Logged in as {sleeperUsername}</em>
+                        </div>
+                    </div>
+                    {isGiftedAccount && (
+                        <div style={{ marginBottom: '12px', fontSize: '0.72rem', color: 'var(--gold)', background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.22)', padding: '0.55rem 0.75rem', borderRadius: '6px' }}>
+                            Gifted account - change your password below.
+                        </div>
+                    )}
+                    <div className="wr-settings-module-grid" style={moduleGridStyle}>
+                        <div style={moduleColumnStyle}>
+                            <div style={moduleSectionStyle}>
+                                <div style={sectionTitle}>ACCOUNT</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.5rem' }}>Display name</div>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <input
+                                        style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+                                        placeholder={sleeperUsername}
+                                        value={displayName}
+                                        onChange={e => setDisplayName(e.target.value)}
+                                    />
+                                    <button onClick={handleDisplayNameSave} style={{ ...btnPrimary, flex: 'none', padding: '0.55rem 0.85rem' }}>Save</button>
+                                </div>
+                            </div>
+                            <div style={moduleSectionStyle}>
+                                <div style={sectionTitle}>PASSWORD</div>
+                                <input style={inputStyle} type="password" placeholder="Current password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} />
+                                <input style={inputStyle} type="password" placeholder="New password" value={newPw} onChange={e => setNewPw(e.target.value)} />
+                                <input style={{ ...inputStyle, marginBottom: '0.75rem' }} type="password" placeholder="Confirm new password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} />
+                                <button onClick={handleChangePassword} style={{ ...btnPrimary, width: '100%', flex: 'none' }}>Update Password</button>
+                                {pwMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.73rem', color: pwMsg.startsWith('ok') ? 'var(--win-green)' : '#E74C3C' }}>{pwMsg}</div>}
+                            </div>
+                            <div style={moduleSectionStyle}>
+                                <div style={sectionTitle}>ACCOUNT ACTIONS</div>
+                                <button onClick={handleLogout} style={{ width: '100%', padding: '0.7rem', background: 'rgba(231,76,60,0.18)', border: '1px solid rgba(231,76,60,0.45)', borderRadius: '6px', color: '#FCA5A5', fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
+                                    Logout
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={moduleColumnStyle}>
+                            <AlexTab sectionStyle={moduleSectionStyle} sectionTitle={sectionTitle} />
+                        </div>
+
+                        <div style={moduleColumnStyle}>
+                            <div style={moduleSectionStyle}>
+                                <div style={sectionTitle}>DISPLAY</div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                                    Change the visual style of your dashboard widgets.
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    {(window.WrTheme ? window.WrTheme.list() : ['default']).map(themeId => {
+                                        const t = window.WrTheme?.themes?.[themeId] || {};
+                                        const isActive = (window.WrTheme?.current || 'default') === themeId;
+                                        return (
+                                            <button key={themeId} onClick={() => {
+                                                if (window.WrTheme) window.WrTheme.set(themeId);
+                                                setSettingsTab('display');
+                                            }} style={{
+                                                padding: '16px 14px',
+                                                background: isActive ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)',
+                                                border: isActive ? '2px solid var(--gold)' : '1px solid rgba(255,255,255,0.1)',
+                                                borderRadius: t.card?.radius || '8px',
+                                                cursor: 'pointer',
+                                                textAlign: 'center',
+                                                transition: '0.15s',
+                                            }}>
+                                                <div style={{ fontSize: '1.6rem', marginBottom: '6px' }}>{t.preview || '\uD83C\uDFA8'}</div>
+                                                <div style={{
+                                                    fontFamily: 'Rajdhani, sans-serif',
+                                                    fontSize: '0.9rem',
+                                                    fontWeight: 700,
+                                                    color: isActive ? 'var(--gold)' : 'var(--white)',
+                                                    letterSpacing: '0.06em',
+                                                }}>{t.name || themeId}</div>
+                                                <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.6, marginTop: '4px' }}>
+                                                    {themeId === 'default' ? 'Dark mode - gold accent' : themeId === 'light' ? 'Light mode - clean and bright' : 'Custom theme'}
+                                                </div>
+                                                {isActive && (
+                                                    <div style={{
+                                                        marginTop: '8px',
+                                                        fontSize: '0.65rem',
+                                                        fontWeight: 700,
+                                                        color: 'var(--gold)',
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.08em',
+                                                    }}>ACTIVE</div>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <CommissionerTab sectionStyle={moduleSectionStyle} sectionTitle={sectionTitle} />
+                        </div>
+
+                        <div style={moduleColumnStyle}>
+                            <div style={moduleSectionStyle}>
+                                <div style={sectionTitle}>PLAN</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>Current plan:</span>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: tierColor[currentTier] || 'var(--silver)', background: tierBg[currentTier] || 'rgba(192,192,192,0.12)', padding: '0.15rem 0.55rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                        {tierLabel[currentTier] || 'War Room Free'}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                    <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: '0.75rem' }}>Upgrade</button>
+                                    <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: '0.75rem' }}>Change Plan</button>
+                                    <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: '0.75rem' }}>Gift Sub</button>
+                                    <button onClick={handleCancelPlan} style={{ ...btnOutline, fontSize: '0.75rem', borderColor: 'rgba(231,76,60,0.35)', color: '#E74C3C' }}>Cancel</button>
+                                </div>
+                            </div>
+                            <div style={moduleSectionStyle}>
+                                <div style={sectionTitle}>AI KEY</div>
+                                <div style={{ fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
+                                    Session-only BYO keys are supported during onboarding and in the AI controls.
+                                </div>
+                                <button onClick={() => { window.location.href = 'onboarding.html?manage=true#byo'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: '0.75rem' }}>Review AI Setup</button>
+                            </div>
+                            <div style={moduleSectionStyle}>
+                                <div style={sectionTitle}>DATA</div>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <button onClick={() => {
+                                        localStorage.removeItem('dhq_leagueintel_v10');
+                                        Object.keys(localStorage).filter(k => k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
+                                        if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; }
+                                        alert('DHQ cache cleared. Reload to rebuild.');
+                                    }} style={{ padding: '6px 12px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.1)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', color: '#E74C3C', cursor: 'pointer' }}>
+                                        Clear DHQ Cache
+                                    </button>
+                                    <button onClick={() => { sessionStorage.clear(); alert('Session cache cleared.'); }}
+                                        style={{ padding: '6px 12px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer' }}>
+                                        Clear Session Cache
+                                    </button>
+                                </div>
+                            </div>
+                            <div style={moduleSectionStyle}>
+                                <div style={sectionTitle}>ABOUT</div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.65 }}>
+                                    Dynasty HQ War Room v2.0 &middot; Powered by DHQ Engine
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
         return (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={onClose}>
-                <div style={{ background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '3px solid var(--gold)', borderRadius: '12px', padding: '1.5rem', maxWidth: '440px', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-                    <h2 style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', color: 'var(--gold)', marginBottom: '0.55rem', textAlign: 'center', letterSpacing: '0.12em' }}>SETTINGS</h2>
+                <div className={isModule ? 'wr-settings-module' : 'wr-settings-modal'} style={shellStyle} onClick={isModule ? undefined : (e) => e.stopPropagation()}>
+                    <h2 style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', color: 'var(--gold)', marginBottom: '0.55rem', textAlign: isModule ? 'left' : 'center', letterSpacing: '0.12em' }}>SETTINGS</h2>
 
                     <div style={{ fontSize: '0.85rem', color: 'var(--silver)', marginBottom: '1rem' }}>
                         Logged in as: <strong style={{ color: 'var(--white)' }}>{sleeperUsername}</strong>
@@ -392,7 +554,13 @@
                         <div style={{ marginTop: '0.6rem', fontSize: '0.66rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>Manage your Dynasty HQ subscription</div>
                     </div>
 
-                    {/* Phase 10: AI Status card removed per user feedback (2026-04-18) — users are not allowed to use their own AI. */}
+                    <div style={sectionStyle}>
+                        <div style={sectionTitle}>BYO AI KEY</div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
+                            Session-only BYO keys are supported during onboarding and in the AI controls. They are not stored in localStorage and they bypass included query limits only for that session.
+                        </div>
+                        <button onClick={() => { window.location.href = 'onboarding.html?manage=true#byo'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: '0.75rem' }}>Review AI Setup</button>
+                    </div>
                     </>)}
 
                     {/* ══ DATA TAB ══ */}
@@ -428,11 +596,29 @@
                         <button onClick={handleLogout} style={{ padding: '0.75rem', background: 'linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)', border: 'none', borderRadius: '8px', color: 'white', fontFamily: 'var(--font-body)', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                             Logout
                         </button>
-                        <button onClick={onClose} style={{ padding: '0.75rem', background: 'var(--black)', border: '2px solid var(--gold)', borderRadius: '8px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
+                        {!isModule && <button onClick={onClose} style={{ padding: '0.75rem', background: 'var(--black)', border: '2px solid var(--gold)', borderRadius: '8px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                             Close
-                        </button>
+                        </button>}
                     </div>
                 </div>
+        );
+    }
+
+    function SettingsModal(props) {
+        return (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={props.onClose}>
+                <SettingsContent {...props} mode="modal" />
             </div>
         );
     }
+
+    function SettingsModule(props) {
+        return (
+            <div style={{ padding: '10px 16px 16px', maxWidth: '1380px', margin: '0 auto' }}>
+                <SettingsContent {...props} mode="module" />
+            </div>
+        );
+    }
+
+    window.SettingsModal = SettingsModal;
+    window.SettingsModule = SettingsModule;

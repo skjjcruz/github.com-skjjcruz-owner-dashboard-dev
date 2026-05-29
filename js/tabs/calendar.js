@@ -4,9 +4,9 @@
 // Data from league settings + localStorage custom events.
 // ══════════════════════════════════════════════════════════════════
 
-function CalendarTab({ currentLeague, myRoster }) {
+function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
     const { useState, useMemo } = React;
-    const leagueId = currentLeague?.id || '';
+    const leagueId = currentLeague?.id || currentLeague?.league_id || '';
     const EVENTS_KEY = 'wr_calendar_' + leagueId;
 
     const [customEvents, setCustomEvents] = useState(() => {
@@ -22,39 +22,67 @@ function CalendarTab({ currentLeague, myRoster }) {
         const settings = currentLeague?.settings || {};
         const season = currentLeague?.season || new Date().getFullYear();
         const now = Date.now();
+        const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
+        const isSeasonalLeague = !!resolvedLeagueSkin?.state?.isSeasonal;
+        const rosteredPlayerCount = resolvedLeagueSkin?.state?.rosterPlayerCount ?? (currentLeague?.rosters || []).reduce((sum, roster) => {
+            const ids = []
+                .concat(roster?.players || [])
+                .concat(roster?.starters || [])
+                .concat(roster?.reserve || [])
+                .concat(roster?.taxi || [])
+                .filter(id => id && String(id) !== '0');
+            return sum + new Set(ids.map(String)).size;
+        }, 0);
+        const suppressSeasonalWaivers = isSeasonalLeague && (
+            resolvedLeagueSkin?.phase === 'pre_draft' ||
+            resolvedLeagueSkin?.phase === 'offseason' ||
+            resolvedLeagueSkin?.phase === 'complete' ||
+            rosteredPlayerCount === 0
+        );
+        const draftTitle = isSeasonalLeague ? 'League Draft' : 'Rookie Draft';
 
         // Phase 9: Draft date — prefer metadata, fall back to drafts[].start_time
         // so a scheduled draft shows up even when the league hasn't set metadata.draft_date.
         if (currentLeague?.draft_id || settings.draft_rounds) {
             let draftTs = currentLeague?.metadata?.draft_date;
             let draftType = currentLeague?.metadata?.draft_type;
+            let draftRounds = Number(settings.draft_rounds || 0);
+            let latestDraft = null;
+            const drafts = (window.S && window.S.drafts) || currentLeague?.drafts || [];
             if (!draftTs) {
-                const drafts = (window.S && window.S.drafts) || currentLeague?.drafts || [];
-                const sameSeason = drafts.find(d => String(d.season) === String(season) && (d.start_time || d.scheduled_time || d.start_ts));
-                const latest = sameSeason || drafts[0];
-                if (latest) {
-                    draftTs = latest.start_time || latest.scheduled_time || latest.start_ts;
-                    draftType = draftType || latest.type || latest.settings?.slot_type || 'snake';
+                const sameSeason = drafts.find(d => String(d.season) === String(season));
+                latestDraft = sameSeason || drafts[0] || null;
+                if (latestDraft) {
+                    draftTs = latestDraft.start_time || latestDraft.scheduled_time || latestDraft.start_ts;
+                    draftType = draftType || latestDraft.type || latestDraft.settings?.slot_type || 'snake';
+                    draftRounds = Number(latestDraft.settings?.rounds || latestDraft.settings?.round_count || latestDraft.rounds || draftRounds || 0);
                 }
             }
+            draftRounds = window.App?.LeagueSkin?.resolveDraftRounds?.({
+                league: currentLeague,
+                leagueSkin: resolvedLeagueSkin,
+                draft: latestDraft,
+                drafts,
+                fallbackRounds: draftRounds || settings.draft_rounds || 0,
+            }) || draftRounds;
             if (draftTs) {
                 items.push({
                     id: 'draft',
-                    title: 'Rookie Draft',
+                    title: draftTitle,
                     date: new Date(Number(draftTs)),
                     icon: '\uD83C\uDFC8',
                     type: 'league',
-                    detail: (settings.draft_rounds ? settings.draft_rounds + ' rounds' : 'Draft') + ', ' + (draftType || 'snake'),
+                    detail: (draftRounds ? draftRounds + ' rounds' : 'Draft') + ', ' + (draftType || 'snake'),
                 });
             } else {
                 // Still surface a placeholder so the user knows a draft exists but the date isn't set
                 items.push({
                     id: 'draft',
-                    title: 'Rookie Draft',
+                    title: draftTitle,
                     date: new Date(season, 7, 15), // mid-August placeholder
                     icon: '\uD83C\uDFC8',
                     type: 'league',
-                    detail: (settings.draft_rounds ? settings.draft_rounds + ' rounds' : 'Draft') + ' · date TBD',
+                    detail: (draftRounds ? draftRounds + ' rounds' : 'Draft') + ' · date TBD',
                     tbd: true,
                 });
             }
@@ -118,7 +146,7 @@ function CalendarTab({ currentLeague, myRoster }) {
 
         // Waiver processing (ongoing — show next occurrence)
         const waiverType = settings.waiver_type;
-        if (waiverType) {
+        if (waiverType && !suppressSeasonalWaivers) {
             const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const waiverDay = settings.waiver_day_of_week || 3; // Default Wednesday
             const nextWaiver = new Date();
@@ -148,7 +176,7 @@ function CalendarTab({ currentLeague, myRoster }) {
 
         // Sort by date
         return items.sort((a, b) => a.date.getTime() - b.date.getTime());
-    }, [currentLeague, customEvents]);
+    }, [currentLeague, customEvents, leagueSkin]);
 
     // ── Add custom event ──
     function addEvent() {
@@ -178,7 +206,7 @@ function CalendarTab({ currentLeague, myRoster }) {
         // Header with Add button
         React.createElement('div', { style: { display: 'flex', alignItems: 'center', marginBottom: '12px' } },
             React.createElement('div', { style: { ...headerStyle, flex: 1 } }, 'LEAGUE CALENDAR'),
-            React.createElement('button', { onClick: () => setShowAdd(!showAdd), style: { background: 'none', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', color: 'var(--gold)', fontSize: '0.72rem', fontWeight: 700, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' } }, showAdd ? 'Cancel' : '+ Add Event'),
+            React.createElement('button', { title: 'Add custom calendar event', onClick: () => setShowAdd(!showAdd), style: { background: 'none', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', color: 'var(--gold)', fontSize: '0.72rem', fontWeight: 700, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' } }, showAdd ? 'Cancel' : '+ Add Event'),
         ),
 
         // Add event form
@@ -212,7 +240,7 @@ function CalendarTab({ currentLeague, myRoster }) {
                             ),
                             // Countdown or delete
                             countdown && React.createElement('span', { style: { fontSize: '0.72rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 } }, countdown),
-                            event.isCustom && React.createElement('button', { onClick: () => removeEvent(event.id), style: { background: 'none', border: 'none', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.9rem', padding: '4px', flexShrink: 0, opacity: 0.5 } }, '\u2715'),
+                            event.isCustom && React.createElement('button', { title: 'Remove custom calendar event', onClick: () => removeEvent(event.id), style: { background: 'none', border: 'none', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.9rem', padding: '4px', flexShrink: 0, opacity: 0.5 } }, '\u2715'),
                         );
                     })
                 ),

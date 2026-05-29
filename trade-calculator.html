@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://jcc100218.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hovnqztlbsgsywrbidbh.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <title>Behavioral Trade Calculator - Dynasty HQ</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -315,7 +316,15 @@
         .tax-table-row.total { background: rgba(212,175,55,0.06); border-top: 1px solid rgba(212,175,55,0.2); font-weight: 700; }
         .tax-name  { flex: 1; font-weight: 600; }
         .tax-desc  { font-size: 0.58rem; color: var(--silver); opacity: 0.55; flex: 2; }
-        .tax-val   { font-weight: 700; font-size: 0.7rem; width: 40px; text-align: right; flex-shrink: 0; }
+        .tax-val   { font-weight: 700; font-size: 0.7rem; width: 54px; text-align: right; flex-shrink: 0; }
+        .buyer-target-card {
+            background: rgba(212,175,55,0.055); border: 1px solid rgba(212,175,55,0.16);
+            border-radius: 6px; padding: 0.55rem 0.65rem; display: flex; flex-direction: column; gap: 0.25rem;
+        }
+        .buyer-target-title { font-size: 0.62rem; color: var(--gold); font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+        .buyer-target-body { font-size: 0.68rem; color: var(--silver); line-height: 1.45; }
+        .buyer-target-body strong { color: var(--white); }
+        .buyer-target-note { font-size: 0.58rem; color: var(--silver); opacity: 0.55; line-height: 1.35; }
 
         /* Grudge log */
         .grudge-log { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.1rem; }
@@ -541,6 +550,17 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/shared/shared-loader.js?v=20260502b"></script>
 <script>
+if (['localhost', '127.0.0.1'].includes(window.location.hostname || '')) {
+  const existingConfig = window.DYNASTY_HQ_CONFIG || {};
+  window.DYNASTY_HQ_CONFIG = {
+    ...existingConfig,
+    devPreviewAI: true,
+    endpoints: {
+      ...(existingConfig.endpoints || {}),
+      aiAnalyze: `${window.location.origin}/api/dev-ai-analyze`,
+    },
+  };
+}
 WRShared.loadMany([
   'app-config.js',
   'constants.js',
@@ -549,6 +569,7 @@ WRShared.loadMany([
   'supabase-client.js',
   'pick-value-model.js',
   'dhq-core.js',
+  'intelligence-context.js',
   'dhq-engine.js',
   'trade-engine.js',
   'dhq-ai.js',
@@ -583,7 +604,7 @@ const isAuthed = !!authRaw;
 if (!isAuthed && !DEV_MODE) window.location.href = 'login.html';
 let sleeperUsername = '';
 if (DEV_MODE) {
-    sleeperUsername = new URLSearchParams(window.location.search).get('user') || 'jcc100218';
+    sleeperUsername = new URLSearchParams(window.location.search).get('user') || 'bigloco';
 }
 try {
     if (authRaw && !sleeperUsername) {
@@ -686,6 +707,7 @@ const POS_WEIGHTS = { QB:14, RB:14, WR:14, TE:8, K:3, DL:13, LB:10, DB:12 };
 const TOTAL_WEIGHT = Object.values(POS_WEIGHTS).reduce((a,b)=>a+b,0);
 
 const TC_POS_ORDER = { QB:0, RB:1, WR:2, TE:3, K:4, DL:5, LB:6, DB:7 };
+const BUYER_TARGET_LIKELIHOOD = 70;
 
 const DNA_TYPES = {
     NONE: { label: '— Not Set —', color: 'var(--silver)', desc: '', taxes: [] },
@@ -693,41 +715,36 @@ const DNA_TYPES = {
         label: 'The Fleecer',
         color: '#E74C3C',
         desc: 'High activity, always hunting asymmetric value. Sends lowball offers constantly. Sharp but impatient — will counter-offer if you decline.',
-        strategy: 'Counter with slightly above-fair value. They respect boldness. Never show urgency.',
-        taxes: ['Endowment Effect +15%', 'Expects to "win" the trade'],
-        multiplier: 0.85,
+        strategy: 'Lead with clean surplus. They respect boldness, but the math still moves linearly.',
+        taxes: ['Endowment -5%', 'Surplus hunter'],
     },
     DOMINATOR: {
         label: 'The Dominator',
         color: '#E67E22',
-        desc: 'High ego, requires a perceived +30% margin to pull the trigger. Motivated by status and bragging rights above all else.',
+        desc: 'High ego, requires visible surplus to pull the trigger. Motivated by status and bragging rights above all else.',
         strategy: 'Frame your offer as giving them the "better" side. Let them feel like they won.',
-        taxes: ['Ego Premium +30%', 'Needs to feel superior', 'Grudge Tax if rejected'],
-        multiplier: 0.75,
+        taxes: ['Status Tax -18%', 'Endowment -14%', 'Loss Aversion -8%'],
     },
     STALWART: {
         label: 'The Stalwart',
         color: '#5DADE2',
-        desc: 'High stability, prefers 1-for-1 lateral moves. Emotionally attached to their roster. Slow to move but reliable when they engage.',
-        strategy: 'Lead with fair value. Never low-ball. Highlight how the trade improves both sides equally.',
-        taxes: ['Desire Tax on fan favorites', 'Prefers even-up deals'],
-        multiplier: 1.0,
+        desc: 'High stability, emotionally attached to their roster. Slow to move but reliable when they engage.',
+        strategy: 'Lead with clear value. Never low-ball. Highlight how the trade improves both sides.',
+        taxes: ['Endowment -10%', 'Loss Aversion -8%'],
     },
     ACCEPTOR: {
         label: 'The Acceptor',
         color: '#2ECC71',
         desc: 'Low attachment, willing to sell current assets for future picks and young players. Rebuilding or just indifferent.',
-        strategy: 'Offer future assets (picks, young upside). They discount current stars — exploit it.',
-        taxes: ['Future Asset Bonus +20%', 'Discounts veterans -15%'],
-        multiplier: 1.15,
+        strategy: 'Offer future assets (picks, young upside). They discount current stars through the tax layer.',
+        taxes: ['Rebuilding Discount +10%', 'Endowment -3%'],
     },
     DESPERATE: {
         label: 'The Desperate',
         color: '#BB8FCE',
-        desc: 'High urgency triggered by injuries, bye-weeks, or playoff push. Will massively overpay for an immediate starter.',
+        desc: 'High urgency triggered by injuries, bye-weeks, or playoff push. Will overpay for an immediate starter.',
         strategy: 'Identify their empty slot or injury. Strike fast — desperation fades after their bye.',
-        taxes: ['Panic Multiplier up to +40%', 'Time-sensitive window'],
-        multiplier: 1.3,
+        taxes: ['Panic Premium +14% to +26%', 'Endowment -8%'],
     },
 };
 
@@ -839,6 +856,91 @@ function calcPsychTaxes(myAssessment, theirAssessment, theirDnaKey, theirPosture
             desc:'Actively shopping. Trade conversations are welcomed.' });
     }
     return taxes;
+}
+
+function clampAcceptanceLikelihood(value) {
+    return Math.round(Math.max(5, Math.min(95, value)));
+}
+
+function calcAcceptanceLikelihood({ hasTrade, totalA, totalB, otherDnaKey, theirAssessment, myAssessment, netTaxTotal }) {
+    if (!hasTrade || (totalA <= 0 && totalB <= 0)) return 50;
+
+    const maxSide                = Math.max(totalA, totalB, 1);
+    const diff                   = totalA - totalB; // positive = I overpay, raising their acceptance odds
+    const taxValueAdjust         = ((Number(netTaxTotal) || 0) / 200) * maxSide;
+    const theirEffectiveSurplus  = diff + taxValueAdjust;
+    const normalizedSurplus      = theirEffectiveSurplus / maxSide;
+    const likelihood             = 50 + Math.round(normalizedSurplus * 200);
+
+    return clampAcceptanceLikelihood(likelihood);
+}
+
+function calcBuyerTarget({ hasTrade, totalA, totalB, otherDnaKey, theirAssessment, myAssessment, netTaxTotal, targetLikelihood = BUYER_TARGET_LIKELIHOOD }) {
+    if (!hasTrade || (totalA <= 0 && totalB <= 0)) return null;
+
+    const likelihoodFor = (giveAdjustment) => calcAcceptanceLikelihood({
+        hasTrade,
+        totalA: Math.max(0, totalA + giveAdjustment),
+        totalB,
+        otherDnaKey,
+        theirAssessment,
+        myAssessment,
+        netTaxTotal,
+    });
+
+    const currentLikelihood = likelihoodFor(0);
+    const maxSide           = Math.max(totalA, totalB, 1);
+
+    if (currentLikelihood < targetLikelihood) {
+        let hi = Math.max(100, Math.ceil(maxSide * 0.05));
+        while (hi < maxSide * 3 && likelihoodFor(hi) < targetLikelihood) hi *= 2;
+
+        if (likelihoodFor(hi) < targetLikelihood) {
+            return {
+                status: 'out_of_range',
+                currentLikelihood,
+                targetLikelihood,
+                adjustment: Math.round(hi),
+                targetTotalA: Math.round(totalA + hi),
+                targetMargin: Math.round(totalA + hi - totalB),
+            };
+        }
+
+        let lo = 0;
+        while (hi - lo > 1) {
+            const mid = Math.floor((lo + hi) / 2);
+            if (likelihoodFor(mid) >= targetLikelihood) hi = mid;
+            else lo = mid;
+        }
+
+        return {
+            status: 'short',
+            currentLikelihood,
+            targetLikelihood,
+            adjustment: Math.round(hi),
+            targetTotalA: Math.round(totalA + hi),
+            targetMargin: Math.round(totalA + hi - totalB),
+        };
+    }
+
+    let lo = 0;
+    let hi = Math.max(0, totalA);
+    while (hi - lo > 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (likelihoodFor(-mid) >= targetLikelihood) lo = mid;
+        else hi = mid;
+    }
+
+    const cushion = Math.round(lo);
+    return {
+        status: 'met',
+        currentLikelihood,
+        targetLikelihood,
+        adjustment: -cushion,
+        cushion,
+        targetTotalA: Math.round(Math.max(0, totalA - cushion)),
+        targetMargin: Math.round(Math.max(0, totalA - cushion) - totalB),
+    };
 }
 
 // ─── AUTO-DERIVE DNA FROM HISTORY ────────────────────────────────────────────
@@ -2115,7 +2217,7 @@ function TradeCalculator() {
                             <span className="guide-step-num">2</span>
                             <div className="guide-step-body">
                                 <div className="guide-step-title">Read the Full Analysis</div>
-                                <div className="guide-step-desc">The verdict panel shows: raw value differential, psychological tax breakdown (factors that affect real-world likelihood), acceptance probability, and a DNA-based approach strategy.</div>
+                                <div className="guide-step-desc">The verdict panel shows: raw DHQ value differential, acceptance drivers that affect real-world likelihood, a buyer target line, and a DNA-based approach strategy.</div>
                             </div>
                         </div>
                     </div>
@@ -2754,9 +2856,7 @@ function TradeCalculator() {
         const fcReady   = Object.keys(fcValues).length > 0;
         const totalA    = tradeSideValue(tradeIds.A, tradePickIds.A, tradeFaab.A);
         const totalB    = tradeSideValue(tradeIds.B, tradePickIds.B, tradeFaab.B);
-        // diff = totalA - totalB = value the OTHER team gains (used for likelihood calc)
         // userGain = totalB - totalA = value YOU gain (used for display)
-        const diff      = totalA - totalB;
         const userGain  = totalB - totalA;
         const absDiff   = Math.abs(userGain);
         const hasTrade  = tradeIds.A.length > 0 || tradeIds.B.length > 0 || tradePickIds.A.length > 0 || tradePickIds.B.length > 0 || tradeFaab.A > 0 || tradeFaab.B > 0;
@@ -2774,31 +2874,13 @@ function TradeCalculator() {
         const theirPosture    = calcOwnerPosture(theirAssessment, otherDnaKey);
         const psychTaxes      = calcPsychTaxes(myAssessment, theirAssessment, otherDnaKey, theirPosture);
         const grudgeTax       = calcGrudgeTax(myOwnerId, otherOwnerId, grudges, otherDnaKey);
-        const netTaxTotal     = psychTaxes.reduce((s,t) => s + t.impact, 0) + grudgeTax.total;
+        const netTaxTotal     = psychTaxes.reduce((s,t) => s + (Number(t.impact) || 0), 0) + grudgeTax.total;
         const fairMargin      = Math.round(Math.max(totalA, totalB) * 0.04);
 
-        // DNA-based acceptance curve
-        let likelihood = 50;
-        if (hasTrade && (totalA > 0 || totalB > 0)) {
-            const maxSide        = Math.max(totalA, totalB, 1);
-            const normalizedDiff = diff / maxSide;
-            if (otherDnaKey === 'FLEECER') {
-                likelihood = normalizedDiff < -0.05 ? 75 + Math.round(Math.abs(normalizedDiff)*40) : Math.max(15, 50 - Math.round(normalizedDiff*150));
-            } else if (otherDnaKey === 'DOMINATOR') {
-                likelihood = normalizedDiff < -0.10 ? 70 : normalizedDiff < 0 ? 55 : Math.max(10, 40 - Math.round(normalizedDiff*200));
-            } else if (otherDnaKey === 'STALWART') {
-                likelihood = Math.min(85, Math.max(20, Math.round((1 - Math.abs(normalizedDiff)*3)*80)));
-            } else if (otherDnaKey === 'ACCEPTOR') {
-                likelihood = Math.min(90, Math.max(30, 60 + Math.round(normalizedDiff*100)));
-            } else if (otherDnaKey === 'DESPERATE') {
-                const fitsNeed = theirAssessment?.needs?.some(n => (myAssessment?.strengths||[]).includes(n.pos));
-                likelihood = fitsNeed ? Math.min(92, 65 + Math.round(Math.abs(normalizedDiff)*20) + 20) : Math.min(75, 55 + Math.round(Math.abs(normalizedDiff)*30));
-            } else {
-                likelihood = Math.min(85, Math.max(15, 50 - Math.round(normalizedDiff*120)));
-            }
-            likelihood += netTaxTotal;
-        }
-        likelihood = Math.round(Math.max(5, Math.min(97, likelihood)));
+        // DNA changes acceptance odds only. Raw DHQ won/lost remains the value differential above.
+        const acceptanceInput = { hasTrade, totalA, totalB, otherDnaKey, theirAssessment, myAssessment, netTaxTotal };
+        const likelihood      = calcAcceptanceLikelihood(acceptanceInput);
+        const buyerTarget     = calcBuyerTarget(acceptanceInput);
 
         const likelihoodColor = likelihood >= 70 ? 'var(--win-green)' : likelihood >= 45 ? 'var(--amber)' : 'var(--loss-red)';
         // verdictColor/Text use userGain (YOUR perspective): positive = you WIN
@@ -3197,7 +3279,7 @@ function TradeCalculator() {
                             <span className="verdict-diff" style={{ color: verdictColor }}>{diffDisplay}</span>
                             <span style={{ fontFamily:'Inter,sans-serif', fontSize:'1.1rem', color: verdictColor }}>{verdictText}</span>
                             <span style={{ fontSize:'0.62rem', color:'var(--silver)', opacity:0.55 }}>
-                                (gave {totalA.toLocaleString()} · received {totalB.toLocaleString()})
+                                (raw DHQ only: gave {totalA.toLocaleString()} · received {totalB.toLocaleString()})
                             </span>
                         </div>
 
@@ -3213,14 +3295,17 @@ function TradeCalculator() {
 
                         {/* Psychological Tax Breakdown */}
                         <div>
-                            <div className="log-section-hdr" style={{ marginBottom:'0.35rem' }}>Psychological Tax Breakdown</div>
+                            <div className="log-section-hdr" style={{ marginBottom:'0.35rem' }}>Acceptance Drivers</div>
+                            <div style={{ fontSize:'0.58rem', color:'var(--silver)', opacity:0.5, margin:'-0.15rem 0 0.35rem', lineHeight:1.35 }}>
+                                These are percentage-point odds modifiers only. They do not change the raw DHQ won/lost above.
+                            </div>
                             <div className="tax-table">
                                 {psychTaxes.map((t,i) => (
                                     <div key={i} className={`tax-table-row ${t.type === 'BONUS' ? 'bonus' : 'tax'}`}>
                                         <span className="tax-name">{t.name}</span>
                                         <span className="tax-desc">{t.desc}</span>
                                         <span className="tax-val" style={{ color: t.impact > 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>
-                                            {t.impact > 0 ? '+' : ''}{t.impact}
+                                            {t.impact > 0 ? '+' : ''}{t.impact}%
                                         </span>
                                     </div>
                                 ))}
@@ -3229,15 +3314,15 @@ function TradeCalculator() {
                                         <span className="tax-name">Grudge Tax</span>
                                         <span className="tax-desc">{grudgeTax.entries.length} logged interaction{grudgeTax.entries.length!==1?'s':''}, decay-weighted</span>
                                         <span className="tax-val" style={{ color: grudgeTax.total < 0 ? 'var(--loss-red)' : 'var(--win-green)' }}>
-                                            {grudgeTax.total > 0 ? '+' : ''}{grudgeTax.total}
+                                            {grudgeTax.total > 0 ? '+' : ''}{grudgeTax.total}%
                                         </span>
                                     </div>
                                 )}
                                 <div className="tax-table-row total">
-                                    <span className="tax-name">NET MODIFIER</span>
-                                    <span className="tax-desc">Applied to base likelihood</span>
+                                    <span className="tax-name">NET ODDS MODIFIER</span>
+                                    <span className="tax-desc">Folded into effective surplus before probability</span>
                                     <span className="tax-val" style={{ color: netTaxTotal > 0 ? 'var(--win-green)' : netTaxTotal < 0 ? 'var(--loss-red)' : 'var(--silver)' }}>
-                                        {netTaxTotal > 0 ? '+' : ''}{netTaxTotal}
+                                        {netTaxTotal > 0 ? '+' : ''}{netTaxTotal}%
                                     </span>
                                 </div>
                             </div>
@@ -3247,6 +3332,33 @@ function TradeCalculator() {
                         {otherDnaKey !== 'NONE' && otherDna.strategy && (
                             <div style={{ fontSize:'0.65rem', color:otherDna.color, fontStyle:'italic', background:`${otherDna.color}0d`, border:`1px solid ${otherDna.color}25`, borderRadius:5, padding:'0.4rem 0.6rem' }}>
                                 Approach: {otherDna.strategy}
+                            </div>
+                        )}
+
+                        {/* Buyer target */}
+                        {buyerTarget && (
+                            <div className="buyer-target-card">
+                                <div className="buyer-target-title">Buyer Line</div>
+                                <div className="buyer-target-body">
+                                    {buyerTarget.status === 'short' && (
+                                        <>
+                                            To get this buyer to roughly <strong>{buyerTarget.targetLikelihood}%</strong>, Side A needs to send about <strong>{buyerTarget.targetTotalA.toLocaleString()} DHQ</strong>. That is about <strong>{buyerTarget.adjustment.toLocaleString()} more DHQ</strong> to their side, or the same amount removed from what you receive.
+                                        </>
+                                    )}
+                                    {buyerTarget.status === 'met' && (
+                                        <>
+                                            This offer already clears the <strong>{buyerTarget.targetLikelihood}%</strong> buyer line. Side A could pull back about <strong>{buyerTarget.cushion.toLocaleString()} DHQ</strong> and still sit near that threshold.
+                                        </>
+                                    )}
+                                    {buyerTarget.status === 'out_of_range' && (
+                                        <>
+                                            This buyer profile is still below <strong>{buyerTarget.targetLikelihood}%</strong> after a large sweetener. You likely need a different asset type, a clearer need fit, or a different trade partner.
+                                        </>
+                                    )}
+                                </div>
+                                <div className="buyer-target-note">
+                                    Target uses buyer DNA, posture, needs, and grudge history. The DHQ verdict above remains raw market value.
+                                </div>
                             </div>
                         )}
 

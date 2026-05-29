@@ -355,7 +355,7 @@
                                 {bigBoard.length === 0 ? <div style={{ fontSize: fs(0.6), color: colors.textFaint, fontStyle: 'italic' }}>No players available</div> : bigBoard.map((p, i) => {
                                     const col = p.dhq >= 5000 ? colors.positive : p.dhq >= 2000 ? colors.accent : colors.textMuted;
                                     return (
-                                        <div key={p.pid} onClick={() => p.pid && openCard(p.pid)} style={{
+                                        <div key={p.pid} role="button" tabIndex={0} title="Open player card" onClick={() => p.pid && openCard(p.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.pid && openCard(p.pid); } }} style={{
                                             display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0',
                                             borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer',
                                             fontSize: fs(0.6), fontFamily: fonts.ui,

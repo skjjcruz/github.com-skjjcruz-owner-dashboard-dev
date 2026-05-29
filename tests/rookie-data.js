@@ -6,7 +6,19 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const RECON_ROOT = path.resolve(ROOT, '..', 'reconai');
+
+function resolveRookieDataRoot() {
+  const sharedSource = process.env.RECONAI_SHARED_SOURCE;
+  const candidates = [
+    sharedSource && path.resolve(sharedSource, '..'),
+    path.resolve(ROOT, '..', 'reconai'),
+    path.resolve(ROOT, 'reconai-shared'),
+  ].filter(Boolean);
+
+  return candidates.find(candidate => fs.existsSync(path.join(candidate, 'shared', 'rookie-data.js')))
+    || candidates.find(candidate => fs.existsSync(path.join(candidate, 'rookie-data.js')))
+    || null;
+}
 
 let passed = 0;
 let failed = 0;
@@ -38,8 +50,16 @@ function read(root, relPath) {
 
 console.log('\nRookie data contract tests');
 
-const rookieShared = read(RECON_ROOT, 'shared/rookie-data.js');
+const rookieDataRoot = resolveRookieDataRoot();
+if (!rookieDataRoot) {
+  throw new Error('Unable to locate canonical rookie-data.js from RECONAI_SHARED_SOURCE, ../reconai, or reconai-shared/');
+}
+const rookieSharedPath = fs.existsSync(path.join(rookieDataRoot, 'shared', 'rookie-data.js'))
+  ? path.join(rookieDataRoot, 'shared', 'rookie-data.js')
+  : path.join(rookieDataRoot, 'rookie-data.js');
+const rookieShared = fs.readFileSync(rookieSharedPath, 'utf8');
 const scouting = read(ROOT, 'js/draft/scouting.js');
+const draftState = read(ROOT, 'js/draft/state.js');
 const csvLoader = read(ROOT, 'draft-war-room/csv-loader.js');
 const sharedLoader = read(ROOT, 'js/shared/shared-loader.js');
 const rootIndex = read(ROOT, 'index.html');
@@ -71,6 +91,23 @@ test('War Room draft scouting delegates to rookie-data instead of fetching CSVs 
   ok(scouting.includes("source: 'rookie-data'"), 'adapter source marker missing');
   ok(!/fetch\s*\(/.test(scouting), 'draft/scouting.js should not fetch its own CSV files');
   ok(!/calculateTier|calculateGrade|rankToTierBase|pickToBase/.test(scouting), 'draft/scouting.js should not own scoring logic');
+});
+
+test('War Room draft state does not rescale rookie scores locally', () => {
+  ok(draftState.includes('resolvePlayerDhq'), 'draft state value resolver missing');
+  ok(draftState.includes('RookieData.findProspect'), 'draft state should consult canonical rookie-data');
+  ok(!/draftScore\s*\*\s*1000/.test(draftState), 'draft state should not rescale draftScore into DHQ');
+});
+
+test('War Room prospect matching does not merge players by last name only', () => {
+  ok(!scouting.includes('keys.add(last)'), 'last-name-only aliasing can merge distinct prospects');
+  ok(scouting.includes('keys.add(`${first[0]} ${last}`)'), 'first-initial alias should remain for nickname matches');
+});
+
+test('canonical rookie-data does not transfer draft capital by surname and school', () => {
+  ok(!rookieShared.includes('keys.add(last)'), 'canonical last-name-only aliasing can merge distinct prospects');
+  ok(!rookieShared.includes('surnameSchoolIndex'), 'surname plus school matching can transfer draft capital to the wrong player');
+  ok(rookieShared.includes('applyPostDraftEnrichment(aliasMatch, e)'), 'safe alias enrichment path missing');
 });
 
 test('standalone csv-loader delegates to canonical rookie-data when available', () => {

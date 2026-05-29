@@ -19,6 +19,7 @@
         const fonts = theme.fonts || {};
         const cardStyle = window.WrTheme?.cardStyle?.() || {};
         const fs = (rem) => window.WrTheme?.fontSize?.(rem) || (rem + 'rem');
+        const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
 
         const myAssess = React.useMemo(() => {
             if (typeof window.assessTeamFromGlobal === 'function' && myRoster?.roster_id) {
@@ -37,6 +38,7 @@
 
         // ── Trade partners: owners with surplus at positions you need ──
         const tradeTargets = React.useMemo(() => {
+            if (!rosterState.isUsable) return [];
             if (!myAssess || !allAssess.length) return [];
             return allAssess
                 .filter(a => a.rosterId !== myRoster?.roster_id)
@@ -62,7 +64,7 @@
                 .filter(a => a.compat > 0)
                 .sort((a, b) => b.compat - a.compat)
                 .slice(0, 8);
-        }, [myAssess, allAssess, myRoster?.roster_id]);
+        }, [rosterState.isUsable, myAssess, allAssess, myRoster?.roster_id]);
 
         const dealCount = tradeTargets.length;
         const topTarget = tradeTargets[0];
@@ -79,6 +81,7 @@
 
         // Waiver targets (un-rostered, DHQ > threshold)
         const waiverTargets = React.useMemo(() => {
+            if (!rosterState.isUsable) return [];
             const scores = window.App?.LI?.playerScores || {};
             const rostered = new Set();
             (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
@@ -94,10 +97,11 @@
                 })
                 .sort((a, b) => b.dhq - a.dhq)
                 .slice(0, 12);
-        }, [currentLeague, playersData]);
+        }, [rosterState.isUsable, currentLeague, playersData]);
 
         // Find a specific player from your surplus that fills their need
         const swapSuggestions = React.useMemo(() => {
+            if (!rosterState.isUsable) return {};
             const scores = window.App?.LI?.playerScores || {};
             const myPlayers = (myRoster?.players || []);
             const out = {};
@@ -114,7 +118,7 @@
                 if (candidates.length) out[t.rosterId || t.name] = candidates[0];
             });
             return out;
-        }, [tradeTargets, myRoster, playersData, myStrengthPositions]);
+        }, [rosterState.isUsable, tradeTargets, myRoster, playersData, myStrengthPositions]);
 
         const isClickable = size === 'sm' || size === 'md';
         const goTo = (target, e) => {
@@ -132,6 +136,19 @@
 
         // ── Avatar URL helper ──
         const avatarUrl = (id) => id ? 'https://sleepercdn.com/avatars/thumbs/' + id : null;
+
+        if (!rosterState.isUsable) {
+            return window.App?.renderRosterDataBlocker?.(rosterState, {
+                title: size === 'sm' ? 'Market paused' : 'Market Radar paused',
+                message: 'Trade and waiver signals need complete roster IDs.',
+                detail: rosterState.detail,
+                compact: size === 'sm' || size === 'md',
+                fill: true,
+                actionLabel: size === 'sm' ? null : 'Open Trades',
+                onAction: openTrades,
+                style: { cursor: isClickable ? 'pointer' : 'default' },
+            });
+        }
 
         // ── SM: deal count + top partner name ──
         if (size === 'sm') {
@@ -264,7 +281,7 @@
         function renderWaiver(p, i, compact) {
             const fillsNeed = myNeedPositions.includes(p.pos);
             return (
-                <div key={i} onClick={() => openCard(p.pid)} title="Open player card" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: fs(compact ? 0.62 : 0.66), cursor: 'pointer' }}>
+                <div key={i} role="button" tabIndex={0} onClick={() => openCard(p.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(p.pid); } }} title="Open player card" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: fs(compact ? 0.62 : 0.66), cursor: 'pointer' }}>
                     <span style={{ flex: 1, fontWeight: 700, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: fonts.ui }}>{p.name}</span>
                     <span style={{ fontSize: fs(0.5), padding: '0px 4px', borderRadius: 3, background: (window.App?.POS_COLORS?.[p.pos] || colors.accent) + '22', color: window.App?.POS_COLORS?.[p.pos] || colors.accent, fontWeight: 700 }}>{p.pos}</span>
                     {fillsNeed && <span style={{ fontSize: fs(0.5), fontWeight: 700, color: colors.positive }}>NEED</span>}

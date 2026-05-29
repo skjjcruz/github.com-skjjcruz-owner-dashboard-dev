@@ -172,14 +172,70 @@
         const peakLabel = age < pLo ? 'Rising' : age <= pHi ? 'Prime' : age <= declineHi ? 'Veteran' : 'Post-Window';
         const peakCol = age < pLo ? '#2ECC71' : age <= pHi ? '#D4AF37' : age <= declineHi ? '#F0A500' : '#E74C3C';
         const dhqCol = dhq >= 7000 ? '#2ECC71' : dhq >= 4000 ? '#3498DB' : dhq >= 2000 ? '#D0D0D0' : 'var(--text-muted)';
-        const sc = scoringSettings || window.S?.leagues?.[0]?.scoring_settings || {};
+        const currentLeague = window.S?.leagues?.find(l => l.league_id === window.S?.currentLeagueId) || window.S?.leagues?.[0] || {};
+        const sc = scoringSettings || currentLeague?.scoring_settings || {};
+        const leagueProfile = typeof window.App?.Intelligence?.buildLeagueProfile === 'function'
+            ? window.App.Intelligence.buildLeagueProfile({ league: { ...currentLeague, scoring_settings: sc }, rosters: window.S?.rosters || [], platform: window.S?.platform || currentLeague?._platform })
+            : null;
+        const leagueFormatBadges = leagueProfile && typeof window.App?.Intelligence?.buildFormatBadges === 'function'
+            ? window.App.Intelligence.buildFormatBadges(leagueProfile).filter(b => b.impact === 'major' || b.impact === 'scoring' || b.impact === 'confidence').slice(0, 4)
+            : [];
+        const playerFormatReasons = leagueProfile && typeof window.App?.Intelligence?.buildPlayerFormatReasons === 'function'
+            ? window.App.Intelligence.buildPlayerFormatReasons({ player: p, pos: nPos, profile: leagueProfile }).slice(0, 3)
+            : [];
         const ppgRaw = typeof window.App?.calcPPG === 'function' ? window.App.calcPPG(st, sc) : 0;
         const ppg = ppgRaw > 0 ? +ppgRaw.toFixed(1) : (meta.ppg || 0);
         const trend = meta.trend || 0;
+        const playerContext = typeof window.App?.Intelligence?.buildPlayerContext === 'function'
+            ? window.App.Intelligence.buildPlayerContext({
+                id: 'player_context_' + pid,
+                pid,
+                player: p,
+                pos: nPos,
+                profile: leagueProfile,
+                dhq,
+                ppg,
+                trend,
+                peakYrs,
+                valueYrs,
+                formatReasons: playerFormatReasons,
+            })
+            : null;
         const pa = typeof window.getPlayerAction === 'function' ? window.getPlayerAction(pid) : null;
         const rec = pa ? pa.label.toUpperCase() :
             (valueYrs <= 0 && trend <= -10 ? 'SELL NOW' : valueYrs <= 0 ? 'SELL' : peakYrs <= 1 ? 'SELL' : dhq >= 7000 && peakYrs >= 3 ? 'HOLD CORE' : 'HOLD');
         const recCol = rec.includes('SELL') ? '#E74C3C' : rec.includes('BUY') ? '#2ECC71' : '#D4AF37';
+        const rosterRecommendation = typeof window.App?.Intelligence?.buildRosterRecommendation === 'function'
+            ? window.App.Intelligence.buildRosterRecommendation({
+                id: 'player_card_' + pid,
+                pid,
+                player: p,
+                pos: nPos,
+                profile: leagueProfile,
+                dhq,
+                trend,
+                peakYrs,
+                valueYrs,
+                playerContext,
+                action: rec.includes('SELL') ? 'sell' : rec.includes('BUY') ? 'target' : 'hold',
+                formatReasons: playerFormatReasons,
+                detail: rec.includes('SELL')
+                    ? 'Value window is tightening; shop before the market prices in decline.'
+                    : peakYrs >= 4
+                        ? 'Long dynasty runway supports patience unless the offer is a clear tier-up.'
+                        : 'Current value is tied to near-term production more than long-run upside.',
+                badge: rec,
+            })
+            : null;
+        if (typeof window.App?.Intelligence?.publishRecommendations === 'function' && rosterRecommendation) {
+            window.App.Intelligence.publishRecommendations('player-card', [rosterRecommendation], { surface: 'player-card', playerId: pid });
+        }
+        const rosterWhyView = typeof window.App?.Intelligence?.buildWhyView === 'function'
+            ? window.App.Intelligence.buildWhyView(rosterRecommendation, { title: 'Why this player card', limit: 3 })
+            : null;
+        const rosterRecommendationWhy = rosterWhyView?.lines || (typeof window.App?.Intelligence?.recommendationWhyLines === 'function'
+            ? window.App.Intelligence.recommendationWhyLines(rosterRecommendation, 3)
+            : []);
         const tier = tierFromDhq(dhq);
         const depthChart = typeof p.depth_chart_order === 'number'
             ? (pos + (p.depth_chart_order + 1))
@@ -275,6 +331,33 @@
                         lineHeight: 1.45,
                     }
                 }, dhqContext),
+                playerFormatReasons.length > 0 && React.createElement('div', {
+                    style: {
+                        margin: '10px 20px 0',
+                        padding: '10px 11px',
+                        border: '1px solid rgba(52,152,219,0.18)',
+                        borderRadius: '7px',
+                        background: 'rgba(52,152,219,0.055)',
+                    }
+                },
+                    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' } },
+                        React.createElement('span', { style: { fontSize: '0.68rem', color: '#7DB7E8', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 800 } }, 'League Context'),
+                        leagueFormatBadges.map(badge => React.createElement('span', {
+                            key: badge.code,
+                            style: {
+                                fontSize: '0.62rem',
+                                color: '#D0E7FA',
+                                border: '1px solid rgba(125,183,232,0.22)',
+                                borderRadius: '4px',
+                                padding: '1px 5px',
+                                background: 'rgba(125,183,232,0.08)',
+                            }
+                        }, badge.label))
+                    ),
+                    React.createElement('div', { style: { fontSize: '0.75rem', color: 'var(--silver)', lineHeight: 1.45 } },
+                        playerFormatReasons.map(r => r.detail || r.label).join(' ')
+                    )
+                ),
                 // Age curve
                 React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' } },
 	                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' } },
@@ -359,11 +442,11 @@
                         ))
                     )
                 ),
-                // AI recommendation
+                // Shared recommendation
                 React.createElement('div', { style: { padding: '14px 20px', display: 'flex', gap: '10px', alignItems: 'flex-start' } },
                     React.createElement('div', { style: { width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg, #D4AF37, #B8941E)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.55rem', fontWeight: 800, color: '#0A0A0A' } }, 'AI'),
                     React.createElement('div', { style: { fontSize: '0.84rem', color: '#D0D0D0', lineHeight: 1.5 } },
-                        (() => {
+                        rosterRecommendation?.display?.detail || (() => {
                             let insight;
 	                            if (isOnMyTeam && valueYrs <= 1 && dhq >= 3000) insight = 'Sell window closing — move before value drops.';
                             else if (!isOnMyTeam && peakYrs >= 5 && dhq < 4000) insight = 'Buy-low candidate — young with room to grow.';
@@ -374,7 +457,10 @@
                             if (trend >= 20) insight += ' Trending up ' + trend + '%.';
                             else if (trend <= -15) insight += ' Production down ' + Math.abs(trend) + '%.';
                             return insight;
-                        })()
+                        })(),
+                        rosterRecommendationWhy.length > 0 && React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '8px' } },
+                            rosterRecommendationWhy.map(line => React.createElement('span', { key: line, style: { color: '#D0E7FA', background: 'rgba(125,183,232,0.07)', border: '1px solid rgba(125,183,232,0.18)', borderRadius: '4px', padding: '2px 5px', fontSize: '0.6rem', lineHeight: 1.25 } }, line))
+                        )
                     )
                 )
             );

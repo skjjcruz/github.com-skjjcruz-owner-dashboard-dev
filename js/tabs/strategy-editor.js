@@ -7,13 +7,35 @@
 function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, setGmStrategy }) {
     const leagueId = currentLeague?.league_id || currentLeague?.id;
 
-    // ── Local draft of strategy (save only on explicit Save) ──────────────────
-    // Phase 1: Three canonical presets (Rebuild / Compete / Win Now) + Custom.
-    // Selecting a preset auto-bundles downstream variables; Custom unlocks them.
-    const [draft, setDraft] = React.useState(() => {
-        const saved = window.GMStrategy?.getStrategy?.(leagueId)
-            || window.WrStorage?.get?.(window.WR_KEYS?.GM_STRATEGY?.(leagueId))
+    const getWarRoomStorage = () => window.App?.WrStorage || window.WrStorage || null;
+    const getWarRoomKeys = () => window.App?.WR_KEYS || window.WR_KEYS || null;
+    const readSharedStrategy = () => {
+        try {
+            if (!localStorage.getItem('dhq_gm_strategy_v1')) return null;
+            return window.GMStrategy?.getStrategy?.(leagueId) || null;
+        } catch (_) {
+            return null;
+        }
+    };
+    const readSavedStrategy = () => {
+        const storage = getWarRoomStorage();
+        const keys = getWarRoomKeys();
+        return readSharedStrategy()
+            || storage?.get?.(keys?.GM_STRATEGY?.(leagueId))
+            || gmStrategy
             || {};
+    };
+    const normalizePosition = (pos) => {
+        if (!pos) return '';
+        if (String(pos).toUpperCase() === 'PICKS') return 'PICKS';
+        return window.App?.normPos?.(pos) || String(pos).trim().toUpperCase();
+    };
+    const normalizePositions = (positions) => Array.from(new Set((positions || []).map(normalizePosition).filter(Boolean)));
+    const positionLabel = (pos) => {
+        if (pos === 'PICKS') return 'Picks';
+        return window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
+    };
+    const normalizeDraft = (saved) => {
         const normalize = window.WR?.GmMode?.normalize || ((m) => m || 'compete');
         return {
             mode: normalize(saved.mode) || 'compete',
@@ -22,12 +44,21 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             marketPosture: saved.marketPosture || 'hold',
             timeline: saved.timeline || '2_3_years',
             alexPersonality: saved.alexPersonality || 'balanced',
-            targetPositions: saved.targetPositions || [],
-            sellPositions: saved.sellPositions || [],
+            targetPositions: normalizePositions(saved.targetPositions),
+            sellPositions: normalizePositions(saved.sellPositions),
             sellRules: saved.sellRules || [],
-            untouchable: saved.untouchable || [],
+            untouchable: saved.untouchable || saved.untouchables || [],
         };
-    });
+    };
+
+    // ── Local draft of strategy (save only on explicit Save) ──────────────────
+    // Phase 1: Three canonical presets (Rebuild / Compete / Win Now) + Custom.
+    // Selecting a preset auto-bundles downstream variables; Custom unlocks them.
+    const [draft, setDraft] = React.useState(() => normalizeDraft(readSavedStrategy()));
+
+    React.useEffect(() => {
+        setDraft(normalizeDraft(readSavedStrategy()));
+    }, [leagueId]);
 
     // Selecting a preset auto-applies its bundled config.
     const applyPreset = (modeId) => {
@@ -59,16 +90,19 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
         setSyncStatus('saving');
         const payload = { ...draft, lastSyncedFrom: 'warroom', leagueId };
         try {
+            let savedPayload = payload;
             if (window.GMStrategy?.saveStrategy) {
-                await window.GMStrategy.saveStrategy(payload);
+                savedPayload = await window.GMStrategy.saveStrategy(payload) || payload;
             }
-            if (window.WrStorage && window.WR_KEYS?.GM_STRATEGY) {
-                window.WrStorage.set(window.WR_KEYS.GM_STRATEGY(leagueId), payload);
+            const storage = getWarRoomStorage();
+            const keys = getWarRoomKeys();
+            if (storage && keys?.GM_STRATEGY) {
+                storage.set(keys.GM_STRATEGY(leagueId), savedPayload);
             }
-            window._wrGmStrategy = payload;
-            if (setGmStrategy) setGmStrategy(payload);
+            window._wrGmStrategy = savedPayload;
+            if (setGmStrategy) setGmStrategy(savedPayload);
             // Phase 1: broadcast mode change so the header card + engines pick it up
-            window.dispatchEvent(new CustomEvent('wr:gm-mode-changed', { detail: { mode: draft.mode, strategy: payload } }));
+            window.dispatchEvent(new CustomEvent('wr:gm-mode-changed', { detail: { mode: savedPayload.mode, strategy: savedPayload } }));
             setSyncStatus('saved');
             setTimeout(() => setSyncStatus('idle'), 3000);
         } catch (e) {
@@ -175,14 +209,14 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         cursor: 'pointer',
                         transition: 'all 0.13s',
                     }}>
-                        {opt}
+                        {positionLabel(opt)}
                     </button>
                 );
             })}
         </div>
     );
 
-    const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'DL', 'LB', 'DB', 'PICKS'];
+    const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'PICKS'];
 
     // ── Mode configs (Phase 1: 3 canonical presets + Custom) ──────────────────
     const MODES = [

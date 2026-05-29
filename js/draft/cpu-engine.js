@@ -21,9 +21,9 @@
         return { player: best, confidence: 0.5, reasoning: { primary: 'BPA fallback', baseVal: best.dhq || best.val || 0, nudges: [], bpaFloorTriggered: true } };
     }
 
-    function computePredictions(persona, pool, round, pickNumber) {
+    function computePredictions(persona, pool, round, pickNumber, ctx) {
         if (window.App?.MockEngine?.computePredictions) {
-            return window.App.MockEngine.computePredictions(persona, pool, round, pickNumber);
+            return window.App.MockEngine.computePredictions(persona, pool, round, pickNumber, ctx);
         }
         return { willReach: [], willPassOn: [], likelyPick: null };
     }

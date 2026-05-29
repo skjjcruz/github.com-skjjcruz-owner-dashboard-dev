@@ -47,7 +47,10 @@
         const posCol = posColors[r.pos] || '#8D887E';
         return React.createElement('div', {
             onClick,
+            role: 'button',
+            tabIndex: 0,
             title: 'Open player card',
+            onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick && onClick(e); } },
             style: {
                 display: 'flex', alignItems: 'center', gap: '6px',
                 padding: '4px 6px', borderRadius: '4px',
@@ -79,7 +82,10 @@
         const posCol = posColors[r.pos] || '#8D887E';
         return React.createElement('div', {
             onClick,
+            role: 'button',
+            tabIndex: 0,
             title: 'Open player card',
+            onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick && onClick(e); } },
             style: {
                 display: 'flex', alignItems: 'center', gap: '8px',
                 padding: '6px 8px', borderRadius: '6px',

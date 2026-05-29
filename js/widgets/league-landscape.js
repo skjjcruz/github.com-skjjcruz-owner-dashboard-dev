@@ -33,6 +33,8 @@
             return [...allAssess].sort((a, b) => (b.healthScore || 0) - (a.healthScore || 0));
         }, [allAssess]);
 
+        const currentRoster = (currentLeague?.rosters || []).find(r => String(r.owner_id) === String(sleeperUserId));
+        const rosterState = window.App?.getRosterDataState?.({ roster: currentRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
         const total = powerRanked.length || 0;
         const myRank = powerRanked.findIndex(a => a.rosterId && (currentLeague?.rosters || []).find(r => r.roster_id === a.rosterId)?.owner_id === sleeperUserId) + 1;
         const txnCount = Array.isArray(transactions) ? transactions.length : 0;
@@ -58,6 +60,19 @@
             powerRanked.forEach(a => { if (dist[a.tier] !== undefined) dist[a.tier]++; });
             return dist;
         }, [powerRanked]);
+
+        if (!rosterState.isUsable) {
+            return window.App?.renderRosterDataBlocker?.(rosterState, {
+                title: size === 'sm' ? 'Rank paused' : 'League Landscape paused',
+                message: 'Power ranks need complete roster IDs.',
+                detail: rosterState.detail,
+                compact: size === 'sm' || size === 'md',
+                fill: true,
+                actionLabel: size === 'sm' ? null : 'Open Analytics',
+                onAction: openAnalytics,
+                style: { cursor: isClickable ? 'pointer' : 'default' },
+            });
+        }
 
         // ── SM: rank-with-label hero + activity count ──
         if (size === 'sm') {

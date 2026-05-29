@@ -340,9 +340,10 @@
         // ── xxl: full breakdown — tiers + tier strength matrix + DHQ chart ──
         if (size === 'xxl') {
             // Position-of-power: which tier owns the most DHQ at each position?
-            const POS_ORDER = ['QB', 'RB', 'WR', 'TE'];
+            const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
             const scores = window.App?.LI?.playerScores || {};
             const normPos = window.App?.normPos || (p => p);
+            const posLabel = pos => window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
 
             const matrix = POS_ORDER.map(pos => {
                 const tierTotals = { ELITE: 0, CONTENDER: 0, CROSSROADS: 0, REBUILDING: 0 };
@@ -419,7 +420,7 @@
                             React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' } }, 'Position Strength · by Tier'),
                             ...matrix.map((m, i) => {
                                 return React.createElement('div', { key: i, style: { marginBottom: '4px' } },
-                                    React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--white)', marginBottom: '2px', fontFamily: 'var(--font-body)' } }, m.pos),
+                                    React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--white)', marginBottom: '2px', fontFamily: 'var(--font-body)' } }, posLabel(m.pos)),
                                     React.createElement('div', { style: { display: 'flex', height: 8, borderRadius: 2, overflow: 'hidden' } },
                                         ...TIER_ORDER.map(t => {
                                             const v = m.totals[t];

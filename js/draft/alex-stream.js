@@ -156,7 +156,19 @@
             overflow: 'hidden',
         });
 
-        const stream = state.alex.stream || [];
+        const stream = React.useMemo(() => {
+            const seen = new Set();
+            return (state.alex.stream || []).filter(item => {
+                const key = [
+                    item.type || '',
+                    String(item.title || '').toLowerCase(),
+                    String(item.text || '').toLowerCase(),
+                ].join('|');
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }, [state.alex.stream]);
 
         return (
             <div style={containerCss}>
@@ -165,7 +177,7 @@
                     <div style={{ fontFamily: FONT_DISPL, fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
                         Alex Stream
                     </div>
-                    <span title={`Sonnet: ${sonnetUsed}/${budget} · Flash: ${flashUsed} (unlimited)`} style={{
+                    <span title={`Premium Alex calls: ${sonnetUsed}/${budget} · Quick replies: ${flashUsed}`} style={{
                         fontSize: '0.5rem',
                         padding: '1px 6px',
                         background: 'rgba(0,0,0,0.3)',
@@ -175,7 +187,7 @@
                         fontFamily: FONT_MONO_SAFE(),
                         fontWeight: 600,
                     }}>
-                        ✦ {sonnetUsed}/{budget}
+                        AI notes {sonnetUsed}/{budget}
                     </span>
                 </div>
 
@@ -233,6 +245,11 @@
                             WebkitBoxOrient: 'vertical',
                             overflow: 'hidden',
                         } : {};
+                        const fullTextBlocks = String(item.fullText || '')
+                            .split(/\n{2,}|(?<=[.!?])\s+(?=[A-Z])/)
+                            .map(part => part.trim())
+                            .filter(Boolean)
+                            .slice(0, 8);
                         return (
                             <div key={item.id} onClick={toggle} style={{
                                 display: 'flex',
@@ -281,14 +298,25 @@
                                     )}
                                     {isExpanded && item.fullText && item.fullText !== item.text && (
                                         <div style={{
-                                            fontSize: '0.56rem',
-                                            color: 'var(--silver)',
-                                            opacity: 0.85,
                                             marginTop: '4px',
-                                            lineHeight: 1.5,
-                                            wordBreak: 'break-word',
-                                            whiteSpace: 'pre-wrap',
-                                        }}>{item.fullText}</div>
+                                            display: 'grid',
+                                            gap: '4px',
+                                        }}>
+                                            {fullTextBlocks.map((block, bi) => (
+                                                <div key={bi} style={{
+                                                    fontSize: '0.56rem',
+                                                    color: 'var(--silver)',
+                                                    opacity: 0.85,
+                                                    lineHeight: 1.45,
+                                                    wordBreak: 'break-word',
+                                                    whiteSpace: 'normal',
+                                                    border: '1px solid rgba(255,255,255,0.055)',
+                                                    borderRadius: '5px',
+                                                    padding: '5px 6px',
+                                                    background: 'rgba(255,255,255,0.018)',
+                                                }}>{block}</div>
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
                             </div>

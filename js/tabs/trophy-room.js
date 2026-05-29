@@ -176,6 +176,42 @@ function TrophyRoomTab({ currentLeague, playersData, myRoster, sleeperUserId }) 
         if (finish === 'Playoffs') return '\uD83C\uDFC8';
         return '\u2014';
     }
+    function ordinal(n) {
+        const num = Number(n);
+        if (!Number.isFinite(num)) return n;
+        const mod100 = num % 100;
+        if (mod100 >= 11 && mod100 <= 13) return num + 'th';
+        const mod10 = num % 10;
+        return num + (mod10 === 1 ? 'st' : mod10 === 2 ? 'nd' : mod10 === 3 ? 'rd' : 'th');
+    }
+    function formatSeasonFinish(finish) {
+        const raw = String(finish || '').trim();
+        if (!raw || raw === '\u2014') return 'Season logged';
+        const hashPlace = raw.match(/^#\s*(\d+)$/);
+        if (hashPlace) return ordinal(hashPlace[1]);
+        if (/^\d+\s*-\s*\d+(?:\s*-\s*\d+)?$/.test(raw)) return 'Record ' + raw.replace(/\s+/g, '');
+        return raw;
+    }
+    function formatSeasonRecord(season) {
+        if (!season) return '';
+        const wins = Number(season.wins);
+        const losses = Number(season.losses);
+        const ties = Number(season.ties || 0);
+        if (Number.isFinite(wins) && Number.isFinite(losses) && (wins + losses + ties) > 0) {
+            return wins + '-' + losses + (ties ? '-' + ties : '');
+        }
+        const raw = String(season.record || '').trim();
+        return /^\d+\s*-\s*\d+(?:\s*-\s*\d+)?$/.test(raw) ? raw.replace(/\s+/g, '') : '';
+    }
+    function formatSeasonLine(season) {
+        const finish = formatSeasonFinish(season?.finish);
+        const record = formatSeasonRecord(season);
+        if (!record) return finish;
+        if (finish === 'Record ' + record || /^\d+\s*-\s*\d+(?:\s*-\s*\d+)?$/.test(String(season?.finish || '').trim())) {
+            return 'Record ' + record;
+        }
+        return finish + ' \u00B7 ' + record;
+    }
 
     // ══════════════════════════════════════════════════════════════
     // LEAGUE-WIDE VIEW
@@ -450,7 +486,7 @@ function TrophyRoomTab({ currentLeague, playersData, myRoster, sleeperUserId }) 
                     _statBox('Titles', o.championships || 0, o.champSeasons?.length ? o.champSeasons.join(', ') : 'No titles'),
                     _statBox('Runner-Up', o.runnerUps || 0, o.runnerUpSeasons?.length ? o.runnerUpSeasons.join(', ') : 'None'),
                     _statBox('Total PF', Math.round(o.pointsFor || 0).toLocaleString(), 'avg ' + avgPF.toLocaleString() + '/yr'),
-                    o.bestSeason && _statBox('Best Season', o.bestSeason.wins + '-' + o.bestSeason.losses, o.bestSeason.season + (o.bestSeason.finish && o.bestSeason.finish !== '\u2014' ? ' \u00B7 ' + o.bestSeason.finish : '')),
+                    o.bestSeason && _statBox('Best Season', formatSeasonRecord(o.bestSeason) || (o.bestSeason.wins + '-' + o.bestSeason.losses), o.bestSeason.season + (o.bestSeason.finish && o.bestSeason.finish !== '\u2014' ? ' \u00B7 ' + formatSeasonFinish(o.bestSeason.finish) : '')),
                     ach && _statBox('Badges', ach.earned + '/' + ach.total, 'Achievements earned'),
                     earn > 0 && _statBox('Earnings', '$' + earn.toLocaleString(), 'All-time'),
                 );
@@ -468,7 +504,7 @@ function TrophyRoomTab({ currentLeague, playersData, myRoster, sleeperUserId }) 
                         }).map(s => React.createElement('div', { key: s.season, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', borderRadius: '4px', background: s.finish === 'Champion' ? 'rgba(212,175,55,0.1)' : 'transparent' } },
                             React.createElement('span', { style: { fontSize: '0.75rem', minWidth: '16px' } }, finishIcon(s.finish)),
                             React.createElement('span', { style: { fontSize: '0.72rem', fontWeight: 600, color: 'var(--white)', minWidth: '32px' } }, s.season),
-                            React.createElement('span', { style: { fontSize: '0.68rem', color: s.finish === 'Champion' ? 'var(--gold)' : 'var(--silver)', flex: 1 } }, s.finish),
+                            React.createElement('span', { style: { fontSize: '0.68rem', color: s.finish === 'Champion' ? 'var(--gold)' : 'var(--silver)', flex: 1 } }, formatSeasonLine(s)),
                         )),
                     ),
                 ),
@@ -758,7 +794,7 @@ ${importText.substring(0, 8000)}`;
             // All-Time Standings
             chronicles.standings?.length > 0 && React.createElement('div', { style: cardStyle },
                 React.createElement('div', { style: headerStyle }, 'ALL-TIME STANDINGS'),
-                React.createElement('div', { style: { overflowX: 'auto' } },
+                React.createElement('div', { style: { overflowX: 'auto', overflowY: 'clip' } },
                     React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' } },
                         React.createElement('thead', null,
                             React.createElement('tr', null,
@@ -886,20 +922,20 @@ ${importText.substring(0, 8000)}`;
                 ),
                 React.createElement('div', { style: { ...cardStyle, marginBottom: 0, textAlign: 'center' } },
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.6rem', fontWeight: 700, color: '#7C6BF8' } }, champEntries.length),
-                    React.createElement('div', { style: { fontSize: '0.62rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Unique Champions'),
+                    React.createElement('div', { style: { fontSize: '0.62rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Unique Players'),
                 ),
                 React.createElement('div', { style: { ...cardStyle, marginBottom: 0, textAlign: 'center' } },
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.6rem', fontWeight: 700, color: '#2ECC71' } }, hof.length),
-                    React.createElement('div', { style: { fontSize: '0.62rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Hall of Famers (Auto)'),
+                    React.createElement('div', { style: { fontSize: '0.62rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Hall of Famers'),
                 ),
             ),
 
-            // ── Auto Hall of Fame ──
+            // ── All-Time Team ──
             hof.length > 0 && React.createElement('div', { style: cardStyle },
                 React.createElement('div', { style: { ...headerStyle, display: 'flex', alignItems: 'center', gap: '6px' } },
                     React.createElement('span', { style: { fontSize: '1rem' } }, '🎓'),
-                    React.createElement('span', { style: { flex: 1 } }, 'AUTOMATIC HALL OF FAME'),
-                    React.createElement('span', { style: { fontSize: '0.62rem', color: 'var(--silver)', textTransform: 'none', letterSpacing: 0 } }, 'Started in 2+ championship games'),
+                    React.createElement('span', { style: { flex: 1 } }, 'ALL-TIME TEAM'),
+                    React.createElement('span', { style: { fontSize: '0.62rem', color: 'var(--silver)', textTransform: 'none', letterSpacing: 0 } }, 'Started in multiple championship lineups'),
                 ),
                 React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '8px' } },
                     ...hof.map(p => {

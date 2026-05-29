@@ -425,8 +425,11 @@
     // ── Widget: Position Fills Bar ────────────────────────────────
     function PositionFillsBar({ posCounts }) {
         const posColors = window.App?.POS_COLORS || POS_COLORS;
-        const targetCounts = { QB: 3, RB: 5, WR: 6, TE: 2 };
-        const positions = ['QB', 'RB', 'WR', 'TE'];
+        const targetCounts = { QB: 3, RB: 5, WR: 6, TE: 2, K: 1, DEF: 1, DL: 3, LB: 3, DB: 3 };
+        const positions = typeof window.getLeaguePositions === 'function'
+            ? window.getLeaguePositions()
+            : ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
+        const posLabel = pos => window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
 
         return (
             <div style={{
@@ -450,9 +453,9 @@
                                     fontSize: '0.54rem',
                                     fontWeight: 700,
                                     color: col,
-                                    width: 16,
+                                    width: 28,
                                     fontFamily: FONT_UI,
-                                }}>{pos}</span>
+                                }}>{posLabel(pos)}</span>
                                 <div style={{
                                     flex: 1,
                                     height: 6,

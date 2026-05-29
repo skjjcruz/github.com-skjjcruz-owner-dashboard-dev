@@ -26,6 +26,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Build Pages artifact
+        run: |
+          set -euo pipefail
+          mkdir -p pages-artifact
+          cp -R \
+            index.html landing.html onboarding.html login.html reset-password.html gift.html \
+            free-agency.html draft-warroom.html trade-calculator.html draft-war-room team-comps \
+            js css content reconai-shared icons *.js *.json *.webmanifest *.css \
+            pages-artifact/ 2>/dev/null || true
+          rm -rf pages-artifact/**/.git pages-artifact/**/node_modules pages-artifact/**/supabase pages-artifact/**/tests
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
@@ -34,7 +45,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "."
+          path: "pages-artifact"
 
       - name: Deploy to GitHub Pages
         id: deployment

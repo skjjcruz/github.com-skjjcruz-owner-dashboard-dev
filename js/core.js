@@ -28,6 +28,7 @@
 //     .calcPPG(stats, scoring)    — pts/game  (set by core.js)
 //     .WR_KEYS         — localStorage key registry  (set by core.js)
 //     .WrStorage       — localStorage/sessionStorage abstraction  (set by core.js)
+//     .LeagueSkin      — league format/phase contract  (set by league-skin.js)
 //
 // window.S  (object)
 //   Set by:  ReconAI CDN; mutated by league-detail.js inside useEffect.
@@ -94,6 +95,10 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // Replace the body here to route to an error reporting service in the future.
     function wrLog(context, err) {
         if (typeof console !== 'undefined') console.warn('[WarRoom]', context, err);
+        window.DHQBugCapture?.captureError?.(
+            err instanceof Error ? err : new Error(String(err || context || 'War Room log')),
+            { source: 'wrLog', context: String(context || 'unknown') }
+        );
     }
     window.wrLog = wrLog; // expose for cross-module access
 
@@ -133,7 +138,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // ──────────────────────────────────────────────────────────────────────────
 
     // ===== PRODUCT TIER SYSTEM =====
-    // Tiers: free → scout → warroom ($9.99) → pro ($12.99) → commissioner ($14.99)
+    // Tiers: free → scout → warroom ($9.99) → pro ($14.95) → commissioner ($14.99)
     //
     // Delegates to shared/tier.js (window.getTier) for canonical paid/free detection,
     // then resolves War Room's granular level from the profile tier field.
@@ -143,14 +148,8 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         const sharedTier = typeof window.getTier === 'function' ? window.getTier() : null;
 
         if (sharedTier === 'paid') {
-            // Shared confirms paid — resolve the specific War Room level from profile
-            try {
-                const p = JSON.parse(localStorage.getItem(window.STORAGE_KEYS?.OD_PROFILE || 'od_profile_v1') || '{}');
-                if (p.tier === 'commissioner') return 'commissioner';
-                if (p.tier === 'pro' || p.tier === 'power') return 'pro';
-                if (p.tier === 'warroom') return 'warroom';
-                if (p.tier === 'scout' || p.tier === 'reconai') return 'scout';
-            } catch(e) { wrLog('getUserTier.parse', e); }
+            const productTier = window.App?._productTier;
+            if (['commissioner', 'pro', 'warroom', 'scout'].includes(productTier)) return productTier;
             // Dev mode returns 'paid' from shared — give full local access
             if (new URLSearchParams(window.location.search).has('dev') || ['localhost', '127.0.0.1'].includes(window.location.hostname)) return 'pro';
             return 'scout'; // paid but unrecognized profile tier → minimum paid level
@@ -159,15 +158,9 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         // Trial users get free-tier access in War Room (no trial concept here)
         if (sharedTier === 'trial') return 'free';
 
-        // Fallback: shared/tier.js not loaded — use local logic directly
+        // Fallback: shared/tier.js not loaded. Do not trust persisted local
+        // storage for paid access; users can edit it in the browser.
         if (sharedTier === null) {
-            try {
-                const p = JSON.parse(localStorage.getItem('od_profile_v1') || '{}');
-                if (p.tier === 'commissioner') return 'commissioner';
-                if (p.tier === 'pro' || p.tier === 'power') return 'pro';
-                if (p.tier === 'warroom') return 'warroom';
-                if (p.tier === 'scout' || p.tier === 'reconai') return 'scout';
-            } catch(e) { wrLog('getUserTier.parse', e); }
             if (new URLSearchParams(window.location.search).has('dev') || ['localhost', '127.0.0.1'].includes(window.location.hostname)) return 'pro';
         }
 
@@ -308,7 +301,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // Position colors — single source of truth (was copy-pasted across 6 locations)
     window.App.POS_COLORS = window.App.POS_COLORS || {
         QB:'#E74C3C', RB:'#2ECC71', WR:'#3498DB', TE:'#F0A500',
-        K:'#9B59B6',  DL:'#E67E22', LB:'#1ABC9C', DB:'#E91E63'
+        K:'#9B59B6',  DEF:'#85929E', DL:'#E67E22', LB:'#1ABC9C', DB:'#E91E63'
     };
 
     // Position groups — canonical arrays for normPos (was inline in 20+ locations)
@@ -316,6 +309,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         DB: ['DB','CB','S','SS','FS'],
         DL: ['DL','DE','DT','NT','IDL','EDGE'],
         LB: ['LB','OLB','ILB','MLB'],
+        DEF: ['DEF','DST','D/ST'],
     };
 
     // Age curves default - fallback only; shared/constants.js is the primary source.
@@ -376,7 +370,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     window.App.calcPosGrades = window.App.calcPosGrades || function calcPosGrades(myRosterId, rosters, playersData) {
         const scores = window.App?.LI?.playerScores || {};
         const normPos = window.App.normPos || (p => p);
-        const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB'];
+        const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
         const totalTeams = (rosters || []).length || 1;
         return posOrder.map(pos => {
             const byTeam = (rosters || []).map(r => {
@@ -446,6 +440,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         WELCOMED:         (leagueId) => `wr_welcomed_v2_${leagueId}`,
         // Draft
         BIGBOARD:         (leagueId) => `wr_bigboard_${leagueId}`,
+        BIGBOARD_DRAFT:   (leagueId, draftType) => `wr_bigboard_${leagueId}_${draftType || 'draft'}`,
         // Session cache (sessionStorage, not localStorage)
         PLAYERS_CACHE:    'fw_players_cache',
         // SOS engine caches (sessionStorage, 24hr TTL — managed by sos-engine.js)
@@ -496,6 +491,124 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     window.App.WR_KEYS  = WR_KEYS;
     window.App.WrStorage = WrStorage;
     window.App.fetchAllPlayers = fetchAllPlayers;
+
+    window.App.getRosterDataState = function getRosterDataState(opts = {}) {
+        const roster = opts.roster || opts.myRoster || (typeof window.myR === 'function' ? window.myR() : null);
+        const rosters = opts.rosters || opts.currentLeague?.rosters || window.S?.rosters || [];
+        const league = opts.currentLeague || window.S?.leagues?.[0] || {};
+        const collectIds = (r) => r ? [...(r.players || []), ...(r.reserve || []), ...(r.taxi || [])].filter(id => id && String(id) !== '0').map(String) : [];
+        const rosterIds = collectIds(roster);
+        const leaguePlayerCount = (rosters || []).reduce((sum, r) => sum + collectIds(r).length, 0);
+        const rosterSlots = (league.roster_positions || []).filter(pos => pos && pos !== 'BN' && pos !== 'TAXI' && pos !== 'IR').length;
+        const minUsableRoster = Math.max(1, Math.min(6, rosterSlots || 6));
+        const leagueId = String(league?.league_id || league?.id || '');
+        const activeSkin = typeof window.App?.LeagueSkin?.getCurrent === 'function' ? window.App.LeagueSkin.getCurrent() : null;
+        const activeSkinLeagueId = String(activeSkin?.profile?.leagueId || '');
+        const matchingActiveSkin = activeSkin && (!leagueId || !activeSkinLeagueId || activeSkinLeagueId === leagueId) ? activeSkin : null;
+        const leagueSkin = opts.leagueSkin || matchingActiveSkin || (typeof window.App?.LeagueSkin?.build === 'function'
+            ? window.App.LeagueSkin.build({
+                league,
+                rosters,
+                myRoster: roster,
+                draft: opts.draft || opts.draftInfo || opts.briefDraftInfo || window.S?.drafts?.find?.(d => d?.status === 'drafting' || d?.status === 'pre_draft'),
+                nflState: opts.nflState || window.S?.nflState,
+                profile: opts.profile,
+            })
+            : null);
+        const skinRosterCopy = leagueSkin?.copy?.rosterData || {};
+        const isPreDraftRosterEmpty = !!(leagueSkin?.state?.isPreDraftRosterEmpty && leaguePlayerCount === 0);
+        let reason = '';
+
+        if (!roster) reason = 'missing-roster';
+        else if (!Array.isArray(rosters) || !rosters.length) reason = 'missing-league-rosters';
+        else if (leaguePlayerCount === 0) reason = isPreDraftRosterEmpty ? 'pre-draft-rosters-empty' : 'league-rosters-empty';
+        else if (rosterIds.length === 0) reason = 'my-roster-empty';
+        else if (rosterIds.length < minUsableRoster) reason = 'my-roster-partial';
+
+        const messages = {
+            'missing-roster': 'Your team roster could not be matched in this league.',
+            'missing-league-rosters': 'League roster data has not loaded yet.',
+            'pre-draft-rosters-empty': skinRosterCopy.emptyRosterMessage || 'This league has not drafted rosters yet.',
+            'league-rosters-empty': 'League rosters loaded with zero player IDs.',
+            'my-roster-empty': 'Your roster loaded with zero player IDs.',
+            'my-roster-partial': 'Your roster looks partially loaded.',
+        };
+        const defaultDetail = 'Refresh league data or re-sync the platform before acting on roster, trade, waiver, draft, or analytics recommendations.';
+        const details = {
+            'pre-draft-rosters-empty': skinRosterCopy.emptyRosterDetail || 'Roster-dependent recommendations stay paused until the draft, but draft prep can continue.',
+        };
+
+        return {
+            isUsable: !reason,
+            reason,
+            rosterCount: rosterIds.length,
+            leaguePlayerCount,
+            minUsableRoster,
+            leagueSkin,
+            isPreDraftRosterEmpty: reason === 'pre-draft-rosters-empty',
+            message: reason ? messages[reason] : 'Roster data ready.',
+            detail: reason ? (details[reason] || defaultDetail) : '',
+            brief: reason === 'pre-draft-rosters-empty' ? (skinRosterCopy.emptyRosterBrief || messages[reason]) : '',
+        };
+    };
+    window.App.renderRosterDataBlocker = function renderRosterDataBlocker(state, opts = {}) {
+        const ReactRef = window.React || (typeof React !== 'undefined' ? React : null);
+        if (!ReactRef) return null;
+        const compact = !!opts.compact;
+        const skinRosterCopy = state?.leagueSkin?.copy?.rosterData || state?.skin?.copy?.rosterData || {};
+        const title = opts.title || (state?.isPreDraftRosterEmpty ? skinRosterCopy.emptyRosterTitle : '') || 'Roster sync incomplete';
+        const message = opts.message || state?.message || 'Roster data is not ready.';
+        const detail = opts.detail || state?.detail || 'Refresh league data before acting on recommendations.';
+        const style = {
+            background: opts.background || 'rgba(10,10,10,0.92)',
+            border: opts.border || '1px solid rgba(240,165,0,0.35)',
+            borderRadius: opts.radius || '8px',
+            padding: compact ? '12px' : '18px',
+            color: 'var(--silver)',
+            height: opts.fill ? '100%' : undefined,
+            minHeight: opts.minHeight || (compact ? '100%' : undefined),
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: compact ? 'center' : 'flex-start',
+            gap: compact ? '6px' : '10px',
+            textAlign: compact ? 'center' : 'left',
+            overflow: 'hidden',
+            ...(opts.style || {}),
+        };
+        return ReactRef.createElement('div', { className: opts.className || 'wr-roster-data-blocker', style },
+            ReactRef.createElement('div', {
+                style: {
+                    color: '#F0A500',
+                    fontFamily: 'Rajdhani, sans-serif',
+                    fontSize: compact ? '0.85rem' : '1.1rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                },
+            }, title),
+            ReactRef.createElement('div', { style: { color: 'var(--white)', fontWeight: 700, fontSize: compact ? '0.78rem' : '0.92rem', lineHeight: 1.35 } }, message),
+            !compact && ReactRef.createElement('div', { style: { fontSize: '0.78rem', lineHeight: 1.55, opacity: 0.78 } }, detail),
+            opts.actionLabel && ReactRef.createElement('button', {
+                type: 'button',
+                onClick: opts.onAction || (() => window.location.reload()),
+                style: {
+                    alignSelf: compact ? 'center' : 'flex-start',
+                    marginTop: compact ? '2px' : '4px',
+                    padding: compact ? '5px 8px' : '7px 12px',
+                    border: '1px solid rgba(240,165,0,0.45)',
+                    background: 'rgba(240,165,0,0.12)',
+                    color: '#F0A500',
+                    borderRadius: '5px',
+                    fontFamily: 'var(--font-body)',
+                    fontSize: compact ? '0.62rem' : '0.72rem',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    cursor: 'pointer',
+                },
+            }, opts.actionLabel)
+        );
+    };
 
     // ── Normalize traded picks: owner_id can be roster_id OR user_id ─
     // Sleeper's /traded_picks API is ambiguous — detect which type and

@@ -66,7 +66,7 @@ function mdsBuildPool(playersData) {
         }
         return window.App?.LI?.playerScores?.[pid] || 0;
     };
-    const VALID = (typeof getLeaguePositions === 'function') ? getLeaguePositions({ asSet: true }) : new Set(['QB','RB','WR','TE']);
+    const VALID = (typeof getLeaguePositions === 'function') ? getLeaguePositions({ asSet: true }) : new Set(['QB','RB','WR','TE','K','DEF']);
     const src = playersData || window.S?.players || {};
     const live = Object.entries(src)
         .filter(([, p]) => VALID.has(normPos(p.position)) && p.status !== 'Inactive' && (p.first_name || p.full_name))
@@ -128,12 +128,13 @@ function mdsGrade(myPicks, originalPool) {
 /* ── Position badge ────────────────────────────────────────── */
 function MdsPosBadge({ pos }) {
     const c = window.App?.POS_COLORS?.[pos] || '#D4AF37';
+    const label = window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
     return (
         <span style={{
             fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '3px',
             background: c + '22', color: c, fontFamily: "'DM Sans', sans-serif",
             letterSpacing: '0.04em', flexShrink: 0,
-        }}>{pos}</span>
+        }}>{label}</span>
     );
 }
 
@@ -445,7 +446,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                 )}
 
                 {/* Draft board grid */}
-                <div style={{ overflowX: 'auto', marginBottom: '14px', borderRadius: '8px', border: '1px solid rgba(212,175,55,0.12)' }}>
+                <div style={{ overflowX: 'auto', overflowY: 'clip', marginBottom: '14px', borderRadius: '8px', border: '1px solid rgba(212,175,55,0.12)' }}>
                     <table style={{ borderCollapse: 'collapse', fontSize: '0.66rem', minWidth: `${leagueSize * 76 + 30}px`, width: '100%', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ background: 'rgba(212,175,55,0.07)' }}>
@@ -494,9 +495,9 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                     <div style={{ ...card, padding: '12px 14px', marginBottom: '12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
                             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>Best Available</div>
-                            {(typeof getLeaguePositions === 'function' ? getLeaguePositions({ withBlank: true }) : ['','QB','RB','WR','TE']).map(pos => (
+                            {(typeof getLeaguePositions === 'function' ? getLeaguePositions({ withBlank: true }) : ['','QB','RB','WR','TE','K','DEF']).map(pos => (
                                 <button key={pos} onClick={() => setPosFilter(pos)} style={{ padding: '2px 9px', fontSize: '0.66rem', fontFamily: font, borderRadius: '10px', cursor: 'pointer', border: '1px solid ' + (posFilter === pos ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'), background: posFilter === pos ? 'rgba(212,175,55,0.12)' : 'transparent', color: posFilter === pos ? 'var(--gold)' : 'var(--silver)' }}>
-                                    {pos || 'ALL'}
+                                    {pos ? (window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)) : 'ALL'}
                                 </button>
                             ))}
                         </div>
@@ -579,7 +580,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                             const c = window.App?.POS_COLORS?.[pos] || '#D4AF37';
                             return (
                                 <span key={pos} style={{ padding: '3px 10px', background: c + '18', border: '1px solid ' + c + '44', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, color: c }}>
-                                    {pos} ×{ct}
+                                    {(window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos))} ×{ct}
                                 </span>
                             );
                         })}

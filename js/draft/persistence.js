@@ -21,13 +21,32 @@
     const LS_KEY = (leagueId) => 'wr_draft_cc_templates_' + (leagueId || 'default');
     const MAX_TEMPLATES = 10; // per league
 
+    function slimPool(pool, maxSize) {
+        return (pool || []).slice(0, maxSize || 600).map(p => ({
+            pid: p.pid,
+            csvPid: p.csvPid || null,
+            name: p.name || p.full_name || '',
+            pos: p.pos || p.position || '',
+            team: p.team || p.nflTeam || '',
+            college: p.college || p.school || '',
+            age: p.age || null,
+            birth_date: p.birth_date || null,
+            dhq: Number(p.dhq || p.val || 0),
+            consensusRank: p.consensusRank || p.rank || null,
+            tier: p.tier || p.csv?.tier || null,
+            photoUrl: p.photoUrl || '',
+            source: p.source || null,
+            isCSV: !!p.isCSV,
+        })).filter(p => p.pid);
+    }
+
     // Strip state for persistence — same pattern as state.saveToLocal
     function stripForSave(state) {
         return {
             ...state,
             // Drop heavy refs
             personas: {},            // recomposed on load
-            originalPool: [],        // rebuilt from pool on load
+            originalPool: slimPool(state.originalPool && state.originalPool.length ? state.originalPool : state.pool, 600),
             pool: (state.pool || []).slice(0, 300),
             picks: (state.picks || []).map(p => ({ ...p, csv: null })),
             // Drop ephemeral UI state
@@ -97,6 +116,9 @@
         if (!state.originalPool || !state.originalPool.length) {
             state.originalPool = (state.pool || []).slice();
         }
+        if (!state.pickedByIdx && window.DraftCC?.state?.buildPickedByIdx) {
+            state.pickedByIdx = window.DraftCC.state.buildPickedByIdx(state.picks || []);
+        }
         return state;
     }
 
@@ -163,6 +185,9 @@
             state.personas = window.DraftCC.persona.composeAllPersonas(state.leagueId, draftDnaMap);
             if (!state.originalPool || !state.originalPool.length) {
                 state.originalPool = (state.pool || []).slice();
+            }
+            if (!state.pickedByIdx && window.DraftCC?.state?.buildPickedByIdx) {
+                state.pickedByIdx = window.DraftCC.state.buildPickedByIdx(state.picks || []);
             }
             return state;
         } catch (e) {

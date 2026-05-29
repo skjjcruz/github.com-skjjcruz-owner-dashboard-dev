@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://jcc100218.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hovnqztlbsgsywrbidbh.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
   <title>Dynasty HQ — Dynasty Fantasy Intelligence</title>
   <link rel="icon" href="icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -142,6 +143,8 @@
     .auth-input::placeholder{color:var(--muted)}
     .auth-submit{width:100%;padding:13px;font-size:14px;font-weight:700;border-radius:10px;border:none;background:linear-gradient(135deg,var(--gold),var(--dark-gold));color:#0a0a0a;cursor:pointer;font-family:inherit;margin-top:4px;transition:all .15s}
     .auth-submit:hover{box-shadow:0 4px 16px rgba(212,175,55,.3)}
+    .auth-link{width:100%;border:none;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-top:12px;text-align:center}
+    .auth-link:hover{color:var(--gold)}
     .alert{font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:12px;display:none}
     .alert.show{display:block}
     .alert-error{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
@@ -368,7 +371,7 @@
       </div>
       <div class="price-card">
         <div class="price-name">Pro</div>
-        <div class="price-amount">$12.99 <span>/mo</span></div>
+        <div class="price-amount">$14.95 <span>/mo</span></div>
         <div class="price-note">Multi-league command center.</div>
         <ul class="price-features">
           <li>Everything in Dynasty HQ</li>
@@ -449,11 +452,13 @@
       <input class="auth-input" type="email" id="si-email" placeholder="Email">
       <input class="auth-input" type="password" id="si-password" placeholder="Password">
       <button class="auth-submit" id="btnSignin" onclick="handleSignin()">Sign In</button>
+      <button class="auth-link" id="btnReset" onclick="requestPasswordReset()">Forgot password?</button>
     </div>
   </section>
 
   <footer class="footer">&copy; 2026 Dynasty HQ &middot; All rights reserved</footer>
 
+  <script src="js/landing-content.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"></script>
   <script>
     const FW_API_BASE = 'https://hovnqztlbsgsywrbidbh.supabase.co/functions/v1';
@@ -461,6 +466,7 @@
     const SUPABASE_URL = 'https://hovnqztlbsgsywrbidbh.supabase.co';
     const SESSION_KEY = 'fw_session_v1';
     const SCOUT_URL = 'https://jcc100218.github.io/ReconAI/';
+    const LANDING_EDITOR_PREVIEW = new URLSearchParams(window.location.search).has('landingPreview');
 
     // ── OAuth sign-in helpers ────────────────────────────────────
     // Providers must be enabled in Supabase Dashboard:
@@ -475,9 +481,71 @@
       return _sbClient;
     }
 
+    const LANDING_ANALYTICS_SESSION_KEY = 'fw_landing_analytics_session_v1';
+    function landingAnalyticsSessionId() {
+      try {
+        let sid = sessionStorage.getItem(LANDING_ANALYTICS_SESSION_KEY);
+        if (!sid) {
+          sid = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+          sessionStorage.setItem(LANDING_ANALYTICS_SESSION_KEY, sid);
+        }
+        return sid;
+      } catch {
+        return 'sess_' + Date.now().toString(36);
+      }
+    }
+    function safeLandingMeta(meta) {
+      const out = { route: window.location.pathname || '/landing.html' };
+      Object.entries(meta || {}).forEach(([key, value]) => {
+        if (/email|password|token|secret|message|content|body/i.test(key)) return;
+        if (value == null) return;
+        if (['string', 'number', 'boolean'].includes(typeof value)) out[key] = value;
+      });
+      return out;
+    }
+    function safeReferrerHost() {
+      try { return document.referrer ? new URL(document.referrer).hostname : null; }
+      catch { return null; }
+    }
+    function trackLandingEvent(eventName, metadata = {}) {
+      try {
+        if (LANDING_EDITOR_PREVIEW) return;
+        const db = getSbClient();
+        if (!db || !eventName) return;
+        db.from('analytics_events').insert([{
+          event_id: 'evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10),
+          username: null,
+          league_id: null,
+          session_id: landingAnalyticsSessionId(),
+          platform: 'warroom',
+          module: 'landing',
+          widget: metadata.widget || null,
+          event_name: eventName,
+          event_ts: new Date().toISOString(),
+          entity_type: metadata.entityType || null,
+          entity_id: metadata.entityId || null,
+          metadata: safeLandingMeta(metadata),
+        }]).then(() => {}).catch(() => {});
+      } catch {}
+    }
+    trackLandingEvent('landing_viewed', {
+      referrerHost: safeReferrerHost(),
+      viewport: window.innerWidth < 768 ? 'mobile' : 'desktop',
+    });
+    document.addEventListener('click', (evt) => {
+      const target = evt.target.closest?.('.price-btn,.hero-cta,.hero-secondary,.nav-btn,.auth-tab');
+      if (!target) return;
+      trackLandingEvent('landing_cta_clicked', {
+        widget: target.classList.contains('price-btn') ? 'pricing' : target.className.split(/\s+/)[0],
+        entityType: 'cta',
+        entityId: target.id || target.className.split(/\s+/)[0],
+      });
+    }, { capture: true });
+
     function handleOAuthGoogle() {
       const db = getSbClient();
       if (!db) return;
+      trackLandingEvent('oauth_started', { provider: 'google' });
       const btn = document.getElementById('btnGoogle');
       if (btn) { btn.disabled = true; btn.textContent = 'Redirecting\u2026'; }
       db.auth.signInWithOAuth({
@@ -489,6 +557,7 @@
     function handleOAuthApple() {
       const db = getSbClient();
       if (!db) return;
+      trackLandingEvent('oauth_started', { provider: 'apple' });
       const btn = document.getElementById('btnApple');
       if (btn) { btn.disabled = true; btn.textContent = 'Redirecting\u2026'; }
       db.auth.signInWithOAuth({
@@ -500,10 +569,12 @@
     // Handle OAuth redirect: if Supabase returns a session via hash, store it and redirect
     (async function handleOAuthCallback() {
       try {
+        if (LANDING_EDITOR_PREVIEW) return;
         const db = getSbClient();
         if (!db) return;
         const { data } = await db.auth.getSession();
         if (data?.session) {
+          trackLandingEvent('oauth_succeeded', { provider: data.session.user?.app_metadata?.provider || 'supabase' });
           // Store in fw_session_v1 format so existing redirect logic works
           const user = data.session.user;
           const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
@@ -525,8 +596,10 @@
     // Redirect if already signed in
     (function checkSession() {
       try {
+        if (LANDING_EDITOR_PREVIEW) return;
         const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
         if (s?.token && s?.user) {
+          trackLandingEvent('landing_existing_session_redirected');
           const profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
           if (!profile || !profile.onboardingComplete) {
             window.location.href = 'onboarding.html';
@@ -549,6 +622,7 @@
       document.getElementById('tabSignin').classList.toggle('active', !isSignup);
       document.getElementById('panelSignup').classList.toggle('active', isSignup);
       document.getElementById('panelSignin').classList.toggle('active', !isSignup);
+      trackLandingEvent('auth_tab_viewed', { tab });
     }
 
     function showAlert(panelId, type, message) {
@@ -563,21 +637,24 @@
       const password = document.getElementById('su-password').value;
       const displayName = document.getElementById('su-name').value.trim();
       const btn = document.getElementById('btnSignup');
-      if (!email || !password) { showAlert('Signup', 'error', 'Email and password are required.'); return; }
-      if (password.length < 8) { showAlert('Signup', 'error', 'Password must be at least 8 characters.'); return; }
+      if (!email || !password) { trackLandingEvent('signup_blocked', { reason: 'missing_fields' }); showAlert('Signup', 'error', 'Email and password are required.'); return; }
+      if (password.length < 8) { trackLandingEvent('signup_blocked', { reason: 'weak_password' }); showAlert('Signup', 'error', 'Password must be at least 8 characters.'); return; }
+      trackLandingEvent('signup_started', { productSlug: 'war_room' });
       btn.disabled = true; btn.textContent = 'Creating account\u2026';
       try {
         const res = await fetch(`${FW_API_BASE}/fw-signup`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
-          body: JSON.stringify({ email, password, displayName, productSlug: 'war-room' }),
+          body: JSON.stringify({ email, password, displayName, productSlug: 'war_room' }),
         });
         const data = await res.json();
-        if (!res.ok) { showAlert('Signup', 'error', data.error || 'Sign-up failed.'); btn.disabled = false; btn.textContent = 'Create Free Account'; return; }
+        if (!res.ok) { trackLandingEvent('signup_failed', { status: res.status }); showAlert('Signup', 'error', data.error || 'Sign-up failed.'); btn.disabled = false; btn.textContent = 'Create Free Account'; return; }
         localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        trackLandingEvent('signup_succeeded', { productSlug: 'war_room' });
         showAlert('Signup', 'success', 'Account created! Setting up Dynasty HQ\u2026');
         setTimeout(() => { window.location.href = 'onboarding.html'; }, 1000);
       } catch (err) {
+        trackLandingEvent('signup_failed', { reason: 'network' });
         showAlert('Signup', 'error', 'Network error: ' + (err?.message || String(err)));
         btn.disabled = false; btn.textContent = 'Create Free Account';
       }
@@ -587,7 +664,8 @@
       const email = document.getElementById('si-email').value.trim();
       const password = document.getElementById('si-password').value;
       const btn = document.getElementById('btnSignin');
-      if (!email || !password) { showAlert('Signin', 'error', 'Email and password are required.'); return; }
+      if (!email || !password) { trackLandingEvent('signin_blocked', { reason: 'missing_fields' }); showAlert('Signin', 'error', 'Email and password are required.'); return; }
+      trackLandingEvent('signin_started');
       btn.disabled = true; btn.textContent = 'Signing in\u2026';
       try {
         const res = await fetch(`${FW_API_BASE}/fw-signin`, {
@@ -596,8 +674,9 @@
           body: JSON.stringify({ email, password }),
         });
         const data = await res.json();
-        if (!res.ok) { showAlert('Signin', 'error', data.error || 'Invalid email or password.'); btn.disabled = false; btn.textContent = 'Sign In'; return; }
+        if (!res.ok) { trackLandingEvent('signin_failed', { status: res.status }); showAlert('Signin', 'error', data.error || 'Invalid email or password.'); btn.disabled = false; btn.textContent = 'Sign In'; return; }
         localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        trackLandingEvent('signin_succeeded');
         showAlert('Signin', 'success', 'Welcome back! Redirecting\u2026');
         const pref = localStorage.getItem('fw_preferred_view');
         let dest = WARROOM_URL;
@@ -605,8 +684,31 @@
         else if (!pref && window.innerWidth < 768) dest = SCOUT_URL;
         setTimeout(() => { window.location.href = dest; }, 800);
       } catch (err) {
+        trackLandingEvent('signin_failed', { reason: 'network' });
         showAlert('Signin', 'error', 'Network error: ' + (err?.message || String(err)));
         btn.disabled = false; btn.textContent = 'Sign In';
+      }
+    }
+
+    async function requestPasswordReset() {
+      const email = document.getElementById('si-email').value.trim();
+      const btn = document.getElementById('btnReset');
+      if (!email) { showAlert('Signin', 'error', 'Enter your email first, then request a reset link.'); return; }
+      trackLandingEvent('password_reset_requested');
+      btn.disabled = true; btn.textContent = 'Sending reset link...';
+      try {
+        await fetch(`${FW_API_BASE}/fw-request-password-reset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
+          body: JSON.stringify({ email }),
+        });
+        trackLandingEvent('password_reset_request_succeeded');
+        showAlert('Signin', 'success', 'If that email exists, a reset link is on the way.');
+      } catch {
+        trackLandingEvent('password_reset_request_failed', { reason: 'network' });
+        showAlert('Signin', 'success', 'If that email exists, a reset link is on the way.');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Forgot password?';
       }
     }
 

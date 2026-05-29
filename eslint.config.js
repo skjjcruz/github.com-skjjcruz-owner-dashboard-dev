@@ -7,6 +7,33 @@ const SCRIPT_GLOBAL_VAR_PATTERN = [
   "^(canAccess|useTaste|hasTasteLeft|canUseAI|trackAIUse|handleLogout|fetchSleeperUser|fetchUserLeagues|fetchLeagueRosters|fetchLeagueUsers|fetchLeagueInfo|fetchSeasonStats|fetchSeasonProjections)$",
 ].join("|");
 
+const LEGACY_UNUSED_VAR_NAMES = [
+  "AVAILABLE_YEARS", "DEV_DEBUG", "DRAFT_CC_LAYOUT", "FONT_MONO", "MAX_TRADE_RATE", "PICK_VALUES",
+  "PICK_VALUES_BY_SLOT", "STATS_YEAR", "STATS_YEAR_TC",
+  "aValStyle", "activeLeagueId", "allAssessments", "baseSeason", "boughtBarWinner", "boughtBarYou",
+  "brackets3", "budgetPct", "clearAnalyzer", "contract", "customDraftStrategy", "dKpiCardStyle",
+  "dKpiLabel", "dKpiNum", "dhqColor", "diff", "dna", "draftDnaSyncMsg", "draftDnaSyncing",
+  "draftGradeLetter", "draftSortIndicator", "draftStrategyEditing", "elitePlayerSet", "espnConnecting",
+  "espnError", "faBudget", "faTargets", "generateHeroStory", "giftLinks", "giftingFor",
+  "gmIsUnconfigured", "goldBadge", "groupLabelStyle", "handleDraftSort", "handleESPNConnect",
+  "handleGiftAccess", "hasFaabEfficiency", "healthData", "healthDelta", "hitRateBarItems",
+  "hitRateLeagueItems", "inboxMode", "isAnalyst", "isViewingMyTeam", "kpiCardStyle", "kpiDeltaStyle",
+  "kpiLabelStyle", "kpiNumberStyle", "l", "lElite", "latePicks", "leagueHitAvg", "leagueId",
+  "likelihood", "matesAccess", "maxPosCount", "maxWeekCount", "midPicks", "myWinPct", "notifications",
+  "panelCard", "posBarItems", "posBarWinnerItems", "positionGroups", "ppos", "prevCount", "profile3",
+  "projClass", "projData", "pw2", "reconLeagueId", "reconUrl", "renderAudit", "renderTradeInbox",
+  "rivalries", "rosterLeagueCount", "rp", "saveGrudges", "scopeButtonStyle", "setAlexAvatar",
+  "setBoardData", "setCustomDraftStrategy", "setDraftDnaSyncMsg", "setDraftDnaSyncing",
+  "setDraftStrategyEditing", "setInboxMode", "setReconLeagueId", "setSelectedYear",
+  "setShowNotifications", "setViewMode", "sevIcon", "showNotifications", "sortedRookies",
+  "switchYear", "tKpiCardStyle", "tKpiLabel", "tKpiNum", "tableRowStyle", "theirWinPct", "themeKey",
+  "thinChips", "tier", "top3", "topPosBought", "total", "totalPicks", "tradeSummaryText",
+  "trending", "tx", "viewingOwner", "viewingRoster", "win", "winnerHitAvg", "years",
+];
+const LEGACY_UNUSED_VAR_PATTERN = "^(" + LEGACY_UNUSED_VAR_NAMES
+  .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  .join("|") + ")$";
+
 /** @type {import("eslint").Linter.Config[]} */
 module.exports = [
   // ── Ignored paths ──────────────────────────────────────────────────────────
@@ -188,7 +215,7 @@ module.exports = [
     },
     rules: {
       "no-undef": "error",
-      "no-unused-vars": ["warn", { "args": "none", "caughtErrors": "none", "varsIgnorePattern": SCRIPT_GLOBAL_VAR_PATTERN }],
+      "no-unused-vars": ["warn", { "args": "none", "caughtErrors": "none", "varsIgnorePattern": [SCRIPT_GLOBAL_VAR_PATTERN, LEGACY_UNUSED_VAR_PATTERN].join("|") }],
       // builtinGlobals:false so declaring wrLog in core.js doesn't clash with the global entry above
       "no-redeclare": ["error", { "builtinGlobals": false }],
       "no-dupe-keys": "error",

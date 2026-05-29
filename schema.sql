@@ -11,6 +11,7 @@ create table if not exists public.users (
     password_hash    text,
     display_name     text,
     is_gifted        boolean  default false,
+    tutorial_state   jsonb    default '{}'::jsonb,
     created_at       timestamptz default now()
 );
 

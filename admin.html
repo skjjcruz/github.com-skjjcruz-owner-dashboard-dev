@@ -242,6 +242,112 @@
       color: var(--muted);
     }
     .empty strong { display: block; font-family: 'Inter', sans-serif; font-size: 1.5rem; color: var(--silver); margin-bottom: 0.5rem; letter-spacing: 0.1em; }
+
+    .ops-panel {
+      margin: 1.5rem;
+      border: 1px solid rgba(212,175,55,0.18);
+      border-radius: 8px;
+      background: var(--off-black);
+      overflow: hidden;
+    }
+    .ops-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem;
+      border-bottom: 1px solid rgba(212,175,55,0.14);
+      flex-wrap: wrap;
+    }
+    .ops-title {
+      color: var(--gold);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .ops-controls { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+    .ops-controls select {
+      background: var(--charcoal);
+      border: 1px solid rgba(212,175,55,0.35);
+      color: var(--white);
+      border-radius: 4px;
+      padding: 0.45rem 0.65rem;
+      font: inherit;
+      font-size: 0.85rem;
+    }
+    .ops-body { padding: 1rem; }
+    .ops-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .ops-card {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.03);
+      padding: 0.8rem;
+      min-width: 0;
+    }
+    .ops-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.64rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.3rem;
+    }
+    .ops-card strong {
+      display: block;
+      color: var(--white);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ops-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .ops-block h3 {
+      color: var(--gold);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.6rem;
+    }
+    .ops-list { display: grid; gap: 0.45rem; }
+    .ops-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.7rem;
+      align-items: center;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 5px;
+      padding: 0.55rem 0.65rem;
+      background: rgba(0,0,0,0.16);
+    }
+    .ops-row strong {
+      color: var(--white);
+      font-size: 0.82rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ops-row span {
+      color: var(--silver);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.76rem;
+      white-space: nowrap;
+    }
+    .ops-muted { color: var(--muted); font-size: 0.82rem; padding: 0.75rem 0; }
+    @media (max-width: 980px) {
+      .ops-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ops-columns { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -284,6 +390,52 @@
       <span class="stat-value" id="stat-free">—</span>
     </div>
   </div>
+
+  <section class="ops-panel" aria-label="Launch analytics">
+    <div class="ops-head">
+      <div>
+        <div class="ops-title">Launch Analytics</div>
+        <div class="stat-label" id="analytics-window-label">Server-side report</div>
+      </div>
+      <div class="ops-controls">
+        <select id="analytics-days">
+          <option value="1">1 day</option>
+          <option value="7" selected>7 days</option>
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+        </select>
+        <button class="btn-sm" id="analytics-refresh-btn">Refresh Analytics</button>
+      </div>
+    </div>
+    <div class="ops-body">
+      <div id="analytics-loading" class="loading" style="padding:1rem">Loading analytics…</div>
+      <div id="analytics-content" style="display:none">
+        <div class="ops-grid" id="analytics-totals"></div>
+        <div class="ops-columns">
+          <div class="ops-block">
+            <h3>Launch Funnel</h3>
+            <div class="ops-list" id="analytics-funnel"></div>
+          </div>
+          <div class="ops-block">
+            <h3>Largest Drop-Offs</h3>
+            <div class="ops-list" id="analytics-dropoffs"></div>
+          </div>
+          <div class="ops-block">
+            <h3>Top Modules</h3>
+            <div class="ops-list" id="analytics-modules"></div>
+          </div>
+          <div class="ops-block">
+            <h3>AI Margin</h3>
+            <div class="ops-list" id="analytics-ai-margin"></div>
+          </div>
+          <div class="ops-block">
+            <h3>Error Correlation</h3>
+            <div class="ops-list" id="analytics-errors"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <div class="table-wrap">
     <div id="table-loading" class="loading">Loading…</div>
@@ -370,6 +522,8 @@
   });
 
   document.getElementById('refresh-btn').addEventListener('click', () => loadUsers());
+  document.getElementById('analytics-refresh-btn').addEventListener('click', () => loadAnalytics());
+  document.getElementById('analytics-days').addEventListener('change', () => loadAnalytics());
   document.getElementById('prev-btn').addEventListener('click', () => { if (currentPage > 0) { currentPage--; loadUsers(); } });
   document.getElementById('next-btn').addEventListener('click', () => {
     if ((currentPage + 1) * PAGE_SIZE < totalCount) { currentPage++; loadUsers(); }
@@ -394,12 +548,20 @@
     } else {
       loadUsers();
     }
+    loadAnalytics();
   }
 
   async function fetchUsers(secret, page, search) {
     const params = new URLSearchParams({ page, limit: PAGE_SIZE });
     if (search) params.set('search', search);
     return fetch(`${FN_BASE}/admin-list-users?${params}`, {
+      headers: { 'Authorization': `Bearer ${secret}` },
+    });
+  }
+
+  async function fetchAnalytics(secret) {
+    const days = document.getElementById('analytics-days').value || '7';
+    return fetch(`${FN_BASE}/admin-analytics-report?days=${encodeURIComponent(days)}`, {
       headers: { 'Authorization': `Bearer ${secret}` },
     });
   }
@@ -417,6 +579,20 @@
       renderTable(data);
     } catch (e) {
       document.getElementById('table-loading').textContent = 'Failed to load. Check network.';
+    }
+  }
+
+  async function loadAnalytics() {
+    document.getElementById('analytics-loading').style.display = 'block';
+    document.getElementById('analytics-loading').textContent = 'Loading analytics…';
+    document.getElementById('analytics-content').style.display = 'none';
+    try {
+      const res = await fetchAnalytics(adminSecret);
+      if (res.status === 401) { document.getElementById('analytics-loading').textContent = 'Analytics locked — log in again.'; return; }
+      const data = await res.json();
+      renderAnalytics(data);
+    } catch {
+      document.getElementById('analytics-loading').textContent = 'Failed to load analytics.';
     }
   }
 
@@ -464,6 +640,71 @@
     }
   }
 
+  function renderAnalytics(data) {
+    const report = data.report || {};
+    const totals = report.totals || {};
+    const aiMargin = report.aiMargin || {};
+    document.getElementById('analytics-loading').style.display = 'none';
+    document.getElementById('analytics-content').style.display = 'block';
+    document.getElementById('analytics-window-label').textContent =
+      `${data.days || 7} day window · since ${formatDate(data.since || report.since)}`;
+
+    document.getElementById('analytics-totals').innerHTML = [
+      ['Events', totals.events],
+      ['Sessions', totals.sessions],
+      ['Known Users', totals.knownUsers],
+      ['Anonymous', totals.anonymousSessions],
+      ['AI Cost', formatUsd(aiMargin.totalCostUsd)],
+      ['AI Calls', aiMargin.calls],
+      ['Client Errors', totals.clientErrors],
+      ['Sentry Linked', totals.sentryLinkedErrors],
+    ].map(([label, value]) => `<div class="ops-card"><span>${label}</span><strong>${formatNum(value)}</strong></div>`).join('');
+
+    renderOpsRows('analytics-funnel', report.funnel || [], row => ({
+      label: row.label || row.eventName,
+      value: `${formatNum(row.sessions)} sessions`,
+    }));
+    renderOpsRows('analytics-dropoffs', (report.dropoffs || []).filter(row => Number(row.fromSessions || 0) > 0), row => ({
+      label: `${row.from} → ${row.to}`,
+      value: `${row.dropoffPct == null ? '—' : row.dropoffPct + '%'} drop`,
+    }));
+    renderOpsRows('analytics-modules', report.topModules || [], row => ({
+      label: row.module,
+      value: `${formatNum(row.sessions)} sessions`,
+    }));
+    const aiRows = [
+      { label: 'Total cost', value: formatUsd(aiMargin.totalCostUsd) },
+      { label: 'Avg cost', value: formatUsd(aiMargin.avgCostUsd) },
+      { label: 'P95 latency', value: `${formatNum(aiMargin.p95LatencyMs)} ms` },
+      { label: 'Error rate', value: `${formatNum(aiMargin.errorRatePct)}%` },
+      { label: 'Fallback rate', value: `${formatNum(aiMargin.fallbackRatePct)}%` },
+      { label: 'Downgrade rate', value: `${formatNum(aiMargin.downgradeRatePct)}%` },
+      { label: 'AI errors', value: formatNum(aiMargin.errors) },
+      { label: 'Quota denials', value: formatNum(aiMargin.quotaDenials) },
+      ...(aiMargin.byModel || []).slice(0, 4).map(row => ({
+        label: `${row.provider || 'provider'} · ${row.model || 'model'}`,
+        value: `${formatNum(row.calls)} calls · ${formatUsd(row.costUsd)}`,
+      })),
+    ];
+    renderOpsRows('analytics-ai-margin', aiRows, row => row);
+    renderOpsRows('analytics-errors', report.errors || [], row => ({
+      label: `${row.source} · ${row.errorName}`,
+      value: `${formatNum(row.events)} events`,
+    }));
+  }
+
+  function renderOpsRows(id, rows, mapRow) {
+    const host = document.getElementById(id);
+    if (!rows.length) {
+      host.innerHTML = '<div class="ops-muted">No data in this window.</div>';
+      return;
+    }
+    host.innerHTML = rows.slice(0, 8).map(row => {
+      const mapped = mapRow(row);
+      return `<div class="ops-row"><strong>${esc(mapped.label || '—')}</strong><span>${esc(mapped.value || '—')}</span></div>`;
+    }).join('');
+  }
+
   function exportCSV() {
     if (!allUsersCache.length) return;
     const headers = ['Email', 'Display Name', 'Tier', 'Products', 'Joined'];
@@ -493,6 +734,15 @@
   function formatDate(iso) {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  function formatNum(n) {
+    if (typeof n === 'string' && n.startsWith('$')) return n;
+    return Number(n || 0).toLocaleString();
+  }
+  function formatUsd(n) {
+    const value = Number(n || 0);
+    if (!Number.isFinite(value)) return '$0.00';
+    return '$' + value.toFixed(value >= 1 ? 2 : 4);
   }
 </script>
 </body>

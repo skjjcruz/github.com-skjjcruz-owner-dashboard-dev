@@ -98,18 +98,22 @@ function IntelligenceBriefWidget({
   myRoster,
   rankedTeams,
   sleeperUserId,
-  currentLeague,
-  briefDraftInfo,
-  playersData,
-  setActiveTab,
-  navigateWidget,
-}) {
+	  currentLeague,
+	  briefDraftInfo,
+	  playersData,
+	  statsData,
+	  prevStatsData,
+	  timeRecomputeTs,
+	  setActiveTab,
+	  navigateWidget,
+	}) {
+    const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
     const myAssess = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
     const tier = (myAssess?.tier || 'UNKNOWN').toUpperCase();
     const hs = myAssess?.healthScore || 0;
-    const needs = myAssess?.needs || [];
-    const elites = typeof window.App?.countElitePlayers === 'function' ? window.App.countElitePlayers(myRoster?.players || []) : 0;
-    const myRank = (rankedTeams || []).findIndex(t => t.userId === sleeperUserId) + 1;
+    const needs = rosterState.isUsable ? (myAssess?.needs || []) : [];
+    const elites = rosterState.isUsable && typeof window.App?.countElitePlayers === 'function' ? window.App.countElitePlayers(myRoster?.players || []) : 0;
+    const myRank = rosterState.isUsable ? ((rankedTeams || []).findIndex(t => t.userId === sleeperUserId) + 1) : 0;
     const scores = window.App?.LI?.playerScores || {};
     const ownerProfiles = window.App?.LI?.ownerProfiles || {};
 
@@ -118,10 +122,33 @@ function IntelligenceBriefWidget({
     const spent = myRoster?.settings?.waiver_budget_used || 0;
     const faabRemaining = Math.max(0, budget - spent);
 
-    // Best waiver target
-    const waiverTarget = useMemo(() => {
-        if (!needs.length) return null;
-        const normPos = window.App?.normPos || (p => p);
+	    // Best waiver target
+	    const waiverTarget = useMemo(() => {
+	        if (!rosterState.isUsable) return null;
+	        const hasActionTargetHelper = typeof window.App?.getFreeAgencyBriefTarget === 'function';
+	        const actionTarget = hasActionTargetHelper ? window.App.getFreeAgencyBriefTarget({
+	            playersData,
+	            statsData,
+	            prevStatsData,
+	            myRoster,
+	            currentLeague,
+	            briefDraftInfo,
+	            rosterState,
+	        }) : null;
+	        if (actionTarget) {
+	            return {
+	                pid: actionTarget.pid,
+	                name: actionTarget.name || actionTarget.p?.full_name || '',
+	                dhq: actionTarget.dhq || 0,
+	                pos: actionTarget.pos || '',
+	                team: actionTarget.p?.team || actionTarget.team || '',
+	                why: actionTarget.why,
+	                faab: actionTarget.faab,
+	            };
+	        }
+	        if (hasActionTargetHelper) return null;
+	        if (!needs.length) return null;
+	        const normPos = window.App?.normPos || (p => p);
         const rostered = new Set();
         (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
         const needPos = typeof needs[0] === 'string' ? needs[0] : needs[0]?.pos;
@@ -142,7 +169,7 @@ function IntelligenceBriefWidget({
             }
         }
         return candidates[0] || null;
-    }, [needs, playersData, scores, currentLeague]);
+	    }, [rosterState.isUsable, needs, playersData, statsData, prevStatsData, myRoster, currentLeague, briefDraftInfo, scores, timeRecomputeTs]);
 
     // Key drops (high-value players dropped in last 3 weeks)
     const keyDrops = useMemo(() => {
@@ -187,7 +214,8 @@ function IntelligenceBriefWidget({
 
     // Build Alex's conversational briefing
     const needPos = needs.length ? (typeof needs[0] === 'string' ? needs[0] : needs[0]?.pos) : '';
-    const tierMsg = tier === 'ELITE' ? p.elite(myRank, hs)
+    const tierMsg = !rosterState.isUsable ? (rosterState.brief || 'Roster sync incomplete. I paused roster, trade, waiver, and league-rank recommendations until player IDs finish loading.')
+        : tier === 'ELITE' ? p.elite(myRank, hs)
         : tier === 'CONTENDER' ? p.contender(myRank, hs)
         : tier === 'CROSSROADS' ? p.crossroads(myRank, hs)
         : p.rebuilding(myRank, hs);
@@ -211,14 +239,17 @@ function IntelligenceBriefWidget({
 
     // Full briefing text — used at tall/xl/xxl
     let briefText = tierMsg;
-    if (portfolioComparison) briefText += ' ' + portfolioComparison;
-    if (elites > 0 && alexFocus.gmStyle !== false) briefText += ` You've got ${elites} elite player${elites > 1 ? 's' : ''} anchoring the roster.`;
-    if (needPos && alexFocus.gmStyle !== false) briefText += ` Your biggest gap is at ${needPos} — I've been keeping an eye on options for you.`;
-    if (activeTrades > 0 && alexFocus.trades !== false) briefText += ` ${activeTrades} trade${activeTrades > 1 ? 's have' : ' has'} gone down in the league recently. Worth watching who's moving what.`;
-    if (budget > 0 && alexFocus.waivers !== false) briefText += ` You've got $${faabRemaining} of $${budget} FAAB left to work with.`;
+    if (rosterState.isUsable) {
+        if (portfolioComparison) briefText += ' ' + portfolioComparison;
+        if (elites > 0 && alexFocus.gmStyle !== false) briefText += ` You've got ${elites} elite player${elites > 1 ? 's' : ''} anchoring the roster.`;
+        if (needPos && alexFocus.gmStyle !== false) briefText += ` Your biggest gap is at ${needPos} — I've been keeping an eye on options for you.`;
+        if (activeTrades > 0 && alexFocus.trades !== false) briefText += ` ${activeTrades} trade${activeTrades > 1 ? 's have' : ' has'} gone down in the league recently. Worth watching who's moving what.`;
+        if (budget > 0 && alexFocus.waivers !== false) briefText += ` You've got $${faabRemaining} of $${budget} FAAB left to work with.`;
+    }
 
     // Three-sentence summary — fits a 160px-tall md row, no scroll
     const threeSentence = (() => {
+        if (!rosterState.isUsable) return tierMsg + ' ' + rosterState.message;
         const parts = [tierMsg];
         if (needPos && alexFocus.gmStyle !== false) parts.push(`Biggest gap: ${needPos}.`);
         else if (elites > 0) parts.push(`${elites} elite anchor${elites > 1 ? 's' : ''}.`);
@@ -245,16 +276,26 @@ function IntelligenceBriefWidget({
     };
 
     // ── Action list (priority-ordered, focus-gated) ─────────────────
-    const actions = [];
+    let actions = [];
+    if (!rosterState.isUsable) {
+        const rosterCopy = rosterState.leagueSkin?.copy?.rosterData || {};
+        const isPreDraftEmpty = !!rosterState.isPreDraftRosterEmpty;
+        actions.push({
+            icon: isPreDraftEmpty ? '📋' : '↻',
+            tab: rosterCopy.actionTarget === 'draft' ? 'draft' : 'myteam',
+            title: isPreDraftEmpty ? 'Open draft prep while rosters are empty.' : 'Re-sync roster data before making a move.',
+            detail: rosterState.message + ' ' + rosterState.detail,
+        });
+    } else {
     if (alexFocus.waivers !== false && waiverTarget) {
         actions.push({
             icon: '🎯', tab: 'fa',
-            title: p.waiver(waiverTarget.name, waiverTarget.pos, waiverTarget.dhq),
-            detail: [
-                React.createElement('span', { key: 'n', style: { color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }, onClick: e => { e.stopPropagation(); if (typeof window.openPlayerModal === 'function' && waiverTarget.pid) window.openPlayerModal(waiverTarget.pid); } }, waiverTarget.name),
-                ` · ${waiverTarget.pos} · DHQ ${waiverTarget.dhq.toLocaleString()} · Fills your ${waiverTarget.pos} gap.`,
-            ],
-        });
+	            title: p.waiver(waiverTarget.name, waiverTarget.pos, waiverTarget.dhq),
+	            detail: [
+	                React.createElement('span', { key: 'n', style: { color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }, onClick: e => { e.stopPropagation(); if (typeof window.openPlayerModal === 'function' && waiverTarget.pid) window.openPlayerModal(waiverTarget.pid); } }, waiverTarget.name),
+	                ` · ${waiverTarget.pos} · DHQ ${waiverTarget.dhq.toLocaleString()} · ${waiverTarget.why || ('Fills your ' + waiverTarget.pos + ' gap.')}`,
+	            ],
+	        });
     }
     if (alexFocus.waivers !== false && keyDrops.length > 0) {
         actions.push({
@@ -288,6 +329,7 @@ function IntelligenceBriefWidget({
         title: p.rank(myRank, tier),
         detail: `${tier} tier · See where everyone else stands.`,
     });
+    }
 
     // ── Reusable action button ───────────────────────────────────────
     const baseBtn = { background: 'rgba(212,175,55,0.05)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '10px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500, textAlign: 'left', display: 'flex', alignItems: 'flex-start', gap: '10px', transition: 'all 0.15s', lineHeight: 1.4 };
@@ -355,10 +397,10 @@ function IntelligenceBriefWidget({
     if (size === 'tall') {
         return React.createElement('div', { style: cardStyle },
             header(),
-            React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflowY: 'auto' } },
-                React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px' } }, briefText),
+            React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
+                React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
                 React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-                    ...actions.map((a, i) => renderActionBtn(a, 'tall-' + i)),
+                    ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'tall-' + i)),
                 ),
             ),
         );
@@ -420,7 +462,7 @@ function IntelligenceBriefWidget({
                 React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' } },
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 } },
                         React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Alex\u2019s Read'),
-                        React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.7, overflowY: 'auto' } }, briefText),
+                        React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.7, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 7, WebkitBoxOrient: 'vertical' } }, briefText),
                     ),
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 } },
                         React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Action Items'),
@@ -434,10 +476,10 @@ function IntelligenceBriefWidget({
     // Default: tall layout
     return React.createElement('div', { style: cardStyle },
         header(),
-        React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflowY: 'auto' } },
-            React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px' } }, briefText),
+        React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
+            React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
             React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-                ...actions.map((a, i) => renderActionBtn(a, 'def-' + i)),
+                ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'def-' + i)),
             ),
         ),
     );
@@ -520,13 +562,20 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
         );
     }
 
-    function emptyState(opts = {}) {
-        return React.createElement('div', { style: { textAlign: 'center', padding: opts.tight ? '12px 0' : '40px 0', color: 'var(--silver)', opacity: 0.5, fontFamily: monoFont } },
-            React.createElement('div', { style: { fontSize: opts.tight ? '1.4rem' : '2rem', marginBottom: '6px' } }, '📋'),
-            React.createElement('div', { style: { fontSize: '0.78rem', fontWeight: 700 } }, 'No field notes yet'),
-            !opts.tight && React.createElement('div', { style: { fontSize: '0.7rem', marginTop: '4px' } }, 'Actions from Scout will appear here.'),
-        );
-    }
+	    function emptyState(opts = {}) {
+	        const tight = !!opts.tight;
+	        return React.createElement('div', { style: { textAlign: 'center', padding: tight ? '12px 0' : '28px 16px', color: 'var(--silver)', fontFamily: monoFont, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: tight ? '4px' : '8px', height: '100%', boxSizing: 'border-box' } },
+	            React.createElement('div', { style: { fontSize: tight ? '1.1rem' : '1.8rem', opacity: 0.55 } }, '📋'),
+	            React.createElement('div', { style: { fontSize: tight ? '0.68rem' : '0.82rem', fontWeight: 800, color: 'var(--white)' } }, 'No decisions logged yet'),
+	            React.createElement('div', { style: { fontSize: tight ? '0.58rem' : '0.7rem', lineHeight: 1.45, maxWidth: '24ch', opacity: 0.72 } },
+	                tight ? 'Notes appear after saved GM actions.' : 'Saved trade, waiver, draft, and Alex decisions will appear here.'),
+	            !tight && React.createElement('button', {
+	                type: 'button',
+	                onClick: e => { e.stopPropagation(); openNotes(); },
+	                style: { marginTop: '4px', border: '1px solid rgba(212,175,55,0.35)', background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', borderRadius: '6px', padding: '7px 10px', fontSize: '0.66rem', fontFamily: monoFont, fontWeight: 800, letterSpacing: '0.04em', cursor: navigateWidget ? 'pointer' : 'default' },
+	            }, 'OPEN GM OFFICE'),
+	        );
+	    }
 
     // ── SLIM (1×2, ~80×160): big number + proportional category bars ──
     if (size === 'slim') {

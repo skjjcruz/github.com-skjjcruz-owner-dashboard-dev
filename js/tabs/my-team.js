@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════
-// js/tabs/my-team.js — MyTeamTab: Dynasty roster view with DHQ values,
+// js/tabs/my-team.js — MyTeamTab: roster view with format-aware value labels,
 // PPG stats, age curves, acquisition history, and column customization
 // Extracted from league-detail.js. Props: all required state from LeagueDetail.
 // ══════════════════════════════════════════════════════════════════
@@ -8,6 +8,7 @@ function MyTeamTab({
   // Core data
   myRoster,
   currentLeague,
+  leagueSkin,
   playersData,
   statsData,
   stats2025Data,
@@ -53,6 +54,12 @@ function MyTeamTab({
 }) {
   // Fallback if prop not passed — prevents crash
   const getAcquisitionInfo = typeof getAcquisitionInfoProp === 'function' ? getAcquisitionInfoProp : () => ({ method: 'Unknown', date: '', cost: '' });
+  const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
+  const skinFeatures = resolvedLeagueSkin?.features || {};
+  const skinVocabulary = resolvedLeagueSkin?.vocabulary || {};
+  const valueLabel = skinVocabulary.valueLabel || 'DHQ Dynasty Value';
+  const valueShortLabel = skinVocabulary.valueShortLabel || 'Value';
+  const assetLabel = skinVocabulary.assetLabel || 'Asset';
 
   function calcRawPts(s) { return window.App.calcRawPts(s, currentLeague?.scoring_settings); }
 
@@ -64,7 +71,7 @@ function MyTeamTab({
 
   // ── filteredAndSortedRows (formerly a sibling function of renderMyTeamTab) ──
   function filteredAndSortedRows(rows) {
-    const offPos = new Set(['QB','RB','WR','TE','K']);
+    const offPos = new Set(['QB','RB','WR','TE','K','DEF']);
     const idpPos = new Set(['DL','LB','DB']);
     let filtered = rows;
     if (rosterFilter === 'Starters') filtered = rows.filter(r => r.isStarter);
@@ -74,7 +81,7 @@ function MyTeamTab({
     else if (rosterFilter === 'Offense') filtered = rows.filter(r => offPos.has(r.pos));
     else if (rosterFilter === 'IDP') filtered = rows.filter(r => idpPos.has(r.pos));
 
-    const posOrder = {QB:0,RB:1,WR:2,TE:3,K:4,DL:5,LB:6,DB:7};
+    const posOrder = {QB:0,RB:1,WR:2,TE:3,K:4,DEF:5,DL:6,LB:7,DB:8};
     return [...filtered].sort((a, b) => {
       const {key, dir} = rosterSort;
       if (rosterGroupMode !== 'none') {
@@ -127,28 +134,28 @@ function MyTeamTab({
   if (!myRoster) return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--silver)' }}>No roster found</div>;
 
   const ROSTER_COLUMNS = {
-    pos:        { label: 'Position', shortLabel: 'Pos', width: '40px', group: 'core' },
+    pos:        { label: 'Position', shortLabel: 'Pos', width: '38px', group: 'core' },
     age:        { label: 'Age', shortLabel: 'Age', width: '38px', group: 'dynasty' },
-    dhq:        { label: 'DHQ Dynasty Value', shortLabel: 'DHQ', width: '64px', group: 'dynasty' },
+    dhq:        { label: valueLabel, shortLabel: valueShortLabel, width: '60px', group: 'dynasty' },
     ppg:        { label: 'Points Per Game', shortLabel: 'PPG', width: '48px', group: 'stats' },
-    prev:       { label: 'Previous Season PPG', shortLabel: 'Prev', width: '48px', group: 'stats' },
-    trend:      { label: 'Year-over-Year PPG Change (%) — how this season\u2019s PPG compares to last season\u2019s', shortLabel: 'Trend', width: '58px', group: 'dynasty' },
+    prev:       { label: 'Previous Season PPG', shortLabel: 'Last', width: '44px', group: 'stats' },
+    trend:      { label: 'Year-over-Year PPG Change (%) — how this season\u2019s PPG compares to last season\u2019s', shortLabel: 'Trend', width: '52px', group: 'dynasty' },
     peak:       { label: 'Peak Window Phase', shortLabel: 'Peak', width: '50px', group: 'dynasty' },
-    action:     { label: 'Trade Recommendation', shortLabel: 'Action', width: '56px', group: 'dynasty' },
+    action:     { label: 'Trade Recommendation', shortLabel: 'Move', width: '54px', group: 'dynasty' },
     gp:         { label: 'Games Played', shortLabel: 'GP', width: '36px', group: 'stats' },
     durability: { label: 'Durability — games played out of 17 (green=15+, amber=10-14, red=<10)', shortLabel: 'Dur', width: '40px', group: 'stats' },
     yrsExp:     { label: 'Years of Experience', shortLabel: 'Exp', width: '38px', group: 'dynasty' },
-    college:    { label: 'College', shortLabel: 'College', width: '90px', group: 'scout' },
+    college:    { label: 'College', shortLabel: 'School', width: '82px', group: 'scout' },
     // nflDraft removed — Sleeper doesn't reliably provide draft capital data
-    posRankLg:  { label: 'League Position Rank', shortLabel: 'Lg Rank', width: '54px', group: 'dynasty' },
-    posRankNfl: { label: 'NFL Position Rank', shortLabel: 'NFL Rank', width: '56px', group: 'dynasty' },
-    starterSzn: { label: 'Starter Seasons', shortLabel: 'Str Szn', width: '48px', group: 'dynasty' },
+    posRankLg:  { label: 'League Position Rank', shortLabel: 'Lg #', width: '46px', group: 'dynasty' },
+    posRankNfl: { label: 'NFL Position Rank', shortLabel: 'NFL #', width: '48px', group: 'dynasty' },
+    starterSzn: { label: 'Starter Seasons', shortLabel: 'Starts', width: '48px', group: 'dynasty' },
     height:     { label: 'Height', shortLabel: 'Ht', width: '42px', group: 'scout' },
     weight:     { label: 'Weight (lbs)', shortLabel: 'Wt', width: '42px', group: 'scout' },
     depthChart: { label: 'Depth Chart Position', shortLabel: 'Depth', width: '48px', group: 'scout' },
     slot:       { label: 'Roster Slot', shortLabel: 'Slot', width: '48px', group: 'core' },
-    acquired:   { label: 'Acquisition Method', shortLabel: 'Acquired', width: '82px', group: 'core' },
-    acquiredDate: { label: 'Date Acquired', shortLabel: 'Date', width: '64px', group: 'core' },
+    acquired:   { label: 'Acquisition Method', shortLabel: 'Added', width: '74px', group: 'core' },
+    acquiredDate: { label: 'Date Acquired', shortLabel: 'When', width: '60px', group: 'core' },
     sos:        { label: 'Sched Strength (1=hardest, 32=easiest)', shortLabel: 'SOS', width: '44px', group: 'stats' },
   };
 
@@ -164,6 +171,19 @@ function MyTeamTab({
     scout: { label: 'Scout', tone: 'profile' },
     full: { label: 'Deep Data', tone: 'all fields' },
   };
+  const rosterFilterOptions = [
+    'All',
+    'Starters',
+    'Bench',
+    ...(skinFeatures.showTaxi === false ? [] : ['Taxi']),
+    'IR',
+    'Offense',
+    ...(skinFeatures.showIDP === false ? [] : ['IDP']),
+  ];
+  const rosterFilterKey = rosterFilterOptions.join('|');
+  React.useEffect(() => {
+    if (rosterFilter && !rosterFilterOptions.includes(rosterFilter)) setRosterFilter('All');
+  }, [rosterFilter, rosterFilterKey]);
 
   const allPlayers = myRoster.players || [];
   const starters = new Set(myRoster.starters || []);
@@ -377,7 +397,7 @@ function MyTeamTab({
     acc[r.section] = (acc[r.section] || 0) + 1;
     return acc;
   }, { starter: 0, bench: 0, taxi: 0, ir: 0 });
-  const posOrder = ['QB', 'RB', 'WR', 'TE', 'DL', 'LB', 'DB', 'K'];
+  const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
   const posMix = posOrder.map(pos => ({
     pos,
     count: rows.filter(r => r.pos === pos).length,
@@ -389,11 +409,18 @@ function MyTeamTab({
   const oldestStarter = starterRows.filter(r => r.age).sort((a, b) => (b.age || 0) - (a.age || 0))[0];
   const boardInsightChips = [
     sellCount > 0 ? { label: sellCount + ' sell flags', color: '#E74C3C' } : null,
-    stashCount > 0 ? { label: stashCount + ' build assets', color: '#2ECC71' } : null,
+    stashCount > 0 ? { label: stashCount + ' build ' + String(assetLabel || 'asset').toLowerCase() + (stashCount === 1 ? '' : 's'), color: '#2ECC71' } : null,
     needs[0] ? { label: needs.slice(0, 2).map(n => n.pos).join('/') + ' needs', color: 'var(--gold)' } : null,
     oldestStarter ? { label: 'Oldest starter ' + oldestStarter.pos + ' ' + oldestStarter.age, color: '#F0A500' } : null,
     bestPosition ? { label: bestPosition.pos + ' depth ' + bestPosition.count, color: bestPosition.color } : null,
   ].filter(Boolean);
+  const rosterSummaryParts = [
+    allPlayers.length + ' players',
+    sectionCounts.starter + ' starters',
+    sectionCounts.bench + ' bench',
+    ...(skinFeatures.showTaxi === false ? [] : [sectionCounts.taxi + ' taxi']),
+    sectionCounts.ir + ' IR',
+  ];
   const rosterTagMeta = {
     trade: { bg: 'rgba(240,165,0,0.13)', col: '#F0A500', lbl: 'Trade' },
     cut: { bg: 'rgba(231,76,60,0.13)', col: '#E74C3C', lbl: 'Cut' },
@@ -441,22 +468,32 @@ function MyTeamTab({
   const activePresetKey = Object.entries(COLUMN_PRESETS).find(([, cols]) => sameColumnSet(cols, visibleCols))?.[0] || 'custom';
   const activePresetMeta = COLUMN_PRESET_META[activePresetKey] || { label: 'Custom', tone: visibleCols.length + ' fields' };
   const isDeepData = activePresetKey === 'full';
+  const [rosterViewportWidth, setRosterViewportWidth] = React.useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => setRosterViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const isNarrowRoster = rosterViewportWidth <= 560;
+  const rosterTableCols = isNarrowRoster
+    ? ['pos', 'dhq', 'action'].filter(key => ROSTER_COLUMNS[key])
+    : visibleCols;
   const visibleColGroupStarts = new Set();
-  visibleCols.forEach((key, idx) => {
-    const prev = visibleCols[idx - 1];
+  rosterTableCols.forEach((key, idx) => {
+    const prev = rosterTableCols[idx - 1];
     if (idx > 0 && ROSTER_COLUMNS[key]?.group !== ROSTER_COLUMNS[prev]?.group) visibleColGroupStarts.add(key);
   });
-  const columnGroupLabelFor = (key) => ROSTER_COLUMNS[key]?.group ? ROSTER_COLUMNS[key].group.toUpperCase() : '';
-  const isCompactRows = rowDensity === 'compact';
+  const isCompactRows = rowDensity === 'compact' || isNarrowRoster;
   const rowHeight = isCompactRows ? 38 : 46;
-  const avatarSize = isCompactRows ? 26 : 30;
-  const playerNameSize = isCompactRows ? '0.78rem' : '0.84rem';
+  const avatarSize = isNarrowRoster ? 22 : (isCompactRows ? 26 : 30);
+  const playerNameSize = isNarrowRoster ? '0.74rem' : (isCompactRows ? '0.78rem' : '0.84rem');
   const columnGroups = ['core', 'dynasty', 'stats', 'scout'].map(group => ({
     group,
     columns: Object.entries(ROSTER_COLUMNS).filter(([, col]) => col.group === group),
   })).filter(g => g.columns.length > 0);
-  const playerColWidth = 292;
-  const visibleDataWidth = visibleCols.reduce((sum, key) => sum + parseInt(ROSTER_COLUMNS[key]?.width || '0', 10), 0);
+  const playerColWidth = isNarrowRoster ? 156 : 292;
+  const visibleDataWidth = rosterTableCols.reduce((sum, key) => sum + parseInt(ROSTER_COLUMNS[key]?.width || '0', 10), 0);
   const tableMinWidth = playerColWidth + visibleDataWidth;
   const setCustomColumns = (updater) => {
     setVisibleCols(prev => typeof updater === 'function' ? updater(prev) : updater);
@@ -478,17 +515,39 @@ function MyTeamTab({
   const addVisibleColumn = (key) => setCustomColumns(prev => prev.includes(key) ? prev : [...prev, key]);
   const activeColumnOrder = visibleCols.filter(key => ROSTER_COLUMNS[key]);
   const inactiveColumnCount = Object.keys(ROSTER_COLUMNS).filter(key => !visibleCols.includes(key)).length;
+  const formatHeight = h => h ? Math.floor(h / 12) + "'" + h % 12 + '"' : null;
+  const slotLabel = r => r.section === 'starter' ? 'Starter' : r.section === 'ir' ? 'IR' : r.section === 'taxi' ? 'Taxi' : 'Bench';
+  const getLeaguePositionRank = r => {
+    const allAtPos = (currentLeague.rosters || []).flatMap(ros => (ros.players || []).filter(pid => {
+      const pp = playersData[pid];
+      return pp && (normPos(pp.position) === r.pos);
+    })).map(pid => ({ pid, dhq: window.App?.LI?.playerScores?.[pid] || 0 })).sort((a, b) => b.dhq - a.dhq);
+    const rank = allAtPos.findIndex(x => x.pid === r.pid) + 1;
+    return rank > 0 ? rank : null;
+  };
+  const dynastyTierLabel = r => (typeof window.App?.isElitePlayer === 'function' ? window.App.isElitePlayer(r.pid) : r.dhq >= 7000) ? 'elite asset'
+    : r.dhq >= 4000 ? 'starter-grade asset'
+    : r.dhq >= 2000 ? 'depth asset'
+    : 'stash-level asset';
+  const buildDynastyRead = r => {
+    const rank = getLeaguePositionRank(r);
+    const valueLine = (r.dhq > 0 ? r.dhq.toLocaleString() + ' ' + valueShortLabel : 'Unscored ' + valueShortLabel) + (rank ? ' and ' + r.pos + rank + ' in this league' : '');
+    const productionLine = r.effectivePPG ? r.effectivePPG + ' PPG across ' + (r.effectiveGP || 0) + ' games' : 'No stable recent production sample';
+    const ageLine = r.age ? 'Age ' + r.age + ' is ' + (r.peakPhase === 'PRE' ? 'before the prime window' : r.peakPhase === 'PRIME' ? 'inside the prime window' : r.peakPhase === 'VET' ? 'in the veteran value band' : 'past the normal value window') : 'Age window unknown';
+    const trendLine = r.trend >= 15 ? 'production is rising' : r.trend <= -15 ? 'production is sliding' : 'production is steady';
+    return valueLine + ' makes him a ' + dynastyTierLabel(r) + '. ' + productionLine + '; ' + ageLine + ', so the current roster call is ' + String(r.rec || 'Hold').toLowerCase() + ' while ' + trendLine + '.';
+  };
 
   // renderCell — renders each data cell with FM-style coloring
   function renderCell(colKey, r) {
     const col = ROSTER_COLUMNS[colKey];
     const isGroupStart = visibleColGroupStarts.has(colKey);
-    const base = { width: col.width, minWidth: col.width, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isCompactRows ? '0.78rem' : '0.84rem', padding: '0 5px', borderLeft: isGroupStart ? '2px solid rgba(212,175,55,0.18)' : '1px solid rgba(255,255,255,0.026)', lineHeight: 1.1 };
+    const base = { width: col.width, minWidth: col.width, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isCompactRows ? '0.73rem' : '0.78rem', padding: '0 5px', borderLeft: isGroupStart ? '1px solid rgba(212,175,55,0.12)' : '1px solid rgba(255,255,255,0.024)', color: 'rgba(235,235,240,0.78)', lineHeight: 1.1 };
 
     switch(colKey) {
-      case 'pos': return <div key={colKey} style={{...base}}><span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '1px 4px', borderRadius: '2px', background: (posColors[r.pos]||'#666')+'22', color: posColors[r.pos]||'var(--silver)' }}>{r.pos}</span></div>;
-      case 'age': return <div key={colKey} style={{...base, background: ageBg(r.age, r.pos)}}><span style={{ color: ageCol(r.age, r.pos), fontWeight: 600 }}>{r.age||'\u2014'}</span></div>;
-      case 'dhq': return <div key={colKey} style={{...base, background: dhqBg(r.dhq)}}><span style={{ color: dhqCol(r.dhq), fontWeight: 700, fontFamily: 'var(--font-body)', fontSize: '0.82rem' }}>{r.dhq > 0 ? r.dhq.toLocaleString() : '\u2014'}</span></div>;
+      case 'pos': return <div key={colKey} style={{...base}}><span style={{ fontSize: '0.68rem', fontWeight: 650, color: posColors[r.pos]||'var(--silver)' }}>{window.App?.posLabel?.(r.pos) || (r.pos === 'DEF' ? 'D/ST' : r.pos)}</span></div>;
+      case 'age': return <div key={colKey} style={{...base, background: ageBg(r.age, r.pos)}}><span style={{ color: ageCol(r.age, r.pos), fontWeight: 550 }}>{r.age||'\u2014'}</span></div>;
+      case 'dhq': return <div key={colKey} style={{...base, background: dhqBg(r.dhq)}}><span style={{ color: dhqCol(r.dhq), fontWeight: 650, fontFamily: 'var(--font-body)', fontSize: '0.78rem' }}>{r.dhq > 0 ? r.dhq.toLocaleString() : '\u2014'}</span></div>;
       case 'ppg': {
         // Rolling PPG override — swap in last-N-games PPG when user toggled the window.
         // If a window is active but weekly data isn't ready for this player, fall back
@@ -503,7 +562,7 @@ function MyTeamTab({
           if (rolling > 0) { shown = rolling; marker = ' · L' + n; }
           else { marker = ' · Szn'; }
         }
-        return <div key={colKey} style={{...base, background: ppgBg(shown, r.pos)}}><span style={{ color: shown >= (posP75[r.pos]||10) ? '#2ECC71' : 'var(--silver)' }}>{shown > 0 ? shown : '\u2014'}{marker}</span></div>;
+        return <div key={colKey} style={{...base, background: ppgBg(shown, r.pos)}}><span style={{ color: shown >= (posP75[r.pos]||10) ? '#2ECC71' : 'var(--silver)', fontWeight: shown >= (posP75[r.pos]||10) ? 650 : 500 }}>{shown > 0 ? shown : '\u2014'}{marker}</span></div>;
       }
       case 'prev': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', opacity: 0.6 }}>{r.prevPPG > 0 ? r.prevPPG : '\u2014'}</span></div>;
       case 'trend': {
@@ -515,12 +574,12 @@ function MyTeamTab({
           return React.createElement('div', { className: 'wr-spark' }, ...heights.map((h, i) => React.createElement('div', { key: i, className: 'wr-spark-bar', style: { height: h + 'px', background: color } })));
         })();
         return <div key={colKey} style={{...base, background: trendBg(r.trend), flexDirection: 'column', gap: '1px'}}>
-          <span style={{ color: r.trend>=15?'#2ECC71':r.trend<=-15?'#E74C3C':'var(--silver)', fontWeight: 600, fontSize: '0.74rem' }}>{r.trend>0?'+'+r.trend+'%':r.trend<0?r.trend+'%':'\u2014'}</span>
+          <span style={{ color: r.trend>=15?'#2ECC71':r.trend<=-15?'#E74C3C':'var(--silver)', fontWeight: 550, fontSize: '0.7rem' }}>{r.trend>0?'+'+r.trend+'%':r.trend<0?r.trend+'%':'\u2014'}</span>
           {trendBars}
         </div>;
       }
-	      case 'peak': return <div key={colKey} style={{...base, flexDirection: 'column', gap: '1px'}}>
-	        <span style={{ fontSize: '0.76rem', fontWeight: 700, color: r.peakPhase==='PRIME'?'#2ECC71':r.peakPhase==='PRE'?'#3498DB':r.peakPhase==='VET'?'#F0A500':'#E74C3C' }}>{r.peakPhase}</span>
+		      case 'peak': return <div key={colKey} style={{...base, flexDirection: 'column', gap: '1px'}}>
+		        <span style={{ fontSize: '0.7rem', fontWeight: 650, color: r.peakPhase==='PRIME'?'#2ECC71':r.peakPhase==='PRE'?'#3498DB':r.peakPhase==='VET'?'#F0A500':'#E74C3C' }}>{r.peakPhase}</span>
         <div style={{ width: '30px', height: '3px', borderRadius: '1px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden', position: 'relative' }}>
           <div style={{ position:'absolute',left:0,top:0,height:'100%',width:'30%',background:'rgba(52,152,219,0.4)' }}></div>
           <div style={{ position:'absolute',left:'30%',top:0,height:'100%',width:'40%',background:'rgba(46,204,113,0.4)' }}></div>
@@ -531,7 +590,7 @@ function MyTeamTab({
       case 'action': {
         const ann = getPlayerAnnotation(r.pid);
         return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={ann?.text || ''}>
-          <span style={{ fontSize:'0.74rem',fontWeight:700,padding:'3px 8px',borderRadius:'4px',background:/sell/i.test(r.rec)?'rgba(231,76,60,0.15)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.18)':'rgba(212,175,55,0.15)',color:/sell/i.test(r.rec)?'#E74C3C':/buy|build|core/i.test(r.rec)?'#2ECC71':'var(--gold)',border:'1px solid '+(/sell/i.test(r.rec)?'rgba(231,76,60,0.3)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.3)':'rgba(212,175,55,0.3)') }}>{r.rec}</span>
+          <span style={{ fontSize:'0.68rem',fontWeight:650,padding:'2px 6px',borderRadius:'4px',background:/sell/i.test(r.rec)?'rgba(231,76,60,0.12)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.12)':'rgba(212,175,55,0.1)',color:/sell/i.test(r.rec)?'#E74C3C':/buy|build|core/i.test(r.rec)?'#2ECC71':'var(--gold)',border:'1px solid '+(/sell/i.test(r.rec)?'rgba(231,76,60,0.22)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.22)':'rgba(212,175,55,0.22)') }}>{r.rec}</span>
         </div>;
       }
       case 'gp': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.74rem' }}>{r.effectiveGP > 0 ? r.effectiveGP : '\u2014'}{r.curGP === 0 && r.prevGP > 0 ? '*' : ''}</span></div>;
@@ -540,12 +599,8 @@ function MyTeamTab({
       case 'college': return <div key={colKey} style={{...base, justifyContent: 'flex-start'}}><span style={{ color: 'var(--silver)', fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.p.college || '\u2014'}</span></div>;
       case 'nflDraft': { const dr = r.p.draft_round; const dp = r.p.draft_pick; const dy = r.p.draft_year; const dRound = dr || (dp ? Math.ceil(dp / 32) : null); const draftLabel = dRound ? (dy ? "'" + String(dy).slice(2) + ' ' : '') + 'Rd ' + dRound + (dp ? '.' + ((dp - 1) % 32 + 1) : '') : (r.p.undrafted === true || (r.p.years_exp > 0 && !dp && !dr) ? 'UDFA' : '\u2014'); return <div key={colKey} style={{...base}}><span style={{ color: dRound ? 'var(--silver)' : 'rgba(255,255,255,0.3)', fontSize: '0.74rem' }}>{draftLabel}</span></div>; }
       case 'posRankLg': {
-        const allAtPos = (currentLeague.rosters||[]).flatMap(ros => (ros.players||[]).filter(pid => {
-          const pp = playersData[pid];
-          return pp && (normPos(pp.position) === r.pos);
-        })).map(pid => ({pid, dhq: window.App?.LI?.playerScores?.[pid] || 0})).sort((a,b) => b.dhq - a.dhq);
-        const rank = allAtPos.findIndex(x => x.pid === r.pid) + 1;
-        return <div key={colKey} style={{...base}}><span style={{ color: rank<=3?'#2ECC71':rank<=8?'var(--gold)':'var(--silver)', fontWeight: rank<=3?700:400 }}>{rank > 0 ? '#'+rank : '\u2014'}</span></div>;
+        const rank = getLeaguePositionRank(r);
+        return <div key={colKey} style={{...base}}><span style={{ color: rank && rank<=3?'#2ECC71':rank && rank<=8?'var(--gold)':'var(--silver)', fontWeight: rank && rank<=3?650:450 }}>{rank ? '#'+rank : '\u2014'}</span></div>;
       }
       case 'posRankNfl': {
         const meta = r.meta;
@@ -603,79 +658,67 @@ function MyTeamTab({
   }
 
   return (
-    <div style={{ padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      <section style={{ background: 'rgba(20,20,26,0.78)', border: '1px solid rgba(255,255,255,0.075)', borderRadius: '10px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '14px', flexWrap: 'wrap' }}>
-          <div style={{ minWidth: 240, flex: '1 1 520px' }}>
-            <div style={{ fontSize: '0.62rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.14em', fontWeight: 800 }}>My Roster</div>
-            <div style={{ marginTop: '3px', display: 'flex', alignItems: 'center', gap: '9px', flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.45rem', lineHeight: 1, color: 'var(--white)', fontWeight: 700, letterSpacing: '0.02em' }}>{tierLabel} Roster</span>
-              {(() => {
-                const champs = window.App?.LI?.championships || {};
-                const myChampCount = Object.values(champs).filter(c => c.champion === myRoster?.roster_id).length;
-                if (myChampCount <= 0) return null;
-                return <span style={{ fontSize: '0.66rem', color: 'var(--gold)', fontWeight: 800, border: '1px solid rgba(212,175,55,0.24)', borderRadius: '999px', padding: '2px 8px', background: 'rgba(212,175,55,0.08)' }}>{myChampCount > 1 ? myChampCount + 'x ' : ''}Champion</span>;
-              })()}
-            </div>
-            <div style={{ marginTop: '5px', fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.78, lineHeight: 1.45 }}>
-              {allPlayers.length} players &middot; {sectionCounts.starter} starters &middot; {sectionCounts.bench} bench &middot; {sectionCounts.taxi} taxi &middot; {sectionCounts.ir} IR
-            </div>
-          </div>
+    <div style={{ padding: 'var(--card-pad, 10px 14px)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <section style={{ background: 'rgba(20,20,26,0.72)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '0.6rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 800 }}>My Roster</span>
+        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.12rem', lineHeight: 1, color: 'var(--white)', fontWeight: 700 }}>{tierLabel}</span>
+        <span style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.76 }}>
+          {rosterSummaryParts.join(' · ')}
+        </span>
+        {(() => {
+          const champs = window.App?.LI?.championships || {};
+          const myChampCount = Object.values(champs).filter(c => c.champion === myRoster?.roster_id).length;
+          if (myChampCount <= 0) return null;
+          return <span style={{ fontSize: '0.63rem', color: 'var(--gold)', fontWeight: 800, border: '1px solid rgba(212,175,55,0.22)', borderRadius: '999px', padding: '1px 7px', background: 'rgba(212,175,55,0.07)' }}>{myChampCount > 1 ? myChampCount + 'x ' : ''}Champion</span>;
+        })()}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '5px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {boardInsightChips.filter(chip => !/needs/i.test(chip.label)).slice(0, 3).map(chip => (
+            <span key={chip.label} style={{ fontSize: '0.62rem', color: chip.color, border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.028)', borderRadius: '999px', padding: '1px 7px', fontWeight: 700 }}>{chip.label}</span>
+          ))}
         </div>
-
-        {(boardInsightChips.length > 0 || needs.length > 0) && (
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {boardInsightChips.filter(chip => !/needs/i.test(chip.label)).slice(0, 2).map(chip => (
-              <span key={chip.label} style={{ fontSize: '0.66rem', color: chip.color, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.035)', borderRadius: '999px', padding: '2px 8px', fontWeight: 700, letterSpacing: '0.02em' }}>{chip.label}</span>
-            ))}
-            {needs.slice(0, 2).map(n => (
-              <span key={n.pos} style={{ fontSize: '0.66rem', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.2)', background: 'rgba(212,175,55,0.07)', borderRadius: '999px', padding: '2px 8px', fontWeight: 700, letterSpacing: '0.02em' }}>{n.pos} need</span>
-            ))}
-          </div>
-        )}
       </section>
 
-      <section style={{ background: 'rgba(20,20,26,0.78)', border: '1px solid rgba(255,255,255,0.075)', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div className="wr-module-toolbar">
+      <section style={{ background: 'rgba(20,20,26,0.72)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', padding: '8px 10px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px 12px', alignItems: 'center' }}>
+        <div className="wr-module-toolbar" style={{ marginBottom: 0, gap: '6px 8px', minWidth: 0 }}>
           <span className="wr-module-toolbar-label">Scope</span>
-          <div className="wr-module-nav">
-          {['All','Starters','Bench','Taxi','IR','Offense','IDP'].map(f => (
-            <button key={f} className={rosterFilter === f ? 'is-active' : ''} onClick={() => setRosterFilter(f)}>{f}</button>
-          ))}
+          <div className="wr-module-nav" style={{ padding: '2px', gap: '2px' }}>
+            {rosterFilterOptions.map(f => (
+              <button key={f} className={rosterFilter === f ? 'is-active' : ''} onClick={() => setRosterFilter(f)}>{f}</button>
+            ))}
           </div>
-          <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.66, whiteSpace: 'nowrap' }}>{filtered.length} of {allPlayers.length} shown</span>
         </div>
+        <span style={{ justifySelf: 'end', fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.62, whiteSpace: 'nowrap' }}>{filtered.length} / {allPlayers.length} shown</span>
 
-        <div className="wr-module-toolbar">
-          <span className="wr-module-toolbar-label">Columns</span>
-          <div className="wr-module-nav">
-          {Object.entries(COLUMN_PRESETS).map(([key, cols]) => (
-            <button key={key} className={activePresetKey === key ? 'is-active' : ''} onClick={() => { setVisibleCols(cols); setColPreset(key); }}>{COLUMN_PRESET_META[key]?.label || key}</button>
-          ))}
-          <button className={(showColPicker || activePresetKey === 'custom') ? 'is-active' : ''} onClick={() => setShowColPicker(!showColPicker)}>Customize</button>
+        <div className="wr-module-toolbar" style={{ marginBottom: 0, gap: '6px 8px', minWidth: 0 }}>
+          <span className="wr-module-toolbar-label">View</span>
+          <div className="wr-module-nav" style={{ padding: '2px', gap: '2px' }}>
+            {Object.entries(COLUMN_PRESETS).map(([key, cols]) => (
+              <button key={key} className={activePresetKey === key ? 'is-active' : ''} onClick={() => { setVisibleCols(cols); setColPreset(key); }}>{COLUMN_PRESET_META[key]?.label || key}</button>
+            ))}
+            <button className={(showColPicker || activePresetKey === 'custom') ? 'is-active' : ''} onClick={() => setShowColPicker(!showColPicker)}>Customize</button>
           </div>
           <span className="wr-module-toolbar-label">PPG</span>
-          <div className="wr-module-nav">
-          {[{k:'season',l:'Season'},{k:'l5',l:'L5'},{k:'l3',l:'L3'}].map(opt => (
-            <button key={opt.k} className={ppgWindow === opt.k ? 'is-active' : ''} onClick={() => setPpgWindow(opt.k)} title={opt.k === 'season' ? 'Season-to-date PPG' : 'Last ' + (opt.k === 'l5' ? 5 : 3) + ' games — requires weekly data'}>{opt.l}</button>
-          ))}
+          <div className="wr-module-nav" style={{ padding: '2px', gap: '2px' }}>
+            {[{k:'season',l:'Season'},{k:'l5',l:'L5'},{k:'l3',l:'L3'}].map(opt => (
+              <button key={opt.k} className={ppgWindow === opt.k ? 'is-active' : ''} onClick={() => setPpgWindow(opt.k)} title={opt.k === 'season' ? 'Season-to-date PPG' : 'Last ' + (opt.k === 'l5' ? 5 : 3) + ' games — requires weekly data'}>{opt.l}</button>
+            ))}
           </div>
-          <span className="wr-module-toolbar-label">Density</span>
-          <div className="wr-module-nav">
-          {[{k:'comfortable',l:'Comfort'},{k:'compact',l:'Compact'}].map(opt => (
-            <button key={opt.k} className={rowDensity === opt.k ? 'is-active' : ''} onClick={() => setRowDensity(opt.k)}>{opt.l}</button>
-          ))}
+          <span className="wr-module-toolbar-label">Rows</span>
+          <div className="wr-module-nav" style={{ padding: '2px', gap: '2px' }}>
+            {[{k:'comfortable',l:'Comfort'},{k:'compact',l:'Compact'}].map(opt => (
+              <button key={opt.k} className={rowDensity === opt.k ? 'is-active' : ''} onClick={() => setRowDensity(opt.k)}>{opt.l}</button>
+            ))}
           </div>
           <span className="wr-module-toolbar-label">Group</span>
-          <div className="wr-module-nav">
-          {GROUP_MODES.map(opt => (
-            <button key={opt.key} className={rosterGroupMode === opt.key ? 'is-active' : ''} onClick={() => setRosterGroupMode(opt.key)}>{opt.label}</button>
-          ))}
+          <div className="wr-module-nav" style={{ padding: '2px', gap: '2px' }}>
+            {GROUP_MODES.map(opt => (
+              <button key={opt.key} className={rosterGroupMode === opt.key ? 'is-active' : ''} onClick={() => setRosterGroupMode(opt.key)}>{opt.label}</button>
+            ))}
           </div>
         </div>
 
         {window.WR?.SavedViews?.SavedViewBar && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignSelf: 'center' }}>
             {React.createElement(window.WR.SavedViews.SavedViewBar, {
               surface: 'roster',
               leagueId: currentLeague?.id,
@@ -765,42 +808,35 @@ function MyTeamTab({
       )}
 
       {/* Roster table with inline expand cards */}
-      <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden', background: 'rgba(12,12,17,0.98)', boxShadow: '0 12px 32px rgba(0,0,0,0.25)' }}>
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.025)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontSize: '1.02rem', fontWeight: 700, letterSpacing: '0.04em' }}>Roster Board</div>
-            <div style={{ fontSize: '0.72rem', color: isDeepData ? 'var(--gold)' : 'var(--silver)', opacity: isDeepData ? 0.9 : 0.56, border: isDeepData ? '1px solid rgba(212,175,55,0.24)' : '1px solid rgba(255,255,255,0.08)', borderRadius: '999px', padding: '2px 8px', background: isDeepData ? 'rgba(212,175,55,0.08)' : 'rgba(255,255,255,0.035)' }}>{activePresetMeta.label} · {visibleCols.length} fields</div>
-            <div style={{ fontSize: '0.72rem', color: rosterGroupMode === 'none' ? 'var(--silver)' : 'var(--gold)', opacity: 0.68, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '999px', padding: '2px 8px', background: 'rgba(255,255,255,0.035)' }}>Grouped: {activeGroupModeLabel}</div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.48, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{activePresetMeta.tone}</div>
-            <div style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Sorted by {ROSTER_COLUMNS[rosterSort.key]?.shortLabel || (rosterSort.key === 'name' ? 'Player' : rosterSort.key)}
+      <div style={{ border: '1px solid rgba(255,255,255,0.075)', borderRadius: '8px', overflow: 'hidden', background: 'rgba(12,12,17,0.98)', boxShadow: '0 10px 24px rgba(0,0,0,0.2)' }}>
+        <div style={{ padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.018)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontSize: '0.96rem', fontWeight: 700 }}>Roster Board</div>
+            <div style={{ fontSize: '0.66rem', color: isDeepData ? 'var(--gold)' : 'var(--silver)', opacity: isDeepData ? 0.86 : 0.58 }}>{activePresetMeta.label} · {visibleCols.length} fields</div>
+            <div style={{ fontSize: '0.66rem', color: rosterGroupMode === 'none' ? 'var(--silver)' : 'var(--gold)', opacity: 0.62 }}>Grouped by {activeGroupModeLabel}</div>
+            <div style={{ marginLeft: 'auto', fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.52, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Sort: {ROSTER_COLUMNS[rosterSort.key]?.shortLabel || (rosterSort.key === 'name' ? 'Player' : rosterSort.key)}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '7px' }}>
-            {boardInsightChips.map(chip => (
-              <span key={chip.label} style={{ fontSize: '0.66rem', color: chip.color, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.035)', borderRadius: '999px', padding: '2px 8px', fontWeight: 700, letterSpacing: '0.02em' }}>{chip.label}</span>
-            ))}
-          </div>
         </div>
-        <div style={{ overflowX: 'auto', background: 'linear-gradient(90deg, rgba(255,255,255,0.02), transparent 12%, transparent 88%, rgba(255,255,255,0.018))' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'clip', background: 'linear-gradient(90deg, rgba(255,255,255,0.02), transparent 12%, transparent 88%, rgba(255,255,255,0.018))' }}>
           <div style={{ minWidth: tableMinWidth + 'px' }}>
             {/* Header row */}
-            <div style={{ display: 'flex', height: '40px', background: 'linear-gradient(180deg, rgba(212,175,55,0.12), rgba(212,175,55,0.055))', borderBottom: '1px solid rgba(212,175,55,0.24)', position: 'sticky', top: 0, zIndex: 5 }}>
-              <div title="Player" style={{ width: playerColWidth + 'px', flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: '0.78rem', fontWeight: 800, color: rosterSort.key === 'name' ? 'var(--white)' : 'var(--gold)', fontFamily: 'var(--font-body)', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none', borderRight: '1px solid rgba(212,175,55,0.2)', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 7, background: 'linear-gradient(180deg, #272315, #17150d)', boxShadow: '10px 0 18px rgba(0,0,0,0.24)' }}
+            <div style={{ display: 'flex', height: '32px', background: 'rgba(212,175,55,0.075)', borderBottom: '1px solid rgba(212,175,55,0.2)', position: 'sticky', top: 0, zIndex: 5 }}>
+              <div title="Player" style={{ width: playerColWidth + 'px', flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: '0.72rem', fontWeight: 750, color: rosterSort.key === 'name' ? 'var(--white)' : 'var(--gold)', fontFamily: 'var(--font-body)', letterSpacing: '0.035em', cursor: 'pointer', userSelect: 'none', borderRight: '1px solid rgba(212,175,55,0.15)', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 7, background: 'linear-gradient(180deg, #201d12, #14130f)', boxShadow: '8px 0 14px rgba(0,0,0,0.2)' }}
                 onClick={() => setRosterSort(prev => prev.key === 'name' ? {...prev, dir: prev.dir*-1} : {key: 'name', dir: 1})}>
-                Player{rosterSort.key === 'name' ? (rosterSort.dir === -1 ? ' \u25BC' : ' \u25B2') : ''}
+                Player{rosterSort.key === 'name' ? (rosterSort.dir === -1 ? ' v' : ' ^') : ''}
               </div>
               <div style={{ flex: 1, display: 'flex' }}>
-                {visibleCols.map(colKey => {
+                {rosterTableCols.map(colKey => {
                   const col = ROSTER_COLUMNS[colKey];
                   if (!col) return null;
                   const isSorted = rosterSort.key === colKey;
                   const isGroupStart = visibleColGroupStarts.has(colKey);
                   return (
                     <div key={colKey} title={col.label} onClick={() => setRosterSort(prev => prev.key === colKey ? {...prev, dir: prev.dir*-1} : {key: colKey, dir: 1})}
-                      style={{ width: col.width, minWidth: col.width, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: '0.76rem', fontWeight: 800, color: isSorted ? 'var(--white)' : 'var(--gold)', fontFamily: 'var(--font-body)', letterSpacing: '0.045em', cursor: 'pointer', userSelect: 'none', textTransform: 'uppercase', borderLeft: isGroupStart ? '2px solid rgba(212,175,55,0.28)' : '1px solid rgba(255,255,255,0.045)', padding: '0 4px', textAlign: 'center', lineHeight: 1.05, background: isSorted ? 'rgba(212,175,55,0.13)' : isGroupStart ? 'rgba(212,175,55,0.035)' : 'transparent' }}>
-                      {isGroupStart && <span style={{ fontSize: '0.44rem', color: 'var(--silver)', opacity: 0.52, letterSpacing: '0.08em', lineHeight: 1 }}>{columnGroupLabelFor(colKey)}</span>}
-                      <span>{col.shortLabel || col.label}{rosterSort.key === colKey ? (rosterSort.dir === -1 ? ' \u25BC' : ' \u25B2') : ''}</span>
+                      style={{ width: col.width, minWidth: col.width, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.67rem', fontWeight: isSorted ? 800 : 700, color: isSorted ? 'var(--white)' : 'rgba(212,175,55,0.86)', fontFamily: 'var(--font-body)', letterSpacing: '0.025em', cursor: 'pointer', userSelect: 'none', textTransform: 'uppercase', borderLeft: isGroupStart ? '1px solid rgba(212,175,55,0.16)' : '1px solid rgba(255,255,255,0.035)', padding: '0 3px', textAlign: 'center', lineHeight: 1.05, background: isSorted ? 'rgba(212,175,55,0.12)' : 'transparent' }}>
+                      <span>{col.shortLabel || col.label}{rosterSort.key === colKey ? (rosterSort.dir === -1 ? ' v' : ' ^') : ''}</span>
                     </div>
                   );
                 })}
@@ -810,10 +846,9 @@ function MyTeamTab({
             {/* Player rows + inline expand */}
             {filtered.map((r, idx) => {
               const isExpanded = expandedPid === r.pid;
-              const contract = window.NFL_CONTRACTS?.[r.pid];
               const rowGroupKey = getRowGroupKey(r);
               const startsPositionGroup = rosterGroupMode !== 'none' && (idx === 0 || getRowGroupKey(filtered[idx - 1]) !== rowGroupKey);
-              const rowBg = isExpanded ? 'rgba(212,175,55,0.075)' : idx % 2 === 1 ? 'rgba(255,255,255,0.024)' : 'rgba(255,255,255,0.008)';
+              const rowBg = isExpanded ? 'rgba(212,175,55,0.058)' : idx % 2 === 1 ? 'rgba(255,255,255,0.018)' : 'rgba(255,255,255,0.006)';
 
               const _recLower = (r.rec || '').toLowerCase();
           const actionClass = _recLower === 'sell now' || _recLower === 'sell' ? 'wr-row-sell' :
@@ -825,25 +860,26 @@ function MyTeamTab({
           return (
             <React.Fragment key={r.pid}>
               {startsPositionGroup && (
-                <div style={{ display: 'flex', height: isCompactRows ? '22px' : '24px', borderTop: idx === 0 ? 'none' : '1px solid rgba(212,175,55,0.14)', borderBottom: '1px solid rgba(255,255,255,0.035)', background: 'linear-gradient(90deg, rgba(212,175,55,0.075), rgba(212,175,55,0.025) 36%, rgba(255,255,255,0.012))' }}>
-                  <div style={{ width: playerColWidth + 'px', flexShrink: 0, position: 'sticky', left: 0, zIndex: 4, display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', background: 'linear-gradient(90deg, #15130e, #111117)', borderRight: '1px solid rgba(212,175,55,0.14)', boxShadow: '10px 0 18px rgba(0,0,0,0.18)' }}>
-                    <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.82rem', color: getRowGroupColor(r), fontWeight: 800, letterSpacing: '0.08em' }}>{getRowGroupLabel(r)}</span>
-                    <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{filteredPosCounts[rowGroupKey]} players</span>
+	                <div style={{ display: 'flex', height: isCompactRows ? '20px' : '22px', borderTop: idx === 0 ? 'none' : '1px solid rgba(212,175,55,0.1)', borderBottom: '1px solid rgba(255,255,255,0.032)', background: 'linear-gradient(90deg, rgba(212,175,55,0.05), rgba(255,255,255,0.01))' }}>
+	                  <div style={{ width: playerColWidth + 'px', flexShrink: 0, position: 'sticky', left: 0, zIndex: 4, display: 'flex', alignItems: 'center', gap: '7px', padding: '0 10px', background: 'linear-gradient(90deg, #14130f, #111117)', borderRight: '1px solid rgba(212,175,55,0.12)', boxShadow: '8px 0 14px rgba(0,0,0,0.16)' }}>
+	                    <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.76rem', color: getRowGroupColor(r), fontWeight: 750, letterSpacing: '0.06em' }}>{getRowGroupLabel(r)}</span>
+	                    <span style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{filteredPosCounts[rowGroupKey]} players</span>
                   </div>
                   <div style={{ flex: 1, borderLeft: '1px solid rgba(255,255,255,0.025)' }} />
                 </div>
               )}
               {/* Normal row */}
-              <div className={[actionClass, isUntouchable ? 'wr-untouchable' : ''].filter(Boolean).join(' ')} style={{ display: 'flex', overflow: 'visible', borderTop: 'none', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.035)', cursor: 'pointer', background: rowBg, transition: 'background 0.1s' }}
+              <div className={[actionClass, isUntouchable ? 'wr-untouchable' : ''].filter(Boolean).join(' ')} role="button" tabIndex={0} title="Open roster player detail" style={{ display: 'flex', overflow: 'visible', borderTop: 'none', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.035)', cursor: 'pointer', background: rowBg, transition: 'background 0.1s' }}
                 onClick={() => setExpandedPid(prev => prev === r.pid ? null : r.pid)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedPid(prev => prev === r.pid ? null : r.pid); } }}
                 onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = 'rgba(212,175,55,0.06)'; }}
                 onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = rowBg; }}>
                 {/* Frozen player info */}
-                <div style={{ width: playerColWidth + 'px', flexShrink: 0, height: rowHeight + 'px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 10px', borderRight: '1px solid rgba(212,175,55,0.12)', position: 'sticky', left: 0, zIndex: 3, background: 'inherit', boxShadow: '10px 0 18px rgba(0,0,0,0.18)' }}>
+	                <div style={{ width: playerColWidth + 'px', flexShrink: 0, height: rowHeight + 'px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 10px', borderRight: '1px solid rgba(212,175,55,0.1)', position: 'sticky', left: 0, zIndex: 3, background: 'inherit', boxShadow: '8px 0 14px rgba(0,0,0,0.16)' }}>
                   <div style={{ width: avatarSize + 'px', height: avatarSize + 'px', flexShrink: 0 }}><img src={'https://sleepercdn.com/content/nfl/players/thumb/'+r.pid+'.jpg'} alt="" onError={e=>e.target.style.display='none'} style={{ width: avatarSize + 'px', height: avatarSize + 'px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.08)' }} /></div>
                   <div style={{ overflow: 'hidden', flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontWeight: 700, color: 'var(--white)', fontSize: playerNameSize, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getPlayerName(r.pid)}</span>
+	                      <span style={{ fontWeight: 650, color: 'var(--white)', fontSize: playerNameSize, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getPlayerName(r.pid)}</span>
                       {inlineTag(slotTagMeta[r.section], 'slot-' + r.pid)}
                       {inlineTag(rosterTagMeta[window._playerTags?.[r.pid]], 'tag-' + r.pid)}
                       {dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title="Drop candidate (click to dismiss)" style={{ fontSize: '0.56rem', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: '#E74C3C', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
@@ -854,47 +890,42 @@ function MyTeamTab({
                 </div>
                 {/* Data columns */}
                 <div style={{ flex: 1, display: 'flex', height: rowHeight + 'px', overflow: 'hidden' }}>
-                  {visibleCols.map(colKey => ROSTER_COLUMNS[colKey] ? renderCell(colKey, r) : null)}
+                  {rosterTableCols.map(colKey => ROSTER_COLUMNS[colKey] ? renderCell(colKey, r) : null)}
                 </div>
               </div>
 
               {/* Inline expand card — Madden/FM style */}
               {isExpanded && (
-                <div style={{ borderBottom: '2px solid rgba(212,175,55,0.25)', background: 'linear-gradient(180deg, rgba(18,18,24,0.99), rgba(6,6,10,0.99))', padding: '16px 20px', animation: 'wrFadeIn 0.2s ease' }}>
+                <div style={{ borderBottom: '2px solid rgba(212,175,55,0.2)', background: 'linear-gradient(180deg, rgba(18,18,24,0.99), rgba(6,6,10,0.99))', padding: '12px 14px', animation: 'wrFadeIn 0.2s ease' }}>
                   {/* Player dossier */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 0.72fr) minmax(360px, 1.25fr) minmax(220px, 0.72fr)', gap: '12px', marginBottom: '14px', alignItems: 'stretch' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '82px minmax(0, 1fr)', gap: '12px', alignItems: 'center', background: 'rgba(255,255,255,0.026)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 0.82fr) minmax(420px, 1.45fr) minmax(220px, 0.72fr)', gap: '10px', marginBottom: '10px', alignItems: 'stretch' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: '10px', alignItems: 'center', background: 'rgba(255,255,255,0.022)', border: '1px solid rgba(255,255,255,0.065)', borderRadius: '8px', padding: '9px' }}>
                       <div style={{ flexShrink: 0, position: 'relative' }}>
-                        <img src={'https://sleepercdn.com/content/nfl/players/'+r.pid+'.jpg'} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} style={{ width: '78px', height: '78px', borderRadius: '10px', objectFit: 'cover', objectPosition: 'top', border: '2px solid rgba(212,175,55,0.28)' }} />
-                        <div style={{ display: 'none', width: '78px', height: '78px', borderRadius: '10px', background: 'var(--charcoal)', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', fontWeight: 700, color: 'var(--silver)', border: '2px solid rgba(212,175,55,0.2)' }}>{(r.p.first_name||'?')[0]}{(r.p.last_name||'?')[0]}</div>
-                        <div style={{ position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)', fontSize: '0.7rem', fontWeight: 700, padding: '1px 8px', borderRadius: '8px', background: (posColors[r.pos]||'#666')+'25', color: posColors[r.pos]||'var(--silver)', whiteSpace: 'nowrap' }}>{r.pos}</div>
+                        <img src={'https://sleepercdn.com/content/nfl/players/'+r.pid+'.jpg'} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} style={{ width: '72px', height: '72px', borderRadius: '8px', objectFit: 'cover', objectPosition: 'top', border: '1px solid rgba(212,175,55,0.24)' }} />
+                        <div style={{ display: 'none', width: '72px', height: '72px', borderRadius: '8px', background: 'var(--charcoal)', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', fontWeight: 700, color: 'var(--silver)', border: '1px solid rgba(212,175,55,0.2)' }}>{(r.p.first_name||'?')[0]}{(r.p.last_name||'?')[0]}</div>
+                        <div style={{ position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)', fontSize: '0.66rem', fontWeight: 700, padding: '1px 7px', borderRadius: '7px', background: (posColors[r.pos]||'#666')+'22', color: posColors[r.pos]||'var(--silver)', whiteSpace: 'nowrap' }}>{window.App?.posLabel?.(r.pos) || (r.pos === 'DEF' ? 'D/ST' : r.pos)}</div>
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.34rem', color: 'var(--white)', letterSpacing: '0.02em', lineHeight: 1.08, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.18rem', color: 'var(--white)', letterSpacing: '0.01em', lineHeight: 1.08, display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.p.full_name || getPlayerName(r.pid)}</span>
                         </div>
-                        <div style={{ fontSize: '0.76rem', color: 'var(--silver)', marginTop: '4px', lineHeight: 1.35 }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginTop: '4px', lineHeight: 1.4 }}>
                           {r.p.team || 'FA'} {'\u00B7'} Age {r.age || '?'} {'\u00B7'} {r.p.years_exp||0}yr exp
+                          {formatHeight(r.p.height) ? ' \u00B7 ' + formatHeight(r.p.height) : ''}
+                          {r.p.weight ? ' \u00B7 ' + r.p.weight + 'lbs' : ''}
                           {r.p.college ? ' \u00B7 '+r.p.college : ''}
                         </div>
                         {r.injury && <div style={{ fontSize: '0.72rem', color: '#E74C3C', fontWeight: 700, marginTop: '5px' }}>{r.injury}</div>}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.022)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '10px 12px', minWidth: 0 }}>
-                      <div style={{ fontSize: '0.62rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
-                      <div style={{ fontSize: '0.82rem', color: '#d8d8de', lineHeight: 1.42 }}>
-	                        {r.peakPhase === 'PRE' && r.dhq >= 4000 ? 'Rising asset with ' + r.peakYrsLeft + ' peak years ahead. Buy window closing.' :
-	                         r.peakPhase === 'PRIME' && r.dhq >= 7000 ? 'Elite producer in prime. Cornerstone dynasty asset.' :
-	                         r.peakPhase === 'PRIME' && r.dhq >= 4000 ? 'Solid starter in peak window. ' + r.peakYrsLeft + ' productive years left.' :
-	                         r.peakPhase === 'VET' ? 'Past elite peak but still in the valuable veteran band. ' + (r.valueYrsLeft ? r.valueYrsLeft + ' value years left.' : 'Final value year.') :
-	                         r.peakPhase === 'POST' ? 'Past value window \u2014 dynasty value declining. ' + (r.dhq >= 3000 ? 'Sell before the cliff.' : 'Move for any return.') :
-	                         r.dhq < 2000 ? 'Depth piece. Low dynasty value.' :
-                         'Moderate dynasty asset. Watch trajectory.'}
-                        {r.trend >= 20 ? ' Trending up ' + r.trend + '%.' : r.trend <= -20 ? ' Production down ' + Math.abs(r.trend) + '%.' : ''}
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.065)', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
+                      <div style={{ fontSize: '0.8rem', color: '#d8d8de', lineHeight: 1.42 }}>
+                        {buildDynastyRead(r)}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.022)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '10px 12px', minWidth: 0 }}>
-                      <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '7px' }}>Decision Stack</div>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.065)', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '7px' }}>Decision Stack</div>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '0.72rem', fontWeight: 800, fontFamily: 'var(--font-body)', padding: '3px 10px', borderRadius: '999px', background: /sell/i.test(r.rec) ? 'rgba(231,76,60,0.15)' : /buy|build|core/i.test(r.rec) ? 'rgba(46,204,113,0.15)' : 'rgba(212,175,55,0.12)', color: /sell/i.test(r.rec) ? '#E74C3C' : /buy|build|core/i.test(r.rec) ? '#2ECC71' : 'var(--gold)', letterSpacing: '0.03em' }}>{r.rec}</span>
                         <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px', background: dhqBg(r.dhq), color: dhqCol(r.dhq) }}>
@@ -903,7 +934,7 @@ function MyTeamTab({
                         <span style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: '999px', background: r.peakPhase === 'PRE' ? 'rgba(46,204,113,0.1)' : r.peakPhase === 'POST' ? 'rgba(231,76,60,0.1)' : 'rgba(212,175,55,0.08)', color: r.peakPhase === 'PRE' ? '#2ECC71' : r.peakPhase === 'POST' ? '#E74C3C' : 'var(--gold)', fontWeight: 700 }}>{r.peakPhase}</span>
                       </div>
                       <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '0.72rem', color: 'var(--silver)' }}>
-                        <div><span style={{ opacity: 0.55 }}>Slot </span><strong style={{ color: 'var(--white)' }}>{r.section === 'starter' ? 'Starter' : r.section === 'ir' ? 'IR' : r.section === 'taxi' ? 'Taxi' : 'Bench'}</strong></div>
+	                        <div><span style={{ opacity: 0.55 }}>Slot </span><strong style={{ color: 'var(--white)' }}>{slotLabel(r)}</strong></div>
                         <div><span style={{ opacity: 0.55 }}>Depth </span><strong style={{ color: 'var(--white)' }}>{r.p.depth_chart_order != null ? r.pos + (r.p.depth_chart_order + 1) : '\u2014'}</strong></div>
                         <div><span style={{ opacity: 0.55 }}>Peak </span><strong style={{ color: 'var(--white)' }}>{r.peakYrsLeft > 0 ? r.peakYrsLeft + ' yrs' : '\u2014'}</strong></div>
                         <div><span style={{ opacity: 0.55 }}>Trend </span><strong style={{ color: r.trend >= 15 ? '#2ECC71' : r.trend <= -15 ? '#E74C3C' : 'var(--white)' }}>{r.trend ? (r.trend > 0 ? '+' : '') + r.trend + '%' : '\u2014'}</strong></div>
@@ -912,7 +943,7 @@ function MyTeamTab({
                   </div>
 
                   {/* Stat boxes grid — Madden style */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '6px', marginBottom: '14px' }}>
+	                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: '6px', marginBottom: '10px' }}>
                     {(() => {
                       const dhqPct = Math.min(100, Math.round((r.dhq / 10000) * 100));
                       const dhqFilled = Math.round(dhqPct / 10);
@@ -925,12 +956,11 @@ function MyTeamTab({
                           return rank > 0 ? r.pos + rank : '\u2014';
                         })(), col: 'var(--gold)' },
                         { label: 'PPG', val: r.effectivePPG || '\u2014', col: r.effectivePPG >= (posP75[r.pos]||10) ? '#2ECC71' : 'var(--text-primary)' },
-                        { label: 'GP', val: r.effectiveGP || '\u2014', col: r.effectiveGP >= 14 ? '#2ECC71' : r.effectiveGP >= 10 ? 'var(--silver)' : '#E74C3C' },
-                        { label: 'TREND', val: r.trend ? (r.trend > 0 ? '+' : '') + r.trend + '%' : '\u2014', col: r.trend >= 15 ? '#2ECC71' : r.trend <= -15 ? '#E74C3C' : 'var(--silver)' },
-                        { label: 'DEPTH', val: r.p.depth_chart_order != null ? r.pos + (r.p.depth_chart_order + 1) : '\u2014', col: r.p.depth_chart_order != null && r.p.depth_chart_order <= 1 ? '#2ECC71' : 'var(--silver)' },
-                      ].map((s, i) => (
-                        <div key={i} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '8px 6px', textAlign: 'center' }}>
-                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', fontWeight: 600, color: s.col, letterSpacing: 0 }}>{s.val}</div>
+	                        { label: 'GP', val: r.effectiveGP || '\u2014', col: r.effectiveGP >= 14 ? '#2ECC71' : r.effectiveGP >= 10 ? 'var(--silver)' : '#E74C3C' },
+	                        { label: 'TREND', val: r.trend ? (r.trend > 0 ? '+' : '') + r.trend + '%' : '\u2014', col: r.trend >= 15 ? '#2ECC71' : r.trend <= -15 ? '#E74C3C' : 'var(--silver)' },
+	                      ].map((s, i) => (
+	                        <div key={i} style={{ background: 'rgba(255,255,255,0.026)', border: '1px solid rgba(255,255,255,0.055)', borderRadius: '7px', padding: '7px 6px', textAlign: 'center' }}>
+	                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1rem', fontWeight: 550, color: s.col, letterSpacing: 0 }}>{s.val}</div>
                           {s.gauge && <div className="wr-gauge" style={{ marginTop: '3px' }}>{Array.from({length: 10}, (_, gi) => <div key={gi} className={'wr-gauge-seg' + (gi < dhqFilled ? ' ' + dhqColor : '')}></div>)}</div>}
                           <div style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{s.label}</div>
                         </div>
@@ -938,20 +968,7 @@ function MyTeamTab({
                     })()}
                   </div>
 
-                  {/* Physical + Draft Profile */}
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' }}>
-                    <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Profile</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '4px', fontSize: '0.78rem' }}>
-                      <div><span style={{ color: 'var(--silver)', opacity: 0.6 }}>Ht </span><span style={{ color: 'var(--white)' }}>{r.p.height ? Math.floor(r.p.height/12)+"'"+r.p.height%12+'"' : '\u2014'}</span></div>
-                      <div><span style={{ color: 'var(--silver)', opacity: 0.6 }}>Wt </span><span style={{ color: 'var(--white)' }}>{r.p.weight ? r.p.weight+'lbs' : '\u2014'}</span></div>
-                      <div><span style={{ color: 'var(--silver)', opacity: 0.6 }}>Slot </span><span style={{ color: 'var(--white)' }}>{r.section === 'starter' ? 'Starter' : r.section === 'ir' ? 'IR' : r.section === 'taxi' ? 'Taxi' : 'Bench'}</span></div>
-                      <div><span style={{ color: 'var(--silver)', opacity: 0.6 }}>Exp </span><span style={{ color: 'var(--white)' }}>{r.p.years_exp || 0}yr</span></div>
-                      {r.p.college && <div><span style={{ color: 'var(--silver)', opacity: 0.6 }}>College </span><span style={{ color: 'var(--white)' }}>{r.p.college}</span></div>}
-                      {r.p.depth_chart_order != null && <div><span style={{ color: 'var(--silver)', opacity: 0.6 }}>NFL Depth </span><span style={{ color: r.p.depth_chart_order <= 1 ? '#2ECC71' : 'var(--white)' }}>{r.pos + (r.p.depth_chart_order + 1)}</span></div>}
-                    </div>
-                  </div>
-
-	                  {/* Age Curve visualization */}
+		                  {/* Age Curve visualization */}
 	                  {(() => {
 	                    const nP = r.pos === 'DE' || r.pos === 'DT' ? 'DL' : r.pos === 'CB' || r.pos === 'S' ? 'DB' : r.pos;
 	                    const curve = typeof window.App?.getAgeCurve === 'function'

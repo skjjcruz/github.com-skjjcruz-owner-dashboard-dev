@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://jcc100218.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hovnqztlbsgsywrbidbh.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <title>Dynasty HQ - Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
@@ -281,9 +282,12 @@
                 const auth = JSON.parse(existingLocal);
                 const inputHash = await hashPassword(password);
                 if (auth.username === username && auth.passwordHash === inputHash) {
-                    window.OD.acquireSessionToken(username, auth.isGifted ? password : undefined)
-                        .catch(() => {});
-                    window.location.href = 'index.html';
+                    const session = await window.OD.acquireSessionToken(username, password);
+                    if (session?.token) {
+                        window.location.href = 'index.html';
+                    } else {
+                        showError('This legacy login now requires a password-backed gifted account. Use email sign-in for Dynasty HQ accounts.');
+                    }
                 } else {
                     showError('Incorrect username or password');
                 }
@@ -294,7 +298,7 @@
         }
 
         // No local auth — authenticate via get-session-token Edge Function.
-        // Handles both gifted users (bcrypt server-side) and regular Sleeper users.
+        // Handles password-backed gifted/legacy users only.
         loginBtn.textContent = 'Verifying...';
         loginBtn.disabled = true;
         try {
@@ -313,27 +317,9 @@
             }
         } catch {}
 
-        // Fallback for regular Sleeper users when Edge Function is unreachable
-        loginBtn.textContent = 'Verifying Sleeper username...';
-        try {
-            const resp = await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(username)}`);
-            const sleeperUser = resp.ok ? await resp.json() : null;
-            if (!sleeperUser || !sleeperUser.user_id) {
-                showError('Sleeper username not found. Check spelling and try again.');
-                loginBtn.textContent = 'Access War Room';
-                loginBtn.disabled = false;
-                return;
-            }
-            const passwordHash = await hashPassword(password);
-            localStorage.setItem(AUTH_KEY, JSON.stringify({ username, passwordHash, createdAt: new Date().toISOString() }));
-            localStorage.setItem('od_locked_username_v2', username);
-            window.OD.acquireSessionToken(username).catch(() => {});
-            window.location.href = 'index.html';
-        } catch {
-            showError('Failed to verify Sleeper username. Check your connection and try again.');
-            loginBtn.textContent = 'Access War Room';
-            loginBtn.disabled = false;
-        }
+        showError('This legacy login now requires a password-backed gifted account. Use email sign-in for Dynasty HQ accounts.');
+        loginBtn.textContent = 'Access War Room';
+        loginBtn.disabled = false;
     });
 </script>
 

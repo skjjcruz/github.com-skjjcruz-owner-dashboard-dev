@@ -119,21 +119,35 @@ window.App.PlayerValue = (function () {
     );
     window.App.decayRates = window.App.decayRates || { QB:0.12, RB:0.22, WR:0.18, TE:0.16, K:0.08, DL:0.15, EDGE:0.15, LB:0.16, DB:0.18 };
 
-    // ── getPickValue ─────────────────────────────────────────────────
-    // Returns DHQ-equivalent value for a draft pick. Delegates to DHQ engine when available.
-    function getPickValue(season, round, totalTeams) {
-        // dhqPickValueFn already applies year discount internally
-        if (window.App?.LI?.dhqPickValueFn) {
-            const val = window.App.LI.dhqPickValueFn(season, round, Math.ceil((totalTeams || 12) / 2));
+    function pickValueBySlot(round, slotInRound, totalTeams, draftRounds) {
+        const rd = Math.max(1, Number(round) || 1);
+        const teams = Math.max(1, Number(totalTeams) || 12);
+        const slot = Math.max(1, Number(slotInRound) || Math.ceil(teams / 2));
+        const rounds = Math.max(1, Number(draftRounds) || DRAFT_ROUNDS);
+        const overall = (rd - 1) * teams + slot;
+        if (window.getPickValueBySlot) {
+            const val = window.getPickValueBySlot(rd, slot, teams, rounds);
             if (val > 0) return val;
         }
-        let value = PICK_VALUES[round] || 100;
         if (window.getIndustryPickValue) {
-            const numTeams = totalTeams || 12;
-            const midPick = (round - 1) * numTeams + Math.ceil(numTeams / 2);
-            const val = window.getIndustryPickValue(midPick, numTeams, DRAFT_ROUNDS);
-            if (val > 0) value = val;
+            const val = window.getIndustryPickValue(overall, teams, rounds);
+            if (val > 0) return val;
         }
+        if (PICK_VALUES_BY_SLOT[overall]) return PICK_VALUES_BY_SLOT[overall];
+        return PICK_VALUES[rd] || 100;
+    }
+
+    // ── getPickValue ─────────────────────────────────────────────────
+    // Returns DHQ-equivalent value for a draft pick. Delegates to DHQ engine when available.
+    function getPickValue(season, round, totalTeams, slotInRound, draftRounds) {
+        const teams = totalTeams || 12;
+        const slot = Number(slotInRound) || null;
+        // dhqPickValueFn already applies year discount internally
+        if (window.App?.LI?.dhqPickValueFn) {
+            const val = window.App.LI.dhqPickValueFn(season, round, slot || Math.ceil(teams / 2));
+            if (val > 0) return val;
+        }
+        let value = slot ? pickValueBySlot(round, slot, teams, draftRounds) : (PICK_VALUES[round] || 100);
         // Future year discount: 12% per year (matches dhq-engine.js)
         const curYear = parseInt(window.S?.season) || new Date().getFullYear();
         const pickYear = parseInt(season) || curYear;
@@ -324,6 +338,7 @@ window.App.PlayerValue = (function () {
         PICK_COLORS,
         POS_CEILINGS,
         getPickValue,
+        pickValueBySlot,
         getPickOverallSlot,
         resolvePickValue,
         projectPlayerValue,

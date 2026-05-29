@@ -21,41 +21,36 @@
 (function() {
     // ── DNA_TYPES (copied from trade-calc.js:26 — kept verbatim) ─────
     const DNA_TYPES = {
-        NONE: { label: '— Not Set —', color: 'var(--silver)', desc: '', taxes: [], multiplier: 1.0 },
+        NONE: { label: '— Not Set —', color: 'var(--silver)', desc: '', taxes: [] },
         FLEECER: {
             label: 'The Fleecer',
             color: '#E74C3C',
             desc: 'High activity, always hunting asymmetric value.',
-            taxes: ['Endowment Effect +15%', 'Expects to "win" the trade'],
-            multiplier: 0.85,
+            taxes: ['Endowment -5 pts', 'Surplus hunter'],
         },
         DOMINATOR: {
             label: 'The Dominator',
             color: '#E67E22',
-            desc: 'High ego, requires a perceived +30% margin to pull the trigger.',
-            taxes: ['Ego Premium +30%', 'Needs to feel superior', 'Grudge Tax if rejected'],
-            multiplier: 0.75,
+            desc: 'High ego, requires visible surplus to pull the trigger.',
+            taxes: ['Status Tax -18', 'Endowment -14', 'Loss Aversion -8'],
         },
         STALWART: {
             label: 'The Stalwart',
             color: '#5DADE2',
-            desc: 'High stability, prefers 1-for-1 lateral moves.',
-            taxes: ['Desire Tax on fan favorites', 'Prefers even-up deals'],
-            multiplier: 1.0,
+            desc: 'High stability, emotionally attached to their roster.',
+            taxes: ['Endowment -10', 'Loss Aversion -8'],
         },
         ACCEPTOR: {
             label: 'The Acceptor',
             color: '#2ECC71',
             desc: 'Low attachment, willing to sell for futures.',
-            taxes: ['Future Asset Bonus +20%', 'Discounts veterans -15%'],
-            multiplier: 1.15,
+            taxes: ['Rebuilding Discount +10', 'Endowment -3'],
         },
         DESPERATE: {
             label: 'The Desperate',
             color: '#BB8FCE',
             desc: 'High urgency triggered by injuries, bye-weeks, or playoff push.',
-            taxes: ['Panic Multiplier up to +40%', 'Time-sensitive window'],
-            multiplier: 1.3,
+            taxes: ['Panic Premium +14 to +26', 'Endowment -8'],
         },
     };
 
@@ -187,7 +182,7 @@
     }
 
     // ── calcAcceptanceLikelihood — CPU evaluates whether to accept ───
-    // Returns 0..100 likelihood percentage.
+    // Returns 5..95 likelihood percentage.
     //
     // Scout's version in reconai/shared/trade-engine.js uses a similar formula.
     // Inputs:
@@ -200,38 +195,18 @@
         const shared = window.App?.TradeEngine?.calcAcceptanceLikelihood || window.App?.calcAcceptanceLikelihood;
         if (typeof shared === 'function') return shared(theirGain, theirGive, theirDnaKey, taxes, theirAssess, myAssess);
 
-        // Defensive defaults
-        theirGain = theirGain || 0;
-        theirGive = theirGive || 1;
+        const totalA = Number(theirGain) || 0;
+        const totalB = Number(theirGive) || 0;
+        if (totalA <= 0 && totalB <= 0) return 50;
 
-        // Base delta: how much the CPU gains relative to what they give
-        const delta = (theirGain - theirGive) / theirGive;
+        const maxSide = Math.max(totalA, totalB, 1);
+        const diff = totalA - totalB;
+        const taxTotal = Array.isArray(taxes) ? taxes.reduce((s, t) => s + (Number(t.impact) || 0), 0) : 0;
+        const taxValueAdjust = (taxTotal / 200) * maxSide;
+        const normalizedSurplus = (diff + taxValueAdjust) / maxSide;
+        const likelihood = 50 + Math.round(normalizedSurplus * 200);
 
-        // DNA-required margin: how much +value the CPU expects to accept
-        const requiredMargin = {
-            DOMINATOR: 0.25, // Ego premium: needs +25%
-            FLEECER:   0.10, // Always hunting, accepts smaller edge
-            STALWART:  0.05, // Close to fair is fine
-            ACCEPTOR:  -0.05,// Will accept slightly under
-            DESPERATE: -0.15,// Will pay over
-            NONE:      0.05,
-        }[theirDnaKey] || 0.05;
-
-        // Start around 50% for fair trade, scale by how far delta exceeds required margin
-        let likelihood = 50 + Math.round((delta - requiredMargin) * 150);
-
-        // Apply psych taxes: sum their impacts (each as a percentage point delta)
-        if (Array.isArray(taxes)) {
-            const taxSum = taxes.reduce((s, t) => s + (t.impact || 0), 0);
-            likelihood += taxSum;
-        }
-
-        // Panic amplifier — panicking teams accept more readily
-        if (theirAssess && theirAssess.panic >= 3) {
-            likelihood += (theirAssess.panic - 2) * 5;
-        }
-
-        return Math.max(0, Math.min(100, Math.round(likelihood)));
+        return Math.max(5, Math.min(95, Math.round(likelihood)));
     }
 
     // ── fairnessGrade — A-F style grade on a trade's DHQ symmetry ────

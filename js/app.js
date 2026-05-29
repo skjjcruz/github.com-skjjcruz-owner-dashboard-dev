@@ -467,11 +467,10 @@
                         if (!lid) return;
                         try {
                             const tp = await fetch('https://api.sleeper.app/v1/league/' + lid + '/traded_picks').then(r => r.ok ? r.json() : []);
-                            if (tp?.length) {
-                                const norm = window.App?.normalizeTradedPicks;
-                                l.tradedPicks = norm ? norm(l.rosters || [], tp) : tp;
-                                allTradedPicks.push(...l.tradedPicks);
-                            }
+                            const norm = window.App?.normalizeTradedPicks;
+                            l.tradedPicks = (norm ? norm(l.rosters || [], tp || []) : (tp || []))
+                                .map(p => ({ ...p, league_id: String(lid) }));
+                            allTradedPicks.push(...l.tradedPicks);
                         } catch {}
                     }));
                     window.S.tradedPicks = allTradedPicks;
@@ -523,6 +522,14 @@
                         activeTab={activeTab}
                         onTabChange={handleTabChange}
                         sleeperUserId={sleeperUser?.user_id}
+                        settingsProps={{
+                            initDisplayName: customDisplayName,
+                            onDisplayNameSave: (name) => {
+                                setCustomDisplayName(name);
+                                window.OD.saveDisplayName(name);
+                            },
+                            leagueMates,
+                        }}
                         onOpenSettings={() => setShowSettings(true)}
                     />
                 </ErrorBoundary>
@@ -684,8 +691,8 @@
             try {
                 const year = parseInt(selectedYear);
                 // Persist credentials for Scout deep-link
-                if (espnS2) localStorage.setItem('espn_s2', espnS2);
-                if (swid)   localStorage.setItem('espn_swid', swid);
+                if (espnS2) { sessionStorage.setItem('espn_s2', espnS2); localStorage.removeItem('espn_s2'); }
+                if (swid)   { sessionStorage.setItem('espn_swid', swid); localStorage.removeItem('espn_swid'); }
                 const result = await window.ESPN.connectLeague(numericId, year, espnS2 || null, swid || null);
                 const league = {
                     id:              result.league.league_id,
@@ -730,7 +737,7 @@
                 // Store credentials
                 localStorage.setItem('mfl_league_id', leagueId);
                 localStorage.setItem('mfl_year', String(year));
-                if (apiKey) localStorage.setItem('mfl_api_key', apiKey);
+                if (apiKey) { sessionStorage.setItem('mfl_api_key', apiKey); localStorage.removeItem('mfl_api_key'); }
                 setMflPendingResult(result);
                 setMflFranchises(franchiseArr);
             } catch (e) {
@@ -769,13 +776,14 @@
 
         // Search connected leagues across active production platforms.
         const resumeLeague = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues].find(l => l.id === lastLeagueId);
+        const iconSrc = ((window.location.pathname || '').includes('/dist-preview/') ? '../' : '') + 'icon-192.png';
 
         return (
             <div className="app-container">
                 {/* ── Header ── */}
                 <header className="header">
                     <div className="header-brand">
-                        <img src="icon-192.png" alt="Logo" style={{ width:'44px',height:'44px',borderRadius:'10px',boxShadow:'0 2px 12px rgba(212,175,55,.3)' }} />
+                        <img src={iconSrc} alt="Logo" style={{ width:'44px',height:'44px',borderRadius:'10px',boxShadow:'0 2px 12px rgba(212,175,55,.3)' }} />
                         <div className="header-text">
                             <h1 className="owner-name" style={{ fontSize:'1.1rem',letterSpacing:'.06em' }}>WAR ROOM</h1>
                             <div className="header-subtitle">{String(displayName)}</div>
@@ -818,7 +826,7 @@
                                 <div className="hub-connect-card">
                                     <input id="wr-sleeper-input" placeholder="Sleeper username" onKeyDown={e => { if (e.key === 'Enter') { const v = e.target.value.trim(); if (v) { localStorage.setItem('od_auth_v1', JSON.stringify({sleeperUsername:v})); window.location.reload(); } } }} />
                                     <button className="hub-cta gold" onClick={() => { const v = document.getElementById('wr-sleeper-input')?.value?.trim(); if (v) { localStorage.setItem('od_auth_v1', JSON.stringify({sleeperUsername:v})); window.location.reload(); } }}>CONNECT</button>
-                                    <button className="hub-cta ghost" style={{ marginTop: '6px' }} onClick={() => { localStorage.setItem('od_auth_v1', JSON.stringify({sleeperUsername:'jcc100218'})); AppStorage.set(APP_WR_KEYS.DEMO_MODE, '1'); window.location.reload(); }}>Demo League</button>
+                                    <button className="hub-cta ghost" style={{ marginTop: '6px' }} onClick={() => { localStorage.setItem('od_auth_v1', JSON.stringify({sleeperUsername:'bigloco'})); AppStorage.set(APP_WR_KEYS.DEMO_MODE, '1'); window.location.reload(); }}>Demo League</button>
                                 </div>
                             ) : (
                                 <>
@@ -876,6 +884,18 @@
                             {!mflFranchises && (
                                 <div>
                                     <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '8px' }}>Enter your MFL League ID and year to connect.</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '6px', marginBottom: '10px' }}>
+                                        {[
+                                            ['Public', 'league XML'],
+                                            ['Private', 'API key'],
+                                            ['Team', 'franchise pick'],
+                                        ].map(([label, detail]) => (
+                                            <div key={label} style={{ border: '1px solid rgba(46,125,50,0.18)', background: 'rgba(46,125,50,0.06)', borderRadius: '6px', padding: '7px 8px', minWidth: 0 }}>
+                                                <strong style={{ display: 'block', color: '#81C784', fontSize: '0.7rem', fontFamily: 'var(--font-body)' }}>{label}</strong>
+                                                <span style={{ display: 'block', color: 'var(--silver)', fontSize: '0.62rem', opacity: 0.72, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                     <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
                                         <input id="wr-mfl-id" placeholder="League ID" style={{ flex: 1, padding: '8px 10px', background: 'var(--charcoal)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '6px', color: 'var(--white)', fontSize: '0.82rem', fontFamily: 'var(--font-body)' }} />
                                         <input id="wr-mfl-year" placeholder="Year" defaultValue="2026" style={{ width: '70px', padding: '8px 10px', background: 'var(--charcoal)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '6px', color: 'var(--white)', fontSize: '0.82rem', fontFamily: 'var(--font-body)', textAlign: 'center' }} />

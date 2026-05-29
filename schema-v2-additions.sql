@@ -16,6 +16,7 @@ create table if not exists public.app_users (
     avatar_url          text,
     email_verified      boolean default false,
     stripe_customer_id  text unique,
+    tutorial_state      jsonb default '{}'::jsonb,
 
     -- ── Platform usernames ────────────────────────────────────
     -- Users connect their accounts from any supported fantasy platform.
