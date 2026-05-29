@@ -5,26 +5,28 @@
 // in app_metadata so RLS policies can enforce per-user access.
 //
 // Auth strategies:
-//   • Gifted users  → password verified server-side with bcrypt
-//                     (legacy SHA-256 hashes are migrated on first use)
-//   • Regular users → Sleeper username verified via Sleeper API
+//   • Password-backed legacy/gifted users only. Username-only Sleeper lookup
+//     is not identity proof and must not mint database/RLS tokens.
 //
 // DEPLOY:
 //   supabase functions deploy get-session-token
 //
 // REQUIRED SECRETS (set once):
-//   supabase secrets set SUPABASE_JWT_SECRET=<your-jwt-secret>
+//   supabase secrets set JWT_SECRET=<your-jwt-secret>
 //   (find it: Supabase Dashboard → Settings → API → JWT Secret)
 // ============================================================
 
 import * as jose    from 'npm:jose';
 import bcrypt       from 'npm:bcryptjs';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import {
+    auditEvent,
+    checkRateLimit,
+    clearRateLimit,
+    clientIp,
+    handleOptions,
+    json,
+} from '../_shared/security.ts';
 
 const TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 const BCRYPT_ROUNDS     = 12;
@@ -40,89 +42,79 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 Deno.serve(async (req) => {
-    if (req.method === 'OPTIONS') {
-        return new Response(null, { headers: corsHeaders });
-    }
-
-    const json = (body: object, status = 200) =>
-        new Response(JSON.stringify(body), {
-            status,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+    const options = handleOptions(req);
+    if (options) return options;
 
     try {
         const { username, password } = await req.json();
+        const normalizedUsername = String(username || '').trim();
 
-        if (!username || typeof username !== 'string') {
-            return json({ error: 'username is required' }, 400);
+        if (!normalizedUsername) {
+            return json(req, { error: 'username is required' }, 400);
         }
 
-        const jwtSecret  = Deno.env.get('SUPABASE_JWT_SECRET');
+        const jwtSecret  = Deno.env.get('SUPABASE_JWT_SECRET') || Deno.env.get('JWT_SECRET');
         const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
         const supabaseUrl = Deno.env.get('SUPABASE_URL');
 
         if (!jwtSecret) {
-            return json({ error: 'SUPABASE_JWT_SECRET not configured — see SETUP.md' }, 500);
+            return json(req, { error: 'JWT_SECRET not configured — see SETUP.md' }, 500);
         }
         if (!serviceKey || !supabaseUrl) {
-            return json({ error: 'Supabase service credentials not available' }, 500);
+            return json(req, { error: 'Supabase service credentials not available' }, 500);
         }
 
         // ── Look up user row (service role bypasses RLS pre-auth) ──────────
         const admin = createClient(supabaseUrl, serviceKey);
+        const ipLimit = await checkRateLimit(admin, 'get-session-token:ip', clientIp(req), { limit: 40, windowSeconds: 900, lockoutSeconds: 900 });
+        const userLimit = await checkRateLimit(admin, 'get-session-token:username', normalizedUsername.toLowerCase(), { limit: 10, windowSeconds: 900, lockoutSeconds: 900 });
+        if (!ipLimit.allowed || !userLimit.allowed) {
+            await auditEvent(admin, req, 'get_session_token_rate_limited', 'blocked', { username: normalizedUsername }, {});
+            return json(req, { error: 'Too many attempts. Try again later.' }, 429);
+        }
+
         const { data: userRow } = await admin
             .from('users')
             .select('password_hash, is_gifted')
-            .eq('sleeper_username', username)
+            .eq('sleeper_username', normalizedUsername)
             .maybeSingle();
 
         const hasStoredPassword = userRow?.password_hash;
         let isGifted = userRow?.is_gifted ?? false;
 
-        // ── Gifted user — verify password ─────────────────────────────────
-        if (hasStoredPassword) {
-            if (!password) {
-                return json({ error: 'Password required for this account', isGifted: true }, 401);
+        if (!hasStoredPassword) {
+            await auditEvent(admin, req, 'get_session_token', 'blocked', { username: normalizedUsername }, { reason: 'passwordless_sleeper_disabled' });
+            return json(req, {
+                error: 'Passwordless Sleeper username sessions are disabled. Sign in with your Dynasty HQ account or use a password-backed gifted account.',
+                code: 'passwordless_sleeper_disabled',
+            }, 401);
+        }
+
+        if (!password) {
+            await auditEvent(admin, req, 'get_session_token', 'failure', { username: normalizedUsername }, { reason: 'password_required' });
+            return json(req, { error: 'Password required for this account', isGifted: true }, 401);
+        }
+
+        let passwordMatch = false;
+
+        if (isLegacySHA256(userRow.password_hash)) {
+            // Legacy hash — compare with SHA-256, then silently upgrade to bcrypt
+            const inputSha = await sha256Hex(password);
+            if (inputSha === userRow.password_hash) {
+                passwordMatch = true;
+                const newHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+                await admin
+                    .from('users')
+                    .update({ password_hash: newHash })
+                    .eq('sleeper_username', normalizedUsername);
             }
-
-            let passwordMatch = false;
-
-            if (isLegacySHA256(userRow.password_hash)) {
-                // Legacy hash — compare with SHA-256, then silently upgrade to bcrypt
-                const inputSha = await sha256Hex(password);
-                if (inputSha === userRow.password_hash) {
-                    passwordMatch = true;
-                    // Migrate to bcrypt
-                    const newHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-                    await admin
-                        .from('users')
-                        .update({ password_hash: newHash })
-                        .eq('sleeper_username', username);
-                }
-            } else {
-                // bcrypt hash
-                passwordMatch = await bcrypt.compare(password, userRow.password_hash);
-            }
-
-            if (!passwordMatch) {
-                return json({ error: 'Incorrect password', isGifted: true }, 401);
-            }
-
         } else {
-            // ── Regular Sleeper user — verify via Sleeper API ───────────────
-            try {
-                const resp = await fetch(
-                    `https://api.sleeper.app/v1/user/${encodeURIComponent(username)}`,
-                    { signal: AbortSignal.timeout(5000) }
-                );
-                const sleeperUser = resp.ok ? await resp.json() : null;
-                if (!sleeperUser?.user_id) {
-                    return json({ error: 'Sleeper username not found' }, 401);
-                }
-            } catch {
-                return json({ error: 'Could not verify Sleeper username — check your connection' }, 503);
-            }
-            isGifted = false;
+            passwordMatch = await bcrypt.compare(password, userRow.password_hash);
+        }
+
+        if (!passwordMatch) {
+            await auditEvent(admin, req, 'get_session_token', 'failure', { username: normalizedUsername }, { reason: 'bad_password' });
+            return json(req, { error: 'Incorrect password', isGifted: true }, 401);
         }
 
         // ── Issue JWT ──────────────────────────────────────────────────────
@@ -137,8 +129,8 @@ Deno.serve(async (req) => {
             role:          'anon',
             iat:           now,
             exp,
-            sub:           username,
-            app_metadata:  { sleeper_username: username, is_gifted: isGifted },
+            sub:           normalizedUsername,
+            app_metadata:  { sleeper_username: normalizedUsername, is_gifted: isGifted },
         };
 
         const secret = new TextEncoder().encode(jwtSecret);
@@ -146,7 +138,10 @@ Deno.serve(async (req) => {
             .setProtectedHeader({ alg: 'HS256' })
             .sign(secret);
 
-        return json({
+        await clearRateLimit(admin, 'get-session-token:username', normalizedUsername.toLowerCase());
+        await auditEvent(admin, req, 'get_session_token', 'success', { username: normalizedUsername }, { isGifted });
+
+        return json(req, {
             token,
             expiresAt: new Date(exp * 1000).toISOString(),
             isGifted,
@@ -154,6 +149,6 @@ Deno.serve(async (req) => {
 
     } catch (err: any) {
         console.error('[get-session-token] error:', err);
-        return json({ error: err.message || 'Internal server error' }, 500);
+        return json(req, { error: err.message || 'Internal server error' }, 500);
     }
 });

@@ -14,7 +14,8 @@
 // Schema (localStorage key: wr_alex_settings):
 //   alertThreshold:    0-100  minimum confidence % to surface an insight
 //   maxAlertsPerWeek:  1-20   cap on surfaced insight count
-//   minPointsDelta:    0-10   reserved — not yet enforced (lineup-scope)
+//   minPointsDelta:    0-10   smallest point swing needed for lineup-scope insights
+//   tradeAggression:   0-100  controls trade package range and acceptance floor
 //   focus: {
 //     startSit:  bool
 //     trades:    bool
@@ -37,7 +38,7 @@
         minPointsDelta: 2.5,
         tradeAggression: 50,
         tradePriority: {
-            positions: { QB: false, RB: false, WR: false, TE: false, DL: false, LB: false, DB: false, K: false },
+            positions: { QB: false, RB: false, WR: false, TE: false, K: false, DEF: false, DL: false, LB: false, DB: false },
             picks: { '2026': true, '2027': true, '2028': false },
             faab: true,
         },
@@ -79,13 +80,27 @@
 
     function get() { return load(); }
 
+    function actionableTradeAcceptanceFloor(settings) {
+        const source = settings && typeof settings === 'object' ? settings : load();
+        const raw = Number(source?.tradeAggression);
+        const aggression = Number.isFinite(raw)
+            ? Math.max(0, Math.min(100, raw))
+            : DEFAULTS.tradeAggression;
+        if (aggression <= 50) {
+            return Math.round(75 + ((50 - aggression) / 50) * 10);
+        }
+        return Math.round(75 - ((aggression - 50) / 50) * 20);
+    }
+
     // Test an insight against the user's settings. Insights come through
     // with shape { severity, confidence?, focus? (string) }. Returns true
     // when the user wants to see it given current thresholds + focus.
     function shouldShow(insight) {
         if (!insight) return false;
         const s = load();
+        if (s.channel?.inApp === false) return false;
         if (insight.confidence != null && insight.confidence < (s.alertThreshold || 0)) return false;
+        if (insight.pointsDelta != null && Math.abs(Number(insight.pointsDelta) || 0) < (s.minPointsDelta || 0)) return false;
         // No focus tag => always allowed (infrastructural insight without a
         // domain, e.g., AI-generated novel finds). Tagged insights must have
         // their focus area enabled.
@@ -119,6 +134,7 @@
         EVENT_NAME,
         get,
         save,
+        actionableTradeAcceptanceFloor,
         shouldShow,
         filterInsights,
         invalidate,

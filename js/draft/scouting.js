@@ -32,7 +32,6 @@
             const last = parts[parts.length - 1];
             keys.add(`${first} ${last}`);
             keys.add(`${first[0]} ${last}`);
-            keys.add(last);
         }
         return [...keys].filter(Boolean);
     }

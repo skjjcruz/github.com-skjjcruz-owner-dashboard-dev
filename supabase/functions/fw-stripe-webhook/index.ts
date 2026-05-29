@@ -32,7 +32,7 @@ const SUPABASE_SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const STRIPE_SECRET_KEY     = Deno.env.get('STRIPE_SECRET_KEY')!;
 const STRIPE_WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET')!;
 
-const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' as any });
 const admin  = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 Deno.serve(async (req) => {
@@ -88,7 +88,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
   const userId       = subscription.metadata.user_id;
-  const productSlug  = subscription.metadata.product_slug ?? 'war_room';
+  const productSlug  = normalizeProductSlug(subscription.metadata.product_slug ?? 'war_room');
 
   if (!userId) {
     console.error('No user_id in subscription metadata');
@@ -122,7 +122,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     .from('subscriptions')
     .update({
       status,
-      tier:                 status === 'active' ? 'pro' : 'free',
+      tier:                 (status === 'active' || status === 'trialing') ? 'pro' : 'free',
       current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
       current_period_end:   new Date(subscription.current_period_end   * 1000).toISOString(),
       cancel_at_period_end: subscription.cancel_at_period_end,
@@ -156,11 +156,29 @@ function mapStripeStatus(stripeStatus: string): string {
     case 'active':   return 'active';
     case 'trialing': return 'trialing';
     case 'past_due': return 'past_due';
+    case 'incomplete':
+      return 'incomplete';
     case 'canceled':
     case 'unpaid':
     case 'incomplete_expired':
       return 'canceled';
     default:
-      return 'active';
+      console.warn('[stripe-webhook] Unknown subscription status:', stripeStatus);
+      return 'incomplete';
   }
+}
+
+function normalizeProductSlug(value: unknown): string {
+  const raw = String(value || 'war_room').trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    'war-room': 'war_room',
+    warroom: 'war_room',
+    'dynasty-hq': 'dynast_hq',
+    dynasty_hq: 'dynast_hq',
+    scout: 'dynast_hq',
+    'recon-ai': 'dynast_hq',
+    recon_ai: 'dynast_hq',
+    pro: 'bundle',
+  };
+  return aliases[raw] || raw;
 }

@@ -28,7 +28,9 @@ deploy — no War Room deploy needed.
 | `dhq-providers.js` | Provider scoring logic | `dynastyValue()`, `getPlayerAction()` |
 | `dhq-ai.js` | AI integration (Claude/Gemini) | `App.askAlex()` |
 | `ai-dispatch.js` | AI message queue and routing | `App.AI.*` |
+| `intelligence-context.js` | App-wide context and recommendation contracts | `App.Intelligence.*` |
 | `analytics-engine.js` | League-wide analytics | `App.Analytics.*` |
+| `assistant-tutorial.js` | Shared first-launch GM briefing tutorial | `App.AssistantTutorial.*` |
 | `team-assess.js` | Roster/team strength assessment | `assessTeamFromGlobal()`, `assessAllTeamsFromGlobal()` |
 | `player-modal.js` | Reusable player detail modal | `App.showPlayerModal()` |
 | `sleeper-api.js` | Sleeper Fantasy API wrapper | `window.Sleeper.*` |
@@ -40,7 +42,7 @@ deploy — no War Room deploy needed.
 
 ### Load Order (required)
 
-`constants.js` → `utils.js` → everything else
+`constants.js` → `utils.js` → `dhq-core.js` and `intelligence-context.js` before `dhq-engine.js` → everything else
 
 `constants.js` must come first because `posColor()` in `utils.js` reads
 `App.POS_COLORS`, which `constants.js` defines.

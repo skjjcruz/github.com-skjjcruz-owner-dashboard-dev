@@ -5,11 +5,11 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const SOURCE = path.resolve(ROOT, '..', 'reconai', 'shared');
 const TARGET = path.join(ROOT, 'reconai-shared');
 
 const FILES = [
   'app-config.js',
+  'bug-capture.js',
   'constants.js',
   'utils.js',
   'storage.js',
@@ -24,10 +24,12 @@ const FILES = [
   'pick-value-model.js',
   'dhq-providers.js',
   'dhq-core.js',
+  'intelligence-context.js',
   'dhq-engine.js',
   'team-assess.js',
   'analytics-engine.js',
   'dhq-ai.js',
+  'assistant-tutorial.js',
   'ai-dispatch.js',
   'strategy.js',
   'trade-engine.js',
@@ -37,8 +39,27 @@ const FILES = [
   'rookie-data.js',
 ];
 
-if (!fs.existsSync(SOURCE)) {
-  console.error(`[sync-reconai-shared] Missing source directory: ${SOURCE}`);
+function findSourceDir() {
+  const candidates = [
+    process.env.RECONAI_SHARED_SOURCE,
+    path.resolve(ROOT, '..', 'reconai', 'shared'),
+  ].filter(Boolean);
+
+  return candidates.find(candidate => fs.existsSync(candidate)) || null;
+}
+
+function hasBundledSnapshot() {
+  return FILES.every(file => fs.existsSync(path.join(TARGET, file)));
+}
+
+const SOURCE = findSourceDir();
+
+if (!SOURCE) {
+  if (hasBundledSnapshot()) {
+    console.log('[sync-reconai-shared] Source checkout unavailable; using bundled reconai-shared snapshot');
+    process.exit(0);
+  }
+  console.error('[sync-reconai-shared] Missing ReconAI shared source and bundled snapshot');
   process.exit(1);
 }
 

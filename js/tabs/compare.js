@@ -9,6 +9,7 @@
 
 function CompareTab({
     currentLeague,
+    leagueSkin,
     myRoster,
     playersData,
     statsData,
@@ -17,6 +18,10 @@ function CompareTab({
     sleeperUserId,
 }) {
     const sameId = (a, b) => String(a) === String(b);
+    const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
+    const skinFeatures = resolvedLeagueSkin?.features || {};
+    const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
+    const valueLabel = resolvedLeagueSkin?.vocabulary?.valueLabel || 'DHQ Value';
     const leagueId = currentLeague?.league_id || currentLeague?.id || '';
     const [compareTeamId, setCompareTeamId] = React.useState(() => {
         try {
@@ -201,7 +206,8 @@ function CompareTab({
     const normPos = window.App.normPos;
     const posColors = window.App.POS_COLORS || {};
     const scores = window.App?.LI?.playerScores || {};
-    const allPositions = ['QB','RB','WR','TE','K','DL','LB','DB'];
+    const allPositions = ['QB','RB','WR','TE','K','DEF','DL','LB','DB'];
+    const posLabel = pos => window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
     const rosterById = {};
     (currentLeague?.rosters || []).forEach(r => { rosterById[String(r.roster_id)] = r; });
     const getRosterTotal = (roster) => (roster?.players || []).reduce((sum, pid) => sum + (scores[pid] || scores[String(pid)] || 0), 0);
@@ -321,18 +327,18 @@ function CompareTab({
     const divisionKeys = Object.keys(divisions).sort((a, b) => Number(a) - Number(b));
     const myDivision = getDivisionKey(myRoster);
     const activeDivision = selectedDivision || myDivision || divisionKeys[0] || '0';
-    const validOpponentIdSet = new Set(opponentOptions.map(t => String(t.rosterId)));
-    const cleanManualIds = manualCompareIds.filter(id => validOpponentIdSet.has(String(id)));
+    const validTeamIdSet = new Set(allTeamOptions.map(t => String(t.rosterId)));
+    const cleanManualIds = manualCompareIds.filter(id => validTeamIdSet.has(String(id)));
     const defaultGroupIds = [...opponentOptions]
         .sort((a, b) => b.dhq - a.dhq)
         .slice(0, Math.min(3, opponentOptions.length))
         .map(t => String(t.rosterId));
     const selectedGroupIds = cleanManualIds.length >= 2 ? cleanManualIds : defaultGroupIds;
     const selectedGroupTeams = selectedGroupIds
-        .map(id => opponentOptions.find(t => sameId(t.rosterId, id)))
+        .map(id => allTeamOptions.find(t => sameId(t.rosterId, id)))
         .filter(Boolean);
-    const selectedDivisionTeams = (divisions[activeDivision] || [])
-        .filter(t => !sameId(t.rosterId, myRoster.roster_id));
+    const selectedDivisionTeams = divisions[activeDivision] || [];
+    const divisionIncludesUser = sameId(activeDivision, myDivision);
     const selectedLeagueTeams = opponentOptions;
     const setScope = (scope) => {
         setCompareScope(scope);
@@ -345,7 +351,7 @@ function CompareTab({
     const pickManualPreset = (preset) => {
         if (preset === 'threats') setManualCompareIds([...opponentOptions].sort((a, b) => b.dhq - a.dhq).slice(0, 4).map(t => String(t.rosterId)));
         else if (preset === 'closest') setManualCompareIds([...opponentOptions].sort((a, b) => a.gap - b.gap).slice(0, 4).map(t => String(t.rosterId)));
-        else if (preset === 'division') setManualCompareIds(selectedDivisionTeams.map(t => String(t.rosterId)));
+        else if (preset === 'division') setManualCompareIds((divisions[myDivision] || []).map(t => String(t.rosterId)));
         else if (preset === 'clear') setManualCompareIds([]);
     };
 
@@ -513,17 +519,17 @@ function CompareTab({
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px' }}>
                         <div>
                             <div style={{ ...labelStyle, color: 'var(--gold)', opacity: 1 }}>Group Builder</div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.68 }}>Pick any 2 or more opponents for a custom field.</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.68 }}>Pick any 2 or more teams for a custom field. Your team is optional.</div>
                         </div>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            <button onClick={() => pickManualPreset('threats')} style={smallButtonStyle(false)}>Top 4 DHQ</button>
+                            <button onClick={() => pickManualPreset('threats')} style={smallButtonStyle(false)}>Top 4 {valueShortLabel}</button>
                             <button onClick={() => pickManualPreset('closest')} style={smallButtonStyle(false)}>Closest 4</button>
                             <button onClick={() => pickManualPreset('division')} style={smallButtonStyle(false)}>My Division</button>
                             <button onClick={() => pickManualPreset('clear')} style={smallButtonStyle(false)}>Clear</button>
                         </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '7px' }}>
-                        {opponentOptions.map(t => {
+                        {allTeamOptions.map(t => {
                             const active = selectedGroupIds.map(String).includes(String(t.rosterId));
                             const manualActive = manualCompareIds.map(String).includes(String(t.rosterId));
                             return (
@@ -537,7 +543,7 @@ function CompareTab({
                                     textAlign: 'left',
                                 }}>
                                     <div style={{ fontWeight: 850, color: manualActive ? 'var(--gold)' : 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
-                                    <div style={{ ...mono, fontSize: '0.66rem', opacity: 0.66, marginTop: '2px' }}>{t.dhq.toLocaleString()} DHQ</div>
+                                    <div style={{ ...mono, fontSize: '0.66rem', opacity: 0.66, marginTop: '2px' }}>{t.dhq.toLocaleString()} {valueShortLabel}{sameId(t.rosterId, myRoster.roster_id) ? ' · You' : ''}</div>
                                 </button>
                             );
                         })}
@@ -560,24 +566,32 @@ function CompareTab({
         return null;
     };
 
-    const renderFieldAnalysis = (selectedTeams, fieldLabel, fieldSub) => {
-        const opponents = selectedTeams.filter(Boolean);
-        if (!opponents.length) {
+    const renderFieldAnalysis = (selectedTeams, fieldLabel, fieldSub, options = {}) => {
+        const includeUser = options.includeUser !== false;
+        const selectedTeamList = selectedTeams.filter(Boolean);
+        const selectedHasUser = selectedTeamList.some(t => sameId(t.rosterId, myRoster.roster_id));
+        const profilesById = new Map();
+        const addProfile = (profile) => {
+            if (profile && !profilesById.has(profile.rosterId)) profilesById.set(profile.rosterId, profile);
+        };
+        if (includeUser && !selectedHasUser) addProfile(teamProfile(null, true));
+        selectedTeamList.forEach(t => addProfile(teamProfile(t, sameId(t.rosterId, myRoster.roster_id))));
+        const profiles = Array.from(profilesById.values());
+        if (profiles.length < 2) {
             return <div style={{ ...panelStyle, padding: '24px', color: 'var(--silver)' }}>Select at least two teams to build a field comparison.</div>;
         }
-        const myProfile = teamProfile(null, true);
-        const opponentProfiles = opponents.map(t => teamProfile(t, false)).filter(Boolean);
-        const profiles = [myProfile, ...opponentProfiles].filter(Boolean);
         const sortedProfiles = [...profiles].sort((a, b) => b.totalAssets - a.totalAssets);
-        const myRank = sortedProfiles.findIndex(p => p.isMine) + 1;
-        const fieldAvg = opponentProfiles.length ? Math.round(opponentProfiles.reduce((s, p) => s + p.total, 0) / opponentProfiles.length) : 0;
-        const starterAvg = opponentProfiles.length ? Math.round(opponentProfiles.reduce((s, p) => s + p.starterTotal, 0) / opponentProfiles.length) : 0;
-        const pickAvg = opponentProfiles.length ? Math.round(opponentProfiles.reduce((s, p) => s + (p.pickCapital?.totalValue || 0), 0) / opponentProfiles.length) : 0;
-        const faabAvg = opponentProfiles.length ? Math.round(opponentProfiles.reduce((s, p) => s + (p.faab?.remaining || 0), 0) / opponentProfiles.length) : 0;
-        const percentile = profiles.length > 1 ? Math.round((1 - ((myRank - 1) / (profiles.length - 1))) * 100) : 100;
+        const focusProfile = profiles.find(p => p.isMine) || profiles[0];
+        const comparisonProfiles = profiles.filter(p => !sameId(p.rosterId, focusProfile.rosterId));
+        const focusRank = Math.max(1, sortedProfiles.findIndex(p => sameId(p.rosterId, focusProfile.rosterId)) + 1);
+        const fieldAvg = comparisonProfiles.length ? Math.round(comparisonProfiles.reduce((s, p) => s + p.total, 0) / comparisonProfiles.length) : 0;
+        const starterAvg = comparisonProfiles.length ? Math.round(comparisonProfiles.reduce((s, p) => s + p.starterTotal, 0) / comparisonProfiles.length) : 0;
+        const pickAvg = comparisonProfiles.length ? Math.round(comparisonProfiles.reduce((s, p) => s + (p.pickCapital?.totalValue || 0), 0) / comparisonProfiles.length) : 0;
+        const faabAvg = comparisonProfiles.length ? Math.round(comparisonProfiles.reduce((s, p) => s + (p.faab?.remaining || 0), 0) / comparisonProfiles.length) : 0;
+        const percentile = profiles.length > 1 ? Math.round((1 - ((focusRank - 1) / (profiles.length - 1))) * 100) : 100;
         const posDiffs = allPositions.map(pos => {
-            const avg = opponentProfiles.length ? opponentProfiles.reduce((s, p) => s + (p.posTotals[pos] || 0), 0) / opponentProfiles.length : 0;
-            return { pos, avg, mine: myProfile.posTotals[pos] || 0, diff: Math.round((myProfile.posTotals[pos] || 0) - avg) };
+            const avg = comparisonProfiles.length ? comparisonProfiles.reduce((s, p) => s + (p.posTotals[pos] || 0), 0) / comparisonProfiles.length : 0;
+            return { pos, avg, mine: focusProfile.posTotals[pos] || 0, diff: Math.round((focusProfile.posTotals[pos] || 0) - avg) };
         });
         const strongest = [...posDiffs].sort((a, b) => b.diff - a.diff)[0];
         const weakest = [...posDiffs].sort((a, b) => a.diff - b.diff)[0];
@@ -609,14 +623,18 @@ function CompareTab({
             return { pos, columns, maxLen, leaderId: leader?.profile?.rosterId };
         }).filter(summary => summary.maxLen > 0) : [];
         const fieldCards = [
-            { label: 'Asset Rank', value: '#' + myRank + ' of ' + profiles.length, sub: percentile + 'th percentile incl. picks', color: myRank <= Math.ceil(profiles.length / 3) ? '#2ECC71' : myRank <= Math.ceil(profiles.length * 0.66) ? 'var(--gold)' : '#E74C3C' },
-            { label: 'Roster vs Field', value: (myProfile.total - fieldAvg > 0 ? '+' : '') + (myProfile.total - fieldAvg).toLocaleString(), sub: myProfile.total.toLocaleString() + ' vs ' + fieldAvg.toLocaleString() + ' avg', color: myProfile.total >= fieldAvg ? '#2ECC71' : '#E74C3C' },
-            { label: 'Starter vs Field', value: (myProfile.starterTotal - starterAvg > 0 ? '+' : '') + (myProfile.starterTotal - starterAvg).toLocaleString(), sub: myProfile.starterTotal.toLocaleString() + ' vs ' + starterAvg.toLocaleString() + ' avg', color: myProfile.starterTotal >= starterAvg ? '#2ECC71' : '#E74C3C' },
-            { label: 'Picks vs Field', value: ((myProfile.pickCapital.totalValue - pickAvg) > 0 ? '+' : '') + (myProfile.pickCapital.totalValue - pickAvg).toLocaleString(), sub: myProfile.pickCapital.count + ' picks vs ' + Math.round(opponentProfiles.reduce((s, p) => s + (p.pickCapital?.count || 0), 0) / Math.max(opponentProfiles.length, 1)) + ' avg', color: myProfile.pickCapital.totalValue >= pickAvg ? '#2ECC71' : '#E74C3C' },
-            { label: 'FAAB vs Field', value: myProfile.faab.isFaab ? ((myProfile.faab.remaining - faabAvg) > 0 ? '+$' : '-$') + Math.abs(myProfile.faab.remaining - faabAvg).toLocaleString() : '—', sub: myProfile.faab.label, color: !myProfile.faab.isFaab ? 'var(--silver)' : myProfile.faab.remaining >= faabAvg ? '#2ECC71' : '#E74C3C' },
-            { label: 'Best Room', value: strongest?.pos || '-', sub: strongest ? ((strongest.diff > 0 ? '+' : '') + strongest.diff.toLocaleString() + ' vs avg') : '-', color: '#2ECC71' },
-            { label: 'Danger Room', value: weakest?.pos || '-', sub: weakest ? ((weakest.diff > 0 ? '+' : '') + weakest.diff.toLocaleString() + ' vs avg') : '-', color: weakest?.diff < 0 ? '#E74C3C' : 'var(--gold)' },
+            { label: 'Asset Rank', value: '#' + focusRank + ' of ' + profiles.length, sub: percentile + 'th percentile incl. picks', color: focusRank <= Math.ceil(profiles.length / 3) ? '#2ECC71' : focusRank <= Math.ceil(profiles.length * 0.66) ? 'var(--gold)' : '#E74C3C' },
+            { label: 'Roster vs Field', value: (focusProfile.total - fieldAvg > 0 ? '+' : '') + (focusProfile.total - fieldAvg).toLocaleString(), sub: focusProfile.total.toLocaleString() + ' vs ' + fieldAvg.toLocaleString() + ' avg', color: focusProfile.total >= fieldAvg ? '#2ECC71' : '#E74C3C' },
+            { label: 'Starter vs Field', value: (focusProfile.starterTotal - starterAvg > 0 ? '+' : '') + (focusProfile.starterTotal - starterAvg).toLocaleString(), sub: focusProfile.starterTotal.toLocaleString() + ' vs ' + starterAvg.toLocaleString() + ' avg', color: focusProfile.starterTotal >= starterAvg ? '#2ECC71' : '#E74C3C' },
+            { label: 'Picks vs Field', value: ((focusProfile.pickCapital.totalValue - pickAvg) > 0 ? '+' : '') + (focusProfile.pickCapital.totalValue - pickAvg).toLocaleString(), sub: focusProfile.pickCapital.count + ' picks vs ' + Math.round(comparisonProfiles.reduce((s, p) => s + (p.pickCapital?.count || 0), 0) / Math.max(comparisonProfiles.length, 1)) + ' avg', color: focusProfile.pickCapital.totalValue >= pickAvg ? '#2ECC71' : '#E74C3C' },
+            { label: 'FAAB vs Field', value: focusProfile.faab.isFaab ? ((focusProfile.faab.remaining - faabAvg) > 0 ? '+$' : '-$') + Math.abs(focusProfile.faab.remaining - faabAvg).toLocaleString() : '—', sub: focusProfile.faab.label, color: !focusProfile.faab.isFaab ? 'var(--silver)' : focusProfile.faab.remaining >= faabAvg ? '#2ECC71' : '#E74C3C' },
+            { label: 'Best Room', value: strongest ? posLabel(strongest.pos) : '-', sub: strongest ? ((strongest.diff > 0 ? '+' : '') + strongest.diff.toLocaleString() + ' vs avg') : '-', color: '#2ECC71' },
+            { label: 'Danger Room', value: weakest ? posLabel(weakest.pos) : '-', sub: weakest ? ((weakest.diff > 0 ? '+' : '') + weakest.diff.toLocaleString() + ' vs avg') : '-', color: weakest?.diff < 0 ? '#E74C3C' : 'var(--gold)' },
         ];
+        const fieldLead = focusProfile.isMine ? 'You' : focusProfile.name;
+        const fieldRead = focusProfile.total >= fieldAvg
+            ? (focusProfile.isMine ? 'You are above this field' : 'Focus is above field avg')
+            : (focusProfile.isMine ? 'This field is above you' : 'Focus is below field avg');
 
         const renderTeamChip = (profile) => (
             <div key={profile.rosterId} style={{ padding: '9px 10px', background: profile.isMine ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)', border: '1px solid ' + (profile.isMine ? 'rgba(212,175,55,0.35)' : 'rgba(255,255,255,0.07)'), borderRadius: '7px' }}>
@@ -653,7 +671,13 @@ function CompareTab({
             const isMine = column.profile.isMine;
             const dhqCol = player.dhq >= 7000 ? '#2ECC71' : player.dhq >= 4000 ? '#3498DB' : player.dhq >= 1000 ? 'var(--silver)' : 'rgba(255,255,255,0.5)';
             return (
-                <div onClick={() => openPlayerCard(player.pid)} style={{
+                <div
+                    role="button"
+                    tabIndex={0}
+                    title="Open player card"
+                    onClick={() => openPlayerCard(player.pid)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlayerCard(player.pid); } }}
+                    style={{
                     minHeight: '46px',
                     padding: '8px',
                     borderRadius: '6px',
@@ -711,12 +735,12 @@ function CompareTab({
                                     </div>
                                     <div>
                                         <div style={labelStyle}>Picks</div>
-                                        <div style={{ ...mono, color: profile.pickCapital.totalValue >= myProfile.pickCapital.totalValue ? '#2ECC71' : 'var(--silver)', fontSize: '0.72rem', fontWeight: 850 }}>{Math.round(profile.pickCapital.totalValue / 1000)}k</div>
+                                        <div style={{ ...mono, color: profile.pickCapital.totalValue >= focusProfile.pickCapital.totalValue ? '#2ECC71' : 'var(--silver)', fontSize: '0.72rem', fontWeight: 850 }}>{Math.round(profile.pickCapital.totalValue / 1000)}k</div>
                                         <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.56 }}>{profile.pickCapital.count} picks</div>
                                     </div>
                                     <div>
                                         <div style={labelStyle}>FAAB</div>
-                                        <div style={{ ...mono, color: profile.faab.isFaab ? (profile.faab.remaining >= myProfile.faab.remaining ? '#2ECC71' : 'var(--silver)') : 'rgba(255,255,255,0.32)', fontSize: '0.72rem', fontWeight: 850 }}>{profile.faab.isFaab ? '$' + profile.faab.remaining : '—'}</div>
+                                        <div style={{ ...mono, color: profile.faab.isFaab ? (profile.faab.remaining >= focusProfile.faab.remaining ? '#2ECC71' : 'var(--silver)') : 'rgba(255,255,255,0.32)', fontSize: '0.72rem', fontWeight: 850 }}>{profile.faab.isFaab ? '$' + profile.faab.remaining : '—'}</div>
                                         <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.56 }}>{profile.faab.isFaab ? profile.faab.pct + '%' : 'No FAAB'}</div>
                                     </div>
                                 </div>
@@ -732,7 +756,7 @@ function CompareTab({
                             <div key={'field-breakdown-' + summary.pos} style={{ ...panelStyle, overflow: 'hidden', marginBottom: '12px' }}>
                                 <div style={{ padding: '10px', background: (posColors[summary.pos] || '#666') + '14', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: '72px repeat(' + summary.columns.length + ', minmax(0, 1fr))', gap: '8px', alignItems: 'end' }}>
-                                        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{summary.pos}</div>
+                                        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</div>
                                         {summary.columns.map(column => {
                                             const isLeader = summary.leaderId === column.profile.rosterId;
                                             return (
@@ -775,16 +799,16 @@ function CompareTab({
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '14px' }}>
                         <div>
                             <div style={labelStyle}>{fieldLabel}</div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.35rem', color: 'var(--white)', fontWeight: 850, letterSpacing: 0 }}>You vs {opponentProfiles.length} team field</div>
+                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.35rem', color: 'var(--white)', fontWeight: 850, letterSpacing: 0 }}>{fieldLead} vs {comparisonProfiles.length} team field</div>
                             <div style={{ fontSize: '0.76rem', color: 'var(--silver)', opacity: 0.72 }}>{fieldSub}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <div style={labelStyle}>Field Read</div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.15rem', fontWeight: 850, color: myProfile.total >= fieldAvg ? '#2ECC71' : '#E74C3C', letterSpacing: 0 }}>
-                                {myProfile.total >= fieldAvg ? 'You are above this field' : 'This field is above you'}
+                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.15rem', fontWeight: 850, color: focusProfile.total >= fieldAvg ? '#2ECC71' : '#E74C3C', letterSpacing: 0 }}>
+                                {fieldRead}
                             </div>
                             <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.7 }}>
-                                {strongest?.pos || 'Roster'} is your best pressure point; {weakest?.pos || 'depth'} is the watch spot.
+                                Best pressure point: {strongest ? posLabel(strongest.pos) : 'Roster'}; watch spot: {weakest ? posLabel(weakest.pos) : 'depth'}.
                             </div>
                         </div>
                     </div>
@@ -813,9 +837,10 @@ function CompareTab({
                                 <span>#</span><span>Team</span><span>Assets</span><span>Roster</span><span>Start</span><span>Picks</span><span>FAAB</span><span>Rooms</span><span>Edge</span>
                             </div>
                             {sortedProfiles.map((profile, idx) => {
-                                const roomsWon = allPositions.filter(pos => (profile.posTotals[pos] || 0) > (myProfile.posTotals[pos] || 0)).length;
-                                const roomsLost = allPositions.filter(pos => (profile.posTotals[pos] || 0) < (myProfile.posTotals[pos] || 0)).length;
-                                const diff = profile.totalAssets - myProfile.totalAssets;
+                                const isFocus = sameId(profile.rosterId, focusProfile.rosterId);
+                                const roomsWon = allPositions.filter(pos => (profile.posTotals[pos] || 0) > (focusProfile.posTotals[pos] || 0)).length;
+                                const roomsLost = allPositions.filter(pos => (profile.posTotals[pos] || 0) < (focusProfile.posTotals[pos] || 0)).length;
+                                const diff = profile.totalAssets - focusProfile.totalAssets;
                                 return (
                                     <div key={profile.rosterId} style={{ display: 'grid', gridTemplateColumns: '34px minmax(140px,1.15fr) minmax(74px,.58fr) minmax(74px,.58fr) minmax(74px,.58fr) minmax(58px,.46fr) minmax(54px,.4fr) minmax(52px,.4fr) minmax(86px,.62fr)', gap: '8px', alignItems: 'center', padding: '8px 9px', borderRadius: '7px', background: profile.isMine ? 'rgba(212,175,55,0.11)' : 'rgba(255,255,255,0.025)', border: '1px solid ' + (profile.isMine ? 'rgba(212,175,55,0.35)' : 'rgba(255,255,255,0.055)'), fontSize: '0.72rem' }}>
                                         <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--silver)', fontWeight: 850 }}>#{idx + 1}</div>
@@ -829,13 +854,13 @@ function CompareTab({
                                             <div style={{ ...mono, color: 'var(--silver)', fontWeight: 800 }}>{profile.starterTotal.toLocaleString()}</div>
                                             <div style={{ height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', marginTop: '4px', overflow: 'hidden' }}><div style={{ width: (profile.starterTotal / maxStarter * 100) + '%', height: '100%', background: profile.isMine ? 'var(--gold)' : '#7C6BF8' }}></div></div>
                                         </div>
-                                        <div style={{ ...mono, color: profile.pickCapital.totalValue >= myProfile.pickCapital.totalValue ? '#2ECC71' : 'var(--silver)', fontWeight: 800 }}>{Math.round(profile.pickCapital.totalValue / 1000)}k</div>
-                                        <div style={{ ...mono, color: profile.faab.isFaab ? (profile.faab.remaining >= myProfile.faab.remaining ? '#2ECC71' : 'var(--silver)') : 'rgba(255,255,255,0.32)', fontWeight: 800 }}>{profile.faab.isFaab ? '$' + profile.faab.remaining : '—'}</div>
-                                        <div style={{ color: profile.isMine ? 'var(--silver)' : roomsWon > roomsLost ? '#E74C3C' : roomsWon < roomsLost ? '#2ECC71' : 'var(--silver)' }}>
-                                            {profile.isMine ? 'You' : roomsWon + '-' + roomsLost}
+                                        <div style={{ ...mono, color: profile.pickCapital.totalValue >= focusProfile.pickCapital.totalValue ? '#2ECC71' : 'var(--silver)', fontWeight: 800 }}>{Math.round(profile.pickCapital.totalValue / 1000)}k</div>
+                                        <div style={{ ...mono, color: profile.faab.isFaab ? (profile.faab.remaining >= focusProfile.faab.remaining ? '#2ECC71' : 'var(--silver)') : 'rgba(255,255,255,0.32)', fontWeight: 800 }}>{profile.faab.isFaab ? '$' + profile.faab.remaining : '—'}</div>
+                                        <div style={{ color: isFocus ? 'var(--silver)' : roomsWon > roomsLost ? '#E74C3C' : roomsWon < roomsLost ? '#2ECC71' : 'var(--silver)' }}>
+                                            {isFocus ? (profile.isMine ? 'You' : 'Focus') : roomsWon + '-' + roomsLost}
                                         </div>
-                                        <div style={{ minWidth: 0, color: profile.isMine ? 'var(--gold)' : diff > 0 ? '#E74C3C' : '#2ECC71', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {profile.isMine ? (profile.topPlayer?.p?.full_name || 'Top player') : (diff > 0 ? '+' : '') + diff.toLocaleString()}
+                                        <div style={{ minWidth: 0, color: isFocus ? (profile.isMine ? 'var(--gold)' : 'var(--silver)') : diff > 0 ? '#E74C3C' : '#2ECC71', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {isFocus ? (profile.topPlayer?.p?.full_name || 'Top player') : (diff > 0 ? '+' : '') + diff.toLocaleString()}
                                         </div>
                                     </div>
                                 );
@@ -847,7 +872,7 @@ function CompareTab({
                         <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 850, color: 'var(--white)', letterSpacing: 0, marginBottom: '12px' }}>Position Heatmap</div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(112px,1.2fr) repeat(8,minmax(38px,1fr))', gap: '5px', alignItems: 'stretch' }}>
                             <div style={{ ...labelStyle }}>Team</div>
-                            {allPositions.map(pos => <div key={pos} style={{ ...labelStyle, textAlign: 'center', color: posColors[pos] || 'var(--silver)' }}>{pos}</div>)}
+                            {allPositions.map(pos => <div key={pos} style={{ ...labelStyle, textAlign: 'center', color: posColors[pos] || 'var(--silver)' }}>{posLabel(pos)}</div>)}
                             {sortedProfiles.map(profile => (
                                 <React.Fragment key={'hm-' + profile.rosterId}>
                                     <div style={{ padding: '7px 6px', borderRadius: '5px', background: profile.isMine ? 'rgba(212,175,55,0.11)' : 'rgba(255,255,255,0.025)', color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
@@ -1068,10 +1093,10 @@ function CompareTab({
             }
 
             const statCards = [
-                { label: 'Asset DHQ', value: (myAssetTotal - theirAssetTotal > 0 ? '+' : '') + (myAssetTotal - theirAssetTotal).toLocaleString(), sub: myAssetTotal.toLocaleString() + ' vs ' + theirAssetTotal.toLocaleString() + ' incl. picks', color: myAssetTotal >= theirAssetTotal ? '#2ECC71' : '#E74C3C' },
-                { label: 'Roster DHQ', value: (myTotal - theirTotal > 0 ? '+' : '') + (myTotal - theirTotal).toLocaleString(), sub: myTotal.toLocaleString() + ' vs ' + theirTotal.toLocaleString(), color: myTotal >= theirTotal ? '#2ECC71' : '#E74C3C' },
-                { label: 'Starter DHQ', value: (myStarterDhq - theirStarterDhq > 0 ? '+' : '') + (myStarterDhq - theirStarterDhq).toLocaleString(), sub: myStarterDhq.toLocaleString() + ' vs ' + theirStarterDhq.toLocaleString(), color: myStarterDhq >= theirStarterDhq ? '#2ECC71' : '#E74C3C' },
-                { label: 'Pick Value', value: (pickValueDiff > 0 ? '+' : '') + pickValueDiff.toLocaleString(), sub: Math.round(myPickCapital.totalValue / 1000) + 'k vs ' + Math.round(theirPickCapital.totalValue / 1000) + 'k pick DHQ', color: pickValueDiff >= 0 ? '#2ECC71' : '#E74C3C' },
+                { label: valueLabel, value: (myAssetTotal - theirAssetTotal > 0 ? '+' : '') + (myAssetTotal - theirAssetTotal).toLocaleString(), sub: myAssetTotal.toLocaleString() + ' vs ' + theirAssetTotal.toLocaleString() + ' incl. picks', color: myAssetTotal >= theirAssetTotal ? '#2ECC71' : '#E74C3C' },
+                { label: 'Roster ' + valueShortLabel, value: (myTotal - theirTotal > 0 ? '+' : '') + (myTotal - theirTotal).toLocaleString(), sub: myTotal.toLocaleString() + ' vs ' + theirTotal.toLocaleString(), color: myTotal >= theirTotal ? '#2ECC71' : '#E74C3C' },
+                { label: 'Starter ' + valueShortLabel, value: (myStarterDhq - theirStarterDhq > 0 ? '+' : '') + (myStarterDhq - theirStarterDhq).toLocaleString(), sub: myStarterDhq.toLocaleString() + ' vs ' + theirStarterDhq.toLocaleString(), color: myStarterDhq >= theirStarterDhq ? '#2ECC71' : '#E74C3C' },
+                { label: 'Pick Value', value: (pickValueDiff > 0 ? '+' : '') + pickValueDiff.toLocaleString(), sub: Math.round(myPickCapital.totalValue / 1000) + 'k vs ' + Math.round(theirPickCapital.totalValue / 1000) + 'k pick ' + valueShortLabel, color: pickValueDiff >= 0 ? '#2ECC71' : '#E74C3C' },
                 { label: 'Pick Count', value: (pickCountDiff > 0 ? '+' : '') + pickCountDiff, sub: myPickCapital.count + ' picks vs ' + theirPickCapital.count + ' picks', color: pickCountDiff >= 0 ? '#2ECC71' : '#E74C3C' },
                 { label: 'FAAB', value: myFaab.isFaab ? ((myFaab.remaining - theirFaab.remaining > 0 ? '+$' : '-$') + Math.abs(myFaab.remaining - theirFaab.remaining).toLocaleString()) : '—', sub: myFaab.isFaab ? '$' + myFaab.remaining + ' vs $' + theirFaab.remaining + ' left' : 'No FAAB budget', color: !myFaab.isFaab ? 'var(--silver)' : myFaab.remaining >= theirFaab.remaining ? '#2ECC71' : '#E74C3C' },
                 { label: 'Position Edges', value: youLead + '-' + theyLead, sub: 'rooms won', color: youLead >= theyLead ? '#2ECC71' : '#E74C3C' },
@@ -1095,7 +1120,13 @@ function CompareTab({
                 const dhqCol = r.dhq >= 7000 ? '#2ECC71' : r.dhq >= 4000 ? '#3498DB' : r.dhq >= 1000 ? 'var(--silver)' : 'rgba(255,255,255,0.5)';
                 const winsDhq = rival && r.dhq > rival.dhq;
                 return (
-                    <div onClick={() => openCard(r.pid)} style={{
+                    <div
+                        role="button"
+                        tabIndex={0}
+                        title="Open player card"
+                        onClick={() => openCard(r.pid)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(r.pid); } }}
+                        style={{
                         padding: '7px 10px',
                         display: 'flex',
                         alignItems: 'center',
@@ -1134,7 +1165,7 @@ function CompareTab({
                             <div style={{ ...labelStyle, marginBottom: '4px' }}>Matchup Read</div>
                             <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 800, color: verdictColor, letterSpacing: 0 }}>{verdict}</div>
                             <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.72, marginTop: '3px' }}>
-                                {biggestEdges[0]?.pos || 'Roster'} is the biggest swing: {(biggestEdges[0]?.diff || 0) > 0 ? '+' : ''}{(biggestEdges[0]?.diff || 0).toLocaleString()} DHQ.
+                                {biggestEdges[0] ? posLabel(biggestEdges[0].pos) : 'Roster'} is the biggest swing: {(biggestEdges[0]?.diff || 0) > 0 ? '+' : ''}{(biggestEdges[0]?.diff || 0).toLocaleString()} {valueShortLabel}.
                             </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
@@ -1146,9 +1177,9 @@ function CompareTab({
 
                     <div style={{ marginBottom: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '6px' }}>
-                            <span style={{ ...mono, color: myColor, fontWeight: 800 }}>{myTotal.toLocaleString()} <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6 }}>DHQ</span></span>
+                            <span style={{ ...mono, color: myColor, fontWeight: 800 }}>{myTotal.toLocaleString()} <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6 }}>{valueShortLabel}</span></span>
                             <span style={{ ...labelStyle, alignSelf: 'center' }}>Roster Share</span>
-                            <span style={{ ...mono, color: theirColor, fontWeight: 800 }}>{theirTotal.toLocaleString()} <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6 }}>DHQ</span></span>
+                            <span style={{ ...mono, color: theirColor, fontWeight: 800 }}>{theirTotal.toLocaleString()} <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6 }}>{valueShortLabel}</span></span>
                         </div>
                         <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', background: 'rgba(255,255,255,0.055)' }}>
                             <div style={{ width: myDhqPct + '%', background: 'linear-gradient(90deg, var(--gold), rgba(212,175,55,0.78))', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '6px', fontSize: '0.58rem', color: '#0A0A0A', fontWeight: 800 }}>
@@ -1188,7 +1219,7 @@ function CompareTab({
                                 return (
                                     <div key={summary.pos} style={{ padding: '10px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '7px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '7px' }}>
-                                            <span style={{ fontWeight: 900, color: posColors[summary.pos] || 'var(--gold)' }}>{summary.pos}</span>
+                                            <span style={{ fontWeight: 900, color: posColors[summary.pos] || 'var(--gold)' }}>{posLabel(summary.pos)}</span>
                                             <span style={{ ...mono, color: edgeColor, fontWeight: 800, fontSize: '0.78rem' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
                                         </div>
                                         <div style={{ display: 'flex', height: '5px', borderRadius: '3px', overflow: 'hidden', background: 'rgba(255,255,255,0.06)', marginBottom: '8px' }}>
@@ -1253,7 +1284,7 @@ function CompareTab({
                         <div style={{ ...labelStyle, color: 'var(--gold)', opacity: 1, marginBottom: '8px' }}>Where you can press</div>
                         {leverage.length ? leverage.map(item => (
                             <div key={item.pos} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '7px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                                <span style={{ color: posColors[item.pos] || 'var(--white)', fontWeight: 800 }}>{item.pos}</span>
+                                <span style={{ color: posColors[item.pos] || 'var(--white)', fontWeight: 800 }}>{posLabel(item.pos)}</span>
                                 <span style={{ color: 'var(--silver)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{renderMiniPlayer(item.topMine)} over {renderMiniPlayer(item.topTheirs)}</span>
                                 <span style={{ ...mono, color: '#2ECC71', fontWeight: 800 }}>+{item.diff.toLocaleString()}</span>
                             </div>
@@ -1263,7 +1294,7 @@ function CompareTab({
                         <div style={{ ...labelStyle, color: '#E74C3C', opacity: 1, marginBottom: '8px' }}>Where they can hurt you</div>
                         {exposures.length ? exposures.map(item => (
                             <div key={item.pos} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '7px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                                <span style={{ color: posColors[item.pos] || 'var(--white)', fontWeight: 800 }}>{item.pos}</span>
+                                <span style={{ color: posColors[item.pos] || 'var(--white)', fontWeight: 800 }}>{posLabel(item.pos)}</span>
                                 <span style={{ color: 'var(--silver)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{renderMiniPlayer(item.topTheirs)} over {renderMiniPlayer(item.topMine)}</span>
                                 <span style={{ ...mono, color: '#E74C3C', fontWeight: 800 }}>{item.diff.toLocaleString()}</span>
                             </div>
@@ -1275,7 +1306,7 @@ function CompareTab({
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline', marginBottom: '10px' }}>
                         <div>
                             <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontWeight: 800, fontSize: '1.05rem', letterSpacing: 0 }}>Draft Picks & FAAB</div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.66 }}>Future capital is included in Asset DHQ; FAAB stays separate as waiver leverage.</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.66 }}>{skinFeatures.showFuturePicks === false ? 'Draft capital' : 'Future capital'} is included in {valueLabel}; FAAB stays separate as waiver leverage.</div>
                         </div>
                         <div style={{ ...mono, color: myAssetTotal >= theirAssetTotal ? '#2ECC71' : '#E74C3C', fontWeight: 850 }}>{myAssetTotal >= theirAssetTotal ? '+' : ''}{(myAssetTotal - theirAssetTotal).toLocaleString()} assets</div>
                     </div>
@@ -1293,7 +1324,7 @@ function CompareTab({
                                     <div>
                                         <div style={labelStyle}>Pick Value</div>
                                         <div style={{ ...mono, color: side.pickCapital.totalValue >= myPickCapital.totalValue ? '#2ECC71' : 'var(--silver)', fontWeight: 850 }}>{Math.round(side.pickCapital.totalValue / 1000)}k</div>
-                                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.58 }}>draft DHQ</div>
+                                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.58 }}>draft {valueShortLabel}</div>
                                     </div>
                                     <div>
                                         <div style={labelStyle}>Pick Count</div>
@@ -1328,7 +1359,7 @@ function CompareTab({
                             <div key={summary.pos} style={{ marginBottom: '12px', ...panelStyle, overflow: 'hidden' }}>
                                 <div style={{ padding: '9px 10px 10px', background: (posColors[summary.pos] || '#666') + '14', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '10px' }}>
-                                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{summary.pos}</span>
+                                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
                                         <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                             <span style={{ color: summary.myPosDHQ >= summary.theirPosDHQ ? '#2ECC71' : 'var(--silver)' }}>You: {summary.myPosDHQ.toLocaleString()}</span>
                                             <span style={{ color: summary.theirPosDHQ >= summary.myPosDHQ ? '#2ECC71' : 'var(--silver)' }}>Them: {summary.theirPosDHQ.toLocaleString()}</span>
@@ -1366,9 +1397,19 @@ function CompareTab({
         <React.Fragment>
             {renderFieldControls()}
             {compareScope === 'group'
-                ? renderFieldAnalysis(selectedGroupTeams, 'Custom Group', cleanManualIds.length >= 2 ? 'Manual selection across the league.' : 'Showing a default 3-team field until you pick at least 2 teams.')
+                ? renderFieldAnalysis(
+                    selectedGroupTeams,
+                    'Custom Group',
+                    cleanManualIds.length >= 2 ? 'Manual selection across the league; your roster is optional.' : 'Showing a default 3-team field until you pick at least 2 teams.',
+                    { includeUser: false }
+                )
                 : compareScope === 'division'
-                    ? renderFieldAnalysis(selectedDivisionTeams, getDivisionName(activeDivision), 'Division lens using Sleeper roster division settings.')
+                    ? renderFieldAnalysis(
+                        selectedDivisionTeams,
+                        getDivisionName(activeDivision),
+                        divisionIncludesUser ? 'Your division includes your roster and division rivals.' : 'Division-only lens; your roster is not added to this field.',
+                        { includeUser: divisionIncludesUser }
+                    )
                     : renderFieldAnalysis(selectedLeagueTeams, 'Full League', 'Every opponent in the league, ranked against your roster.')}
         </React.Fragment>
         )}

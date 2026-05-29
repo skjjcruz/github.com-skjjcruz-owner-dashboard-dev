@@ -12,46 +12,61 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { SignJWT } from 'npm:jose';
+import {
+  auditEvent,
+  checkRateLimit,
+  clientIp,
+  handleOptions,
+  json,
+  normalizeEmail,
+} from '../_shared/security.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const JWT_SECRET           = Deno.env.get('JWT_SECRET')!;
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const VALID_PRODUCT_SLUGS  = new Set(['war_room', 'dynast_hq', 'bundle']);
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  const options = handleOptions(req);
+  if (options) return options;
 
   try {
-    const { email, password, displayName, productSlug = 'war_room' } = await req.json();
+    const { email, password, displayName, productSlug: rawProductSlug = 'war_room' } = await req.json();
+    const normalizedEmail = normalizeEmail(email);
+    const productSlug = normalizeProductSlug(rawProductSlug);
 
     // ── Validate inputs ──────────────────────────────────────
-    if (!email || !password) {
-      return json({ error: 'Email and password are required.' }, 400);
+    if (!normalizedEmail || !password) {
+      return json(req, { error: 'Email and password are required.' }, 400);
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return json({ error: 'Invalid email address.' }, 400);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return json(req, { error: 'Invalid email address.' }, 400);
     }
     if (password.length < 8) {
-      return json({ error: 'Password must be at least 8 characters.' }, 400);
+      return json(req, { error: 'Password must be at least 8 characters.' }, 400);
+    }
+    if (!VALID_PRODUCT_SLUGS.has(productSlug)) {
+      return json(req, { error: 'Unknown product.' }, 400);
     }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const ipLimit = await checkRateLimit(admin, 'fw-signup:ip', clientIp(req), { limit: 10, windowSeconds: 3600, lockoutSeconds: 3600 });
+    const emailLimit = await checkRateLimit(admin, 'fw-signup:email', normalizedEmail, { limit: 3, windowSeconds: 3600, lockoutSeconds: 3600 });
+    if (!ipLimit.allowed || !emailLimit.allowed) {
+      await auditEvent(admin, req, 'fw_signup_rate_limited', 'blocked', { email: normalizedEmail }, {});
+      return json(req, { error: 'Too many sign-up attempts. Try again later.' }, 429);
+    }
 
     // ── Check for existing account ────────────────────────────
     const { data: existing } = await admin
       .from('app_users')
       .select('id')
-      .eq('email', email.toLowerCase().trim())
+      .eq('email', normalizedEmail)
       .maybeSingle();
 
     if (existing) {
-      return json({ error: 'An account with this email already exists.' }, 409);
+      await auditEvent(admin, req, 'fw_signup', 'failure', { email: normalizedEmail }, { reason: 'email_exists' });
+      return json(req, { error: 'An account with this email already exists.' }, 409);
     }
 
     // ── Hash password (PBKDF2 via Web Crypto — no external deps) ─
@@ -60,30 +75,37 @@ Deno.serve(async (req) => {
     const { data: newUser, error: insertErr } = await admin
       .from('app_users')
       .insert({
-        email:         email.toLowerCase().trim(),
+        email:         normalizedEmail,
         password_hash: passwordHash,
-        display_name:  displayName?.trim() || email.split('@')[0],
+        display_name:  displayName?.trim() || normalizedEmail.split('@')[0],
       })
-      .select('id, email, display_name, created_at')
+      .select('id, email, display_name, created_at, session_version')
       .single();
 
     if (insertErr || !newUser) {
       console.error('Insert error:', insertErr);
-      return json({ error: `DB insert failed: ${insertErr?.message ?? insertErr?.code ?? 'unknown'} (${insertErr?.details ?? insertErr?.hint ?? ''})` }, 500);
+      return json(req, { error: `DB insert failed: ${insertErr?.message ?? insertErr?.code ?? 'unknown'} (${insertErr?.details ?? insertErr?.hint ?? ''})` }, 500);
     }
 
     // ── Provision free subscription for chosen product ────────
-    await admin.from('subscriptions').insert({
+    const { error: subscriptionErr } = await admin.from('subscriptions').insert({
       user_id:      newUser.id,
       product_slug: productSlug,
       tier:         'free',
       status:       'active',
     });
+    if (subscriptionErr) {
+      console.error('Subscription insert error:', subscriptionErr);
+      await admin.from('app_users').delete().eq('id', newUser.id);
+      await auditEvent(admin, req, 'fw_signup', 'failure', { userId: newUser.id, email: normalizedEmail }, { reason: 'subscription_insert_failed', productSlug });
+      return json(req, { error: 'Could not provision product access.' }, 500);
+    }
 
     // ── Issue JWT ─────────────────────────────────────────────
-    const token = await mintJWT(newUser.id, newUser.email, 'free', [productSlug]);
+    const token = await mintJWT(newUser.id, newUser.email, 'free', [productSlug], newUser.session_version || 1);
+    await auditEvent(admin, req, 'fw_signup', 'success', { userId: newUser.id, email: normalizedEmail }, { productSlug });
 
-    return json({
+    return json(req, {
       token,
       user: {
         id:          newUser.id,
@@ -96,7 +118,7 @@ Deno.serve(async (req) => {
 
   } catch (err) {
     console.error('fw-signup error:', err);
-    return json({ error: 'Internal server error.' }, 500);
+    return json(req, { error: 'Internal server error.' }, 500);
   }
 });
 
@@ -120,9 +142,10 @@ async function mintJWT(
   email: string,
   tier: string,
   products: string[],
+  sessionVersion: number,
 ): Promise<string> {
   const secret = new TextEncoder().encode(JWT_SECRET);
-  return new SignJWT({ role: 'authenticated', app_metadata: { user_id: userId, email, tier, products } })
+  return new SignJWT({ role: 'authenticated', app_metadata: { user_id: userId, email, tier, products, session_version: sessionVersion } })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuer(SUPABASE_URL + '/auth/v1')
     .setSubject(userId)
@@ -131,9 +154,15 @@ async function mintJWT(
     .sign(secret);
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+function normalizeProductSlug(value: unknown): string {
+  const raw = String(value || 'war_room').trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    'war-room': 'war_room',
+    warroom: 'war_room',
+    'dynasty-hq': 'dynast_hq',
+    dynasty_hq: 'dynast_hq',
+    scout: 'dynast_hq',
+    pro: 'bundle',
+  };
+  return aliases[raw] || raw;
 }

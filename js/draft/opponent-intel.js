@@ -173,6 +173,10 @@
                         <StatRow label="TIER" value={persona.assessment?.tier || '—'} color="var(--silver)" />
                         <StatRow label="HEALTH" value={(persona.assessment?.healthScore || 0) + ' / 100'} color={healthColor(persona.assessment?.healthScore || 0)} />
 
+                        {persona.ownerIntel && (
+                            <OwnerIntelBlock ownerIntel={persona.ownerIntel} />
+                        )}
+
                         {/* Needs */}
                         {persona.assessment?.needs?.length > 0 && (
                             <div style={{ marginTop: '8px' }}>
@@ -391,6 +395,45 @@
                     opacity: 0.7,
                 }}>{label}</span>
                 <span style={{ fontWeight: 700, color }}>{value}</span>
+            </div>
+        );
+    }
+
+    function OwnerIntelBlock({ ownerIntel }) {
+        const confidence = ownerIntel?.confidence?.overall || 'inferred';
+        const reasons = (ownerIntel?.reasonCodes || []).slice(0, 3);
+        const color = confidence === 'high' ? '#2ECC71' : confidence === 'medium' ? 'var(--gold)' : confidence === 'low' ? '#F0A500' : 'var(--silver)';
+        return (
+            <div style={{
+                marginTop: '9px',
+                padding: '7px 8px',
+                background: 'rgba(255,255,255,0.025)',
+                border: '1px solid rgba(212,175,55,0.14)',
+                borderRadius: '5px',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: reasons.length ? '5px' : 0 }}>
+                    <SectionLabel>Historical Intel</SectionLabel>
+                    <span style={{
+                        fontSize: '0.52rem',
+                        fontWeight: 800,
+                        color,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        fontFamily: FONT_UI,
+                    }}>{confidence}</span>
+                </div>
+                {reasons.map(r => (
+                    <div key={r.code} title={r.source || ''} style={{
+                        fontSize: '0.58rem',
+                        color: 'var(--silver)',
+                        lineHeight: 1.35,
+                        marginTop: '3px',
+                        fontFamily: FONT_UI,
+                    }}>
+                        <span style={{ color: 'var(--gold)', fontWeight: 700 }}>{r.label}: </span>
+                        <span>{r.detail}</span>
+                    </div>
+                ))}
             </div>
         );
     }

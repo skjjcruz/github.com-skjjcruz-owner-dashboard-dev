@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://jcc100218.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hovnqztlbsgsywrbidbh.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
   <title>Dynasty HQ — Get Started</title>
   <link rel="icon" href="icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
@@ -547,7 +548,7 @@
           <span class="plan-badge">Best Value</span>
           <div class="plan-icon">🏆</div>
           <div class="plan-name">Pro</div>
-          <div class="plan-price">$12.99 <span>/ month</span></div>
+          <div class="plan-price">$14.95 <span>/ month</span></div>
           <ul class="plan-features">
             <li><span class="pf-check">✦</span> Everything in War Room</li>
             <li><span class="pf-check">✦</span> Global dashboard — all leagues at once</li>
@@ -620,7 +621,7 @@
               <option value="anthropic">Claude (Anthropic)</option>
               <option value="groq">Groq — Free (Llama 3.3)</option>
               <option value="gemini">Gemini Flash — Free (Google)</option>
-              <option value="openai">GPT-4o (OpenAI)</option>
+              <option value="openai">OpenAI — GPT-5.4 Mini</option>
               <option value="grok">Grok (xAI)</option>
             </select>
           </div>
@@ -660,7 +661,7 @@
         </div>
 
         <div class="security-note" style="margin-top:1rem;">
-          🔒 <span>Keys stored <strong>only on your device</strong> (localStorage). Never sent to our servers — all AI calls go directly to your provider.</span>
+          🔒 <span>Keys are kept <strong>only for this browser session</strong>. Never sent to our servers — all AI calls go directly to your provider.</span>
         </div>
       </div>
 
@@ -833,6 +834,7 @@
     // ═══════════════════════════════════════════════════════
 
     // ── State ──────────────────────────────────────────────
+    const SUPABASE_URL = 'https://hovnqztlbsgsywrbidbh.supabase.co';
     let selectedPlan = null;
     let selectedStandardProduct = 'war_room'; // default for Standard tier
     const selectedPlatforms = new Set(['sleeper']);
@@ -1035,13 +1037,26 @@
     }
 
     // ── BYO AI Key — Dynasty HQ implementation ─────────────
+    const AI_SESSION_KEYS = ['dynastyhq_ai_provider', 'dynastyhq_ai_key', 'dynastyhq_ai_model', 'dynastyhq_xai_key'];
+    const AI_LEGACY_KEYS = ['dynastyhq_provider', 'dynastyhq_gemini_key', 'dynastyhq_anthropic_key', ...AI_SESSION_KEYS];
+
+    function migrateAIKeysToSession() {
+      try {
+        AI_LEGACY_KEYS.forEach(name => {
+          const value = localStorage.getItem(name);
+          if (value && !sessionStorage.getItem(name)) sessionStorage.setItem(name, value);
+          localStorage.removeItem(name);
+        });
+      } catch (e) {}
+    }
+
     function updateProviderHint() {
       const provider = document.getElementById('ai-provider-sel').value;
       const hints = {
         anthropic: 'Get your free API key at console.anthropic.com. Claude 3.5 Sonnet is recommended.',
         groq:      'Free Llama 3.3 inference. Get your key at console.groq.com (no credit card needed).',
         gemini:    'Free Google Gemini Flash. Get your key at ai.google.dev (includes generous free tier).',
-        openai:    'Paid GPT-4o access. Get your key at platform.openai.com (requires credit card).',
+        openai:    'Paid OpenAI access. GPT-5.4 Mini is the default BYO model; GPT-5.5 can be entered manually for premium analysis.',
         grok:      'Get your key at x.ai. Includes real-time X/Twitter data for news.',
       };
       document.getElementById('provider-hint').textContent = hints[provider] || '';
@@ -1060,13 +1075,16 @@
       }
 
       try {
-        localStorage.setItem('dynastyhq_ai_provider', provider);
-        localStorage.setItem('dynastyhq_ai_key', key);
-        if (model) localStorage.setItem('dynastyhq_ai_model', model);
+        migrateAIKeysToSession();
+        sessionStorage.setItem('dynastyhq_ai_provider', provider);
+        sessionStorage.setItem('dynastyhq_ai_key', key);
+        if (model) sessionStorage.setItem('dynastyhq_ai_model', model);
+        else sessionStorage.removeItem('dynastyhq_ai_model');
 
         // Save optional xAI key
         const xaiKey = document.getElementById('xai-key-in').value.trim();
-        if (xaiKey) localStorage.setItem('dynastyhq_xai_key', xaiKey);
+        if (xaiKey) sessionStorage.setItem('dynastyhq_xai_key', xaiKey);
+        else sessionStorage.removeItem('dynastyhq_xai_key');
       } catch (e) {
         statusEl.className = 'alert alert-error show';
         statusEl.textContent = 'Storage error: ' + e.message;
@@ -1075,7 +1093,7 @@
 
       patchProfile({ byoAI: provider, hasBYOKey: true });
       statusEl.className = 'alert alert-success show';
-      statusEl.textContent = '✓ API key saved to your device only.';
+      statusEl.textContent = '✓ API key saved for this browser session.';
       setTimeout(() => showStep(3), 900);
     }
 
@@ -1087,10 +1105,11 @@
     // Load any previously saved keys into the form
     function loadStoredAIKeys() {
       try {
-        const p = localStorage.getItem('dynastyhq_ai_provider');
-        const k = localStorage.getItem('dynastyhq_ai_key');
-        const m = localStorage.getItem('dynastyhq_ai_model');
-        const x = localStorage.getItem('dynastyhq_xai_key');
+        migrateAIKeysToSession();
+        const p = sessionStorage.getItem('dynastyhq_ai_provider');
+        const k = sessionStorage.getItem('dynastyhq_ai_key');
+        const m = sessionStorage.getItem('dynastyhq_ai_model');
+        const x = sessionStorage.getItem('dynastyhq_xai_key');
         if (p) document.getElementById('ai-provider-sel').value = p;
         if (k) document.getElementById('api-key-in').value = k;
         if (m) document.getElementById('ai-model-in').value = m;
@@ -1160,6 +1179,7 @@
           ...existingAuth, username, createdAt: new Date().toISOString()
         }));
         patchProfile({ sleeperUsername: username, sleeperUserId: data.user_id });
+        window.OD?.savePlatformUsernames?.({ sleeper: username }).catch(() => {});
 
         alertEl.className = 'alert alert-success show';
         alertEl.textContent = `✓ Connected as ${username}!`;

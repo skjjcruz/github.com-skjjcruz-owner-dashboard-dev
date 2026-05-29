@@ -22,6 +22,7 @@
         const fonts = theme.fonts || {};
         const cardStyle = window.WrTheme?.cardStyle?.() || {};
         const fs = (rem) => window.WrTheme?.fontSize?.(rem) || (rem + 'rem');
+        const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
 
         // ── Data ────────────────────────────────────────────────
         const assess = React.useMemo(() => {
@@ -86,7 +87,7 @@
         };
 
         // ── Position breakdown — league-relative DHQ ranking ────
-        const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB'];
+        const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
         const posBreakdown = React.useMemo(() => {
             const grades = window.App?.calcPosGrades?.(myRoster?.roster_id, currentLeague?.rosters, playersData) || [];
             return grades.map(g => ({
@@ -94,6 +95,17 @@
                 col: g.grade === 'A' ? colors.positive : g.grade === 'B' ? colors.accent : (g.grade === 'C' || g.grade === 'D') ? colors.warn : colors.negative,
             }));
         }, [assess, currentLeague, myRoster, playersData]);
+
+        if (!rosterState.isUsable) {
+            return window.App?.renderRosterDataBlocker?.(rosterState, {
+                title: size === 'sm' ? 'Sync' : 'Roster Pulse paused',
+                compact: size === 'sm' || size === 'md',
+                fill: true,
+                actionLabel: size === 'sm' ? null : 'Open Roster',
+                onAction: openMyRoster,
+                style: { cursor: size === 'sm' || size === 'md' ? 'pointer' : 'default' },
+            });
+        }
 
         // ── SM (1×1) ─────────────────────────────────────────────
         if (size === 'sm') {
@@ -224,7 +236,7 @@
                                     borderRadius: '4px',
                                     padding: '4px 2px', textAlign: 'center',
                                 }}>
-                                    <div style={{ fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, fontFamily: fonts.ui, lineHeight: 1 }}>{p.pos}</div>
+                                    <div style={{ fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, fontFamily: fonts.ui, lineHeight: 1 }}>{window.App?.posLabel?.(p.pos) || (p.pos === 'DEF' ? 'D/ST' : p.pos)}</div>
                                     <div style={{ fontFamily: fonts.mono, fontSize: fs(1.05), fontWeight: 800, color: p.col, lineHeight: 1, margin: '2px 0' }}>{p.grade}</div>
                                     <div style={{ height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
                                         <div style={{ width: p.pct + '%', height: '100%', background: p.col, transition: '0.3s' }} />
@@ -358,12 +370,12 @@
                         const pct = (p.dhq / max) * 100;
                         const col = p.dhq >= 5000 ? colors.positive : p.dhq >= 2000 ? colors.accent : colors.textMuted;
                         return (
-                            <div key={p.pid} onClick={() => { if (typeof window.openPlayerModal === 'function' && p.pid) window.openPlayerModal(p.pid); }} style={{
+                            <div key={p.pid} role="button" tabIndex={0} title="Open player card" onClick={() => { if (typeof window.openPlayerModal === 'function' && p.pid) window.openPlayerModal(p.pid); }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (typeof window.openPlayerModal === 'function' && p.pid) window.openPlayerModal(p.pid); } }} style={{
                                 display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
                                 padding: '2px 0',
                             }}>
                                 <span style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.textFaint, width: 12, fontFamily: fonts.mono }}>{i + 1}</span>
-                                <span style={{ fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, width: 22, fontFamily: fonts.ui }}>{p.pos}</span>
+                                <span style={{ fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, width: 22, fontFamily: fonts.ui }}>{window.App?.posLabel?.(p.pos) || (p.pos === 'DEF' ? 'D/ST' : p.pos)}</span>
                                 <span style={{ flex: 1, minWidth: 0, fontSize: fs(0.66), fontWeight: 600, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
                                 {p.age && <span style={{ fontSize: fs(0.54), color: colors.textFaint, fontFamily: fonts.mono, minWidth: 16, textAlign: 'right' }}>{p.age}</span>}
                                 <div style={{ width: 60, height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
@@ -417,7 +429,7 @@
                             borderRadius: '4px', padding: '6px 8px',
                             opacity: 0.4,
                         }}>
-                            <div style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: fonts.ui }}>{pos}</div>
+                            <div style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: fonts.ui }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</div>
                             <div style={{ fontSize: fs(0.6), color: colors.textFaint, marginTop: '4px', fontStyle: 'italic', fontFamily: fonts.ui }}>None</div>
                         </div>
                     );
@@ -430,11 +442,11 @@
                             overflow: 'hidden',
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: fonts.ui }}>{pos}</span>
+                                <span style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: fonts.ui }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</span>
                                 <span style={{ fontSize: fs(0.54), color: colors.textFaint, fontFamily: fonts.ui }}>{players.length}</span>
                             </div>
                             {players.map((pl, i) => (
-                                <div key={pl.pid} onClick={() => onPlayerClick(pl.pid)} style={{
+                                <div key={pl.pid} role="button" tabIndex={0} title="Open player card" onClick={() => onPlayerClick(pl.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPlayerClick(pl.pid); } }} style={{
                                     display: 'flex', alignItems: 'center', gap: '4px',
                                     cursor: 'pointer', padding: '1px 0',
                                     borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',

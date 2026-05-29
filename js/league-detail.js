@@ -17,6 +17,38 @@
         return escapeHtml(str).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
     }
 
+    function wrCanPageScroll() {
+        const doc = document.documentElement;
+        const body = document.body;
+        return Math.max(doc?.scrollHeight || 0, body?.scrollHeight || 0) > window.innerHeight + 1;
+    }
+
+    function wrCanElementConsumeWheel(el, deltaY) {
+        if (!(el instanceof HTMLElement)) return false;
+        const style = window.getComputedStyle(el);
+        if (!/(auto|scroll|overlay)/.test(style.overflowY)) return false;
+        if (el.scrollHeight <= el.clientHeight + 1) return false;
+        const canScrollUp = el.scrollTop > 1;
+        const canScrollDown = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+        return deltaY < 0 ? canScrollUp : canScrollDown;
+    }
+
+    function rerouteWheelToPage(event) {
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
+        if (Math.abs(event.deltaY) < 1 || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+        if (!wrCanPageScroll()) return;
+
+        let el = event.target;
+        while (el && el !== document.body && el !== document.documentElement) {
+            if (wrCanElementConsumeWheel(el, event.deltaY)) return;
+            el = el.parentElement;
+        }
+
+        event.preventDefault();
+        window.__WR_SCROLL_FALLBACK_LAST = { at: Date.now(), deltaY: event.deltaY };
+        window.scrollBy({ top: event.deltaY, left: 0, behavior: 'auto' });
+    }
+
     function resolvePlatformProvider(league) {
         const registry = window.App?.Platforms || window.Platforms;
         const registered = registry?.getForLeague?.(league);
@@ -37,12 +69,66 @@
         return fallback;
     }
 
+    function leagueTypeHeaderMeta(profile) {
+        const type = String(profile?.type || 'unknown').toLowerCase();
+        const defs = {
+            redraft: { label: 'Redraft', short: 'RD', color: '#2ECC71', icon: 'reset' },
+            keeper: { label: 'Keeper', short: 'KP', color: '#7C6BF8', icon: 'bookmark' },
+            dynasty: { label: 'Dynasty', short: 'DY', color: '#D4AF37', icon: 'crown' },
+            best_ball: { label: 'Best Ball', short: 'BB', color: '#3498DB', icon: 'spark' },
+            dfs: { label: 'DFS', short: 'DFS', color: '#3498DB', icon: 'spark' },
+        };
+        return defs[type] || { label: type && type !== 'unknown' ? type.replace(/_/g, ' ') : 'League Type Unknown', short: '?', color: '#C7CDD7', icon: 'circle' };
+    }
+
+    function LeagueTypeHeaderIcon({ meta }) {
+        const common = {
+            width: 14,
+            height: 14,
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: 2,
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+            'aria-hidden': 'true',
+            focusable: 'false',
+            style: { display: 'block', flexShrink: 0 },
+        };
+        const icon = meta?.icon || 'circle';
+        if (icon === 'reset') {
+            return React.createElement('svg', common,
+                React.createElement('path', { d: 'M4 7h10a6 6 0 1 1-4.2 10.2' }),
+                React.createElement('path', { d: 'M7 4 4 7l3 3' })
+            );
+        }
+        if (icon === 'bookmark') {
+            return React.createElement('svg', common,
+                React.createElement('path', { d: 'M7 4h10a1 1 0 0 1 1 1v15l-6-3-6 3V5a1 1 0 0 1 1-1z' })
+            );
+        }
+        if (icon === 'crown') {
+            return React.createElement('svg', common,
+                React.createElement('path', { d: 'm3 7 5 4 4-7 4 7 5-4-2 12H5L3 7z' }),
+                React.createElement('path', { d: 'M5 19h14' })
+            );
+        }
+        if (icon === 'spark') {
+            return React.createElement('svg', common,
+                React.createElement('path', { d: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z' })
+            );
+        }
+        return React.createElement('svg', common,
+            React.createElement('circle', { cx: 12, cy: 12, r: 7 })
+        );
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // END DRAFT TAB
     // ══════════════════════════════════════════════════════════════════════════
 
     // League Detail Component
-    function LeagueDetail({ league, onBack, sleeperUserId, onOpenSettings, activeTab: propActiveTab, onTabChange }) {
+    function LeagueDetail({ league, onBack, sleeperUserId, onOpenSettings, settingsProps = {}, activeTab: propActiveTab, onTabChange }) {
         const [loading, setLoading] = useState(true);
         const [error, setError] = useState(null);
         const [playersData, setPlayersData] = useState({});
@@ -71,6 +157,8 @@
         const setActiveTab = onTabChange || setLocalActiveTab;
         const [tradeSubTab, setTradeSubTab] = useState(null); // when set, TradeCalcTab opens this sub-tab
         const [selectedPlayerPid, setSelectedPlayerPid] = useState(null);
+        const [headerDraftInfo, setHeaderDraftInfo] = useState(null);
+        const [headerClockNow, setHeaderClockNow] = useState(Date.now());
 
         // ── TIME CONTEXT — the temporal lens of the entire app ──
         // Single source of truth. All modules read timeYear and derived helpers.
@@ -83,6 +171,45 @@
         const [timeRecomputeTs, setTimeRecomputeTs] = useState(Date.now());
         const [basePlayersData, setBasePlayersData] = useState(null);
 
+        useEffect(() => {
+            const leagueId = currentLeague?.league_id || currentLeague?.id;
+            if (!leagueId) return;
+            let cancelled = false;
+            const fetchDrafts = window.Sleeper?.fetchDrafts || (async (lid) => {
+                const resp = await fetch('https://api.sleeper.app/v1/league/' + lid + '/drafts');
+                return resp.ok ? resp.json() : [];
+            });
+            fetchDrafts(leagueId)
+                .then(rows => {
+                    if (cancelled) return;
+                    const drafts = Array.isArray(rows) ? rows : [];
+                    const active = drafts.find(d => d.status === 'drafting')
+                        || drafts.find(d => d.status === 'pre_draft')
+                        || null;
+                    setHeaderDraftInfo(active);
+                })
+                .catch(() => { if (!cancelled) setHeaderDraftInfo(null); });
+            return () => { cancelled = true; };
+        }, [currentLeague?.league_id, currentLeague?.id]);
+
+        useEffect(() => {
+            if (!headerDraftInfo?.start_time || headerDraftInfo.status !== 'pre_draft') return;
+            const id = setInterval(() => setHeaderClockNow(Date.now()), 60000);
+            return () => clearInterval(id);
+        }, [headerDraftInfo?.start_time, headerDraftInfo?.status]);
+
+        const headerDraftClock = useMemo(() => {
+            if (!headerDraftInfo) return null;
+            if (headerDraftInfo.status === 'drafting') return { label: 'Draft Live', clock: 'Now' };
+            if (!headerDraftInfo.start_time) return { label: 'Draft Upcoming', clock: 'Scheduled' };
+            const diff = Number(headerDraftInfo.start_time) - headerClockNow;
+            if (diff <= 0) return { label: 'Draft Upcoming', clock: 'Open' };
+            const days = Math.floor(diff / 86400000);
+            const hours = Math.floor((diff % 86400000) / 3600000);
+            const mins = Math.floor((diff % 3600000) / 60000);
+            return { label: 'Draft Upcoming', clock: (days > 0 ? days + 'd ' : '') + hours + 'h ' + mins + 'm' };
+        }, [headerDraftInfo, headerClockNow]);
+
         // ── SeasonContext state — reactive data shared with tab components ──
         const [seasonCtxData, setSeasonCtxData] = useState({
             season: league.season || '',
@@ -92,6 +219,59 @@
             myRosterId: null,
             lastUpdated: 0,
         });
+        const headerLeagueProfile = useMemo(() => {
+            if (!currentLeague || typeof window.App?.Intelligence?.buildLeagueProfile !== 'function') return null;
+            try {
+                const rosters = seasonCtxData.rosters?.length ? seasonCtxData.rosters : (currentLeague.rosters || []);
+                return window.App.Intelligence.buildLeagueProfile({
+                    league: currentLeague,
+                    rosters,
+                    platform: currentLeague._platform || window.S?.platform,
+                });
+            } catch (err) {
+                if (window.wrLog) window.wrLog('leagueHeader.profile', err);
+                return null;
+            }
+        }, [
+            currentLeague,
+            currentLeague?.league_id,
+            currentLeague?.id,
+            currentLeague?.type,
+            currentLeague?.league_type,
+            currentLeague?.settings?.type,
+            currentLeague?.roster_positions,
+            currentLeague?.scoring_settings,
+            seasonCtxData.lastUpdated,
+        ]);
+        const headerLeagueType = useMemo(() => leagueTypeHeaderMeta(headerLeagueProfile), [headerLeagueProfile]);
+        const leagueSkin = useMemo(() => {
+            if (!currentLeague || typeof window.App?.LeagueSkin?.build !== 'function') return null;
+            const rosters = seasonCtxData.rosters?.length ? seasonCtxData.rosters : (currentLeague.rosters || []);
+            return window.App.LeagueSkin.build({
+                league: currentLeague,
+                profile: headerLeagueProfile,
+                rosters,
+                myRoster,
+                draft: headerDraftInfo,
+                nflState: window.S?.nflState,
+            });
+        }, [
+            headerLeagueProfile,
+            currentLeague,
+            currentLeague?.league_id,
+            currentLeague?.id,
+            currentLeague?.status,
+            currentLeague?.settings?.type,
+            currentLeague?.roster_positions,
+            myRoster?.roster_id,
+            headerDraftInfo?.draft_id,
+            headerDraftInfo?.status,
+            seasonCtxData.lastUpdated,
+        ]);
+        useEffect(() => {
+            if (!leagueSkin || typeof window.App?.LeagueSkin?.setCurrent !== 'function') return;
+            window.App.LeagueSkin.setCurrent(leagueSkin);
+        }, [leagueSkin]);
 
         // ── VIEW MODE — Analyst is now the only mode (Brief tab replaces Flash Brief) ──
         const [viewMode, setViewMode] = useState('analyst');
@@ -183,8 +363,13 @@
             walkChain();
             return () => { cancelled = true; };
         }, [currentLeague?.id]);
+        const maxTimeYear = leagueSkin?.features?.showFuturePicks === false ? currentSeason : currentSeason + 2;
         const timeYears = [];
-        for (let y = leagueStartYear; y <= currentSeason + 2; y++) timeYears.push(y);
+        for (let y = leagueStartYear; y <= maxTimeYear; y++) timeYears.push(y);
+        useEffect(() => {
+            if (timeYear <= maxTimeYear) return;
+            handleTimeYearChange(currentSeason);
+        }, [timeYear, maxTimeYear, currentSeason]);
 
         // Persist time year
         useEffect(() => { LeagueStorage.set(LEAGUE_WR_KEYS.TIME_YEAR, String(timeYear)); }, [timeYear]);
@@ -228,42 +413,85 @@
         const projectPlayerValue = window.App.PlayerValue.projectPlayerValue;
 
         // ── LEGEND PANEL — explains War Room tools without revealing sauce ──
-        function LegendPanel() {
+        function LegendPanel({ module = false } = {}) {
             const [open, setOpen] = React.useState(false);
             const [expanded, setExpanded] = React.useState(false);
+            const valueTerm = skinValueShort === 'DHQ' ? 'DHQ Value' : skinValueLabel;
+            const rankTerm = skinShowsDynastyValue ? 'Dynasty Rank' : 'Asset Rank';
+            const windowTerm = skinShowsAgeCurve ? 'Compete Window' : 'Season Window';
             const quickItems = [
-                { term: 'DHQ Value', def: 'Dynasty value score (0-10,000). Production + age + situation + market.' },
+                { term: valueTerm, def: skinShowsDynastyValue ? 'Dynasty value score (0-10,000). Production + age + situation + market.' : 'Format-adjusted value score (0-10,000). Production, role, scarcity, and market context.' },
                 { term: 'Health Score', def: 'Team grade (0-100). 90+ Elite, 80+ Contender, 70+ Crossroads.' },
-                { term: 'Elite Player', def: '7000+ DHQ or top 5 at their position across all league rosters.' },
-                { term: 'Compete Window', def: 'Years until your weakest position group ages out.' },
+                { term: 'Elite Player', def: '7000+ ' + skinValueShort + ' or top 5 at their position across all league rosters.' },
+                { term: windowTerm, def: skinShowsAgeCurve ? 'Years until your weakest position group ages out.' : 'Current-season readiness for this league format.' },
                 { term: 'Player Tags', def: 'Tag players as Trade Block, Cut, Untouchable, or Watch. Syncs between apps.' },
                 { term: 'Flash Brief', def: 'Quick-action dashboard. Analyst mode shows deep data.' },
             ];
             const fullItems = [
-                { cat: 'Valuations', items: [
-                    { term: 'DHQ Value', def: 'Dynasty valuation score on a 0-10,000 scale. Combines on-field production, age trajectory, roster situation, positional scarcity, and market consensus. Updated when you refresh data.' },
-                    { term: 'Elite Player', def: 'A player with 7000+ DHQ or a top-5 positional rank across all rosters in your league. Championship rosters typically have 2-4 elite assets.' },
-                    { term: 'Player Tags', def: 'Tag any player as Trade Block, Cut, Untouchable, or Watch List. Tags sync between War Room and War Room Scout so your decisions carry across both apps.' },
-                    { term: 'Trend', def: 'Year-over-year production change as a percentage. A player who went from 15 PPG to 18 PPG has a +20% trend. During the season, trend directly influences DHQ values (up to \u00B18%).' },
+                { cat: 'What DHQ Measures', items: [
+                    { term: valueTerm, def: skinShowsDynastyValue ? 'A 0-10,000 dynasty value score. It blends production, projected role, age curve, positional scarcity, roster situation, market consensus, and format context. It is updated when you refresh league data.' : 'A 0-10,000 format-adjusted value score. It blends production, projected role, positional scarcity, roster situation, market consensus, and this league format. It is updated when you refresh league data.' },
+                    { term: 'Production Layer', def: 'Recent fantasy scoring, usage, playing time, and efficiency establish the floor. Current-season roles matter more in redraft, while multi-year stability carries more weight in dynasty.' },
+                    { term: 'Context Layer', def: 'Team, depth chart, scoring settings, lineup slots, and replacement level adjust the raw player value. A scarce starter can gain value even if his box-score profile is similar to a deeper position.' },
+                    { term: 'Market Layer', def: 'Market consensus, rank movement, roster ownership, and trade behavior help keep the number from becoming only a projection model. DHQ is meant to reflect what a player is worth in the room.' },
+                ]},
+                { cat: 'How To Read DHQ', items: [
+                    { term: 'Elite Player', def: '7000+ ' + skinValueShort + ' or a top-5 positional rank across the league. These are anchor assets; losing one usually changes the direction of a roster or trade package.' },
+                    { term: 'Starter Band', def: 'Roughly 3500-6999 ' + skinValueShort + ' is the weekly starter and premium depth range. Compare players inside the same position and format before treating two numbers as equal.' },
+                    { term: 'Depth Band', def: 'Roughly 1000-3499 ' + skinValueShort + ' usually means usable depth, upside bench pieces, short-term streamers, or rookies/prospects who still need the role to arrive.' },
+                    { term: 'Replacement Band', def: 'Below 1000 ' + skinValueShort + ' is usually waiver-wire, injury stash, speculative bench, or low-certainty IDP depth. The name can still matter, but the number is warning you not to overpay.' },
+                ]},
+                { cat: 'What Moves DHQ', items: [
+                    { term: 'Role Change', def: 'Depth-chart promotion, target share, route participation, snap share, injury replacement, or defensive alignment changes can move value quickly.' },
+                    { term: 'Age And Window', def: skinShowsAgeCurve ? 'Age curve matters because dynasty value prices future seasons. RB declines usually hit earlier than WR/TE, and QB value can stay durable much longer.' : 'Age still matters, but redraft weights this season much more heavily than long-term decline. Role and weekly ceiling should beat distant age-curve concerns.' },
+                    { term: 'Risk', def: 'Injury status, volatile usage, unstable quarterback play, committee backfields, defensive rotation, suspension risk, and contract uncertainty all pressure the value down.' },
+                    { term: 'Format', def: 'PPR, TE premium, Superflex, IDP, kicker, D/ST, lineup depth, and bench size all change replacement level. DHQ should be read through this league, not as a universal player rank.' },
+                ]},
+                { cat: 'What DHQ Is Not', items: [
+                    { term: 'Not A Projection Only', def: 'A player can project well this week and still carry lower DHQ if the role is fragile, the market is thin, or the roster value is hard to trade later.' },
+                    { term: 'Not A Trade Price Alone', def: 'Trade offers also depend on partner needs, owner behavior, leverage, timing, and package shape. DHQ is the value anchor, not the whole negotiation.' },
+                    { term: 'Not A Blind Sort', def: 'Use DHQ to build a shortlist, then check position need, tier breaks, lineup rules, health, and roster construction. The best move is often the best tier fit, not just the highest number.' },
                 ]},
                 { cat: 'Team Assessment', items: [
                     { term: 'Health Score', def: 'Your team\u2019s competitive readiness on a 0-100 scale. 60% is based on your optimal starting lineup strength, 40% on positional depth and coverage. 90+ = Elite tier, 80+ = Contender, 70+ = Crossroads.' },
                     { term: 'Contender Rank', def: 'How you stack up for winning THIS season. Based on your best possible starting lineup PPG compared to every other team in the league.' },
-                    { term: 'Dynasty Rank', def: 'Your long-term foundation strength. Based on total DHQ value across your entire roster \u2014 starters, bench, taxi, and picks.' },
-                    { term: 'Compete Window', def: 'How many more years your roster can realistically compete before age-related decline forces a rebuild. Based on the age curves of your weakest position group.' },
+                    { term: rankTerm, def: skinShowsDynastyValue ? 'Your long-term foundation strength. Based on total ' + skinValueShort + ' value across your entire roster - starters, bench, taxi, and picks.' : 'Your format-adjusted roster strength. Based on total ' + skinValueShort + ' value across your active roster context.' },
+                    { term: windowTerm, def: skinShowsAgeCurve ? 'How many more years your roster can realistically compete before age-related decline forces a rebuild. Based on the age curves of your weakest position group.' : 'How ready your roster is for the current season format, without forcing a multi-year age-curve read.' },
                 ]},
-                { cat: 'Trading', items: [
-                    { term: 'Owner DNA', def: 'A behavioral profile derived from each owner\u2019s trade history. Types include Fleecer (always wins trades), Stalwart (fair deals only), Dominator (wants to feel like the winner), Acceptor (open to deals), and Desperate (panic trades). Used to predict acceptance likelihood.' },
-                    { term: 'Trade Impact', def: 'Before you send a trade, see exactly how it changes your health score, elite count, and competitive tier. Simulates the roster swap and recalculates everything.' },
-                    { term: 'Acceptance Likelihood', def: 'Predicted chance the other owner accepts your offer, based on value difference, their DNA type, positional needs, and psychological factors like endowment bias.' },
+                { cat: 'Trading And Tools', items: [
+                    { term: 'Owner DNA', def: 'A behavioral profile derived from each owner\u2019s trade history. Types include Fleecer, Stalwart, Dominator, Acceptor, and Desperate. It helps estimate how hard a deal will be to close.' },
+                    { term: 'Trade Impact', def: 'Before you send a trade, see exactly how it changes your health score, elite count, positional leverage, and competitive tier. Simulates the roster swap and recalculates the team.' },
+                    { term: 'Acceptance Likelihood', def: 'Predicted chance the other owner accepts your offer, based on value difference, their DNA type, positional needs, package shape, and owner behavior.' },
+                    { term: 'Fit Score', def: 'How well a draft or waiver target fills your specific roster needs. A team thin at RB will see RB options scored higher than a team already overloaded there.' },
+                    { term: 'Player Tags', def: 'Tag players as Trade Block, Cut, Untouchable, or Watch List. Tags sync between War Room and War Room Scout so your decisions carry across both apps.' },
                 ]},
-                { cat: 'Flash Brief & Analytics', items: [
-                    { term: 'Flash Brief', def: 'Quick-action command dashboard. Shows team diagnosis, prioritized action plan, trade currency, and position investment vs championship winners. Analyst mode reveals deep historical analytics.' },
-                    { term: 'Fit Score', def: 'How well a draft prospect fills your specific roster needs. A team thin at RB will see RB prospects scored higher. Based on positional depth analysis.' },
-                    { term: 'FAAB Strategy', def: 'Free Agent Acquisition Budget recommendations. War Room analyzes which other teams need the same players and how much budget they have left, then suggests a bid amount to win without overpaying.' },
-                ]},
-            ];
-            return React.createElement('div', { style: { marginBottom: '8px' } },
+	            ];
+	            if (module) {
+	                return React.createElement('div', { style: { padding: '10px 16px 16px', maxWidth: '1280px', margin: '0 auto' } },
+	                    React.createElement('div', { className: 'wr-module-strip' },
+	                        React.createElement('div', { className: 'wr-module-title' },
+	                            React.createElement('span', null, 'GUIDE'),
+	                            React.createElement('strong', null, 'Legend'),
+	                            React.createElement('em', null, 'Metric definitions, status language, and tool meanings for this league format.')
+	                        )
+	                    ),
+	                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' } },
+	                        ...quickItems.map(item => React.createElement('div', { key: item.term, style: { padding: '12px 13px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.18)', borderRadius: '8px' } },
+	                            React.createElement('div', { style: { fontSize: '0.76rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', marginBottom: '4px' } }, item.term),
+	                            React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--silver)', lineHeight: 1.45 } }, item.def)
+	                        ))
+	                    ),
+	                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' } },
+	                        ...fullItems.map(section => React.createElement('section', { key: section.cat, style: { padding: '13px 14px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.18)', borderRadius: '8px' } },
+	                            React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', color: 'var(--gold)', letterSpacing: '0.08em', marginBottom: '10px', textTransform: 'uppercase' } }, section.cat),
+	                            ...section.items.map(item => React.createElement('div', { key: item.term, style: { marginBottom: '10px' } },
+	                                React.createElement('div', { style: { fontSize: '0.8rem', fontWeight: 800, color: 'var(--white)', marginBottom: '2px' } }, item.term),
+	                                React.createElement('div', { style: { fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.42 } }, item.def)
+	                            ))
+	                        ))
+	                    )
+	                );
+	            }
+	            return React.createElement('div', { style: { marginBottom: '8px' } },
                 React.createElement('button', {
                     onClick: () => setOpen(!open),
                     style: { width: '100%', padding: '10px 16px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--gold)', fontSize: '0.78rem', fontFamily: 'var(--font-body)', letterSpacing: '0.03em', textAlign: 'left' },
@@ -293,7 +521,7 @@
                             React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.4rem', color: 'var(--gold)', letterSpacing: '0.06em' } }, 'WAR ROOM GUIDE'),
                             React.createElement('button', { onClick: () => setExpanded(false), style: { background: 'none', border: 'none', color: 'var(--silver)', cursor: 'pointer', fontSize: '1.2rem' } }, '\u2715')
                         ),
-                        React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.4, marginBottom: '20px' } }, 'Dynasty HQ analyzes your dynasty league to give you an edge in every decision \u2014 trades, drafts, waivers, and roster construction. Here\u2019s what every tool and metric means.'),
+                        React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.4, marginBottom: '20px' } }, 'Dynasty HQ analyzes this league format to give you an edge in every decision - trades, drafts, waivers, and roster construction. Here\u2019s what every tool and metric means.'),
                         ...fullItems.map(section => React.createElement('div', { key: section.cat, style: { marginBottom: '20px' } },
                             React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', borderBottom: '1px solid rgba(212,175,55,0.2)', paddingBottom: '4px', marginBottom: '10px' } }, section.cat),
                             ...section.items.map(item => React.createElement('div', { key: item.term, style: { marginBottom: '12px' } },
@@ -474,19 +702,23 @@
         const [leagueSubView, setLeagueSubView] = useState('teams'); // sub-tabs below the overview
         const [lpSort, setLpSort] = useState({ key: 'dhq', dir: 1 });
         const [lpFilter, setLpFilter] = useState('');
+        const skinShowsDynastyValue = leagueSkin ? leagueSkin.features?.showDynastyValue !== false : true;
+        const skinShowsAgeCurve = leagueSkin ? leagueSkin.features?.showAgeCurve !== false : true;
+        const skinValueShort = leagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
+        const skinValueLabel = leagueSkin?.vocabulary?.valueLabel || 'DHQ Value';
 
         // Core KPI metadata — used by computeKpiValue and module widgets
         const KPI_OPTIONS = {
-            'health-score':   { label: 'Health Score',    icon: '', category: 'Roster',   tip: 'Blended score: 60% scoring power (contender) + 40% position coverage (dynasty depth). 90+=Elite, 80+=Contender, 70+=Crossroads' },
-            'avg-age':        { label: 'DHQ-Wtd Age',     icon: '', category: 'Roster',   tip: 'DHQ-weighted average age. Lower = longer dynasty window' },
-            'elite-count':    { label: 'Elite Players',   icon: '', category: 'Roster',   tip: 'Players with 7000+ DHQ or a top-5 rank at their position league-wide. These are your cornerstone assets.' },
-            'aging-cliff':    { label: 'Aging Cliff %',   icon: '', category: 'Roster',   tip: '% of DHQ held by players past their value window' },
-            'bench-quality':  { label: 'Bench Quality',   icon: '', category: 'Roster',   tip: 'Average DHQ of non-starter roster players' },
+            'health-score':   { label: 'Health Score',    icon: '', category: 'Roster',   tip: 'Blended score: 60% scoring power (contender) + 40% position coverage. 90+=Elite, 80+=Contender, 70+=Crossroads' },
+            'avg-age':        { label: skinValueShort + '-Wtd Age', icon: '', category: 'Roster', tip: skinValueShort + '-weighted average age. ' + (skinShowsAgeCurve ? 'Lower = longer roster window' : 'Useful context for short-term roster balance') },
+            'elite-count':    { label: 'Elite Players',   icon: '', category: 'Roster',   tip: 'Players with 7000+ ' + skinValueShort + ' or a top-5 rank at their position league-wide. These are your cornerstone assets.' },
+            'aging-cliff':    { label: 'Aging Cliff %',   icon: '', category: 'Roster',   tip: '% of ' + skinValueShort + ' held by players past their value window' },
+            'bench-quality':  { label: 'Bench Quality',   icon: '', category: 'Roster',   tip: 'Average ' + skinValueShort + ' of non-starter roster players' },
             'contender-rank': { label: 'Contender Rank',  icon: '', category: 'League',   tip: 'Win-now rank based on optimal starting lineup PPG vs league. How competitive are you THIS season?' },
-            'dynasty-rank':   { label: 'Dynasty Rank',    icon: '', category: 'League',   tip: 'Long-term rank based on total roster DHQ value. How strong is your dynasty foundation?' },
-            'window':         { label: 'Compete Window',  icon: '', category: 'Projection',tip: 'Estimated years your roster can compete based on age decay' },
+            'dynasty-rank':   { label: skinShowsDynastyValue ? 'Dynasty Rank' : 'Asset Rank', icon: '', category: 'League', tip: skinShowsDynastyValue ? 'Long-term rank based on total roster ' + skinValueShort + ' value. How strong is your dynasty foundation?' : 'Format-adjusted rank based on total roster value.' },
+            'window':         { label: skinShowsAgeCurve ? 'Compete Window' : 'Season Window', icon: '', category: 'Projection', tip: skinShowsAgeCurve ? 'Estimated years your roster can compete based on age decay' : 'Current-season readiness based on format-adjusted roster context' },
             'hit-rate':       { label: 'Trade Win Rate',  icon: '', category: 'Trades',   tip: 'Percentage of trades where you gained value (won or fair)' },
-            'net-trade':      { label: 'Net DHQ/Trade',   icon: '', category: 'Trades',   tip: 'Average DHQ gained or lost per trade' },
+            'net-trade':      { label: 'Net ' + skinValueShort + '/Trade', icon: '', category: 'Trades', tip: 'Average ' + skinValueShort + ' gained or lost per trade' },
             'trade-velocity': { label: 'Trade Velocity',  icon: '', category: 'Trades',   tip: 'Number of trades completed this season' },
             'pick-capital':   { label: 'Pick Capital',    icon: '', category: 'Draft',    tip: 'Total value of your draft picks across next 3 seasons. Includes traded picks.' },
             'draft-roi':      { label: 'Draft ROI',       icon: '', category: 'Draft',    tip: 'Current DHQ of drafted players vs capital spent' },
@@ -496,11 +728,12 @@
         };
         // Default 6-widget dashboard — module-based format. Intelligence brief
         // sits at the top as a full-width xl widget so new users land on Alex.
-        // v2 default layout — Intel Brief (2×4 tall) left, Field Notes (1×4 narrow) right,
-        // one sm from each remaining module fills the last column beside them.
+        // v2 default layout — Intel Brief anchors the board; Field Notes starts
+        // compact until real decision logs exist, so empty notes do not consume
+        // a full desktop column.
         const DEFAULT_WIDGETS = [
             { id: 'dw0', key: 'intel-brief',        size: 'tall' },
-            { id: 'dw1', key: 'field-notes',        size: 'narrow' },
+            { id: 'dw1', key: 'field-notes',        size: 'slim' },
             { id: 'dw2', key: 'roster-pulse',       size: 'sm', primaryMetric: 'health-score' },
             { id: 'dw3', key: 'market-radar',       size: 'sm' },
             { id: 'dw4', key: 'draft-capital',      size: 'sm' },
@@ -525,10 +758,13 @@
                 };
                 widgets = stored.map((k, i) => ({ id: 'mig_' + i, key: keyToModule[k] || k, size: 'sm', primaryMetric: k }));
             } else {
-                // Old format v2: {key, size} without id or primaryMetric
-                widgets = stored.map((w, i) => {
-                    if (!w.id) w = { ...w, id: 'mig2_' + i };
-                    // Map old KPI keys to module keys
+	                // Old format v2: {key, size} without id or primaryMetric
+	                widgets = stored.map((w, i) => {
+	                    if (!w.id) w = { ...w, id: 'mig2_' + i };
+	                    if (w.key === 'field-notes' && w.id === 'dw1' && w.size === 'narrow') {
+	                        w = { ...w, size: 'slim' };
+	                    }
+	                    // Map old KPI keys to module keys
                     const legacyKpiModules = {
                         'health-score': 'roster', 'avg-age': 'roster', 'elite-count': 'roster',
                         'aging-cliff': 'roster', 'bench-quality': 'roster', 'portfolio': 'roster',
@@ -931,6 +1167,7 @@
         const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
             try { return localStorage.getItem('wr_sidebar_collapsed') === '1'; } catch (_) { return false; }
         });
+        const iconSrc = ((window.location.pathname || '').includes('/dist-preview/') ? '../' : '') + 'icon-192.png';
         useEffect(() => {
             try { localStorage.setItem('wr_sidebar_collapsed', sidebarCollapsed ? '1' : '0'); } catch (_) {}
         }, [sidebarCollapsed]);
@@ -938,21 +1175,57 @@
         // Expose for cross-module access (draft-room "Edit GM Strategy" button)
         window._wrSetActiveTab = setActiveTab;
         window._wrSetGmStrategyOpen = setGmStrategyOpen;
-        const GM_STRATEGY_DEFAULT = { mode: 'balanced', riskTolerance: 'moderate', positionalNeeds: {}, untouchable: [], targets: [], notes: '' };
+        const getCurrentLeagueId = (lg) => lg?.league_id || lg?.id;
+        const GM_STRATEGY_DEFAULT = { mode: 'compete', riskTolerance: 'moderate', positionalNeeds: {}, untouchable: [], targets: [], notes: '' };
+        const readSharedGmStrategy = (leagueId) => {
+            try {
+                if (!localStorage.getItem('dhq_gm_strategy_v1')) return null;
+                return window.GMStrategy?.getStrategy?.(leagueId) || null;
+            } catch (_) {
+                return null;
+            }
+        };
+        const normalizeGmStrategy = (strategy, leagueId) => {
+            const normalize = window.WR?.GmMode?.normalize || ((mode) => mode || 'compete');
+            return {
+                ...GM_STRATEGY_DEFAULT,
+                ...(strategy || {}),
+                mode: normalize(strategy?.mode || GM_STRATEGY_DEFAULT.mode),
+                leagueId,
+            };
+        };
+        const loadGmStrategy = (leagueId) => {
+            const saved = readSharedGmStrategy(leagueId)
+                || LeagueStorage.get(LEAGUE_WR_KEYS.GM_STRATEGY(leagueId))
+                || GM_STRATEGY_DEFAULT;
+            return normalizeGmStrategy(saved, leagueId);
+        };
         const [gmStrategy, setGmStrategy] = useState(() =>
-            LeagueStorage.get(LEAGUE_WR_KEYS.GM_STRATEGY(currentLeague?.league_id)) || GM_STRATEGY_DEFAULT
+            loadGmStrategy(getCurrentLeagueId(currentLeague))
         );
         const gmStrategyInitRef = useRef(true);
+        const gmStrategyLeagueRef = useRef(getCurrentLeagueId(currentLeague));
         useEffect(() => {
-            if (currentLeague?.league_id) {
-                LeagueStorage.set(LEAGUE_WR_KEYS.GM_STRATEGY(currentLeague.league_id), gmStrategy);
+            const leagueId = getCurrentLeagueId(currentLeague);
+            if (!leagueId || String(gmStrategyLeagueRef.current || '') === String(leagueId)) return;
+            const next = loadGmStrategy(leagueId);
+            gmStrategyLeagueRef.current = leagueId;
+            gmStrategyInitRef.current = true;
+            window._wrGmStrategy = next;
+            setGmStrategy(next);
+        }, [currentLeague?.league_id, currentLeague?.id]);
+        useEffect(() => {
+            const leagueId = getCurrentLeagueId(currentLeague);
+            if (leagueId) {
+                const normalized = normalizeGmStrategy(gmStrategy, leagueId);
+                LeagueStorage.set(LEAGUE_WR_KEYS.GM_STRATEGY(leagueId), normalized);
                 // Expose to window for AI context
-                window._wrGmStrategy = gmStrategy;
+                window._wrGmStrategy = normalized;
                 // Log deliberate updates (skip initial load)
                 if (gmStrategyInitRef.current) { gmStrategyInitRef.current = false; }
                 else { window.wrLogAction?.('\uD83D\uDCCA', 'Updated GM strategy', 'roster', { actionType: 'gm-strategy' }); }
             }
-        }, [gmStrategy, currentLeague?.league_id]);
+        }, [gmStrategy, currentLeague?.league_id, currentLeague?.id]);
 
         // Fetch draft info for Brief tab (Sleeper only — other platforms don't have this endpoint)
         useEffect(() => {
@@ -1040,6 +1313,12 @@
           return () => window.removeEventListener('keydown', handler);
         }, []);
 
+        useEffect(() => {
+          window.__WR_SCROLL_FALLBACK_ACTIVE = true;
+          window.addEventListener('wheel', rerouteWheelToPage, { passive: false, capture: true });
+          return () => window.removeEventListener('wheel', rerouteWheelToPage, { capture: true });
+        }, []);
+
         // First-time welcome — auto-open chat with Alex's intro
         useEffect(() => {
           if (!myRoster?.players?.length || !currentLeague?.league_id) return;
@@ -1047,7 +1326,13 @@
           if (LeagueStorage.get(welcomeKey)) return;
           LeagueStorage.set(welcomeKey, '1');
           // Small delay so the app finishes rendering first
-          const t = setTimeout(() => {
+          const t = setTimeout(async () => {
+            if (window.App?.AssistantTutorial?.isActive?.()) return;
+            if (window.WR_TUTORIAL_CONFIG && window.App?.AssistantTutorial?.shouldShow) {
+              try {
+                if (await window.App.AssistantTutorial.shouldShow(window.WR_TUTORIAL_CONFIG)) return;
+              } catch (e) { window.wrLog?.('welcome.tutorialCheck', e); }
+            }
             setWelcomeMode(true);
             setReconPanelOpen(true);
             setReconMessages([{
@@ -1405,9 +1690,16 @@
                         return +(games.reduce((a, b) => a + b, 0) / games.length).toFixed(1);
                     };
 
-                    // Load AI keys from localStorage so callClaude can use them
-                    const savedProvider = localStorage.getItem('dynastyhq_provider') || 'gemini';
-                    const savedKey = localStorage.getItem('dynastyhq_' + savedProvider + '_key') || localStorage.getItem('dynastyhq_gemini_key') || localStorage.getItem('dynastyhq_anthropic_key') || '';
+                    // BYO keys are session-only; migrate and clear older localStorage keys.
+                    ['dynastyhq_ai_provider', 'dynastyhq_ai_key', 'dynastyhq_ai_model', 'dynastyhq_xai_key', 'dynastyhq_provider', 'dynastyhq_gemini_key', 'dynastyhq_anthropic_key'].forEach(name => {
+                        try {
+                            const value = localStorage.getItem(name);
+                            if (value && !sessionStorage.getItem(name)) sessionStorage.setItem(name, value);
+                            localStorage.removeItem(name);
+                        } catch (_) {}
+                    });
+                    const savedProvider = sessionStorage.getItem('dynastyhq_ai_provider') || sessionStorage.getItem('dynastyhq_provider') || 'gemini';
+                    const savedKey = sessionStorage.getItem('dynastyhq_ai_key') || sessionStorage.getItem('dynastyhq_' + savedProvider + '_key') || sessionStorage.getItem('dynastyhq_gemini_key') || sessionStorage.getItem('dynastyhq_anthropic_key') || '';
                     if (savedKey) { window.S.aiProvider = savedProvider; window.S.apiKey = savedKey; }
 
                     // Bridge stats data — use prevStats (2025) as base, overlay current season
@@ -1474,7 +1766,12 @@
                     });
                     window.S.transactions = txnsByWeek;
                 }
-                setTransactions(allTxns.slice(0, 50));
+                let visibleTxns = allTxns.slice(0, 50);
+                if (!visibleTxns.some(t => t.type === 'trade')) {
+                    const firstTrade = allTxns.find(t => t.type === 'trade');
+                    if (firstTrade) visibleTxns = [...visibleTxns.slice(0, 49), firstTrade];
+                }
+                setTransactions(visibleTxns);
 
                 // Trending — if the provider supplied it (Sleeper), use that;
                 // otherwise fall back to Sleeper's global trending endpoint
@@ -1534,9 +1831,19 @@
                     }).catch(err => window.wrLog('tags.load', err));
                 }
 
-                // Show tutorial for first-time users
+                // Show tutorial for first-time users only while they are still on Home.
                 if (typeof window.startWRTutorial === 'function') {
-                    setTimeout(window.startWRTutorial, 1000);
+                    setTimeout(async () => {
+                        const hashTab = new URLSearchParams((window.location.hash || '').replace(/^#/, '')).get('tab') || 'dashboard';
+                        if (hashTab !== 'dashboard') return;
+                        if (window.App?.AssistantTutorial?.isActive?.()) return;
+                        if (window.WR_TUTORIAL_CONFIG && typeof window.shouldShowWRTutorial === 'function') {
+                            try {
+                                if (!await window.shouldShowWRTutorial()) return;
+                            } catch (e) { window.wrLog?.('tutorial.shouldShow', e); }
+                        }
+                        window.startWRTutorial();
+                    }, 1000);
                 }
 
                 // Load league docs context for commissioner mode (fire-and-forget)
@@ -1691,6 +1998,10 @@
         function getPositionColor(pos) {
             const colors = { QB: '#FF6B6B', RB: '#4ECDC4', WR: '#45B7D1', TE: '#F7DC6F', K: '#BB8FCE', DEF: '#85929E' };
             return colors[pos] || 'var(--silver)';
+        }
+
+        function getPositionLabel(pos) {
+            return window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
         }
 
         // Dashboard helpers
@@ -1887,7 +2198,10 @@
             }
             setReconMessages(prev => [...prev,
               { role: 'assistant', content: '**Last question — any positions you\'re actively targeting in trades?** Tap all that apply, or skip.',
-                onboardChoices: ['QB','RB','WR','TE','DL','LB','DB','Picks'].map(t => ({ label: t, value: t, multi: true })),
+                onboardChoices: [
+                  ['QB','QB'], ['RB','RB'], ['WR','WR'], ['TE','TE'], ['K','K'],
+                  ['D/ST','DEF'], ['DL','DL'], ['LB','LB'], ['DB','DB'], ['Picks','Picks']
+                ].map(([label, value]) => ({ label, value, multi: true })),
                 onboardMulti: true,
                 onboardSkip: true
               }
@@ -1896,8 +2210,9 @@
           } else if (step === 4) {
             if (value !== 'skip' && Array.isArray(value) && value.length) {
               setGmStrategy(prev => ({ ...prev, targets: value }));
+              const labelTargets = value.map(v => window.App?.posLabel?.(v) || (v === 'DEF' ? 'D/ST' : v));
               setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined, onboardMulti: undefined, onboardSkip: undefined })),
-                { role: 'user', content: 'Targeting: ' + value.join(', ') }
+                { role: 'user', content: 'Targeting: ' + labelTargets.join(', ') }
               ]);
             } else {
               setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined, onboardMulti: undefined, onboardSkip: undefined })),
@@ -2153,7 +2468,7 @@
                         background: 'rgba(212, 175, 55, 0.08)',
                         letterSpacing: '0.02em'
                     }}>
-                        {pos}
+                        {getPositionLabel(pos)}
                     </span>
                     {/* Player name + team — opens shared player card */}
                     <a
@@ -2347,6 +2662,7 @@
             calendar: ['M5 5h14v15H5z', 'M8 3v4', 'M16 3v4', 'M5 9h14'],
             strategy: ['M12 3l7 7-7 11-7-11 7-7Z', 'M12 8v5l3 2'],
             settings: ['M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z', 'M12 3v2', 'M12 19v2', 'M3 12h2', 'M19 12h2', 'M5.6 5.6 7 7', 'M17 17l1.4 1.4', 'M18.4 5.6 17 7', 'M7 17l-1.4 1.4'],
+            legend: ['M4 5h16', 'M4 12h16', 'M4 19h16', 'M7 5v14', 'M11 5v14'],
             refresh: ['M21 12a9 9 0 0 1-14.8 6.9', 'M3 12A9 9 0 0 1 17.8 5.1', 'M17 3v4h4', 'M7 21v-4H3'],
         };
         const renderNavIcon = (key) => React.createElement('svg', {
@@ -2360,11 +2676,12 @@
             'aria-hidden': 'true',
         }, ...(iconPaths[key] || iconPaths.home).map((d, idx) => React.createElement('path', { key: idx, d })));
 
-        const _seasonCtxValue = { ...seasonCtxData, selectPlayer };
+        const _seasonCtxValue = { ...seasonCtxData, leagueSkin, selectPlayer };
+        const leagueSkinClassName = leagueSkin?.theme?.className || (leagueSkin?.type ? 'wr-league-skin-' + leagueSkin.type : 'wr-league-skin-default');
 
         return (
           <window.App.SeasonContext.Provider value={_seasonCtxValue}>
-            <div className="app-container" style={{ paddingBottom: '60px' }}>
+            <div className={'app-container ' + leagueSkinClassName} data-league-skin-type={leagueSkin?.type || 'unknown'} data-league-skin-theme={leagueSkin?.theme?.id || 'war-room-default'} onWheel={rerouteWheelToPage} style={{ paddingBottom: '60px' }}>
                 {/* DHQ Loading Bubble */}
                 {dhqStatus.loading && (
                     <div style={{
@@ -2403,11 +2720,34 @@
 
                 {/* Mobile hamburger toggle */}
                 <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
-                    display: 'none', position: 'fixed', top: '10px', left: '10px', zIndex: 201,
+                    display: 'none', position: 'fixed', top: 'calc(10px + var(--wr-dev-banner-height, 0px))', left: '10px', zIndex: 201,
                     background: 'var(--black)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px',
                     padding: '6px 10px', cursor: 'pointer', color: 'var(--gold)', fontSize: '1.2rem', lineHeight: 1
                 }} className="wr-hamburger">{sidebarOpen ? '\u2715' : '\u2630'}</button>
-                <style>{`@media(max-width:767px){html,body,#root{max-width:100%;overflow-x:hidden}.wr-hamburger{display:block !important}.wr-sidebar{left:-220px !important;transform:none !important}.wr-sidebar.open{left:0 !important}.wr-main-content{margin-left:0 !important;width:100% !important;max-width:100vw;overflow-x:hidden;box-sizing:border-box}}`}</style>
+                <style>{`@media(max-width:767px){
+                    html,body,#root{max-width:100%;overflow-x:clip;overflow-y:visible}
+                    .wr-hamburger{display:block !important}
+                    .wr-sidebar{left:-220px !important;top:var(--wr-dev-banner-height,0px) !important;transform:none !important}
+                    .wr-sidebar.open{left:0 !important}
+                    .wr-main-content{margin-left:0 !important;width:100% !important;max-width:100vw;overflow-x:clip;overflow-y:visible;box-sizing:border-box;padding-top:var(--wr-dev-banner-height,0px)}
+                    .wr-league-header-row{display:grid !important;grid-template-columns:minmax(0,1fr) auto;align-items:start !important;gap:6px 8px !important;padding-left:42px}
+                    .wr-league-header-row .header-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.96rem !important;line-height:1.2}
+                    .wr-league-switch{grid-column:2;grid-row:1}
+                    .wr-gm-mode-badge{grid-column:1 / 3;justify-self:start;max-width:100%;min-width:0}
+                    .wr-league-type-badge{grid-column:1 / 3;grid-row:3;justify-self:start;max-width:100%;min-width:0}
+                    .wr-league-phase-badge{grid-column:1 / 3;grid-row:4;justify-self:start;max-width:100%;min-width:0}
+                    .wr-draft-header-clock{grid-column:1 / 3;grid-row:5;justify-self:start;max-width:100%;min-width:0;overflow:hidden}
+                    .wr-draft-header-clock>span{max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+                    .wr-draft-header-clock>strong{flex-shrink:0}
+                    .wr-time-bar{align-items:flex-start !important;padding:8px 10px !important;gap:6px !important}
+                    .wr-time-years{width:auto;max-width:100%;overflow:visible;flex-wrap:wrap !important;padding-bottom:2px}
+                    .wr-time-spacer{display:none !important}
+                    .wr-time-mode{margin-left:0;flex-shrink:0}
+                    .wr-time-banner{padding:8px 10px !important;flex-direction:column;align-items:flex-start !important;gap:4px !important}
+                    .wr-time-banner button{margin-left:0 !important;width:100%;max-width:220px}
+                    .wr-debug-strip{padding:4px 10px !important;overflow-x:auto;overflow-y:clip}
+                    .wr-debug-strip>div{min-width:max-content}
+                }`}</style>
 
                 {/* Mobile overlay */}
                 {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ display: 'none', position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 99 }} className="wr-sidebar-overlay" />}
@@ -2422,7 +2762,7 @@
                 }}>
                     {/* Logo — click to go home */}
                     <div className="wr-sidebar-brand" onClick={onBack} style={{ padding: '0 14px', marginBottom: sidebarCollapsed ? '10px' : '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} title="Back to Dynasty HQ home">
-                      <img src="icon-192.png" alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: '6px' }} onError={e => { e.target.style.display = 'none'; }} />
+                      <img src={iconSrc} alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: '6px' }} onError={e => { e.target.style.display = 'none'; }} />
                       <div className="wr-sidebar-wordmark">
                         <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', lineHeight: 1.1 }}>DYNASTY HQ</div>
                         <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.5, fontFamily: 'var(--font-body)', letterSpacing: '0.04em' }}>WAR ROOM</div>
@@ -2466,7 +2806,7 @@
                                 if (name.toLowerCase().includes(lower)) matches.push({ type: 'player', pid, name, pos: p.position || '?', team: p.team || 'FA' });
                             });
                             // Search tabs
-                            [{ label: 'Home', tab: 'dashboard' }, { label: 'My Roster', tab: 'myteam' }, { label: 'Trade Center', tab: 'trades' }, { label: 'Free Agency', tab: 'fa' }, { label: 'Draft Command', tab: 'draft' }, { label: 'Analytics', tab: 'analytics' }, { label: 'GM\'s Office', tab: 'alex' }, { label: 'Trophy Room', tab: 'trophies' }].forEach(t => {
+                            [{ label: 'Home', tab: 'dashboard' }, { label: 'My Roster', tab: 'myteam' }, { label: 'Trade Center', tab: 'trades' }, { label: 'Free Agency', tab: 'fa' }, { label: 'Draft Command', tab: 'draft' }, { label: 'Analytics', tab: 'analytics' }, { label: 'GM\'s Office', tab: 'alex' }, { label: 'Trophy Room', tab: 'trophies' }, { label: 'Settings', tab: 'settings' }, { label: 'Legend', tab: 'legend' }].forEach(t => {
                                 if (t.label.toLowerCase().includes(lower)) matches.push({ type: 'tab', label: t.label, tab: t.tab });
                             });
                             setResults(matches.slice(0, 8));
@@ -2521,7 +2861,8 @@
                         { label: 'Trophy Room', tab: 'trophies', iconKey: 'trophy' },
                         { label: 'Calendar', tab: 'calendar', iconKey: 'calendar' },
                         { section: 'SETTINGS' },
-                        { label: 'Settings', action: () => onOpenSettings && onOpenSettings(), iconKey: 'settings' },
+                        { label: 'Settings', tab: 'settings', iconKey: 'settings' },
+                        { label: 'Legend', tab: 'legend', iconKey: 'legend' },
                     ].map((item, i) => {
                         if (item.section) {
                             // Hairline divider only — section labels removed for a
@@ -2573,9 +2914,6 @@
                         {window.App?.LI_LOADED ? 'Synced' : 'Loading'}
                     </div>
 
-                    {/* Legend / Guide */}
-                    {!sidebarCollapsed && React.createElement(LegendPanel)}
-
                     {/* Refresh Button */}
                     <button onClick={async () => {
                         try {
@@ -2603,14 +2941,22 @@
                 </div>
 
                 {/* Main content shifted right */}
-                <div className="wr-main-content" style={{ marginLeft: sidebarWidth + 'px', width: 'calc(100% - ' + sidebarWidth + 'px)' }}>
+                <div className="wr-main-content" style={{
+                    marginLeft: sidebarWidth + 'px',
+                    width: 'calc(100vw - ' + sidebarWidth + 'px)',
+                    maxWidth: 'calc(100vw - ' + sidebarWidth + 'px)',
+                    minWidth: 0,
+                    overflowX: 'clip',
+                    overflowY: 'visible',
+                    boxSizing: 'border-box',
+                }}>
                 {/* Header — collapsed into a single left-aligned strip.
                     Removed: redundant "{year} SEASON" subtitle (year picker below handles this)
                     and the duplicate league-name/team-count in the time context bar. */}
                 <header className="header" style={{ position: 'relative', marginBottom: '0', paddingTop: '0.6rem', paddingBottom: '0.6rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '10px' }}>
-                        <div className="header-title" style={{ fontSize: '1.05rem' }}>{currentLeague.name}</div>
-                        <button onClick={onBack} style={{ padding: '4px 12px', fontSize: '0.66rem', fontFamily: 'var(--font-body)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'rgba(212,175,55,0.10)', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>SWITCH</button>
+                    <div className="wr-league-header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px 10px', flexWrap: 'wrap', minWidth: 0 }}>
+                        <div className="header-title" style={{ fontSize: '1.05rem', minWidth: 0, maxWidth: 'min(460px, 100%)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentLeague.name}</div>
+                        <button className="wr-league-switch" onClick={onBack} style={{ padding: '4px 12px', fontSize: '0.66rem', fontFamily: 'var(--font-body)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'rgba(212,175,55,0.10)', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>SWITCH</button>
                         {(() => {
                             const gm = window.WR?.GmMode?.describe?.(gmStrategy?.mode || 'compete');
                             if (!gm) return null;
@@ -2618,19 +2964,79 @@
                                 key: 'gm-badge-' + gm.id,
                                 onClick: () => setActiveTab && setActiveTab('strategy'),
                                 title: 'GM Mode — edit in GM\'s Office',
+                                className: 'wr-gm-mode-badge',
                                 style: {
                                     padding: '4px 10px 4px 8px', display: 'inline-flex', alignItems: 'center', gap: '6px',
                                     fontSize: '0.66rem', fontFamily: 'var(--font-body)', fontWeight: 700,
                                     textTransform: 'uppercase', letterSpacing: '0.06em',
                                     background: gm.badgeColor + '22', color: gm.badgeColor,
                                     border: '1px solid ' + gm.badgeColor + '66',
-                                    borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap'
+                                    borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0
                                 }
                             },
                                 React.createElement('span', { style: { width: 6, height: 6, borderRadius: '50%', background: gm.badgeColor } }),
                                 'GM · ' + gm.label
                             );
                         })()}
+                        {headerLeagueType && React.createElement('div', {
+                            className: 'wr-league-type-badge',
+                            title: 'League type: ' + headerLeagueType.label,
+                            'aria-label': 'League type: ' + headerLeagueType.label,
+                            style: {
+                                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                flex: '0 0 auto', minWidth: 'max-content',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                border: '1px solid ' + headerLeagueType.color + '66',
+                                background: headerLeagueType.color + '18',
+                                color: headerLeagueType.color,
+                                fontFamily: 'var(--font-body)', fontSize: '0.66rem',
+                                fontWeight: 800, textTransform: 'uppercase',
+                                letterSpacing: '0.06em', whiteSpace: 'nowrap',
+                                cursor: 'help'
+                            }
+                        },
+                            React.createElement(LeagueTypeHeaderIcon, { meta: headerLeagueType }),
+                            headerLeagueType.label === 'League Type Unknown' ? 'Type ?' : headerLeagueType.label
+                        )}
+                        {leagueSkin?.phaseMeta && leagueSkin.phase !== 'unknown' && React.createElement('div', {
+                            className: 'wr-league-phase-badge',
+                            title: 'League phase: ' + leagueSkin.phaseMeta.label,
+                            'aria-label': 'League phase: ' + leagueSkin.phaseMeta.label,
+                            style: {
+                                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                flex: '0 0 auto', minWidth: 'max-content',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                border: '1px solid ' + leagueSkin.phaseMeta.color + '55',
+                                background: leagueSkin.phaseMeta.color + '14',
+                                color: leagueSkin.phaseMeta.color,
+                                fontFamily: 'var(--font-body)', fontSize: '0.66rem',
+                                fontWeight: 800, textTransform: 'uppercase',
+                                letterSpacing: '0.06em', whiteSpace: 'nowrap',
+                                cursor: 'help'
+                            }
+                        },
+                            leagueSkin.phaseMeta.label
+                        )}
+                        {headerDraftClock && React.createElement('div', {
+                            className: 'wr-draft-header-clock',
+                            title: headerDraftInfo?.start_time ? new Date(headerDraftInfo.start_time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'League draft status',
+                            style: {
+                                display: 'inline-flex', alignItems: 'center', gap: '7px',
+                                flex: '0 0 auto',
+                                padding: '4px 10px', borderRadius: '6px',
+                                border: '1px solid rgba(212,175,55,0.42)',
+                                background: 'rgba(212,175,55,0.12)',
+                                color: 'var(--gold)',
+                                fontFamily: 'var(--font-body)', fontSize: '0.66rem',
+                                fontWeight: 800, textTransform: 'uppercase',
+                                letterSpacing: '0.06em', whiteSpace: 'nowrap'
+                            }
+                        },
+                            React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.78 } }, headerDraftClock.label),
+                            React.createElement('strong', { style: { color: 'var(--white)', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.68rem' } }, headerDraftClock.clock)
+                        )}
                     </div>
                 </header>
 
@@ -2648,13 +3054,13 @@
                 )}
 
                 {/* ── GLOBAL TIME CONTEXT BAR ── */}
-                <div style={{
+                <div className="wr-time-bar" style={{
                     display: 'flex', alignItems: 'center', gap: '8px', padding: '8px clamp(12px, 4vw, 24px)', flexWrap: 'wrap',
                     background: 'rgba(0,0,0,0.4)', borderBottom: '1px solid rgba(212,175,55,0.12)',
                     position: 'sticky', top: 0, zIndex: 50
                 }}>
                     {/* Year pills */}
-                    <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', minWidth: 0 }}>
+                    <div className="wr-time-years" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', minWidth: 0 }}>
                         {timeYears.map(yr =>
                             <button key={yr} onClick={() => handleTimeYearChange(yr)} style={{
                                 padding: '4px 10px', fontSize: '0.76rem', fontFamily: 'var(--font-body)',
@@ -2667,9 +3073,9 @@
                         )}
                     </div>
                     {/* League name/team-count moved to the main header to avoid duplication. */}
-                    <div style={{ marginLeft: 'auto' }}></div>
+                    <div className="wr-time-spacer" style={{ marginLeft: 'auto' }}></div>
                     {/* Time mode badge */}
-                    <span style={{
+                    <span className="wr-time-mode" style={{
                         fontSize: '0.72rem', fontWeight: 700, color: timeModeColor,
                         background: timeModeColor + '15', border: '1px solid ' + timeModeColor + '30',
                         padding: '2px 10px', borderRadius: '12px',
@@ -2683,7 +3089,7 @@
                 </div>
 
                 {/* Time mode banner — visible when not viewing current season */}
-                {!isCurrentYear && <div style={{
+                {!isCurrentYear && <div className="wr-time-banner" style={{
                     padding: '8px 24px', display: 'flex', alignItems: 'center', gap: '8px',
                     background: timeModeColor + '10', borderBottom: '1px solid ' + timeModeColor + '30'
                 }}>
@@ -2697,7 +3103,7 @@
                 </div>}
 
                 {/* Debug panel (dev only) */}
-                {DEV_DEBUG && <div style={{ padding: '4px 24px', background: 'rgba(255,0,0,0.04)', borderBottom: '1px solid rgba(255,0,0,0.1)', fontSize: '0.7rem', fontFamily: 'monospace', color: '#F0A500' }}>
+                {DEV_DEBUG && <div className="wr-debug-strip" style={{ padding: '4px 24px', background: 'rgba(255,0,0,0.04)', borderBottom: '1px solid rgba(255,0,0,0.1)', fontSize: '0.7rem', fontFamily: 'monospace', color: '#F0A500' }}>
                     <div style={{ display: 'flex', gap: '16px', marginBottom: '2px' }}>
                         <span>year={timeYear}</span>
                         <span>mode={timeMode}</span>
@@ -2731,6 +3137,7 @@
                         myRoster={myRoster}
                         standings={standings}
                         currentLeague={currentLeague}
+                        leagueSkin={leagueSkin}
                         sleeperUserId={sleeperUserId}
                         timeRecomputeTs={timeRecomputeTs}
                         viewMode={viewMode}
@@ -2740,6 +3147,7 @@
                 ) : activeTab === 'myteam' ? <MyTeamTab
                     myRoster={myRoster}
                     currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
                     playersData={playersData}
                     statsData={statsData}
                     stats2025Data={stats2025Data}
@@ -2786,6 +3194,7 @@
                     setLpFilter={setLpFilter}
                     standings={standings}
                     currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
                     playersData={playersData}
                     statsData={statsData}
                     sleeperUserId={sleeperUserId}
@@ -2794,12 +3203,14 @@
                     timeRecomputeTs={timeRecomputeTs}
                     setTimeRecomputeTs={setTimeRecomputeTs}
                     getAcquisitionInfo={getAcquisitionInfo}
+                    setActiveTab={setActiveTab}
                 /> : activeTab === 'analytics' ? <AnalyticsPanel
                     analyticsData={analyticsData}
                     analyticsTab={analyticsTab}
                     setAnalyticsTab={setAnalyticsTab}
                     myRoster={myRoster}
                     currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
                     standings={standings}
                     playersData={playersData}
                     statsData={statsData}
@@ -2822,6 +3233,7 @@
                     prevStatsData={stats2025Data}
                     myRoster={myRoster}
                     currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
                     sleeperUserId={sleeperUserId}
                     timeRecomputeTs={timeRecomputeTs}
                     viewMode={viewMode}
@@ -2831,6 +3243,7 @@
                     statsData={statsData}
                     myRoster={myRoster}
                     currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
                     sleeperUserId={sleeperUserId}
                     setReconPanelOpen={setReconPanelOpen}
                     sendReconMessage={sendReconMessage}
@@ -2838,14 +3251,22 @@
                     viewMode={viewMode}
                 /> : activeTab === 'trophies' ? <TrophyRoomTab
                     currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
                     playersData={playersData}
                     myRoster={myRoster}
                     sleeperUserId={sleeperUserId}
                 /> : activeTab === 'calendar' ? <CalendarTab
                     currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
                     myRoster={myRoster}
-                /> : (activeTab === 'alex' || activeTab === 'strategy') ? (typeof window.AlexInsightsTab === 'function' ? React.createElement(window.AlexInsightsTab, {
-                    currentLeague, myRoster, playersData, statsData,
+                /> : activeTab === 'settings' ? (
+                    typeof window.SettingsModule === 'function'
+                        ? React.createElement(window.SettingsModule, settingsProps)
+                        : <div style={{ padding: '40px', textAlign: 'center', color: 'var(--silver)' }}>Settings module not loaded.</div>
+                ) : activeTab === 'legend' ? (
+                    React.createElement(LegendPanel, { module: true })
+                ) : (activeTab === 'alex' || activeTab === 'strategy') ? (typeof window.AlexInsightsTab === 'function' ? React.createElement(window.AlexInsightsTab, {
+                    currentLeague, leagueSkin, myRoster, playersData, statsData,
                     stats2025Data, standings, sleeperUserId,
                     timeRecomputeTs, setActiveTab,
                     gmStrategy, setGmStrategy,
@@ -2853,7 +3274,7 @@
                     initialSubTab: activeTab === 'strategy' ? 'strategy' : null,
                 }) : <div style={{ padding: '40px', textAlign: 'center', color: 'var(--silver)' }}>GM's Office module not loaded.</div>
                 ) : activeTab === 'compare' ? (typeof window.CompareTab === 'function' ? React.createElement(window.CompareTab, {
-                    currentLeague, myRoster, playersData, statsData, stats2025Data,
+                    currentLeague, leagueSkin, myRoster, playersData, statsData, stats2025Data,
                     standings, sleeperUserId,
                 }) : <div style={{ padding: '40px', textAlign: 'center', color: 'var(--silver)' }}>Compare module not loaded.</div>
                 ) : (
@@ -2870,12 +3291,16 @@
                     transactions={transactions}
                     standings={standings}
                     currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
                     playersData={playersData}
+                    statsData={statsData}
+                    prevStatsData={stats2025Data}
                     myRoster={myRoster}
                     getOwnerName={getOwnerName}
                     getPlayerName={getPlayerName}
                     timeAgo={timeAgo}
                     briefDraftInfo={briefDraftInfo}
+                    timeRecomputeTs={timeRecomputeTs}
                 />
                 )}
                 </div>

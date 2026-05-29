@@ -359,10 +359,15 @@
             if (mine.length >= 4) {
                 // Optimal isn't in the payload, but we can flag low-scoring weeks vs opponents.
                 const avg = mine.reduce((s, m) => s + (m.points || 0), 0) / mine.length;
-                const lowWeeks = mine.filter(m => (m.points || 0) < avg * 0.75).length;
+                const minDelta = Number(window.WR?.AlexSettings?.get?.()?.minPointsDelta ?? DEFAULT_SETTINGS.minPointsDelta ?? 0);
+                const lowWeekDeltas = mine
+                    .map(m => avg - (m.points || 0))
+                    .filter(delta => delta >= Math.max(avg * 0.25, minDelta));
+                const lowWeeks = lowWeekDeltas.length;
                 if (lowWeeks >= 3) {
                     out.push({
                         focus: 'startSit', severity: 'pattern', confidence: 70,
+                        pointsDelta: Math.max(...lowWeekDeltas),
                         title: lowWeeks + ' of ' + mine.length + ' weeks were 25%+ below your average',
                         body: 'Lineup variance is eating wins. Either volatile plays or frequent start-sit misses. Use the Compare tab\u2019s matchup view to pre-commit starters.',
                         ctaLabel: 'Open Compare',
@@ -414,6 +419,55 @@
         const priority = { warning: 0, edge: 1, pattern: 2, opportunity: 3 };
         out.sort((a, b) => (priority[a.severity] ?? 9) - (priority[b.severity] ?? 9));
         return out;
+    }
+
+    function getInsightsLeagueProfile(props) {
+        const currentLeague = props?.currentLeague
+            || window.S?.leagues?.find(l => l.league_id === window.S?.currentLeagueId)
+            || window.S?.leagues?.[0]
+            || null;
+        if (!currentLeague || typeof window.App?.Intelligence?.buildLeagueProfile !== 'function') return null;
+        return window.App.Intelligence.buildLeagueProfile({
+            league: currentLeague,
+            rosters: currentLeague?.rosters || window.S?.rosters || [],
+            platform: window.S?.platform || currentLeague?._platform,
+        });
+    }
+
+    function decorateInsightRecommendations(insights, props, kpis, source) {
+        if (typeof window.App?.Intelligence?.buildBehavioralRecommendation !== 'function') return insights || [];
+        const profile = getInsightsLeagueProfile(props);
+        return (insights || []).map((ins, index) => {
+            const titleSlug = String(ins?.title || index).replace(/\W+/g, '_').toLowerCase().slice(0, 48);
+            const intelligence = window.App.Intelligence.buildBehavioralRecommendation({
+                id: 'alex_' + (source || 'heuristic') + '_' + index + '_' + titleSlug,
+                focus: ins?.focus,
+                severity: ins?.severity,
+                confidence: ins?.confidence,
+                title: ins?.title,
+                body: ins?.body,
+                profile,
+                kpis,
+                evidenceDetail: (source === 'ai' ? 'AI-generated ' : 'Deterministic ') + 'behavioral read grounded in decision history.',
+                badge: ins?.severity,
+            });
+            const whyView = typeof window.App?.Intelligence?.buildWhyView === 'function'
+                ? window.App.Intelligence.buildWhyView(intelligence, { title: 'Why this insight', limit: 3 })
+                : null;
+            const recommendationWhy = whyView?.lines || (typeof window.App?.Intelligence?.recommendationWhyLines === 'function'
+                ? window.App.Intelligence.recommendationWhyLines(intelligence, 3)
+                : []);
+            return { ...ins, intelligence, whyView, recommendationWhy };
+        });
+    }
+
+    function publishInsightRecommendations(insights, surface) {
+        if (typeof window.App?.Intelligence?.publishRecommendations !== 'function') return;
+        window.App.Intelligence.publishRecommendations(
+            'alex-insights',
+            (insights || []).map(ins => ins.intelligence).filter(Boolean),
+            { surface: surface || 'gm-office' }
+        );
     }
 
     // ── AI-generated novel insights ───────────────────────────────
@@ -552,7 +606,7 @@
     }
 
     // ── Overview sub-tab ──────────────────────────────────────────
-    function OverviewView({ kpis, insights, props }) {
+    function OverviewView({ kpis, insights, props, settings }) {
         const Kpi = window.WR.Kpi;
         const InsightCard = window.WR.InsightCard;
         const fmtK = (n) => n == null ? null : ((n > 0 ? '+' : '') + (n / 1000).toFixed(1) + 'k');
@@ -562,8 +616,19 @@
         const [aiState, setAiState] = useState(() => loadCachedAiInsights(props));
         const [aiLoading, setAiLoading] = useState(false);
         const [aiError, setAiError] = useState(null);
-        const aiInsights = (aiState?.insights || []).filter(x => !window.WR?.AlexSettings || window.WR.AlexSettings.shouldShow(x));
-        const merged = [...insights, ...aiInsights];
+        const decoratedAiInsights = React.useMemo(
+            () => decorateInsightRecommendations(aiState?.insights || [], props, kpis, 'ai'),
+            [aiState, props, kpis]
+        );
+        const aiInsights = React.useMemo(
+            () => decoratedAiInsights.filter(x => !window.WR?.AlexSettings || window.WR.AlexSettings.shouldShow(x)),
+            [decoratedAiInsights, settings]
+        );
+        const merged = React.useMemo(() => [...insights, ...aiInsights], [insights, aiInsights]);
+
+        useEffect(() => {
+            publishInsightRecommendations(merged, 'gm-office-overview');
+        }, [merged]);
 
         useEffect(() => {
             setAiState(loadCachedAiInsights(props));
@@ -654,6 +719,25 @@
                 : h('div', { className: 'gm-office-insight-grid' },
                     merged.map((ins, i) => h('div', { key: i, style: { position: 'relative' } },
                         h(InsightCard, ins),
+                        ins.recommendationWhy?.length > 0 && h('div', {
+                            style: {
+                                display: 'flex', flexWrap: 'wrap', gap: '5px',
+                                margin: '6px 2px 0',
+                            }
+                        },
+                            ins.recommendationWhy.slice(0, 3).map(line => h('span', {
+                                key: line,
+                                style: {
+                                    color: '#D0E7FA',
+                                    background: 'rgba(125,183,232,0.07)',
+                                    border: '1px solid rgba(125,183,232,0.18)',
+                                    borderRadius: '4px',
+                                    padding: '2px 5px',
+                                    fontSize: '0.6rem',
+                                    lineHeight: 1.25,
+                                }
+                            }, line))
+                        ),
                         ins.isAi && h('div', { style: { position: 'absolute', top: 10, right: 10, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.52rem', fontWeight: 700, letterSpacing: '0.12em', padding: '2px 6px', borderRadius: '4px', background: 'rgba(124,107,248,0.2)', color: '#9b8afb', border: '1px solid rgba(124,107,248,0.4)' } }, '\u2728 AI')
                     ))
                 )
@@ -981,15 +1065,71 @@
         if (txnMap && typeof txnMap === 'object' && !Array.isArray(txnMap)) {
             Object.values(txnMap).forEach(arr => { if (Array.isArray(arr)) txns.push(...arr); });
         }
+        function getTradeRosters(t) {
+            return (t?.roster_ids || Object.keys(t?.sides || {})).map(String).sort();
+        }
+        function sideReceivedAssets(t, rid) {
+            const rosterId = String(rid);
+            if (t?.sides) {
+                const side = t.sides[rosterId] || {};
+                const faab = Number(side.faab || side.faabDelta || side.waiverBudget || 0);
+                return {
+                    players: [...(side.players || [])].map(String),
+                    picks: [...(side.picks || [])],
+                    faab: Number.isFinite(faab) && faab > 0 ? faab : 0,
+                };
+            }
+            const pickMoved = pk => String(pk?.owner_id ?? '') !== String(pk?.previous_owner_id ?? '');
+            const faabRows = Array.isArray(t?.waiver_budget) ? t.waiver_budget : [];
+            return {
+                players: Object.entries(t?.adds || {}).filter(([, r]) => String(r) === rosterId).map(([pid]) => String(pid)),
+                picks: (t?.draft_picks || []).filter(pk => pickMoved(pk) && String(pk.owner_id) === rosterId),
+                faab: faabRows
+                    .filter(row => String(row.receiver ?? row.to ?? row.roster_id ?? '') === rosterId)
+                    .reduce((sum, row) => sum + (Number(row.amount ?? row.value ?? 0) || 0), 0),
+            };
+        }
+        function sideSentAssets(t, rid) {
+            const rosterId = String(rid);
+            if (t?.sides) {
+                return getTradeRosters(t).filter(r => r !== rosterId).reduce((acc, otherRid) => {
+                    const received = sideReceivedAssets(t, otherRid);
+                    acc.players.push(...received.players);
+                    acc.picks.push(...received.picks);
+                    acc.faab += received.faab || 0;
+                    return acc;
+                }, { players: [], picks: [], faab: 0 });
+            }
+            const pickMoved = pk => String(pk?.owner_id ?? '') !== String(pk?.previous_owner_id ?? '');
+            const faabRows = Array.isArray(t?.waiver_budget) ? t.waiver_budget : [];
+            return {
+                players: Object.entries(t?.drops || {}).filter(([, r]) => String(r) === rosterId).map(([pid]) => String(pid)),
+                picks: (t?.draft_picks || []).filter(pk => pickMoved(pk) && String(pk.previous_owner_id) === rosterId),
+                faab: faabRows
+                    .filter(row => String(row.sender ?? row.from ?? '') === rosterId)
+                    .reduce((sum, row) => sum + (Number(row.amount ?? row.value ?? 0) || 0), 0),
+            };
+        }
+        function transactionEventKey(ev) {
+            const t = ev?.transaction || {};
+            if (t.type === 'trade') {
+                return 'trade:' + _dhMs(t.created || t.ts || ev.ts || 0) + ':' + getTradeRosters(t).join(',');
+            }
+            return t.transaction_id || t.id || (t.type + ':' + (t.created || t.ts || ev.ts || 0) + ':' + JSON.stringify(t.adds || {}) + ':' + JSON.stringify(t.drops || {}));
+        }
         // ts stored as the raw upstream value — _dhMs() auto-detects seconds
         // vs ms when rendering, so we don't pre-multiply (which broke dates
         // when LI.tradeHistory's t.ts was already in milliseconds).
         const transactionEvents = txns.filter(t => {
             const addsMe = t.adds && Object.values(t.adds).some(r => String(r) === String(myRid));
             const dropsMe = t.drops && Object.values(t.drops).some(r => String(r) === String(myRid));
+            const pickMe = (t.draft_picks || []).some(pk => String(pk.owner_id) === String(myRid) || String(pk.previous_owner_id) === String(myRid));
+            const faabMe = (t.waiver_budget || []).some(row => String(row.sender ?? row.from ?? row.receiver ?? row.to ?? '') === String(myRid));
             const tradeMe = t.type === 'trade' && (
                 (Array.isArray(t.roster_ids) && t.roster_ids.some(r => String(r) === String(myRid))) ||
-                (t.sides && Object.keys(t.sides).some(r => String(r) === String(myRid)))
+                (t.sides && Object.keys(t.sides).some(r => String(r) === String(myRid))) ||
+                pickMe ||
+                faabMe
             );
             return addsMe || dropsMe || tradeMe;
         }).map(t => ({ kind: 'transaction', ts: t.created || t.ts || 0, transaction: t }));
@@ -1001,7 +1141,9 @@
         const eventById = new Map();
         [...transactionEvents, ...liTradeEvents].forEach(ev => {
             const t = ev.transaction || {};
-            const id = t.transaction_id || t.id || (t.type + ':' + (t.created || t.ts || 0) + ':' + JSON.stringify(t.roster_ids || Object.keys(t.sides || {})));
+            const id = ev.kind === 'transaction' ? transactionEventKey(ev) : (ev.id || String(ev.ts || Math.random()));
+            const existing = eventById.get(id);
+            if (existing?.transaction?.draft_picks?.length && !t.draft_picks?.length) return;
             eventById.set(id, ev);
         });
         const events = [...log, ...Array.from(eventById.values())].sort((a, b) => _dhMs(b.ts) - _dhMs(a.ts)).slice(0, 50);
@@ -1085,27 +1227,40 @@
             // For trades, gather adds (what I got) and drops (what I gave)
             let addedPids = [];
             let droppedPids = [];
+            let addedPicks = [];
+            let droppedPicks = [];
+            let addedFaab = 0;
+            let droppedFaab = 0;
             if (kind === 'trade') {
-                if (t.sides && t.sides[myRid]) {
-                    addedPids = (t.sides[myRid].players || []);
-                    Object.entries(t.sides).forEach(([rid, side]) => {
-                        if (String(rid) === String(myRid)) return;
-                        droppedPids = droppedPids.concat(side.players || []);
-                    });
-                } else if (t.adds || t.drops) {
-                    addedPids = Object.keys(t.adds || {}).filter(pid => String(t.adds[pid]) === String(myRid));
-                    droppedPids = Object.keys(t.drops || {}).filter(pid => String(t.drops[pid]) === String(myRid));
-                }
+                const received = sideReceivedAssets(t, myRid);
+                const sent = sideSentAssets(t, myRid);
+                addedPids = received.players;
+                addedPicks = received.picks;
+                addedFaab = received.faab || 0;
+                droppedPids = sent.players;
+                droppedPicks = sent.picks;
+                droppedFaab = sent.faab || 0;
             } else {
                 addedPids = Object.keys(t.adds || {}).filter(pid => String(t.adds[pid]) === String(myRid));
                 droppedPids = Object.keys(t.drops || {}).filter(pid => String(t.drops[pid]) === String(myRid));
             }
 
             // Compute net DHQ for trades
+            const totalTeams = props?.currentLeague?.rosters?.length || window.S?.rosters?.length || 12;
+            function pickDhq(pk) {
+                const round = Number(pk?.round || 0);
+                if (!round) return 0;
+                const exact = window.App?.PlayerValue?.getPickValue?.(pk.season, round, totalTeams);
+                if (Number.isFinite(exact)) return exact;
+                return ({ 1: 7000, 2: 3500, 3: 1800, 4: 800, 5: 400, 6: 200 }[round] || 100);
+            }
             const myIn = addedPids.reduce((s, pid) => s + pdhq(pid), 0);
             const myOut = droppedPids.reduce((s, pid) => s + pdhq(pid), 0);
-            const netDhq = myIn - myOut;
-            const netStr = kind === 'trade' && (myIn || myOut) ? ((netDhq >= 0 ? '+' : '') + (Math.abs(netDhq) >= 1000 ? (netDhq / 1000).toFixed(1) + 'k' : Math.round(netDhq)) + ' DHQ') : null;
+            const pickIn = addedPicks.reduce((s, pk) => s + pickDhq(pk), 0);
+            const pickOut = droppedPicks.reduce((s, pk) => s + pickDhq(pk), 0);
+            const netDhq = (myIn + pickIn) - (myOut + pickOut);
+            const hasTradeAssets = !!(addedPids.length || droppedPids.length || addedPicks.length || droppedPicks.length || addedFaab || droppedFaab);
+            const netStr = kind === 'trade' && hasTradeAssets ? ((netDhq >= 0 ? '+' : '') + (Math.abs(netDhq) >= 1000 ? (netDhq / 1000).toFixed(1) + 'k' : Math.round(netDhq)) + ' DHQ') : null;
             const netCol = netDhq > 0 ? '#2ECC71' : netDhq < 0 ? '#E74C3C' : 'var(--silver)';
 
             const renderChips = (pids, prefix, color) => pids.length === 0 ? null : h('span', { style: { display: 'inline-flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' } },
@@ -1115,15 +1270,45 @@
                 }, prefix, chipText(pid))),
                 pids.length > 4 ? h('span', { style: { fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.6 } }, '+' + (pids.length - 4)) : null,
             );
+            function rosterLabel(rid) {
+                const rosters = props?.currentLeague?.rosters || window.S?.rosters || [];
+                const users = props?.currentLeague?.users || window.S?.leagueUsers || [];
+                const roster = rosters.find(r => String(r.roster_id) === String(rid));
+                const owner = users.find(u => String(u.user_id) === String(roster?.owner_id));
+                return owner?.display_name || owner?.username || roster?._owner_name || (rid ? 'Team ' + rid : '');
+            }
+            function pickText(pk) {
+                const parts = [];
+                if (pk?.season) parts.push(pk.season);
+                parts.push('R' + (pk?.round || '?'));
+                const original = rosterLabel(pk?.roster_id);
+                return parts.join(' ') + (original ? ' (' + original + ')' : '');
+            }
+            const renderPickChips = (picks, prefix, color) => picks.length === 0 ? null : h('span', { style: { display: 'inline-flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' } },
+                picks.slice(0, 4).map((pk, idx) => h('span', {
+                    key: [pk.season, pk.round, pk.roster_id, idx].join(':'),
+                    style: { fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: color + '12', border: '1px solid ' + color + '33', color: color, fontWeight: 600 },
+                }, prefix, pickText(pk))),
+                picks.length > 4 ? h('span', { style: { fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.6 } }, '+' + (picks.length - 4) + ' picks') : null,
+            );
+            const renderFaabChip = (amount, prefix, color) => !amount ? null : h('span', {
+                style: { fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: color + '12', border: '1px solid ' + color + '33', color: color, fontWeight: 600 },
+            }, prefix, '$' + amount + ' FAAB');
+            const hasIncoming = !!(addedPids.length || addedPicks.length || addedFaab);
+            const hasOutgoing = !!(droppedPids.length || droppedPicks.length || droppedFaab);
 
             return h(window.WR.Card, { key: 'tx' + i, padding: '10px 14px' },
                 h('div', { style: { display: 'grid', gridTemplateColumns: '60px 1fr auto auto', gap: '10px', alignItems: 'center' } },
                     h(window.WR.Badge, { label: kind, kind }),
                     h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', minWidth: 0 } },
                         renderChips(addedPids, '+ ', '#2ECC71'),
-                        droppedPids.length > 0 && addedPids.length > 0 && h('span', { style: { fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.5, alignSelf: 'center' } }, 'for'),
+                        renderPickChips(addedPicks, '+ ', '#2ECC71'),
+                        renderFaabChip(addedFaab, '+ ', '#2ECC71'),
+                        hasOutgoing && hasIncoming && h('span', { style: { fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.5, alignSelf: 'center' } }, 'for'),
                         renderChips(droppedPids, '\u2212 ', '#E74C3C'),
-                        addedPids.length === 0 && droppedPids.length === 0 && h('span', { style: { fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6, fontStyle: 'italic' } }, 'No player changes'),
+                        renderPickChips(droppedPicks, '\u2212 ', '#E74C3C'),
+                        renderFaabChip(droppedFaab, '\u2212 ', '#E74C3C'),
+                        !hasTradeAssets && h('span', { style: { fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6, fontStyle: 'italic' } }, 'No recorded asset changes'),
                     ),
                     netStr && h('span', { style: { fontSize: '0.74rem', fontWeight: 700, color: netCol, fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 } }, netStr),
                     h('div', { style: { fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.6, fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 } }, date),
@@ -1156,7 +1341,16 @@
     }
 
     // ── Model Settings sub-tab ────────────────────────────────────
-    function SettingsView({ settings, setSettings }) {
+    function SettingsView({ settings, setSettings, leagueSkin, currentLeague }) {
+        const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
+        const skinFeatures = resolvedLeagueSkin?.features || {};
+        const baseDraftYear = String(parseInt(currentLeague?.season || new Date().getFullYear(), 10) || new Date().getFullYear());
+        const draftYearOptions = [baseDraftYear, String(Number(baseDraftYear) + 1), String(Number(baseDraftYear) + 2)];
+        const settingsIntro = resolvedLeagueSkin?.features?.showDynastyValue === false
+            ? 'These knobs control which behavioral insights surface in Overview, how confidently Alex needs to be before flagging something, and where you get pinged. Defaults follow this league format - use the presets below if you want a different vibe.'
+            : 'These knobs control which behavioral insights surface in Overview, how confidently Alex needs to be before flagging something, and where you get pinged. Defaults are tuned for active dynasty managers - use the presets below if you want a different vibe.';
+        const targetPositions = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].concat(skinFeatures.showIDP === false ? [] : ['DL', 'LB', 'DB']);
+        const draftPickYears = skinFeatures.showFuturePicks === false ? [baseDraftYear] : draftYearOptions;
         const update = (patch) => { const next = { ...settings, ...patch }; setSettings(next); saveSettings(next); };
         const updateFocus = (k, v) => update({ focus: { ...settings.focus, [k]: v } });
         const updateChannel = (k, v) => update({ channel: { ...settings.channel, [k]: v } });
@@ -1189,14 +1383,17 @@
                 color: settings.focus[k] ? 'var(--gold)' : 'var(--silver)',
             }
         }, label);
-        const chanChip = (k, label) => h('button', {
-            key: k, onClick: () => updateChannel(k, !settings.channel[k]),
+        const chanChip = (k, label, opts = {}) => h('button', {
+            key: k, onClick: opts.disabled ? undefined : () => updateChannel(k, !settings.channel[k]),
+            disabled: !!opts.disabled,
+            title: opts.title,
             style: {
                 padding: '6px 12px', borderRadius: '6px', fontSize: '0.74rem', fontWeight: 500,
-                cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+                cursor: opts.disabled ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif',
                 border: '1px solid ' + (settings.channel[k] ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.1)'),
                 background: settings.channel[k] ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.02)',
                 color: settings.channel[k] ? 'var(--gold)' : 'var(--silver)',
+                opacity: opts.disabled ? 0.48 : 1,
             }
         }, label);
 
@@ -1204,6 +1401,11 @@
             h('h3', { style: { fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, fontSize: '1.02rem', margin: 0, letterSpacing: '0.01em', color: 'var(--white)' } }, label.title),
             h('span', { style: { fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.55, fontFamily: 'JetBrains Mono, monospace' } }, label.sub),
         );
+        const tradeAggressionLabel = (v) => {
+            const stance = v <= 20 ? 'Conservative' : v <= 40 ? 'Cautious' : v <= 60 ? 'Balanced' : v <= 80 ? 'Bold' : 'Aggressive';
+            const floor = window.WR?.AlexSettings?.actionableTradeAcceptanceFloor?.({ tradeAggression: Number(v) }) || 75;
+            return stance + ' · ' + floor + '%+';
+        };
 
         const presetButton = (label, desc, getPatch) => h('button', {
             onClick: () => { const p = getPatch(); setSettings(p); saveSettings(p); },
@@ -1223,7 +1425,7 @@
             h('div', { style: { padding: '12px 16px', marginBottom: '14px', background: 'rgba(124,107,248,0.04)', border: '1px solid rgba(124,107,248,0.15)', borderRadius: 'var(--card-radius, 10px)' } },
                 h('div', { style: { fontSize: '0.68rem', color: '#9b8afb', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px', fontFamily: 'Rajdhani, sans-serif' } }, 'How Alex talks to you'),
                 h('div', { style: { fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.85, lineHeight: 1.5 } },
-                    'These knobs control which behavioral insights surface in Overview, how confidently Alex needs to be before flagging something, and where you get pinged. Defaults are tuned for active dynasty managers \u2014 use the presets below if you want a different vibe.')
+                    settingsIntro)
             ),
             h('div', { style: { display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '14px' } },
                 h(window.WR.Card, { padding: '20px 22px' },
@@ -1257,12 +1459,12 @@
                     h('div', { style: { marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' } },
                         sectionTitle({ title: 'Notifications', sub: 'Where you get pinged' }),
                         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } },
-                            chanChip('inApp', 'In-app'),
-                            chanChip('email', 'Email (daily)'),
-                            chanChip('push', 'Push'),
+                            chanChip('inApp', 'GM Office cards'),
+                            chanChip('email', 'Email (coming soon)', { disabled: true, title: 'Email delivery is not wired yet.' }),
+                            chanChip('push', 'Push (coming soon)', { disabled: true, title: 'Push delivery is not wired yet.' }),
                         ),
                         h('div', { style: { fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.55, marginTop: '10px', lineHeight: 1.5 } },
-                            'In-app shows up as toasts on Home + a count badge on GM\'s Office. Email/Push are coming soon \u2014 toggle to opt in early.'),
+                            'GM Office cards controls whether Alex surfaces behavioral cards here. Email and push delivery need the notification service before they can be enabled.'),
                     )
                 ),
             ),
@@ -1271,8 +1473,8 @@
                 // Left column — Aggression
                 h(window.WR.Card, { padding: '20px 22px' },
                     sectionTitle({ title: 'Trade Calculator', sub: 'How aggressive Deal HQ builds packages' }),
-                    sliderRow('Trade aggression', 'Controls how wide the value-matching window is when generating packages. Conservative = tight, fair deals. Aggressive = bold moves that might land with the right owner.', 'tradeAggression', 0, 100, 5,
-                        v => v <= 20 ? 'Conservative' : v <= 40 ? 'Cautious' : v <= 60 ? 'Balanced' : v <= 80 ? 'Bold' : 'Aggressive'),
+                    sliderRow('Trade aggression', 'Controls how wide the value-matching window is when generating packages. Balanced only auto-surfaces 75%+ offers; higher settings loosen that floor.', 'tradeAggression', 0, 100, 5,
+                        tradeAggressionLabel),
                     h('div', { style: { fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.55, marginTop: '4px', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'Rajdhani, sans-serif', fontWeight: 700 } }, 'Quick presets'),
                     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' } },
                         presetButton('Conservative', 'Tight value · fair only',
@@ -1292,8 +1494,9 @@
                     h('div', { style: { marginBottom: '16px' } },
                         h('div', { style: { fontSize: '0.66rem', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '7px', fontFamily: 'Rajdhani, sans-serif' } }, 'Target Positions'),
                         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } },
-                            ['QB', 'RB', 'WR', 'TE', 'DL', 'LB', 'DB', 'K'].map(pos => {
-                                const posColors = { QB:'#FF6B6B', RB:'#4ECDC4', WR:'#45B7D1', TE:'#F7DC6F', DL:'#E67E22', LB:'#F0A500', DB:'#5DADE2', K:'#BB8FCE' };
+                            targetPositions.map(pos => {
+                                const posColors = window.App?.POS_COLORS || { QB:'#FF6B6B', RB:'#4ECDC4', WR:'#45B7D1', TE:'#F7DC6F', K:'#BB8FCE', DEF:'#85929E', DL:'#E67E22', LB:'#F0A500', DB:'#5DADE2' };
+                                const label = window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
                                 const active = tp.positions?.[pos];
                                 const c = posColors[pos] || 'var(--silver)';
                                 return h('button', {
@@ -1305,7 +1508,7 @@
                                         background: active ? c + '18' : 'rgba(255,255,255,0.02)',
                                         color: active ? c : 'var(--silver)',
                                     }
-                                }, pos);
+                                }, label);
                             })
                         )
                     ),
@@ -1314,7 +1517,7 @@
                         h('div', null,
                             h('div', { style: { fontSize: '0.66rem', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '7px', fontFamily: 'Rajdhani, sans-serif' } }, 'Draft Pick Years'),
                             h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } },
-                                ['2026', '2027', '2028'].map(yr => {
+                                draftPickYears.map(yr => {
                                     const active = tp.picks?.[yr];
                                     return h('button', {
                                         key: yr, onClick: () => updateTP('picks', yr, !active),
@@ -1367,7 +1570,20 @@
                 return localStorage.getItem('wr_alex_subtab') || 'overview';
             } catch { return 'overview'; }
         });
-        useEffect(() => { try { localStorage.setItem('wr_alex_subtab', subTab); } catch {} }, [subTab]);
+        const resolvedLeagueSkin = props.leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
+        const hideStrategyTab = resolvedLeagueSkin?.type === 'redraft';
+        const activeSubTab = hideStrategyTab && subTab === 'strategy' ? 'overview' : subTab;
+        const alexTabs = [
+            { k: 'overview', label: 'Overview' },
+            ...(hideStrategyTab ? [] : [{ k: 'strategy', label: 'My Strategy' }]),
+            { k: 'patterns', label: 'Patterns' },
+            { k: 'history', label: 'Decision History' },
+            { k: 'settings', label: 'Model Settings' },
+        ];
+        useEffect(() => {
+            if (activeSubTab !== subTab) setSubTab(activeSubTab);
+        }, [activeSubTab, subTab]);
+        useEffect(() => { try { localStorage.setItem('wr_alex_subtab', activeSubTab); } catch {} }, [activeSubTab]);
 
         const [settings, setSettings] = useState(loadSettings);
 
@@ -1380,7 +1596,11 @@
 
         // Safe read of derived data — handle mid-load states
         const kpis = React.useMemo(() => computeKpis(props), [props.myRoster, props.currentLeague, props.timeRecomputeTs]);
-        const rawInsights = React.useMemo(() => computeInsights(props, kpis), [kpis, props.myRoster, props.playersData]);
+        const rawInsightBase = React.useMemo(() => computeInsights(props, kpis), [kpis, props.myRoster, props.playersData]);
+        const rawInsights = React.useMemo(
+            () => decorateInsightRecommendations(rawInsightBase, props, kpis, 'heuristic'),
+            [rawInsightBase, props, kpis]
+        );
         // Filter through AlexSettings — applies alertThreshold + focus areas + maxAlertsPerWeek.
         const insights = React.useMemo(() => {
             if (window.WR?.AlexSettings?.filterInsights) return window.WR.AlexSettings.filterInsights(rawInsights);
@@ -1390,21 +1610,15 @@
         return h('div', { className: 'gm-office-shell wr-fade-in' },
             h(Hero, { active: !!(window.App?.LI_LOADED) }),
             h(SubTabs, {
-                value: subTab,
+                value: activeSubTab,
                 onChange: setSubTab,
-                tabs: [
-                    { k: 'overview', label: 'Overview' },
-                    { k: 'strategy', label: 'My Strategy' },
-                    { k: 'patterns', label: 'Patterns' },
-                    { k: 'history', label: 'Decision History' },
-                    { k: 'settings', label: 'Model Settings' },
-                ]
+                tabs: alexTabs
             }),
-            subTab === 'overview' && h(OverviewView, { kpis, insights, props }),
-            subTab === 'strategy' && h(StrategySubview, { props }),
-            subTab === 'patterns' && h(PatternsView, { props }),
-            subTab === 'history' && h(HistoryView, { props }),
-            subTab === 'settings' && h(SettingsView, { settings, setSettings })
+            activeSubTab === 'overview' && h(OverviewView, { kpis, insights, props, settings }),
+            !hideStrategyTab && activeSubTab === 'strategy' && h(StrategySubview, { props }),
+            activeSubTab === 'patterns' && h(PatternsView, { props }),
+            activeSubTab === 'history' && h(HistoryView, { props }),
+            activeSubTab === 'settings' && h(SettingsView, { settings, setSettings, leagueSkin: props.leagueSkin, currentLeague: props.currentLeague })
         );
     }
 

@@ -47,6 +47,9 @@
         const name = p.full_name || ((p.first_name||'') + ' ' + (p.last_name||'')).trim();
         const dhq = window.App?.LI?.playerScores?.[pid] || 0;
         const meta = window.App?.LI?.playerMeta?.[pid] || {};
+        const leagueSkin = window.App?.LeagueSkin?.getCurrent?.() || null;
+        const skinFeatures = leagueSkin?.features || {};
+        const valueShortLabel = leagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
         const st = statsData?.[pid] || {};
         const nPos = ['DE','DT','NT'].includes(pos)?'DL':['CB','S','SS','FS'].includes(pos)?'DB':['OLB','ILB','MLB'].includes(pos)?'LB':pos;
         const curve = typeof window.App?.getAgeCurve === 'function'
@@ -97,7 +100,7 @@
             // Stats row
             React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'4px', padding:'10px 16px', borderBottom:'1px solid rgba(255,255,255,0.06)' } },
                 ...[
-                    { val:dhq>0?dhq.toLocaleString():'\u2014', lbl:'DHQ', col:dhqCol, gauge:true },
+                    { val:dhq>0?dhq.toLocaleString():'\u2014', lbl:valueShortLabel, col:dhqCol, gauge:true },
                     { val:ppg||'\u2014', lbl:'PPG', col:ppg>=10?'#2ECC71':'#D0D0D0' },
                     { val:peakYrs>0?peakYrs+'yr':valueYrs+'yr', lbl:peakYrs>0?'PEAK':'VALUE', col:peakCol },
                     { val:rec, lbl:'ACTION', col:recCol }
@@ -142,7 +145,7 @@
                         if (isOnMyTeam && needCount >= 3) insight = needCount + ' teams need ' + nPos + ' \u2014 strong trade leverage.';
 	                        else if (isOnMyTeam && valueYrs <= 1 && dhq >= 3000) insight = 'Sell window closing. Move before value drops.';
                         else if (!isOnMyTeam && peakYrs >= 5 && dhq < 4000) insight = 'Buy-low candidate \u2014 young with room to grow.';
-                        else if (peakYrs >= 4) insight = 'Long dynasty window \u2014 cornerstone asset.';
+                        else if (peakYrs >= 4) insight = skinFeatures.showDynastyValue === false ? 'Long value window - high-upside player.' : 'Long dynasty window - cornerstone asset.';
                         else if (peakYrs >= 1) insight = 'In production window.';
 	                        else insight = 'Past value window \u2014 value declining.';
 
@@ -439,6 +442,9 @@
         }
         componentDidCatch(error, info) {
             console.error('[War Room] Render crash:', error, info.componentStack);
+            window.DHQBugCapture?.captureError?.(error, { source: 'react_error_boundary', app: 'warroom' }, {
+                componentStack: info?.componentStack || '',
+            });
         }
         render() {
             if (this.state.hasError) {
@@ -470,11 +476,34 @@
     }
     window.ErrorBoundary = ErrorBoundary;
 
+    function tradeFinderAcceptanceFloorFromSettings(settings = {}) {
+        const sharedFloor = window.WR?.AlexSettings?.actionableTradeAcceptanceFloor?.(settings);
+        if (Number.isFinite(Number(sharedFloor))) return Math.max(55, Math.min(90, Math.round(Number(sharedFloor))));
+        const raw = Number(settings.tradeAggression);
+        const aggression = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 50;
+        return aggression <= 50
+            ? Math.round(75 + ((50 - aggression) / 50) * 10)
+            : Math.round(75 - ((aggression - 50) / 50) * 20);
+    }
+
+    function currentTradeFinderAcceptanceFloor(settings) {
+        return tradeFinderAcceptanceFloorFromSettings(settings || window.WR?.AlexSettings?.get?.() || {});
+    }
+
     function TradeFinderTab({ allRosters, myRosterId, assessments, ownerDna, playersData, picksByOwner, getPlayerValue, getPickValue, calcOwnerPosture, calcPsychTaxes, calcAcceptanceLikelihood, DNA_TYPES, autoTarget, onAutoTargetConsumed }) {
+        const leagueSkin = window.App?.LeagueSkin?.getCurrent?.() || null;
+        const valueShortLabel = leagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
         const [finderMode, setFinderMode] = React.useState('my');
         const [finderAsset, setFinderAsset] = React.useState(null);
         const [finderResults, setFinderResults] = React.useState(null);
+        const [showMoonshots, setShowMoonshots] = React.useState(false);
+        const [actionableAcceptanceFloor, setActionableAcceptanceFloor] = React.useState(() => currentTradeFinderAcceptanceFloor());
         const autoTargetRef = React.useRef(false);
+
+        React.useEffect(() => {
+            if (!window.WR?.AlexSettings?.subscribe) return undefined;
+            return window.WR.AlexSettings.subscribe((next) => setActionableAcceptanceFloor(currentTradeFinderAcceptanceFloor(next)));
+        }, []);
 
         const myPlayers = React.useMemo(() => (allRosters.find(r => r.roster_id === myRosterId)?.players || [])
             .map(pid => ({ pid, name: playersData[pid]?.full_name || pid, pos: playersData[pid]?.position || '?', val: getPlayerValue(pid).value }))
@@ -509,7 +538,14 @@
                     const theirPicks = picksByOwner[ta.ownerId]||[];
                     theirP.slice(0,8).forEach(tp2=>{if(tp2.val>=val)return;const gap=val-tp2.val;const bp=theirPicks.find(pk=>{const pv=getPickValue(pk.year||pk.season,pk.round,allRosters.length);return Math.abs(pv-gap)<=val*tolerance;});if(bp){const pv=getPickValue(bp.year||bp.season,bp.round,allRosters.length);const total=tp2.val+pv;const taxes=calcPsychTaxes(myAssess,ta,dk,tp);const lk=calcAcceptanceLikelihood(val,total,dk,taxes,myAssess,ta);trades.push({give:[{pid,val}],receive:[{pid:tp2.pid,val:tp2.val}],givePicks:[],receivePicks:[{...bp,val:pv}],diff:total-val,likelihood:lk,type:'Player + Pick'});}});
                     trades.sort((a,b)=>b.likelihood-a.likelihood);
-                    if(trades.length) results.push({team:ta,dnaKey:dk,trades:trades.slice(0,3)});
+                    const topTrades = trades.slice(0,3);
+                    if(topTrades.length) results.push({
+                        team:ta,
+                        dnaKey:dk,
+                        trades:topTrades,
+                        actionableTrades:topTrades.filter(t=>t.likelihood>=actionableAcceptanceFloor),
+                        moonshotCount:topTrades.filter(t=>t.likelihood<actionableAcceptanceFloor).length
+                    });
                 });
             } else {
                 const ownerR = allRosters.find(r=>(r.players||[]).includes(pid));
@@ -522,7 +558,14 @@
                 myP2.forEach(mp=>{if(mp.val>=minVal&&mp.val<=maxVal){const taxes=calcPsychTaxes(myAssess,ta,dk,tp);const lk=calcAcceptanceLikelihood(mp.val,val,dk,taxes,myAssess,ta);trades.push({give:[{pid:mp.pid,val:mp.val}],receive:[{pid,val}],givePicks:[],receivePicks:[],diff:val-mp.val,likelihood:lk,type:'1-for-1'});}});
                 for(let i=0;i<Math.min(myP2.length,12);i++){for(let j=i+1;j<Math.min(myP2.length,12);j++){const c=myP2[i].val+myP2[j].val;if(c>=minVal&&c<=maxVal){const taxes=calcPsychTaxes(myAssess,ta,dk,tp);const lk=calcAcceptanceLikelihood(c,val,dk,taxes,myAssess,ta);trades.push({give:[{pid:myP2[i].pid,val:myP2[i].val},{pid:myP2[j].pid,val:myP2[j].val}],receive:[{pid,val}],givePicks:[],receivePicks:[],diff:val-c,likelihood:lk,type:'2-for-1'});break;}}}
                 trades.sort((a,b)=>b.likelihood-a.likelihood);
-                if(trades.length) results.push({team:ta,dnaKey:dk,trades:trades.slice(0,3)});
+                const topTrades = trades.slice(0,3);
+                if(topTrades.length) results.push({
+                    team:ta,
+                    dnaKey:dk,
+                    trades:topTrades,
+                    actionableTrades:topTrades.filter(t=>t.likelihood>=actionableAcceptanceFloor),
+                    moonshotCount:topTrades.filter(t=>t.likelihood<actionableAcceptanceFloor).length
+                });
             }
             results.sort((a,b)=>Math.max(...b.trades.map(t=>t.likelihood))-Math.max(...a.trades.map(t=>t.likelihood)));
             setFinderResults(results);
@@ -593,6 +636,13 @@
             return { label: 'Window neutral', icon: '\u2192', col: 'var(--silver)' };
         }
 
+        const hiddenMoonshotCount = finderResults
+            ? finderResults.reduce((sum, r)=>sum+(r.trades||[]).filter(t=>t.likelihood<actionableAcceptanceFloor).length,0)
+            : 0;
+        const visibleFinderResults = finderResults
+            ? finderResults.map(r=>({...r,trades:showMoonshots?r.trades:(r.trades||[]).filter(t=>t.likelihood>=actionableAcceptanceFloor)})).filter(r=>r.trades.length)
+            : null;
+
         return React.createElement('div', null,
             // Time context banner
             isProjected ? React.createElement('div', { style:{fontSize:'0.76rem',color:'#3498DB',background:'rgba(52,152,219,0.08)',border:'1px solid rgba(52,152,219,0.2)',borderRadius:'6px',padding:'6px 12px',marginBottom:'10px',display:'flex',alignItems:'center',gap:'6px'} },
@@ -600,17 +650,19 @@
             ) : null,
             React.createElement('div', {style:{fontSize:'0.78rem',color:'var(--silver)',opacity:0.65,marginBottom:'0.75rem',lineHeight:1.5}}, 'Select any player to generate trade proposals. Shows offers within 20% value variance ranked by acceptance likelihood. ', React.createElement(Tip, null, 'Builds 1-for-1, 2-for-1, and player+pick combos. Acceptance % uses DNA type, psychological taxes, and trade posture.')),
             React.createElement('div', {style:{display:'flex',gap:'0.5rem',marginBottom:'1rem'}},
-                React.createElement('button', {onClick:()=>{setFinderMode('my');setFinderAsset(null);setFinderResults(null);},style:{padding:'7px 16px',fontSize:'0.78rem',fontFamily: 'var(--font-body)',textTransform:'uppercase',background:finderMode==='my'?'var(--gold)':'rgba(255,255,255,0.04)',color:finderMode==='my'?'var(--black)':'var(--silver)',border:'1px solid '+(finderMode==='my'?'var(--gold)':'rgba(255,255,255,0.08)'),borderRadius:'4px',cursor:'pointer'}}, 'Trade My Player'),
-                React.createElement('button', {onClick:()=>{setFinderMode('acquire');setFinderAsset(null);setFinderResults(null);},style:{padding:'7px 16px',fontSize:'0.78rem',fontFamily: 'var(--font-body)',textTransform:'uppercase',background:finderMode==='acquire'?'var(--gold)':'rgba(255,255,255,0.04)',color:finderMode==='acquire'?'var(--black)':'var(--silver)',border:'1px solid '+(finderMode==='acquire'?'var(--gold)':'rgba(255,255,255,0.08)'),borderRadius:'4px',cursor:'pointer'}}, 'Acquire a Player')
+                React.createElement('button', {onClick:()=>{setFinderMode('my');setFinderAsset(null);setFinderResults(null);setShowMoonshots(false);},style:{padding:'7px 16px',fontSize:'0.78rem',fontFamily: 'var(--font-body)',textTransform:'uppercase',background:finderMode==='my'?'var(--gold)':'rgba(255,255,255,0.04)',color:finderMode==='my'?'var(--black)':'var(--silver)',border:'1px solid '+(finderMode==='my'?'var(--gold)':'rgba(255,255,255,0.08)'),borderRadius:'4px',cursor:'pointer'}}, 'Trade My Player'),
+                React.createElement('button', {onClick:()=>{setFinderMode('acquire');setFinderAsset(null);setFinderResults(null);setShowMoonshots(false);},style:{padding:'7px 16px',fontSize:'0.78rem',fontFamily: 'var(--font-body)',textTransform:'uppercase',background:finderMode==='acquire'?'var(--gold)':'rgba(255,255,255,0.04)',color:finderMode==='acquire'?'var(--black)':'var(--silver)',border:'1px solid '+(finderMode==='acquire'?'var(--gold)':'rgba(255,255,255,0.08)'),borderRadius:'4px',cursor:'pointer'}}, 'Acquire a Player')
             ),
             React.createElement('div', {style:{fontSize:'0.74rem',color:'var(--gold)',textTransform:'uppercase',marginBottom:'0.3rem',fontWeight:700}}, finderMode==='my'?'Select your player to shop':'Select a player to acquire'),
             React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'0.35rem',maxHeight:'200px',overflowY:'auto',marginBottom:'1rem',padding:'10px',background:'rgba(255,255,255,0.02)',borderRadius:'8px',border:'1px solid rgba(212,175,55,0.12)'}},
                 ...(finderMode==='my'?myPlayers:allLeaguePlayers).slice(0,60).map(p=>
-                    React.createElement('button', {key:p.pid, onClick:()=>{setFinderAsset(p.pid);setFinderResults(null);generateTrades(p.pid,finderMode);}, style:{padding:'5px 12px',fontSize:'0.74rem',fontFamily: 'var(--font-body)',borderRadius:'4px',cursor:'pointer',background:finderAsset===p.pid?'var(--gold)':'rgba(255,255,255,0.04)',color:finderAsset===p.pid?'var(--black)':'var(--silver)',border:'1px solid '+(finderAsset===p.pid?'var(--gold)':'rgba(255,255,255,0.06)')}}, p.name+' '+p.val.toLocaleString())
+                    React.createElement('button', {key:p.pid, onClick:()=>{setFinderAsset(p.pid);setFinderResults(null);setShowMoonshots(false);generateTrades(p.pid,finderMode);}, style:{padding:'5px 12px',fontSize:'0.74rem',fontFamily: 'var(--font-body)',borderRadius:'4px',cursor:'pointer',background:finderAsset===p.pid?'var(--gold)':'rgba(255,255,255,0.04)',color:finderAsset===p.pid?'var(--black)':'var(--silver)',border:'1px solid '+(finderAsset===p.pid?'var(--gold)':'rgba(255,255,255,0.06)')}}, p.name+' '+p.val.toLocaleString())
                 )
             ),
             finderResults && !finderResults.length ? React.createElement('div', {style:{color:'var(--silver)',fontSize:'0.82rem',textAlign:'center',padding:'2rem'}}, 'No viable trades found within 20% value variance.') : null,
-            finderResults ? finderResults.map((r,ri) =>
+            finderResults && finderResults.length && !visibleFinderResults.length ? React.createElement('div', {style:{color:'var(--silver)',fontSize:'0.82rem',textAlign:'center',padding:'2rem'}}, 'No actionable trades clear '+actionableAcceptanceFloor+'% acceptance.') : null,
+            hiddenMoonshotCount ? React.createElement('button', {onClick:()=>setShowMoonshots(v=>!v), style:{padding:'6px 12px',fontSize:'0.72rem',fontFamily:'var(--font-body)',textTransform:'uppercase',background:'rgba(255,255,255,0.04)',color:'var(--gold)',border:'1px solid rgba(212,175,55,0.22)',borderRadius:'4px',cursor:'pointer',marginBottom:'0.75rem'}}, showMoonshots ? 'Hide moonshots' : 'Show '+hiddenMoonshotCount+' moonshot'+(hiddenMoonshotCount===1?'':'s')) : null,
+            visibleFinderResults ? visibleFinderResults.map((r,ri) =>
                 React.createElement('div', {key:ri, style:{marginBottom:'1.25rem'}, className:'wr-fade-in'},
                     React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.5rem',paddingBottom:'0.4rem',borderBottom:'1px solid rgba(212,175,55,0.15)'}},
                         React.createElement('span', {style:{fontFamily:'Rajdhani, sans-serif',fontSize:'1rem',color:'var(--white)'}}, r.team.ownerName),
@@ -625,7 +677,7 @@
                             React.createElement('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}},
                                 React.createElement('span', {style:{fontSize:'0.74rem',color:'var(--gold)',fontWeight:700,textTransform:'uppercase'}}, t.type),
                                 React.createElement('div', {style:{display:'flex',gap:'0.5rem',alignItems:'center'}},
-                                    React.createElement('span', {style:{fontSize:'0.74rem',color:t.diff>=0?'var(--win-green)':'var(--loss-red)'}}, (t.diff>=0?'You gain ':'You give ')+Math.abs(Math.round(t.diff)).toLocaleString()+' DHQ'),
+                                    React.createElement('span', {style:{fontSize:'0.74rem',color:t.diff>=0?'var(--win-green)':'var(--loss-red)'}}, (t.diff>=0?'You gain ':'You give ')+Math.abs(Math.round(t.diff)).toLocaleString()+' '+valueShortLabel),
                                     React.createElement('span', {style:{fontSize:'0.78rem',fontWeight:700,color:t.likelihood>=60?'var(--win-green)':t.likelihood>=40?'#F0A500':'var(--loss-red)',background:(t.likelihood>=60?'rgba(46,204,113,0.1)':t.likelihood>=40?'rgba(240,165,0,0.1)':'rgba(231,76,60,0.1)'),padding:'0.15rem 0.5rem',borderRadius:'4px'}}, Math.round(t.likelihood)+'%')
                                 )
                             ),
@@ -673,8 +725,10 @@
     const DEV_DEBUG = new URLSearchParams(window.location.search).get('dev') === 'true';
     if (DEV_MODE) {
         console.log('%c[DEV MODE] All features unlocked, auth bypassed','color:#D4AF37;font-weight:bold;font-size:14px');
+        document.documentElement.style.setProperty('--wr-dev-banner-height', '18px');
         const b = document.createElement('div');
-        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#D4AF37;color:#000;font-size:11px;font-weight:700;text-align:center;padding:3px;letter-spacing:.05em;font-family:monospace';
+        b.className = 'wr-dev-banner';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;height:18px;box-sizing:border-box;z-index:99999;background:#D4AF37;color:#000;font-size:11px;font-weight:700;text-align:center;padding:3px;letter-spacing:.05em;font-family:monospace;line-height:12px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
         b.textContent = IS_LOCAL ? '⚡ LOCAL DEV — bigloco auto-logged in, all features unlocked' : 'SANDBOX — changes here do not affect production';
         document.body.prepend(b);
     }

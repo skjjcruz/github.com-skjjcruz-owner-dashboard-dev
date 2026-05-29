@@ -7,10 +7,14 @@
 // ══════════════════════════════════════════════════════════════════
 // ReportSubView — Custom report builder (manager, editor, table)
 // ══════════════════════════════════════════════════════════════════
+function leagueMapPosLabel(pos) {
+  return window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
+}
+
 function ReportSubView({
   runReport, loadSavedReports, saveReportsToStorage, DEFAULT_REPORTS,
   getPlayerColumns, getTeamColumns, getFilterableFields, getFilterOps, getFilterOptionSet, sortBtnStyle,
-  analyticsEmbedMode,
+  analyticsEmbedMode, openTeamContext,
 }) {
   const [reportView, setReportView] = React.useState('list'); // 'list' | 'edit' | 'view'
   const [reports, setReports] = React.useState(() => {
@@ -84,6 +88,71 @@ function ReportSubView({
     setViewResult({ report: viewResult.report, ...re });
   }
 
+  function canOpenReportPlayer(row, report) {
+    return !!(report?.dataSource === 'players' && row?.pid && !row._groupHeader);
+  }
+
+  function openReportPlayerRow(row, report) {
+    if (!canOpenReportPlayer(row, report)) return;
+    const options = { context: 'custom_report', reportId: report?.id || null, reportName: report?.name || null };
+    if (window.WR && typeof window.WR.openPlayerCard === 'function') {
+      window.WR.openPlayerCard(row.pid, options);
+      return;
+    }
+    if (typeof window.openPlayerModal === 'function') {
+      window.openPlayerModal(row.pid);
+      return;
+    }
+    if (typeof window.openFWPlayerModal === 'function') {
+      window.openFWPlayerModal(row.pid);
+    }
+  }
+
+  function handleReportPlayerRowKey(e, row, report) {
+    if (!canOpenReportPlayer(row, report)) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openReportPlayerRow(row, report);
+  }
+
+  function reportPlayerRowProps(row, report) {
+    if (!canOpenReportPlayer(row, report)) return {};
+    return {
+      role: 'button',
+      tabIndex: 0,
+      title: 'Open player card',
+      onClick: () => openReportPlayerRow(row, report),
+      onKeyDown: (e) => handleReportPlayerRowKey(e, row, report),
+    };
+  }
+
+  function canOpenReportTeam(row, report) {
+    return !!(report?.dataSource === 'teams' && row?.rosterId && !row._groupHeader && typeof openTeamContext === 'function');
+  }
+
+  function openReportTeamRow(row, report) {
+    if (!canOpenReportTeam(row, report)) return;
+    openTeamContext(row, report);
+  }
+
+  function handleReportTeamRowKey(e, row, report) {
+    if (!canOpenReportTeam(row, report)) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openReportTeamRow(row, report);
+  }
+
+  function reportTeamRowProps(row, report) {
+    if (!canOpenReportTeam(row, report)) return {};
+    return {
+      role: 'button',
+      tabIndex: 0,
+      title: 'Open team context',
+      onClick: () => openReportTeamRow(row, report),
+      onKeyDown: (e) => handleReportTeamRowKey(e, row, report),
+    };
+  }
+
   // ── List View ───────────────────────────────────────────────────
   if (reportView === 'list') {
     const previewReport = reports[0] || DEFAULT_REPORTS[0];
@@ -116,10 +185,11 @@ function ReportSubView({
         {reports.length === 0 && <div style={{ color: 'var(--silver)', fontSize: '0.82rem', padding: '24px', textAlign: 'center' }}>No reports yet. Create one to get started.</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {reports.map(r => (
-            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '8px', padding: '10px 14px', cursor: 'pointer', transition: 'border-color 0.15s' }}
+            <div key={r.id} role="button" tabIndex={0} title="Open report" data-report-id={r.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '8px', padding: '10px 14px', cursor: 'pointer', transition: 'border-color 0.15s', outline: 'none' }}
               onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,175,55,0.4)'}
               onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(212,175,55,0.15)'}
               onClick={() => handleViewReport(r)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewReport(r); } }}
             >
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--white)' }}>{r.name || 'Untitled Report'}</div>
@@ -149,11 +219,21 @@ function ReportSubView({
                 <div className="analytics-report-preview-head" style={{ gridTemplateColumns: previewCols.map(() => '1fr').join(' ') }}>
                   {previewCols.map(col => <span key={col.key}>{col.label}</span>)}
                 </div>
-                {previewRows.map((row, idx) => (
-                  <div key={idx} className="analytics-report-preview-row" style={{ gridTemplateColumns: previewCols.map(() => '1fr').join(' ') }}>
-                    {previewCols.map(col => <span key={col.key}>{row[col.key] == null ? '\u2014' : String(row[col.key])}</span>)}
-                  </div>
-                ))}
+                {previewRows.map((row, idx) => {
+                  const canOpenPlayer = canOpenReportPlayer(row, previewReport);
+                  const canOpenTeam = canOpenReportTeam(row, previewReport);
+                  return (
+                    <div
+                      key={idx}
+                      className={'analytics-report-preview-row' + ((canOpenPlayer || canOpenTeam) ? ' is-clickable' : '')}
+                      style={{ gridTemplateColumns: previewCols.map(() => '1fr').join(' ') }}
+                      {...reportPlayerRowProps(row, previewReport)}
+                      {...reportTeamRowProps(row, previewReport)}
+                    >
+                      {previewCols.map(col => <span key={col.key}>{row[col.key] == null ? '\u2014' : (col.key === 'pos' ? leagueMapPosLabel(row[col.key]) : String(row[col.key]))}</span>)}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="analytics-report-preview-empty">No rows match this report yet.</div>
@@ -263,7 +343,7 @@ function ReportSubView({
                 {optSet && optSet.length && f.op !== 'in' ? (
                   <select value={f.value} onChange={e => updateFilter(i, { value: e.target.value })} style={{ ...selectStyle, flex: 1 }}>
                     <option value="">— choose —</option>
-                    {optSet.map(v => <option key={v} value={v}>{v}</option>)}
+                    {optSet.map(v => <option key={v} value={v}>{f.field === 'pos' ? leagueMapPosLabel(v) : v}</option>)}
                   </select>
                 ) : (
                   <input value={f.value} onChange={e => updateFilter(i, { value: e.target.value })} placeholder={optSet && f.op === 'in' ? optSet.slice(0, 3).join(',') + '…' : 'value'} style={{ ...inputStyle, flex: 1 }} />
@@ -316,6 +396,7 @@ function ReportSubView({
       if (col.key === 'dhq' || col.key === 'totalDHQ') return typeof val === 'number' ? val.toLocaleString() : val;
       if (col.key === 'healthScore') return typeof val === 'number' ? val : val;
       if (col.key === 'peakYrs') return val > 0 ? val : (val === 0 ? 'At peak' : 'Past');
+      if (col.key === 'pos') return leagueMapPosLabel(val);
       return String(val);
     }
 
@@ -360,12 +441,16 @@ function ReportSubView({
               if (row._groupHeader) {
                 return (
                   <div key={'gh_' + row._groupKey} style={{ padding: '8px 10px', background: 'rgba(212,175,55,0.06)', borderBottom: '1px solid rgba(212,175,55,0.15)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'Rajdhani, sans-serif', letterSpacing: '0.04em' }}>
-                    {row._groupKey} <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>({row._count})</span>
+                    {report.groupBy === 'pos' ? leagueMapPosLabel(row._groupKey) : row._groupKey} <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>({row._count})</span>
                   </div>
                 );
               }
+              const canOpenPlayer = canOpenReportPlayer(row, report);
+              const canOpenTeam = canOpenReportTeam(row, report);
               return (
-                <div key={idx} style={{ display: 'grid', gridTemplateColumns: columns.map(() => '1fr').join(' '), gap: '4px', padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.74rem', alignItems: 'center', transition: 'background 0.1s' }}
+                <div key={idx} className={(canOpenPlayer || canOpenTeam) ? 'is-clickable-report-row' : ''} style={{ display: 'grid', gridTemplateColumns: columns.map(() => '1fr').join(' '), gap: '4px', padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.74rem', alignItems: 'center', transition: 'background 0.1s', cursor: (canOpenPlayer || canOpenTeam) ? 'pointer' : 'default', outline: 'none' }}
+                  {...reportPlayerRowProps(row, report)}
+                  {...reportTeamRowProps(row, report)}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.05)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
@@ -426,6 +511,7 @@ function LeagueMapTab({
   lpSearch, setLpSearch,
   standings,
   currentLeague,
+  leagueSkin,
   playersData,
   statsData,
   sleeperUserId,
@@ -435,6 +521,7 @@ function LeagueMapTab({
   setTimeRecomputeTs,
   getAcquisitionInfo: getAcquisitionInfoProp,
   getOwnerName: getOwnerNameProp,
+  setActiveTab,
 }) {
   // Defensive fallback — any render path that mounts LeagueMapTab without a
   // getAcquisitionInfo function (stale prop chain during initial mount, legacy
@@ -447,6 +534,8 @@ function LeagueMapTab({
   const _seasonCtx = React.useContext(window.App.SeasonContext) || {};
   const _sPlayerStats = _seasonCtx.playerStats || window.S?.playerStats || {};
   const _sTradedPicks = _seasonCtx.tradedPicks !== undefined ? _seasonCtx.tradedPicks : (window.S?.tradedPicks || []);
+  const resolvedLeagueSkin = leagueSkin || _seasonCtx.leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
+  const skinFeatures = resolvedLeagueSkin?.features || {};
   const normPos = window.App.normPos;
 
   function calcRawPts(s) { return window.App.calcRawPts(s, currentLeague?.scoring_settings); }
@@ -581,7 +670,7 @@ function LeagueMapTab({
   // instead of free text. Each key maps the field name to the allowed values.
   function getFilterOptionSet(field) {
     switch (field) {
-      case 'pos':   return ['QB','RB','WR','TE','K','DL','LB','DB'];
+      case 'pos':   return ['QB','RB','WR','TE','K','DEF','DL','LB','DB'];
       case 'tier':  return ['ELITE','CONTENDER','CROSSROADS','REBUILDING'];
       case 'owner': {
         try {
@@ -773,6 +862,77 @@ function LeagueMapTab({
     color: active ? 'var(--black)' : 'var(--gold)',
   });
 
+  function openLeagueTeamContext(team, roster) {
+    const resolvedRoster = roster || currentLeague.rosters?.find(r => sameId(r.roster_id, team?.rosterId) || sameId(r.owner_id, team?.userId) || sameId(r.owner_id, team?.ownerId));
+    if (!resolvedRoster) return;
+    const standingTeam = sortedStandings.find(t => sameId(t.userId, resolvedRoster.owner_id) || sameId(t.rosterId, resolvedRoster.roster_id)) || {};
+    setLeagueViewMode('roster');
+    setSelectedTeam({
+      ...standingTeam,
+      ...team,
+      roster: resolvedRoster,
+      rosterId: resolvedRoster.roster_id,
+      userId: resolvedRoster.owner_id,
+      displayName: team?.displayName || team?.teamName || standingTeam.displayName || getOwnerName(resolvedRoster.roster_id),
+    });
+  }
+
+  function handleLeagueTeamKey(e, team, roster) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openLeagueTeamContext(team, roster);
+  }
+
+  function openTeamContext(row) {
+    if (!row?.rosterId) return;
+    const roster = currentLeague.rosters?.find(r => sameId(r.roster_id, row.rosterId));
+    openLeagueTeamContext({
+      rosterId: row.rosterId,
+      displayName: row.teamName,
+      teamName: row.teamName,
+      wins: row.wins,
+      losses: row.losses,
+    }, roster);
+  }
+
+  function openPickContext(row) {
+    if (!row) return;
+    const detail = {
+      context: 'league_pick_ledger',
+      year: row.year,
+      round: row.round,
+      label: row.label,
+      status: row.status,
+      value: row.value || 0,
+      traded: !!row.traded,
+      isMine: !!row.isMyPick,
+      originalRosterId: row.originalRid,
+      currentOwnerRosterId: row.currentOwnerRid,
+      originalOwnerName: getOwnerName(row.originalRid),
+      currentOwnerName: getOwnerName(row.currentOwnerRid),
+    };
+    window._wrDraftPickFocus = detail;
+    try { window.dispatchEvent(new CustomEvent('wr:open-draft-pick-context', { detail })); } catch (_) {}
+    if (typeof setActiveTab === 'function') setActiveTab('draft');
+    else if (typeof window.wrNavigateTab === 'function') window.wrNavigateTab('draft');
+  }
+
+  function handlePickRowKey(e, row) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openPickContext(row);
+  }
+
+  function pickRowProps(row) {
+    return {
+      role: 'button',
+      tabIndex: 0,
+      title: 'Open draft pick context',
+      onClick: () => openPickContext(row),
+      onKeyDown: (e) => handlePickRowKey(e, row),
+    };
+  }
+
   // Phase 8: when Analytics embeds this component, force the requested sub-view
   // and skip the outer chrome entirely. We still use all the local helpers/state.
   const _isEmbed = !!embedSubView;
@@ -952,11 +1112,11 @@ function LeagueMapTab({
           const isMe = team.userId === sleeperUserId;
           const user = currentLeague.users?.find(u => u.user_id === team.userId);
           return (
-            <div key={team.rosterId} onClick={() => setSelectedTeam({ ...team, roster })}
+            <div key={team.rosterId} role="button" tabIndex={0} title="Open team context" onClick={() => openLeagueTeamContext(team, roster)} onKeyDown={e => handleLeagueTeamKey(e, team, roster)}
               style={{
                 background: 'var(--black)', border: '2px solid ' + (isMe ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'),
                 borderRadius: '10px', padding: '14px', cursor: 'pointer',
-                transition: 'all 0.15s'
+                transition: 'all 0.15s', outline: 'none'
               }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = isMe ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'; e.currentTarget.style.transform = 'none'; }}
@@ -1011,7 +1171,10 @@ function LeagueMapTab({
                   const posDhq = {};
                   scored.forEach(x => { const pos2 = x.meta?.pos || 'UNK'; posDhq[pos2] = (posDhq[pos2] || 0) + x.dhq; });
                   const teamTotal = scored.reduce((s,x) => s + x.dhq, 0) || 1;
-                  ['QB','RB','WR','TE'].forEach(pos2 => {
+                  const needPositions = typeof window.getLeaguePositions === 'function'
+                    ? window.getLeaguePositions({ league: currentLeague })
+                    : ['QB','RB','WR','TE','K','DEF','DL','LB','DB'];
+                  needPositions.forEach(pos2 => {
                     const pct = (posDhq[pos2] || 0) / teamTotal;
                     if (pct < 0.10) posNeeds.push(pos2);
                   });
@@ -1035,7 +1198,7 @@ function LeagueMapTab({
                       <span>{'\u00B7'} {eliteCount} elite</span>
                     </div>
                     {posNeeds.length > 0 && <div style={{ display: 'flex', gap: '4px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                      {posNeeds.map(pos2 => <span key={pos2} style={{ fontSize: '0.68rem', color: '#E74C3C', background: 'rgba(231,76,60,0.1)', padding: '1px 6px', borderRadius: '3px', fontWeight: 600 }}>Need {pos2}</span>)}
+                      {posNeeds.map(pos2 => <span key={pos2} style={{ fontSize: '0.68rem', color: '#E74C3C', background: 'rgba(231,76,60,0.1)', padding: '1px 6px', borderRadius: '3px', fontWeight: 600 }}>Need {leagueMapPosLabel(pos2)}</span>)}
                     </div>}
                     {scored.sort((a2,b2) => b2.dhq - a2.dhq).slice(0, 3).map(x => (
                       <div key={x.pid} style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1051,21 +1214,43 @@ function LeagueMapTab({
         })}
       </div>
       </div>)}
-      {_activeSubView === 'players' && (() => {
-        const posColors = window.App.POS_COLORS;
-        const allPlayers = [];
-        (currentLeague.rosters || []).forEach(r => {
-            const user = currentLeague.users?.find(u => u.user_id === r.owner_id);
-            const teamName = user?.display_name || user?.username || 'Team';
-            (r.players || []).forEach(pid => {
-                const p = playersData[pid]; if (!p) return;
-                const dhq = window.App?.LI?.playerScores?.[pid] || 0;
-                const pos = normPos(p.position) || p.position;
-                const st = statsData[pid] || {};
-                const ppg = st.gp > 0 ? +(calcRawPts(st) / st.gp).toFixed(1) : 0;
-                allPlayers.push({ pid, p, pos, dhq, ppg, age: p.age || null, teamName, rosterId: r.roster_id, isMe: r.roster_id === myRoster?.roster_id });
-            });
-        });
+	      {_activeSubView === 'players' && (() => {
+	        const posColors = window.App.POS_COLORS;
+	        const allPlayers = [];
+	        const rosteredPlayerIds = new Set();
+	        (currentLeague.rosters || []).forEach(r => {
+	            const user = currentLeague.users?.find(u => u.user_id === r.owner_id);
+	            const teamName = user?.display_name || user?.username || 'Team';
+	            (r.players || []).forEach(pid => {
+	                const p = playersData[pid]; if (!p) return;
+	                rosteredPlayerIds.add(String(pid));
+	                const dhq = window.App?.LI?.playerScores?.[pid] || 0;
+	                const pos = normPos(p.position) || p.position;
+	                const st = statsData[pid] || {};
+	                const ppg = st.gp > 0 ? +(calcRawPts(st) / st.gp).toFixed(1) : 0;
+	                allPlayers.push({ pid, p, pos, dhq, ppg, age: p.age || null, teamName, rosterId: r.roster_id, isMe: r.roster_id === myRoster?.roster_id });
+	            });
+	        });
+	        const shouldShowDraftPool = !!(resolvedLeagueSkin?.state?.isSeasonal && (resolvedLeagueSkin?.state?.isPreDraft || resolvedLeagueSkin?.state?.isPreDraftRosterEmpty || allPlayers.length === 0));
+	        if (shouldShowDraftPool) {
+	            const leaguePositions = typeof window.getLeaguePositions === 'function'
+	                ? window.getLeaguePositions({ league: currentLeague })
+	                : ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
+	            const validPositions = new Set((leaguePositions || [])
+	                .map(pos => normPos(pos) || pos)
+	                .map(pos => pos === 'DST' || pos === 'D/ST' ? 'DEF' : pos)
+	                .filter(pos => ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'].includes(pos)));
+	            Object.entries(playersData || {}).forEach(([pid, p]) => {
+	                if (!p || rosteredPlayerIds.has(String(pid))) return;
+	                const pos = normPos(p.position) || p.position;
+	                if (!validPositions.has(pos)) return;
+	                if (p.active === false && pos !== 'DEF') return;
+	                const dhq = window.App?.LI?.playerScores?.[pid] || 0;
+	                const st = statsData[pid] || {};
+	                const ppg = st.gp > 0 ? +(calcRawPts(st) / st.gp).toFixed(1) : 0;
+	                allPlayers.push({ pid, p, pos, dhq, ppg, age: p.age || null, teamName: 'Draft Pool', rosterId: null, isMe: false, isPool: true });
+	            });
+	        }
         let filtered = allPlayers;
         // Phase 8 deferred: free-text search across player name + owner team
         const q = (lpSearch || '').toLowerCase().trim();
@@ -1125,14 +1310,14 @@ function LeagueMapTab({
                         placeholder="Search by player name or owner…"
                         style={{ flex: '0 1 260px', padding: '5px 10px', fontSize: '0.76rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', color: 'var(--white)', fontFamily: 'var(--font-body)', outline: 'none' }}
                     />
-                    {['','QB','RB','WR','TE','DL','LB','DB','K'].map(pos => (
+                    {['','QB','RB','WR','TE','K','DEF','DL','LB','DB'].map(pos => (
                         <button key={pos} onClick={() => setLpFilter(pos)} style={{
                             padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', textTransform: 'uppercase',
                             background: lpFilter === pos ? 'var(--gold)' : 'rgba(255,255,255,0.04)',
                             color: lpFilter === pos ? 'var(--black)' : 'var(--silver)',
                             border: '1px solid ' + (lpFilter === pos ? 'var(--gold)' : 'rgba(255,255,255,0.08)'),
                             borderRadius: '3px', cursor: 'pointer'
-                        }}>{pos || 'All'}</button>
+                        }}>{pos ? (window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)) : 'All'}</button>
                     ))}
                     <span style={{ fontSize: '0.72rem', color: 'var(--silver)', alignSelf: 'center' }}>{filtered.length} players</span>
                     {/* Rolling PPG window selector */}
@@ -1251,10 +1436,10 @@ function LeagueMapTab({
                                 else if (x.age >= lo - 2 && x.age <= hi + 2) peakColor = '#F1C40F';
                                 else peakColor = '#E74C3C';
                             }
-                            const acq = getAcquisitionInfo(x.pid, x.rosterId);
-                            const acqMethod = acq?.method || (acq?.type === 'draft' ? 'Drafted' : acq?.type === 'trade' ? 'Traded' : acq?.type === 'add' ? 'FA' : '—');
-                            const acqDate = acq?.date || '';
-                            const acqColor = acqMethod === 'Drafted' ? '#3498DB' : acqMethod === 'Traded' ? '#F0A500' : (acqMethod === 'FA' || acqMethod === 'Waiver') ? '#2ECC71' : 'rgba(255,255,255,0.25)';
+	                            const acq = x.isPool ? { method: 'Draft Pool', date: '' } : getAcquisitionInfo(x.pid, x.rosterId);
+	                            const acqMethod = acq?.method || (acq?.type === 'draft' ? 'Drafted' : acq?.type === 'trade' ? 'Traded' : acq?.type === 'add' ? 'FA' : '—');
+	                            const acqDate = acq?.date || '';
+	                            const acqColor = acqMethod === 'Draft Pool' ? 'var(--gold)' : acqMethod === 'Drafted' ? '#3498DB' : acqMethod === 'Traded' ? '#F0A500' : (acqMethod === 'FA' || acqMethod === 'Waiver') ? '#2ECC71' : 'rgba(255,255,255,0.25)';
                             const yrs = peakYrsOf(x);
                             const tier = tierOf(x.rosterId);
                             const yoe = x.p.years_exp != null ? x.p.years_exp : '';
@@ -1263,7 +1448,7 @@ function LeagueMapTab({
                                     case 'name':
                                         return <div key={c.key} style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontWeight: 600, color: x.isMe ? 'var(--gold)' : 'var(--white)' }}>{x.p.full_name || (x.p.first_name + ' ' + x.p.last_name).trim()}</div>;
                                     case 'pos':
-                                        return <span key={c.key} style={{ fontSize: '0.7rem', fontWeight: 700, color: posColors[x.pos] || 'var(--silver)' }}>{x.pos}</span>;
+                                        return <span key={c.key} style={{ fontSize: '0.7rem', fontWeight: 700, color: posColors[x.pos] || 'var(--silver)' }}>{leagueMapPosLabel(x.pos)}</span>;
                                     case 'nflTeam':
                                         return <span key={c.key} style={{ color: 'var(--silver)', fontSize: '0.7rem' }}>{x.p.team || '\u2014'}</span>;
                                     case 'age':
@@ -1325,12 +1510,17 @@ function LeagueMapTab({
             </div>
         );
       })()}
-      {_activeSubView === 'picks' && (() => {
-        const tradedPicks = _sTradedPicks;
-        const leagueSeason = parseInt(currentLeague.season || activeYear);
-        const draftRounds = currentLeague.settings?.draft_rounds || 5;
-        const years = [leagueSeason, leagueSeason + 1, leagueSeason + 2];
-        const totalTeams = currentLeague.rosters?.length || 12;
+	      {_activeSubView === 'picks' && (() => {
+		        const tradedPicks = _sTradedPicks;
+		        const leagueSeason = parseInt(currentLeague.season || activeYear);
+		        const draftRounds = window.App?.LeagueSkin?.resolveDraftRounds?.({
+		            league: currentLeague,
+		            leagueSkin: resolvedLeagueSkin,
+		            drafts: window.S?.drafts || currentLeague?.drafts || [],
+		            fallbackRounds: currentLeague.settings?.draft_rounds || 5,
+		        }) || currentLeague.settings?.draft_rounds || 5;
+		        const years = skinFeatures.showFuturePicks === false ? [leagueSeason] : [leagueSeason, leagueSeason + 1, leagueSeason + 2];
+	        const totalTeams = currentLeague.rosters?.length || 12;
         const sortedRosters = [...(currentLeague.rosters || [])].sort((a, b) => {
             const stA = standings.find(s => { const rr = currentLeague.rosters.find(r => sameId(r.owner_id, s.userId)); return sameId(rr?.roster_id, a.roster_id); });
             const stB = standings.find(s => { const rr = currentLeague.rosters.find(r => sameId(r.owner_id, s.userId)); return sameId(rr?.roster_id, b.roster_id); });
@@ -1413,7 +1603,7 @@ function LeagueMapTab({
                 {_analyticsEmbed && (
                     <div className="analytics-embed-summary">
                         <div><span>My Pick Capital</span><strong>{myValue.toLocaleString()}</strong><em>{myRows.length} slot-adjusted picks</em></div>
-                        <div><span>Early Picks</span><strong>{myRows.filter(r => r.round <= 2).length}</strong><em>R1-R2 through {leagueSeason + 2}</em></div>
+	                        <div><span>Early Picks</span><strong>{myRows.filter(r => r.round <= 2).length}</strong><em>{years.length === 1 ? 'R1-R2 this draft' : 'R1-R2 through ' + (leagueSeason + 2)}</em></div>
                         <div><span>Traded Picks</span><strong>{pickRows.filter(r => r.traded).length}</strong><em>league-wide moved picks</em></div>
                         <div><span>Capital Leader</span><strong>{leaders[0] ? getOwnerName(leaders[0].rid) : '\u2014'}</strong><em>{leaders[0] ? leaders[0].value.toLocaleString() + ' DHQ' : 'no data'}</em></div>
                     </div>
@@ -1467,11 +1657,12 @@ function LeagueMapTab({
                             </div>
                             <div style={_analyticsEmbed ? {} : { maxHeight: '500px', overflow: 'auto' }}>
                                 {filteredRows.filter(row => row.year === yr).map(row => (
-                                            <div key={yr+'-'+row.round+'-'+row.originalRid} style={{
+                                            <div key={yr+'-'+row.round+'-'+row.originalRid} {...pickRowProps(row)} style={{
                                                 display: 'grid', gridTemplateColumns: '70px 1fr 1fr 90px 80px', gap: '4px',
                                                 padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.03)',
                                                 fontSize: '0.72rem', alignItems: 'center',
-                                                background: row.isMyPick ? 'rgba(212,175,55,0.04)' : 'transparent'
+                                                background: row.isMyPick ? 'rgba(212,175,55,0.04)' : 'transparent',
+                                                cursor: 'pointer', outline: 'none'
                                             }}>
                                                 <span style={{ fontFamily: 'var(--font-body)', fontWeight: 700, color: row.round === 1 ? 'var(--gold)' : 'var(--silver)' }}>{row.label}</span>
                                                 <span style={{ color: row.isMyPick ? 'var(--gold)' : 'var(--white)', fontWeight: row.isMyPick ? 700 : 400 }}>
@@ -1502,6 +1693,7 @@ function LeagueMapTab({
           runReport, loadSavedReports, saveReportsToStorage, DEFAULT_REPORTS,
           getPlayerColumns, getTeamColumns, getFilterableFields, getFilterOps, getFilterOptionSet, sortBtnStyle,
           analyticsEmbedMode: _analyticsEmbed,
+          openTeamContext,
         });
       })()}
       </React.Fragment>}
@@ -1693,7 +1885,7 @@ function LeagueMapTab({
                   <div style={{ fontWeight: 600, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.p.full_name || (r.p.first_name + ' ' + r.p.last_name).trim()}</div>
                   <div style={{ fontSize: '0.76rem', color: 'var(--silver)', opacity: 0.65 }}>{r.p.team || 'FA'}</div>
                 </div>
-                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: r.posCol }}>{r.pos}</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: r.posCol }}>{leagueMapPosLabel(r.pos)}</span>
                 <span style={{ color: 'var(--silver)' }}>{r.p.age || '\u2014'}</span>
                 <span style={{ fontWeight: 700, fontFamily: 'var(--font-body)', color: r.dhq >= 7000 ? '#2ECC71' : r.dhq >= 4000 ? '#3498DB' : r.dhq >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.3)' }}>{r.dhq > 0 ? r.dhq.toLocaleString() : '\u2014'}</span>
                 <span style={{ color: 'var(--silver)' }}>{r.ppg || '\u2014'}</span>

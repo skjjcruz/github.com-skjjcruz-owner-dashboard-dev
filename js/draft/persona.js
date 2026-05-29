@@ -179,7 +179,7 @@
         const ownerName = opts.displayName || owner?.display_name || owner?.username || '';
         const avatar = opts.avatar || (owner?.avatar ? ('https://sleepercdn.com/avatars/thumbs/' + owner.avatar) : '');
 
-        return {
+        const persona = {
             rosterId,
             ownerId: roster.owner_id || null,
             teamName,
@@ -206,6 +206,17 @@
                 draftRelationship: 'neutral',
             },
         };
+        try {
+            if (window.DraftCC?.context?.buildOwnerIntel) {
+                persona.ownerIntel = window.DraftCC.context.buildOwnerIntel(persona, {
+                    leagueId,
+                    rosterId,
+                });
+            }
+        } catch (e) {
+            if (window.wrLog) window.wrLog('persona.ownerIntel', e);
+        }
+        return persona;
     }
 
     /**

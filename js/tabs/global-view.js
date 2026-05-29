@@ -8,6 +8,7 @@ function buildEmpirePortfolioModel(input) {
     const sleeperUserId = input.sleeperUserId;
     const scores = input.scores || {};
     const normPos = input.normPos || function(pos) { return pos || '?'; };
+    const posLabel = input.posLabel || function(pos) { return pos === 'DEF' ? 'D/ST' : (pos || '?'); };
     const getAgeCurve = input.getAgeCurve || function(pos) {
         const peak = (input.peakWindows || {})[pos] || [24, 29];
         return { build: [22, Math.max(22, peak[0] - 1)], peak, decline: [peak[1] + 1, peak[1] + 3] };
@@ -163,7 +164,7 @@ function buildEmpirePortfolioModel(input) {
                 exposurePct: 0,
             };
             assets.push(asset);
-            addTotal(positionTotals, pos, { label: pos, count: 1, dhq, color: input.posColors?.[pos] });
+            addTotal(positionTotals, pos, { label: posLabel(pos), count: 1, dhq, color: input.posColors?.[pos] });
             addTotal(ageTotals, phase.key, { label: phase.label, count: 1, dhq, color: phase.color });
             addTotal(tierTotals, asset.tier, { label: asset.tier, count: 1, dhq, color: asset.tierColor });
         });
@@ -360,11 +361,11 @@ function buildEmpirePortfolioModel(input) {
             pushSignal({
                 severity: pos.share >= 45 ? 'high' : 'medium',
                 type: 'allocation',
-                title: pos.key + ' allocation is overweight',
-                body: pos.share + '% of portfolio ' + (useValueShare ? 'DHQ' : 'asset count') + ' sits at ' + pos.key + '.',
+                title: pos.label + ' allocation is overweight',
+                body: pos.share + '% of portfolio ' + (useValueShare ? 'DHQ' : 'asset count') + ' sits at ' + pos.label + '.',
                 metric: pos.share + '%',
                 filter: { position: pos.key },
-                detail: { type: 'slice', title: pos.key + ' Allocation', filter: { position: pos.key } },
+                detail: { type: 'slice', title: pos.label + ' Allocation', filter: { position: pos.key } },
                 cta: 'Open slice',
             });
         }
@@ -586,6 +587,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
         sleeperUserId,
         scores,
         normPos,
+        posLabel: window.App?.posLabel,
         posColors,
         getAgeCurve: window.App?.getAgeCurve,
         peakWindows: window.App?.peakWindows,
@@ -935,7 +937,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
                     {lensButton('Contenders', { status: 'contender' }, '#2ECC71')}
                     {lensButton('Rebuilds', { status: 'rebuild' }, '#E74C3C')}
                     <span className="empire-filter-label">Pos</span>
-                    {['QB','RB','WR','TE','DL','LB','DB'].map(pos => filterButton('position', pos, pos, posColors[pos]))}
+                    {['QB','RB','WR','TE','K','DEF','DL','LB','DB'].map(pos => filterButton('position', pos, window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos), posColors[pos]))}
                     <span className="empire-filter-label">Age</span>
                     {filterButton('agePhase', 'build', 'Build', '#4ECDC4')}
                     {filterButton('agePhase', 'peak', 'Peak', '#2ECC71')}

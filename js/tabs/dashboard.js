@@ -63,6 +63,24 @@ const WIDGET_MODULES = {
         sizes: ['sm', 'md', 'lg', 'tall', 'xl', 'xxl'],
         clickTarget: { sm: 'analytics', md: 'analytics' },
     },
+    'league-standings': {
+        label: 'League Standings',
+        icon: '📊',
+        description: 'Current records, value, and roster strength by team',
+        accent: () => T().color?.('accent') || '#D4AF37',
+        metrics: [],
+        sizes: ['md', 'lg'],
+        clickTarget: { md: 'analytics' },
+    },
+    'transaction-ticker': {
+        label: 'Transaction Ticker',
+        icon: '📰',
+        description: 'Recent adds, drops, waivers, and trade drill-ins',
+        accent: () => T().color?.('info') || '#3498DB',
+        metrics: [],
+        sizes: ['md', 'lg'],
+        clickTarget: {},
+    },
     'market-radar': {
         label: 'Market Radar',
         icon: '📡',
@@ -103,7 +121,7 @@ const WIDGET_MODULES = {
     'power-rankings': {
         label: 'Power Rankings',
         icon: '📈',
-        description: 'Blended health, contender PPG, and dynasty DHQ rankings',
+        description: 'Blended health, contender PPG, and value rankings',
         accent: () => T().color?.('positive') || '#2ECC71',
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'tall', 'xxl'],
@@ -256,7 +274,8 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                     <div style={{ padding: '16px 20px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
                             {Object.entries(WIDGET_MODULES).map(([key, m]) => (
-                                <div key={key}
+                                <button key={key}
+                                    type="button"
                                     onMouseEnter={() => setHoverModule(key)}
                                     onMouseLeave={() => setHoverModule(null)}
                                     onClick={() => { setSelectedModule(key); setSelectedMetric(m.metrics?.[0]?.key || null); setStep('size'); }}
@@ -264,12 +283,12 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                                         background: hoverModule === key ? 'rgba(212,175,55,0.08)' : 'rgba(255,255,255,0.03)',
                                         border: '1px solid ' + (hoverModule === key ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'),
                                         borderRadius: '10px', padding: '14px 12px', cursor: 'pointer',
-                                        transition: 'all 0.15s', textAlign: 'center',
+                                        transition: 'all 0.15s', textAlign: 'center', fontFamily: 'inherit',
                                     }}>
                                     <div style={{ fontSize: '1.5rem', marginBottom: '4px', lineHeight: 1 }}>{m.icon}</div>
                                     <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.88rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em', marginBottom: '2px' }}>{m.label}</div>
                                     <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.6, lineHeight: 1.3 }}>{m.description}</div>
-                                </div>
+                                </button>
                             ))}
                         </div>
                     </div>
@@ -369,13 +388,19 @@ function DashboardPanel({
     transactions,
     standings,
     currentLeague,
+    leagueSkin,
     playersData,
+    statsData,
+    prevStatsData,
     myRoster,
     getOwnerName,
     getPlayerName,
     timeAgo,
     briefDraftInfo,
+    timeRecomputeTs,
 }) {
+    const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
+    const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
     const [pickerOpen, setPickerOpen] = React.useState(false);
     const [editingWidget, setEditingWidget] = React.useState(null); // { widgetId, widget }
     const [dragIdx, setDragIdx] = React.useState(null);
@@ -579,7 +604,7 @@ function DashboardPanel({
         const primaryVal = kv(primaryKey);
         const ann = typeof getKpiAnnotation === 'function' ? getKpiAnnotation(primaryKey, primaryVal.value) : '';
 
-        // League context for bar chart — find roster DHQ for comparison
+        // League context for bar chart — find roster value for comparison
         const allDHQs = (() => {
             const LI = window.App?.LI || {};
             const scores = LI.playerScores || {};
@@ -620,9 +645,9 @@ function DashboardPanel({
                     </div>
                 )}
 
-                {/* Mini bar chart: league DHQ comparison */}
+                {/* Mini bar chart: league value comparison */}
                 <div style={{ marginTop: 'auto' }}>
-                    <div style={{ fontSize: '0.6rem', color: S, opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: dmFont, marginBottom: '6px' }}>League DHQ</div>
+                    <div style={{ fontSize: '0.6rem', color: S, opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: dmFont, marginBottom: '6px' }}>League {valueShortLabel}</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                         {allDHQs.slice(0, 6).map(t => (
                             <div key={t.rid} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -654,6 +679,9 @@ function DashboardPanel({
             currentLeague,
             briefDraftInfo,
             playersData,
+            statsData,
+            prevStatsData,
+            timeRecomputeTs,
             setActiveTab,
             navigateWidget,
         });
@@ -674,15 +702,98 @@ function DashboardPanel({
     // TRANSACTION TICKER
     // ══════════════════════════════════════════════════════════════
     function renderTransactionTicker(size) {
+        const transactionLimit = size === 'lg' ? 8 : 5;
+        let visibleTransactions = (transactions || []).slice(0, transactionLimit);
+        if (size === 'lg' && !visibleTransactions.some(t => t.type === 'trade')) {
+            const firstTrade = (transactions || []).find(t => t.type === 'trade');
+            if (firstTrade && !visibleTransactions.includes(firstTrade)) {
+                visibleTransactions = [...visibleTransactions.slice(0, transactionLimit - 1), firstTrade];
+            }
+        }
+        function openTickerPlayer(pid) {
+            if (!pid) return;
+            if (window.WR?.openPlayerCard) {
+                window.WR.openPlayerCard(pid);
+                return;
+            }
+            if (typeof window._wrSelectPlayer === 'function') {
+                window._wrSelectPlayer(pid);
+                return;
+            }
+            if (typeof window.openPlayerModal === 'function') {
+                window.openPlayerModal(pid);
+            }
+        }
+        function tickerPlayerProps(pid) {
+            return {
+                role: 'button',
+                tabIndex: 0,
+                title: 'Open player card',
+                onClick: e => { e.stopPropagation(); openTickerPlayer(pid); },
+                onKeyDown: e => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openTickerPlayer(pid);
+                },
+            };
+        }
+        function buildTickerTradeContext(txn) {
+            const rosterIds = txn?.roster_ids || [];
+            const owners = rosterIds.map(rid => ({ rosterId: rid, name: getOwnerName(rid) || ('Team ' + rid) }));
+            const adds = Object.keys(txn?.adds || {}).map(pid => ({ pid, name: getPlayerName(pid) }));
+            const drops = Object.keys(txn?.drops || {}).map(pid => ({ pid, name: getPlayerName(pid) }));
+            const pickCount = txn?.draft_picks?.length || 0;
+            const assetSummary = [
+                adds.length ? adds.slice(0, 3).map(p => '+' + p.name).join(', ') : null,
+                drops.length ? drops.slice(0, 3).map(p => '-' + p.name).join(', ') : null,
+                pickCount ? pickCount + ' pick' + (pickCount === 1 ? '' : 's') : null,
+            ].filter(Boolean).join(' | ');
+            return {
+                context: 'transaction_ticker_trade',
+                transactionId: txn?.transaction_id || txn?.transactionId || txn?.created || null,
+                created: txn?.created || null,
+                rosterIds,
+                owners,
+                adds,
+                drops,
+                pickCount,
+                summary: owners.map(o => o.name).join(' vs ') + (assetSummary ? ': ' + assetSummary : ''),
+                transaction: txn,
+            };
+        }
+        function openTickerTrade(txn) {
+            if (txn?.type !== 'trade') return;
+            const detail = buildTickerTradeContext(txn);
+            window._wrTradeContext = detail;
+            try { window.dispatchEvent(new CustomEvent('wr:open-trade-context', { detail })); } catch (_) {}
+            if (navigateWidget) navigateWidget('trades');
+            else if (setActiveTab) setActiveTab('trades');
+            else if (typeof window.wrNavigateTab === 'function') window.wrNavigateTab('trades');
+        }
+        function tickerTradeProps(txn) {
+            if (txn?.type !== 'trade') return {};
+            return {
+                role: 'button',
+                tabIndex: 0,
+                title: 'Open trade context',
+                onClick: () => openTickerTrade(txn),
+                onKeyDown: e => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    openTickerTrade(txn);
+                },
+            };
+        }
         return (
-            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', maxHeight: size === 'lg' ? '100%' : '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', maxHeight: size === 'lg' ? '100%' : '300px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ fontFamily: rajFont, fontSize: '0.9rem', fontWeight: 700, color: '#34D399', letterSpacing: '0.07em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     📰 TRANSACTION TICKER
                 </div>
                 {(!transactions || transactions.length === 0) ? (
                     <SkeletonRows count={6} />
-                ) : transactions.map((txn, ti) => (
-                    <div key={ti} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                ) : visibleTransactions.map((txn, ti) => (
+                    <div key={ti} {...tickerTradeProps(txn)} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: txn.type === 'trade' ? 'pointer' : 'default', outline: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', flexWrap: 'wrap' }}>
                             <span style={{ fontSize: '0.65rem', color: S, opacity: 0.55, minWidth: '36px' }}>{timeAgo(txn.created)}</span>
                             <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '1px 5px', borderRadius: '3px',
@@ -697,12 +808,15 @@ function DashboardPanel({
                         <div style={{ fontSize: '0.72rem', color: W, paddingLeft: '42px' }}>
                             {Object.keys(txn.adds || {}).map(pid => (
                                 <span key={'a'+pid} style={{ color: '#2ECC71', cursor: 'pointer', marginRight: '5px' }}
-                                    onClick={() => window._wrSelectPlayer?.(pid)}>
+                                    {...tickerPlayerProps(pid)}>
                                     +{getPlayerName(pid)}
                                 </span>
                             ))}
                             {Object.keys(txn.drops || {}).map(pid => (
-                                <span key={'d'+pid} style={{ color: '#E74C3C', marginRight: '5px' }}>-{getPlayerName(pid)}</span>
+                                <span key={'d'+pid} style={{ color: '#E74C3C', cursor: 'pointer', marginRight: '5px' }}
+                                    {...tickerPlayerProps(pid)}>
+                                    -{getPlayerName(pid)}
+                                </span>
                             ))}
                             {txn.settings?.waiver_bid > 0 && <span style={{ color: '#F0A500', marginLeft: '2px' }}>${txn.settings.waiver_bid}</span>}
                             {txn.type === 'trade' && txn.draft_picks?.length > 0 && (
@@ -731,7 +845,7 @@ function DashboardPanel({
         const isCompact = size === 'md';
 
         return (
-            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', overflowY: 'auto' }}>
+            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', overflow: 'hidden' }}>
                 <div style={{ fontFamily: rajFont, fontSize: '0.9rem', fontWeight: 700, color: G, letterSpacing: '0.07em', marginBottom: '10px' }}>📊 LEAGUE STANDINGS</div>
                 {divKeys.map(divKey => (
                     <div key={divKey} style={{ marginBottom: hasDivisions ? '14px' : 0 }}>
@@ -742,7 +856,7 @@ function DashboardPanel({
                             <span>Team</span>
                             <span style={{ textAlign: 'right' }}>{isOffseason ? 'HP' : 'W-L'}</span>
                             {!isCompact && <span style={{ textAlign: 'right' }}>PF</span>}
-                            <span style={{ textAlign: 'right' }}>DHQ</span>
+                            <span style={{ textAlign: 'right' }}>{valueShortLabel}</span>
                         </div>
                         {divisions[divKey].sort((a, b) => {
                             if (isOffseason) {
@@ -755,7 +869,7 @@ function DashboardPanel({
                             if (b.wins !== a.wins) return b.wins - a.wins;
                             if (a.losses !== b.losses) return a.losses - b.losses;
                             return b.pointsFor - a.pointsFor;
-                        }).map((team, idx) => {
+                        }).slice(0, isCompact ? 5 : 8).map((team, idx) => {
                             const isMe = team.userId === sleeperUserId;
                             const roster = currentLeague?.rosters?.find(r => r.owner_id === team.userId);
                             const totalDHQ = roster?.players?.reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0) || 0;
@@ -806,6 +920,9 @@ function DashboardPanel({
         return (
             <div
                 className="wr-widget"
+                data-widget-id={widget.id || ''}
+                data-widget-key={widget.key || ''}
+                data-widget-size={widget.size || ''}
                 draggable
                 onDragStart={e => { setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)); }}
                 onDragOver={e => e.preventDefault()}
@@ -1092,6 +1209,40 @@ function DashboardPanel({
                         grid-column:span 2 !important;
                     }
                 }
+                @media(min-width:1024px) and (max-width:1279px){
+                    .wr-dashboard-grid{
+                        grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+                    }
+                    .wr-dashboard-grid>.wr-widget,
+                    .wr-dashboard-grid>.wr-add-widget{
+                        min-width:0;
+                    }
+                    .wr-dashboard-grid>.wr-widget[style*="span 3"],
+                    .wr-dashboard-grid>.wr-widget[style*="span 4"]{
+                        grid-column:span 2 !important;
+                    }
+                }
+                @media(min-width:1280px) and (max-width:1439px){
+                    .wr-dashboard-grid{
+                        grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+                    }
+                    .wr-dashboard-grid>.wr-widget,
+                    .wr-dashboard-grid>.wr-add-widget{
+                        min-width:0;
+                    }
+                    .wr-dashboard-grid>.wr-widget[style*="span 4"]{
+                        grid-column:span 3 !important;
+                    }
+                }
+                @media(min-width:1440px){
+                    .wr-dashboard-grid{
+                        grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+                    }
+                    .wr-dashboard-grid>.wr-widget,
+                    .wr-dashboard-grid>.wr-add-widget{
+                        min-width:0;
+                    }
+                }
             `}</style>
 
             {/* Widget grid */}
@@ -1103,26 +1254,32 @@ function DashboardPanel({
                 padding: '16px 20px',
                 background: BK,
                 borderBottom: '1px solid ' + (theme.colors?.border || 'rgba(212,175,55,0.12)'),
+                minWidth: 0,
+                maxWidth: '100%',
+                overflowX: 'hidden',
             }}>
                 {widgets.map((widget, idx) => renderWidget(widget, idx))}
 
                 {/* Add widget button */}
-                <div
+                <button
+                    type="button"
                     className="wr-add-widget"
                     onClick={() => { setEditingWidget(null); setPickerOpen(true); }}
                     style={{
                         gridColumn: 'span 1', gridRow: 'span 1',
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
                         border: '1px dashed rgba(212,175,55,0.25)', borderRadius: '10px',
+                        background: 'transparent',
                         cursor: 'pointer', minHeight: '160px',
                         transition: 'all 0.15s', color: 'rgba(212,175,55,0.35)',
+                        fontFamily: 'inherit',
                     }}
                     onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(212,175,55,0.5)'; e.currentTarget.style.color = 'rgba(212,175,55,0.6)'; e.currentTarget.style.background = 'rgba(212,175,55,0.04)'; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(212,175,55,0.25)'; e.currentTarget.style.color = 'rgba(212,175,55,0.35)'; e.currentTarget.style.background = 'transparent'; }}
                 >
                     <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>+</span>
                     <span style={{ fontSize: '0.65rem', fontFamily: dmFont, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Add Widget</span>
-                </div>
+                </button>
             </div>
 
             {/* Pinned / starred section */}
