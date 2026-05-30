@@ -155,11 +155,16 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
             return 'scout'; // paid but unrecognized profile tier → minimum paid level
         }
 
-        // TEST FLIGHT: free and trial testers get full product access.
-        if (sharedTier === 'trial') return 'pro';
+        // Trial users get free-tier access in War Room (no trial concept here)
+        if (sharedTier === 'trial') return 'free';
 
-        // TEST FLIGHT: shared/tier.js missing or free → grant full access too.
-        return 'pro';
+        // Fallback: shared/tier.js not loaded. Do not trust persisted local
+        // storage for paid access; users can edit it in the browser.
+        if (sharedTier === null) {
+            if (new URLSearchParams(window.location.search).has('dev') || ['localhost', '127.0.0.1'].includes(window.location.hostname)) return 'pro';
+        }
+
+        return 'free';
     }
 
     const WR_FEATURES = new Set(['trade-finder', 'deal-analyzer', 'owner-dna', 'league-map', 'command-view', 'projections',
@@ -191,8 +196,17 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     const _sharedCanAccess = window._sharedCanAccess || null;
 
     function canAccess(feature) {
-        // TEST FLIGHT: all features unlocked for every tester — no paywalls.
-        return true;
+        // TEST FLIGHT: paywalls are OFF — every feature is unlocked for all testers.
+        // To re-enable billing-tier gating (e.g. when subscriptions go live),
+        // set window.__WR_ENFORCE_TIERS = true and the original matrix below applies.
+        if (!(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true)) return true;
+
+        // War Room's granular feature matrix is the primary gate
+        const tier = getUserTier();
+        if (TIER_FEATURES[tier]?.has(feature)) return true;
+        // Fall back to shared tier.js canAccess for features not in War Room's matrix
+        // (covers shared FEATURES enum values used by ReconAI modules)
+        return _sharedCanAccess ? _sharedCanAccess(feature) : false;
     }
 
     function isPro() { const t = getUserTier(); return t === 'pro' || t === 'commissioner'; }
