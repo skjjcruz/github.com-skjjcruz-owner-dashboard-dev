@@ -105,21 +105,6 @@
     .feat-name{font-size:14px;font-weight:800;margin-bottom:6px}
     .feat-desc{font-size:13px;color:var(--muted);line-height:1.52}
 
-    /* Pricing */
-    .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:stretch}
-    .price-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px 20px;position:relative;display:flex;flex-direction:column}
-    .price-card-pop{border-color:var(--gold);box-shadow:0 0 34px rgba(212,175,55,.11)}
-    .price-badge{position:absolute;top:-10px;left:18px;background:var(--gold);color:#0a0a0a;font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:0;font-weight:800;margin-bottom:6px}
-    .price-amount{font-size:30px;font-weight:800;letter-spacing:0;margin-bottom:2px}
-    .price-amount span{font-size:14px;font-weight:600;color:var(--silver)}
-    .price-note{font-size:12px;color:var(--muted);margin-bottom:16px;min-height:30px}
-    .price-features{list-style:none;margin-bottom:22px;display:flex;flex-direction:column;gap:8px}
-    .price-features li{font-size:13px;color:var(--silver);line-height:1.35;display:flex;align-items:flex-start;gap:8px}
-    .price-features li::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--gold);flex-shrink:0;margin-top:6px}
-    .price-btn{width:100%;min-height:42px;margin-top:auto;font-size:14px;font-weight:800;border-radius:9px;border:1px solid var(--border);background:var(--bg3);color:var(--white);cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s}
-    .price-btn:hover{border-color:var(--gold);color:var(--gold)}
-    .price-btn-gold{background:var(--gold);color:#0a0a0a;border:none;box-shadow:0 5px 20px rgba(212,175,55,.2)}
-    .price-btn-gold:hover{color:#0a0a0a;box-shadow:0 9px 28px rgba(212,175,55,.28)}
 
     /* Platforms */
     .platforms{max-width:1180px;margin:0 auto;padding:0 24px 76px}
@@ -155,7 +140,6 @@
     @media(max-width:1040px){
       .hero-dashboard{right:-110px;width:640px;opacity:.7}
       .phone-preview{display:none}
-      .pricing-grid{grid-template-columns:repeat(2,1fr)}
     }
     @media(max-width:780px){
       .hero{align-items:flex-end;padding:96px 20px 46px;min-height:min(640px,calc(100vh - 98px))}
@@ -189,7 +173,6 @@
       .hero-cta,.hero-secondary{width:100%}
       .product-strip,.platforms{padding-left:16px;padding-right:16px}
       .section{padding-left:16px;padding-right:16px}
-      .pricing-grid{grid-template-columns:1fr}
       .price-note{min-height:0}
       .auth{padding-left:16px;padding-right:16px}
     }
@@ -204,8 +187,7 @@
       <span class="nav-title">DYNASTY HQ</span>
     </div>
     <div class="nav-links">
-      <button class="nav-btn" id="navSignin" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'})">Sign In</button>
-      <button class="nav-btn nav-btn-primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Get Started</button>
+      <button class="nav-btn nav-btn-primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('sleeperJoin').focus()">Join</button>
     </div>
   </nav>
 
@@ -257,10 +239,9 @@
       <h1>Dynasty HQ</h1>
       <p class="hero-sub">Most tools stop at player rankings. Dynasty HQ turns your Sleeper league into the model: DHQ values, owner tendencies, draft history, trade memory, and Scout decisions in one operating system.</p>
       <div class="hero-actions">
-        <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Start free with Sleeper</button>
-        <button class="hero-secondary" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">View plans</button>
+        <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('sleeperJoin').focus()">Join with Sleeper</button>
       </div>
-      <p class="hero-free">Free forever for one Sleeper league. No credit card.</p>
+      <p class="hero-free">Just your Sleeper username. No email, no password.</p>
     </div>
   </section>
 
@@ -330,77 +311,6 @@
     </div>
   </section>
 
-  <!-- Pricing -->
-  <section class="section pricing" id="pricing">
-    <div class="section-head">
-      <div>
-        <div class="section-kicker">Plans</div>
-        <h2 class="section-title">Start with one league. Upgrade when the board gets bigger.</h2>
-      </div>
-      <p class="section-sub">Live plans are Sleeper-first while additional platform connectors stay in beta.</p>
-    </div>
-    <div class="pricing-grid">
-      <div class="price-card">
-        <div class="price-name">Free</div>
-        <div class="price-amount">$0</div>
-        <div class="price-note">One league, forever</div>
-        <ul class="price-features">
-          <li>One Sleeper league</li>
-          <li>League-specific DHQ values</li>
-          <li>Player cards with age curves</li>
-          <li>Team diagnosis</li>
-          <li>1 AI query per day</li>
-        </ul>
-        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Get started</button>
-      </div>
-      <div class="price-card price-card-pop">
-        <div class="price-badge">Most Popular</div>
-        <div class="price-name">Dynasty HQ</div>
-        <div class="price-amount">$9.99 <span>/mo</span></div>
-        <div class="price-note">Unlimited Sleeper leagues. Cancel anytime.</div>
-        <ul class="price-features">
-          <li>Everything in Free</li>
-          <li>Unlimited Sleeper leagues</li>
-          <li>Unlimited AI analysis</li>
-          <li>Owner DNA profiles</li>
-          <li>Trade memory + finder</li>
-          <li>Draft command + pick values</li>
-          <li>Scout + War Room access</li>
-        </ul>
-        <button class="price-btn price-btn-gold" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Start free trial</button>
-      </div>
-      <div class="price-card">
-        <div class="price-name">Pro</div>
-        <div class="price-amount">$14.95 <span>/mo</span></div>
-        <div class="price-note">Multi-league command center.</div>
-        <ul class="price-features">
-          <li>Everything in Dynasty HQ</li>
-          <li>Global dashboard for Sleeper leagues</li>
-          <li>Cross-league AI advice</li>
-          <li>Player exposure tracking</li>
-          <li>Unified Trophy Room</li>
-          <li>Season recap generator</li>
-        </ul>
-        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Start free trial</button>
-      </div>
-      <div class="price-card">
-        <div class="price-name">Dynasty HQ Annual</div>
-        <div class="price-amount">$79.99 <span>/yr</span></div>
-        <div class="price-note">Save 33% — $6.67/mo</div>
-        <ul class="price-features">
-          <li>Everything in monthly</li>
-          <li>Locked-in annual rate</li>
-          <li>Priority feature access</li>
-          <li>Unlimited Sleeper leagues</li>
-        </ul>
-        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});switchTab('signup')">Start free trial</button>
-      </div>
-    </div>
-    <p style="text-align:center;font-size:13px;color:var(--muted);margin-top:24px">
-      <strong style="color:var(--gold)">League Pass</strong> — Get your whole league on Dynasty HQ at a group discount. <a href="mailto:fantasywarsapp@gmail.com" style="color:var(--gold)">Contact us</a>
-    </p>
-  </section>
-
   <!-- Platforms -->
   <section class="platforms">
     <div class="platform-band">
@@ -415,45 +325,16 @@
     </div>
   </section>
 
-  <!-- Auth -->
+  <!-- Join -->
   <section class="auth" id="auth">
     <img src="icon-192.png" alt="Dynasty HQ" style="display:block;width:56px;height:56px;border-radius:14px;margin:0 auto 16px;box-shadow:0 4px 20px rgba(212,175,55,.2)">
-    <h2 class="auth-title">Get Dynasty HQ</h2>
+    <h2 class="auth-title">Join Dynasty HQ</h2>
+    <p style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 22px">Enter your Sleeper username and you're in. We read your leagues from Sleeper's public API — no email, no password.</p>
 
-    <!-- OAuth sign-in buttons (Google & Apple) -->
-    <button id="btnGoogle" onclick="handleOAuthGoogle()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:10px;border:1px solid #dadce0;background:#fff;color:#3c4043;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;box-sizing:border-box;font-family:inherit;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,.18)'" onmouseout="this.style.boxShadow='none'">
-      <svg viewBox="0 0 24 24" width="18" height="18" style="flex-shrink:0"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-      Continue with Google
-    </button>
-    <button id="btnApple" onclick="handleOAuthApple()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:10px;border:none;background:#000;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:16px;box-sizing:border-box;font-family:inherit;transition:opacity .15s" onmouseover="this.style.opacity='.82'" onmouseout="this.style.opacity='1'">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="#fff" style="flex-shrink:0"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-      Continue with Apple
-    </button>
-
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <div style="flex:1;height:1px;background:rgba(255,255,255,.12)"></div>
-      <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.4);white-space:nowrap;text-transform:uppercase;letter-spacing:0">or</span>
-      <div style="flex:1;height:1px;background:rgba(255,255,255,.12)"></div>
-    </div>
-
-    <div class="auth-tabs">
-      <button class="auth-tab active" id="tabSignup" onclick="switchTab('signup')">Create Account</button>
-      <button class="auth-tab" id="tabSignin" onclick="switchTab('signin')">Sign In</button>
-    </div>
-    <div class="auth-panel active" id="panelSignup">
-      <div class="alert" id="alertSignup"></div>
-      <input class="auth-input" type="text" id="su-name" placeholder="Display name (optional)">
-      <input class="auth-input" type="email" id="su-email" placeholder="Email">
-      <input class="auth-input" type="password" id="su-password" placeholder="Password (8+ characters)">
-      <button class="auth-submit" id="btnSignup" onclick="handleSignup()">Create Free Account</button>
-    </div>
-    <div class="auth-panel" id="panelSignin">
-      <div class="alert" id="alertSignin"></div>
-      <input class="auth-input" type="email" id="si-email" placeholder="Email">
-      <input class="auth-input" type="password" id="si-password" placeholder="Password">
-      <button class="auth-submit" id="btnSignin" onclick="handleSignin()">Sign In</button>
-      <button class="auth-link" id="btnReset" onclick="requestPasswordReset()">Forgot password?</button>
-    </div>
+    <div class="alert" id="alertJoin"></div>
+    <input class="auth-input" type="text" id="sleeperJoin" placeholder="Your Sleeper username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button class="auth-submit" id="btnJoin" onclick="joinWithSleeper()">Enter Dynasty HQ →</button>
+    <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:14px">This is your <strong style="color:var(--silver)">username</strong> on Sleeper — not your email.</p>
   </section>
 
   <footer class="footer">&copy; 2026 Dynasty HQ &middot; All rights reserved</footer>
@@ -461,18 +342,13 @@
   <script src="js/landing-content.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"></script>
   <script>
-    const FW_API_BASE = 'https://hovnqztlbsgsywrbidbh.supabase.co/functions/v1';
     const FW_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhvdm5xenRsYnNnc3l3cmJpZGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NTY3MjcsImV4cCI6MjA5NTAzMjcyN30.WFz9TkCpjQpzJS_mb7b4G_58m71brqoGQC5jp2IVC1o';
     const SUPABASE_URL = 'https://hovnqztlbsgsywrbidbh.supabase.co';
     const SESSION_KEY = 'fw_session_v1';
     const SCOUT_URL = 'https://jcc100218.github.io/ReconAI/';
     const LANDING_EDITOR_PREVIEW = new URLSearchParams(window.location.search).has('landingPreview');
 
-    // ── OAuth sign-in helpers ────────────────────────────────────
-    // Providers must be enabled in Supabase Dashboard:
-    //   Settings → Authentication → Providers
-    //   Google: Client ID + Secret from Google Cloud Console
-    //   Apple:  Service ID + Secret Key from Apple Developer Portal
+    // Supabase client — used only for lightweight landing analytics below.
     let _sbClient = null;
     function getSbClient() {
       if (!_sbClient && window.supabase) {
@@ -533,189 +409,91 @@
       viewport: window.innerWidth < 768 ? 'mobile' : 'desktop',
     });
     document.addEventListener('click', (evt) => {
-      const target = evt.target.closest?.('.price-btn,.hero-cta,.hero-secondary,.nav-btn,.auth-tab');
+      const target = evt.target.closest?.('.hero-cta,.nav-btn,.auth-submit');
       if (!target) return;
       trackLandingEvent('landing_cta_clicked', {
-        widget: target.classList.contains('price-btn') ? 'pricing' : target.className.split(/\s+/)[0],
+        widget: target.className.split(/\s+/)[0],
         entityType: 'cta',
         entityId: target.id || target.className.split(/\s+/)[0],
       });
     }, { capture: true });
 
-    function handleOAuthGoogle() {
-      const db = getSbClient();
-      if (!db) return;
-      trackLandingEvent('oauth_started', { provider: 'google' });
-      const btn = document.getElementById('btnGoogle');
-      if (btn) { btn.disabled = true; btn.textContent = 'Redirecting\u2026'; }
-      db.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.origin + window.location.pathname },
-      });
-    }
-
-    function handleOAuthApple() {
-      const db = getSbClient();
-      if (!db) return;
-      trackLandingEvent('oauth_started', { provider: 'apple' });
-      const btn = document.getElementById('btnApple');
-      if (btn) { btn.disabled = true; btn.textContent = 'Redirecting\u2026'; }
-      db.auth.signInWithOAuth({
-        provider: 'apple',
-        options: { redirectTo: window.location.origin + window.location.pathname },
-      });
-    }
-
-    // Handle OAuth redirect: if Supabase returns a session via hash, store it and redirect
-    (async function handleOAuthCallback() {
-      try {
-        if (LANDING_EDITOR_PREVIEW) return;
-        const db = getSbClient();
-        if (!db) return;
-        const { data } = await db.auth.getSession();
-        if (data?.session) {
-          trackLandingEvent('oauth_succeeded', { provider: data.session.user?.app_metadata?.provider || 'supabase' });
-          // Store in fw_session_v1 format so existing redirect logic works
-          const user = data.session.user;
-          const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-          if (!existing?.token) {
-            localStorage.setItem(SESSION_KEY, JSON.stringify({
-              token: data.session.access_token,
-              user: { email: user.email, displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email },
-            }));
-          }
-          const profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
-          const dest = (!profile || !profile.onboardingComplete) ? 'onboarding.html'
-            : (localStorage.getItem('fw_preferred_view') === 'scout' ? SCOUT_URL : WARROOM_URL);
-          window.location.href = dest;
-        }
-      } catch (e) { console.warn('[WR] OAuth callback error:', e); }
-    })();
     const WARROOM_URL = 'index.html';
+    const AUTH_KEY = 'od_auth_v1';
+    const PROFILE_KEY = 'od_profile_v1';
 
-    // Redirect if already signed in
+    function destForUser() {
+      const pref = localStorage.getItem('fw_preferred_view');
+      if (pref === 'scout') return SCOUT_URL;
+      if (pref === 'warroom') return WARROOM_URL;
+      // Default: mobile -> Scout, desktop -> War Room
+      return window.innerWidth < 768 ? SCOUT_URL : WARROOM_URL;
+    }
+
+    // Redirect if a tester is already in
     (function checkSession() {
       try {
         if (LANDING_EDITOR_PREVIEW) return;
-        const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-        if (s?.token && s?.user) {
+        const legacy = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
+        const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (legacy?.username || session?.token) {
           trackLandingEvent('landing_existing_session_redirected');
-          const profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
-          if (!profile || !profile.onboardingComplete) {
-            window.location.href = 'onboarding.html';
-          } else {
-            // Device-aware routing with preference override
-            const pref = localStorage.getItem('fw_preferred_view');
-            if (pref === 'scout') { window.location.href = SCOUT_URL; return; }
-            if (pref === 'warroom') { window.location.href = WARROOM_URL; return; }
-            // Default: mobile -> Scout, desktop -> War Room
-            if (window.innerWidth < 768) { window.location.href = SCOUT_URL; }
-            else { window.location.href = WARROOM_URL; }
-          }
+          window.location.href = destForUser();
         }
       } catch {}
     })();
 
-    function switchTab(tab) {
-      const isSignup = tab === 'signup';
-      document.getElementById('tabSignup').classList.toggle('active', isSignup);
-      document.getElementById('tabSignin').classList.toggle('active', !isSignup);
-      document.getElementById('panelSignup').classList.toggle('active', isSignup);
-      document.getElementById('panelSignin').classList.toggle('active', !isSignup);
-      trackLandingEvent('auth_tab_viewed', { tab });
-    }
-
-    function showAlert(panelId, type, message) {
-      const el = document.getElementById('alert' + panelId);
+    function showAlert(type, message) {
+      const el = document.getElementById('alertJoin');
       el.className = 'alert alert-' + type + ' show';
       el.textContent = message;
       if (type !== 'success') setTimeout(() => el.classList.remove('show'), 6000);
     }
 
-    async function handleSignup() {
-      const email = document.getElementById('su-email').value.trim();
-      const password = document.getElementById('su-password').value;
-      const displayName = document.getElementById('su-name').value.trim();
-      const btn = document.getElementById('btnSignup');
-      if (!email || !password) { trackLandingEvent('signup_blocked', { reason: 'missing_fields' }); showAlert('Signup', 'error', 'Email and password are required.'); return; }
-      if (password.length < 8) { trackLandingEvent('signup_blocked', { reason: 'weak_password' }); showAlert('Signup', 'error', 'Password must be at least 8 characters.'); return; }
-      trackLandingEvent('signup_started', { productSlug: 'war_room' });
-      btn.disabled = true; btn.textContent = 'Creating account\u2026';
+    async function joinWithSleeper() {
+      const input = document.getElementById('sleeperJoin');
+      const username = input.value.trim();
+      const btn = document.getElementById('btnJoin');
+      if (!username) { trackLandingEvent('join_blocked', { reason: 'missing_username' }); showAlert('error', 'Enter your Sleeper username to continue.'); input.focus(); return; }
+      trackLandingEvent('join_started');
+      btn.disabled = true; btn.textContent = 'Finding your leagues\u2026';
       try {
-        const res = await fetch(`${FW_API_BASE}/fw-signup`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
-          body: JSON.stringify({ email, password, displayName, productSlug: 'war_room' }),
-        });
-        const data = await res.json();
-        if (!res.ok) { trackLandingEvent('signup_failed', { status: res.status }); showAlert('Signup', 'error', data.error || 'Sign-up failed.'); btn.disabled = false; btn.textContent = 'Create Free Account'; return; }
-        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-        trackLandingEvent('signup_succeeded', { productSlug: 'war_room' });
-        showAlert('Signup', 'success', 'Account created! Setting up Dynasty HQ\u2026');
-        setTimeout(() => { window.location.href = 'onboarding.html'; }, 1000);
+        const res = await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(username)}`);
+        const user = res.ok ? await res.json() : null;
+        if (!user || !user.user_id) {
+          trackLandingEvent('join_failed', { reason: 'username_not_found' });
+          showAlert('error', "We couldn't find that Sleeper username. Check the spelling and try again.");
+          btn.disabled = false; btn.textContent = 'Enter Dynasty HQ \u2192';
+          return;
+        }
+        // Legacy Sleeper-username auth \u2014 the app reads this to load leagues (read-only, no password).
+        localStorage.setItem(AUTH_KEY, JSON.stringify({
+          username: user.username || username,
+          sleeperUserId: user.user_id,
+          createdAt: new Date().toISOString(),
+        }));
+        localStorage.setItem('od_locked_username_v2', user.username || username);
+        // Mark onboarding complete so testers go straight into the app.
+        const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
+        localStorage.setItem(PROFILE_KEY, JSON.stringify({
+          ...profile,
+          sleeperUsername: user.username || username,
+          sleeperUserId: user.user_id,
+          platforms: ['sleeper'],
+          onboardingComplete: true,
+        }));
+        trackLandingEvent('join_succeeded');
+        showAlert('success', 'You\u2019re in! Loading Dynasty HQ\u2026');
+        setTimeout(() => { window.location.href = destForUser(); }, 700);
       } catch (err) {
-        trackLandingEvent('signup_failed', { reason: 'network' });
-        showAlert('Signup', 'error', 'Network error: ' + (err?.message || String(err)));
-        btn.disabled = false; btn.textContent = 'Create Free Account';
-      }
-    }
-
-    async function handleSignin() {
-      const email = document.getElementById('si-email').value.trim();
-      const password = document.getElementById('si-password').value;
-      const btn = document.getElementById('btnSignin');
-      if (!email || !password) { trackLandingEvent('signin_blocked', { reason: 'missing_fields' }); showAlert('Signin', 'error', 'Email and password are required.'); return; }
-      trackLandingEvent('signin_started');
-      btn.disabled = true; btn.textContent = 'Signing in\u2026';
-      try {
-        const res = await fetch(`${FW_API_BASE}/fw-signin`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
-          body: JSON.stringify({ email, password }),
-        });
-        const data = await res.json();
-        if (!res.ok) { trackLandingEvent('signin_failed', { status: res.status }); showAlert('Signin', 'error', data.error || 'Invalid email or password.'); btn.disabled = false; btn.textContent = 'Sign In'; return; }
-        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-        trackLandingEvent('signin_succeeded');
-        showAlert('Signin', 'success', 'Welcome back! Redirecting\u2026');
-        const pref = localStorage.getItem('fw_preferred_view');
-        let dest = WARROOM_URL;
-        if (pref === 'scout') dest = SCOUT_URL;
-        else if (!pref && window.innerWidth < 768) dest = SCOUT_URL;
-        setTimeout(() => { window.location.href = dest; }, 800);
-      } catch (err) {
-        trackLandingEvent('signin_failed', { reason: 'network' });
-        showAlert('Signin', 'error', 'Network error: ' + (err?.message || String(err)));
-        btn.disabled = false; btn.textContent = 'Sign In';
-      }
-    }
-
-    async function requestPasswordReset() {
-      const email = document.getElementById('si-email').value.trim();
-      const btn = document.getElementById('btnReset');
-      if (!email) { showAlert('Signin', 'error', 'Enter your email first, then request a reset link.'); return; }
-      trackLandingEvent('password_reset_requested');
-      btn.disabled = true; btn.textContent = 'Sending reset link...';
-      try {
-        await fetch(`${FW_API_BASE}/fw-request-password-reset`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
-          body: JSON.stringify({ email }),
-        });
-        trackLandingEvent('password_reset_request_succeeded');
-        showAlert('Signin', 'success', 'If that email exists, a reset link is on the way.');
-      } catch {
-        trackLandingEvent('password_reset_request_failed', { reason: 'network' });
-        showAlert('Signin', 'success', 'If that email exists, a reset link is on the way.');
-      } finally {
-        btn.disabled = false; btn.textContent = 'Forgot password?';
+        trackLandingEvent('join_failed', { reason: 'network' });
+        showAlert('error', 'Network error: ' + (err?.message || String(err)));
+        btn.disabled = false; btn.textContent = 'Enter Dynasty HQ \u2192';
       }
     }
 
     document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return;
-      if (document.getElementById('panelSignup').classList.contains('active')) handleSignup();
-      else handleSignin();
+      if (e.key === 'Enter' && document.activeElement?.id === 'sleeperJoin') joinWithSleeper();
     });
   </script>
 </body>
