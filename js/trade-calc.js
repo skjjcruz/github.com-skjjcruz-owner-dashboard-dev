@@ -106,13 +106,19 @@
 
         function calcNflStarterSet() {
             const scoring = currentLeague.scoring_settings;
+            const dhqScores = window.App?.LI?.playerScores || {};
             const byPos = {};
             for (const [id, p] of Object.entries(playersData)) {
                 const pos = normPos(p.position);
                 if (!pos || !(pos in NFL_STARTER_POOL)) continue;
                 if (!p.team) continue;
                 if (!byPos[pos]) byPos[pos] = [];
-                const score = calcSeasonPts(id, scoring);
+                // Rank the startable pool by forward-looking DHQ dynasty value so
+                // rookies/breakouts aren't graded as zero on last season's box score.
+                // Fall back to last-season fantasy points when no DHQ value exists
+                // (e.g. before the value engine has loaded), so the pool is never empty.
+                const dhq = dhqScores[id];
+                const score = (dhq != null && dhq > 0) ? dhq : calcSeasonPts(id, scoring);
                 if (score > 0) byPos[pos].push({ id, score });
             }
             const result = {};
@@ -674,7 +680,9 @@
         const nflStarterSet = useMemo(() => {
             if (!Object.keys(playersData).length || !Object.keys(statsData).length) return {};
             return calcNflStarterSet();
-        }, [playersData, statsData]);
+            // timeRecomputeTs: recompute once DHQ playerScores load so the pool
+            // ranks by dynasty value rather than the season-points fallback.
+        }, [playersData, statsData, timeRecomputeTs]);
 
         const tradedPicks = useMemo(() => window.S?.tradedPicks || [], [currentLeague]);
 
