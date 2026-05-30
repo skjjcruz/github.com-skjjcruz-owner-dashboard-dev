@@ -22,15 +22,13 @@
         }
 
         const tierLabel = targetTier === 'scout' ? 'Scout' : 'War Room';
-        const tierPrice = targetTier === 'scout' ? '$4.99/mo' : '$9.99/mo';
 
         return React.createElement('div', { style: { background:'linear-gradient(135deg, var(--off-black), var(--charcoal))', border:'1px solid rgba(212,175,55,0.2)', borderRadius:'10px', padding:'28px 24px', textAlign:'center', maxWidth:'480px', margin:'20px auto' } },
-            React.createElement('div', { style: { fontFamily:'Rajdhani, sans-serif', fontSize:'1.6rem', color:'var(--gold)', letterSpacing:'0.06em', marginBottom:'8px' } }, title || 'UPGRADE TO UNLOCK'),
-            React.createElement('div', { style: { fontSize:'0.88rem', color:'var(--silver)', lineHeight:1.7, marginBottom:'16px' } }, description || 'This feature requires a paid subscription.'),
+            React.createElement('div', { style: { fontFamily:'Rajdhani, sans-serif', fontSize:'1.6rem', color:'var(--gold)', letterSpacing:'0.06em', marginBottom:'8px' } }, title || 'UNLOCK THIS FEATURE'),
+            React.createElement('div', { style: { fontSize:'0.88rem', color:'var(--silver)', lineHeight:1.7, marginBottom:'16px' } }, description || 'This feature is part of ' + tierLabel + '.'),
             React.createElement('div', { style: { display:'flex', gap:'10px', justifyContent:'center', marginBottom:'12px' } },
-                React.createElement('button', { onClick: () => { window.location.href = 'landing.html'; }, style: { padding:'10px 24px', background:'var(--gold)', color:'var(--black)', border:'none', borderRadius:'6px', fontFamily:'Rajdhani, sans-serif', fontSize:'1.1rem', letterSpacing:'0.05em', cursor:'pointer' } }, 'Unlock ' + tierLabel + ' — ' + tierPrice),
+                React.createElement('button', { onClick: () => { if (onClose) onClose(); }, style: { padding:'10px 24px', background:'var(--gold)', color:'var(--black)', border:'none', borderRadius:'6px', fontFamily:'Rajdhani, sans-serif', fontSize:'1.1rem', letterSpacing:'0.05em', cursor:'pointer' } }, 'Got it'),
             ),
-            React.createElement('div', { style: { fontSize:'0.76rem', color:'var(--silver)', opacity:0.5 } }, 'Currently on Scout (free) plan'),
             onClose ? React.createElement('button', { onClick: onClose, style: { marginTop:'10px', background:'none', border:'none', color:'var(--silver)', cursor:'pointer', fontSize:'0.78rem' } }, 'Maybe later') : null
         );
     }
