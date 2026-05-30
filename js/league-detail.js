@@ -17,6 +17,39 @@
         return escapeHtml(str).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
     }
 
+    // Discount players buried on the NFL depth chart (Sleeper depth_chart_order).
+    // Applied once to LI.playerScores after the DHQ engine loads, so every module
+    // that reads playerScores (grading, trade math, rankings) inherits the role
+    // penalty. Idempotent: keeps an unpenalized backup and re-derives from it.
+    function applyRolePenalties() {
+        try {
+            const LI = window.App?.LI;
+            const players = window.App?._playersCache;
+            const penalize = window.App?.PlayerValue?.computeRolePenalty;
+            const normPos = window.App?.normPos;
+            if (!LI?.playerScores || !players || typeof penalize !== 'function') return;
+            // Preserve the engine's raw scores so the time machine projects from
+            // clean base values and the penalty never compounds across reloads.
+            if (!LI._preRolePenaltyScores) LI._preRolePenaltyScores = { ...LI.playerScores };
+            const base = LI._preRolePenaltyScores;
+            const adjusted = {};
+            let demoted = 0;
+            for (const [pid, score] of Object.entries(base)) {
+                const p = players[pid];
+                const nPos = normPos ? normPos(p?.position) : p?.position;
+                const mult = penalize(nPos, p?.depth_chart_order);
+                if (mult < 1) demoted++;
+                adjusted[pid] = Math.round(score * mult);
+            }
+            LI.playerScores = adjusted;
+            if (typeof DEV_MODE !== 'undefined' && DEV_MODE) {
+                console.log('[War Room] Role penalty applied to ' + demoted + ' depth-chart-buried players');
+            }
+        } catch (e) {
+            console.warn('[War Room] applyRolePenalties failed:', e);
+        }
+    }
+
     function wrCanPageScroll() {
         const doc = document.documentElement;
         const body = document.body;
@@ -1806,6 +1839,7 @@
                     try {
                         await window.App.loadLeagueIntel();
                         console.log('[War Room] DHQ engine loaded:', Object.keys(window.App.LI?.playerScores || {}).length, 'players valued');
+                        applyRolePenalties(); // discount players buried on the depth chart
                         setDhqStatus({ loading: false, step: 'Complete!', progress: 100 });
                         setStatsData(prev => ({ ...prev })); // force re-render
                         setTimeRecomputeTs(Date.now()); // refresh KPIs and rankings

@@ -115,8 +115,9 @@
                 if (!byPos[pos]) byPos[pos] = [];
                 // Rank the startable pool by forward-looking DHQ dynasty value so
                 // rookies/breakouts aren't graded as zero on last season's box score.
-                // Fall back to last-season fantasy points when no DHQ value exists
-                // (e.g. before the value engine has loaded), so the pool is never empty.
+                // playerScores already carries the depth-chart role penalty (applied
+                // once at load in applyRolePenalties). Fall back to last-season points
+                // only when no DHQ value exists, so the pool is never empty.
                 const dhq = dhqScores[id];
                 const score = (dhq != null && dhq > 0) ? dhq : calcSeasonPts(id, scoring);
                 if (score > 0) byPos[pos].push({ id, score });

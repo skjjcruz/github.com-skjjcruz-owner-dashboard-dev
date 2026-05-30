@@ -155,7 +155,7 @@ process.stdout.write('OK\n\n');
 // ── Grab references from context ──────────────────────────────────
 const { normPos, calcRawPts, calcPPG }                         = ctx.App;
 const LeagueSkin                                               = ctx.App.LeagueSkin;
-const { getPickValue, projectPlayerValue, PICK_VALUES }        = ctx.App.PlayerValue;
+const { getPickValue, projectPlayerValue, PICK_VALUES, computeRolePenalty } = ctx.App.PlayerValue;
 const computeWeightedDNA                                       = ctx.computeWeightedDNA;
 const buildEmpirePortfolioModel                                = ctx.buildEmpirePortfolioModel;
 // getUserTier / canAccess are top-level function declarations in core.js
@@ -404,6 +404,30 @@ test('warroom: analytics-full accessible',
 test('warroom: intelligence-full accessible',
   () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('intelligence-full')); resetTierState(); });
 delete ctx.window.__WR_ENFORCE_TIERS; // restore test-flight default for remaining tests
+
+// ══════════════════════════════════════════════════════════════════
+// 4b. computeRolePenalty (depth-chart role discount)
+// ══════════════════════════════════════════════════════════════════
+group('computeRolePenalty');
+// Unknown / missing depth → never penalize
+test('null order → no penalty',        () => eq(computeRolePenalty('QB', null), 1.0));
+test('undefined order → no penalty',   () => eq(computeRolePenalty('QB', undefined), 1.0));
+test('non-number order → no penalty',  () => eq(computeRolePenalty('WR', 'x'), 1.0));
+// QB starts 1: order 0 full, order 1+ penalized on the moderate curve
+test('QB1 (order 0) → full value',     () => eq(computeRolePenalty('QB', 0), 1.0));
+test('QB2 (order 1) → 0.60',           () => eq(computeRolePenalty('QB', 1), 0.60));
+test('QB3 (order 2) → 0.40',           () => eq(computeRolePenalty('QB', 2), 0.40));
+test('QB4 (order 3) → 0.25 floor',     () => eq(computeRolePenalty('QB', 3), 0.25));
+test('QB deep (order 6) → 0.25 floor', () => eq(computeRolePenalty('QB', 6), 0.25));
+// Position-aware starter depth: WR starts 3, so WR1-3 are full, WR4 penalized
+test('WR3 (order 2) → full value',     () => eq(computeRolePenalty('WR', 2), 1.0));
+test('WR4 (order 3) → 0.60',           () => eq(computeRolePenalty('WR', 3), 0.60));
+// RB starts 2: RB2 full, RB3 penalized
+test('RB2 (order 1) → full value',     () => eq(computeRolePenalty('RB', 1), 1.0));
+test('RB3 (order 2) → 0.60',           () => eq(computeRolePenalty('RB', 2), 0.60));
+// Unknown position → defaults to starter depth 1
+test('unknown pos order 0 → full',     () => eq(computeRolePenalty('ZZ', 0), 1.0));
+test('unknown pos order 1 → 0.60',     () => eq(computeRolePenalty('ZZ', 1), 0.60));
 
 // ══════════════════════════════════════════════════════════════════
 // 5. getPickValue
