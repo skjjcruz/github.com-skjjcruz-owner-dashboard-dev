@@ -198,6 +198,31 @@ window.App.PlayerValue = (function () {
         return Math.round(baseDhq * capped * 0.10);
     }
 
+    // ── Depth-chart role penalty ─────────────────────────────────────
+    // Sleeper exposes depth_chart_order (0-indexed: 0 = team's starter at the
+    // position, 1 = primary backup, 2+ = deeper). Barring injury, a player
+    // buried on the depth chart sees little real production, so dynasty value
+    // and starter grading should discount them.
+    //
+    // The penalty is position-aware: it only applies to players ranked BEYOND
+    // their position's real starter depth, so legit multi-start roles (WR3, RB2)
+    // are not punished. Returns a multiplier in (0, 1]; 1 = no penalty.
+    //
+    //   nPos  — normalized position (QB/RB/WR/TE/K/DL/LB/DB)
+    //   order — depth_chart_order (0-indexed) or null/undefined when unknown
+    const ROLE_STARTER_DEPTH = { QB:1, RB:2, WR:3, TE:1, K:1, DL:4, LB:4, DB:4 };
+    // Multiplier applied to the 1st / 2nd / 3rd-and-deeper non-starter slot.
+    const ROLE_PENALTY_STEPS = [0.60, 0.40, 0.25];
+    function computeRolePenalty(nPos, order) {
+        // Unknown depth (free agents, missing data) → no penalty; never punish on absent data.
+        if (order == null || typeof order !== 'number' || order < 0) return 1.0;
+        const starterDepth = ROLE_STARTER_DEPTH[nPos] ?? 1;
+        // Within the position's real starting slots → full value.
+        if (order < starterDepth) return 1.0;
+        const stepsBeyond = order - starterDepth; // 0 = first non-starter
+        return ROLE_PENALTY_STEPS[Math.min(stepsBeyond, ROLE_PENALTY_STEPS.length - 1)];
+    }
+
     // ── projectPlayerValue ───────────────────────────────────────────
     // Projects (or retro-jects) a player's DHQ value `delta` seasons away.
     // Uses position-specific peak windows, usage-adjusted decay rates, and
@@ -344,5 +369,7 @@ window.App.PlayerValue = (function () {
         getPickOverallSlot,
         resolvePickValue,
         projectPlayerValue,
+        computeRolePenalty,
+        ROLE_STARTER_DEPTH,
     };
 })();
