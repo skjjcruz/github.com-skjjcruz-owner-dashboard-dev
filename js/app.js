@@ -596,30 +596,13 @@
 
             const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
             const isPaid = tier === 'pro' || tier === 'warroom' || tier === 'war_room' || tier === 'commissioner';
-            const showProCard = true; // Always show — changes label based on tier
 
             return (
                 <div className="hub-league-selector">
                     <label>Select League</label>
 
-                    {/* Pro tier card — launcher for paid, upgrade for free */}
-                    {showProCard && !isPaid && (
-                        <div onClick={() => { if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage(); else window.location.href = 'landing.html'; }}
-                            style={{ cursor: 'pointer', marginBottom: '12px', borderRadius: '12px', padding: '14px 16px', background: 'linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.04))', border: '1.5px solid rgba(212,175,55,0.35)', display: 'flex', alignItems: 'center', gap: '12px', transition: 'all 0.18s' }}
-                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(212,175,55,0.6)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(212,175,55,0.15)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(212,175,55,0.35)'; e.currentTarget.style.boxShadow = 'none'; }}>
-                            <div style={{ width: '36px', height: '36px', flexShrink: 0 }}><ProTierIcon size={36} /></div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--white)' }}>Upgrade to War Room</span>
-                                    <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--gold)', background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '10px', padding: '1px 7px', letterSpacing: '0.04em' }}>$4.99/mo</span>
-                                </div>
-                                <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.6 }}>Unlock full AI analysis · All leagues · Owner DNA</div>
-                            </div>
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="rgba(212,175,55,0.5)" strokeWidth="2.5" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
-                        </div>
-                    )}
-                    {showProCard && isPaid && (
+                    {/* Empire Dashboard launcher — paid tiers only (no pricing/upgrade prompt for testers) */}
+                    {isPaid && (
                         <div onClick={() => setProMode(true)}
                             style={{ cursor: 'pointer', marginBottom: '12px', borderRadius: '12px', padding: '14px 16px', background: 'linear-gradient(135deg, rgba(212,175,55,0.1), rgba(0,0,0,0.3))', border: '1.5px solid rgba(212,175,55,0.4)', display: 'flex', alignItems: 'center', gap: '12px', transition: 'all 0.18s' }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(212,175,55,0.7)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(212,175,55,0.2)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
@@ -807,8 +790,8 @@
                     </div>
                 )}
 
-                {/* ── 4 Platform Cards ── */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', padding: '0 12px' }}>
+                {/* ── Platform Cards ── */}
+                <div className="hub-platforms">
 
                     {/* ──── SLEEPER ──── */}
                     <div className="product-card" style={{ borderColor: 'rgba(26,153,170,0.3)', background: 'linear-gradient(135deg, rgba(26,153,170,0.04), transparent)' }}>

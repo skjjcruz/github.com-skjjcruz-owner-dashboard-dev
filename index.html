@@ -515,6 +515,27 @@
     }
 
     /* Product Card — shared base for both pillars */
+    /* Hub — centers the platform card(s) instead of a half-empty 2-col grid */
+    .hub-platforms {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 32px 16px 48px;
+        width: 100%;
+        max-width: 600px;
+        margin: 0 auto;
+        min-height: calc(100vh - 160px);
+        box-sizing: border-box;
+    }
+    .hub-platforms .product-card {
+        width: 100%;
+    }
+    @media (max-width: 600px) {
+        .hub-platforms { min-height: 0; padding-top: 20px; justify-content: flex-start; }
+    }
+
     .product-card {
         background: var(--black);
         border: 2px solid rgba(212, 175, 55, 0.15);
