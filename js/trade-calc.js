@@ -238,28 +238,10 @@
                 posGroups[np].push(id);
             }
 
-            // Superflex-aware QB requirement: count dedicated QB slots plus
-            // SUPER_FLEX / OP slots (filled by a QB in virtually all dynasty builds).
-            // Falls back to the static default when lineup settings are unavailable.
-            const _qbStarters = (() => {
-                const slots = currentLeague?.roster_positions || [];
-                let qb = 0, sf = 0;
-                for (const s of slots) {
-                    if (s === 'QB') qb++;
-                    else if (s === 'SUPER_FLEX' || s === 'SUPERFLEX' || s === 'OP') sf++;
-                }
-                return (qb + sf) > 0 ? (qb + sf) : null;
-            })();
-
             const posAssessment = {};
-            for (const [pos, idealBase] of Object.entries(IDEAL_ROSTER)) {
+            for (const [pos, ideal] of Object.entries(IDEAL_ROSTER)) {
                 const playerIds = posGroups[pos] || [];
-                // QB targets follow the league's real starting slots (e.g. 2 in superflex);
-                // ideal depth = starters + 1 backup. Other positions use the static targets.
-                const ideal = (pos === 'QB' && _qbStarters) ? _qbStarters + 1 : idealBase;
-                const startingReq = (pos === 'QB' && _qbStarters)
-                    ? _qbStarters
-                    : (MIN_STARTER_QUALITY[pos] ?? LINEUP_STARTERS[pos] ?? 1);
+                const startingReq = MIN_STARTER_QUALITY[pos] ?? LINEUP_STARTERS[pos] ?? 1;
                 const ptTarget = POS_PT_TARGETS[pos] || 8;
                 const withPPG = playerIds.map(id => ({ id, ppg: calcPPG(id, scoring) })).sort((a,b) => b.ppg - a.ppg);
                 const projectedPts = withPPG.slice(0, startingReq).reduce((s, p) => s + p.ppg, 0);
@@ -268,7 +250,7 @@
                 const nflStarters = nflStarterIds.length;
                 const actual = playerIds.length;
                 const diff = actual - ideal;
-                const minQuality = (pos === 'QB' && _qbStarters) ? _qbStarters : (MIN_STARTER_QUALITY[pos] || startingReq);
+                const minQuality = MIN_STARTER_QUALITY[pos] || startingReq;
 
                 let status;
                 if (nflStarters === 0) status = 'deficit';
