@@ -138,7 +138,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // ──────────────────────────────────────────────────────────────────────────
 
     // ===== PRODUCT TIER SYSTEM =====
-    // Tiers: free → scout → warroom ($9.99) → pro ($14.95) → commissioner ($14.99)
+    // Tiers: free → scout → warroom → pro → commissioner
     //
     // Delegates to shared/tier.js (window.getTier) for canonical paid/free detection,
     // then resolves War Room's granular level from the profile tier field.

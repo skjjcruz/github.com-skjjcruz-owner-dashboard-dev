@@ -516,7 +516,7 @@
         <div class="plan-card" id="plan-standard" onclick="selectPlan('standard')">
           <div class="plan-icon">⚔️</div>
           <div class="plan-name">Standard</div>
-          <div class="plan-price">$9.99 <span>/ month</span></div>
+          <div class="plan-price">Free during test flight</div>
           <ul class="plan-features">
             <li><span class="pf-check">✦</span> Dynasty HQ War Room</li>
             <li><span class="pf-check">✦</span> Full War Room desktop suite</li>
@@ -548,7 +548,7 @@
           <span class="plan-badge">Best Value</span>
           <div class="plan-icon">🏆</div>
           <div class="plan-name">Pro</div>
-          <div class="plan-price">$14.95 <span>/ month</span></div>
+          <div class="plan-price">Free during test flight</div>
           <ul class="plan-features">
             <li><span class="pf-check">✦</span> Everything in War Room</li>
             <li><span class="pf-check">✦</span> Global dashboard — all leagues at once</li>
@@ -579,7 +579,7 @@
         <div class="payment-sub" id="paySub">
           Full access to all War Room tools — Team Comparison, Behavioral Trade Calculator, Draft War Room, Free Agency Tracker, Calendar, Trophy Case, and Direct Messaging. AI included (20 queries/mo).
         </div>
-        <div class="payment-price" id="payPrice">$9.99 <span>/ month</span></div>
+        <div class="payment-price" id="payPrice">Free during test flight</div>
         <button class="cta-btn" id="stripeBtn" onclick="goToStripe()">Proceed to Secure Checkout →</button>
         <p class="stripe-note">Secured by <a href="https://stripe.com" target="_blank" rel="noopener">Stripe</a> &middot; Cancel anytime &middot; No hidden fees</p>
       </div>
@@ -930,9 +930,7 @@
       document.getElementById('paySub').textContent    = isPro
         ? 'Scout and War Room unlocked. All tools. 200 AI queries/mo. BYO AI key supported. No contract.'
         : 'All War Room tools unlocked. 20 AI queries/mo. BYO AI key supported. No contract.';
-      document.getElementById('payPrice').innerHTML    = isPro
-        ? '$14.95 <span>/ month</span>'
-        : '$9.99 <span>/ month</span>';
+      document.getElementById('payPrice').textContent  = 'Free during test flight';
     }
 
     function updateProgress(n) {
@@ -1207,8 +1205,8 @@
       const username = getUsername();
 
       const tierLabels = {
-        standard: 'Standard — $9.99/mo',
-        pro:      'Dynasty HQ Pro — $14.95/mo',
+        standard: 'Standard',
+        pro:      'Dynasty HQ Pro',
       };
       const tierLabel = tierLabels[profile.tier] || profile.tier || 'Standard';
 

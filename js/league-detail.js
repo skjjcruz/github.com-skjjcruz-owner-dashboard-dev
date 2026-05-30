@@ -2258,7 +2258,7 @@
 	          });
 	          // Free tier: 1 AI call per day
           if (!canUseAI()) {
-            setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to War Room Scout ($4.99/mo) or War Room ($9.99/mo) for unlimited AI access.' }]);
+            setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to War Room for unlimited AI access.' }]);
             return;
           }
           // Only track local daily use if NOT using server AI (server handles its own rate limiting)
