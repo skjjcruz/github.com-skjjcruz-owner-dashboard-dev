@@ -361,7 +361,20 @@ test('server paid with unknown product tier → scout minimum',
 test('malformed JSON profile → free',
   () => { resetTierState(); ls.setItem('od_profile_v1', '{bad json{{'); eq(getUserTier(), 'free'); resetTierState(); });
 
-group('canAccess');
+// TEST FLIGHT: paywalls off by default — canAccess unlocks everything
+// unless window.__WR_ENFORCE_TIERS is explicitly turned on.
+group('canAccess (test-flight: all unlocked by default)');
+test('default: trade-finder unlocked for free',
+  () => { resetTierState(); delete ctx.window.__WR_ENFORCE_TIERS; ok(canAccess('trade-finder')); });
+test('default: owner-dna unlocked for free',
+  () => { resetTierState(); ok(canAccess('owner-dna')); });
+test('default: ai-unlimited unlocked for free',
+  () => { resetTierState(); ok(canAccess('ai-unlimited')); });
+
+// With tier enforcement ON, the original billing matrix applies (kept so the
+// gating logic stays covered for when subscriptions are re-enabled).
+ctx.window.__WR_ENFORCE_TIERS = true;
+group('canAccess (tier enforcement on)');
 test('free: my-roster-basic accessible',
   () => { resetTierState(); ok(canAccess('my-roster-basic')); });
 test('free: draft-rankings accessible',
@@ -390,6 +403,7 @@ test('warroom: analytics-full accessible',
   () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('analytics-full')); resetTierState(); });
 test('warroom: intelligence-full accessible',
   () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('intelligence-full')); resetTierState(); });
+delete ctx.window.__WR_ENFORCE_TIERS; // restore test-flight default for remaining tests
 
 // ══════════════════════════════════════════════════════════════════
 // 5. getPickValue
