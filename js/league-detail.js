@@ -70,15 +70,41 @@
             const IDEAL = window.App?.PlayerValue?.IDEAL_ROSTER;
             if (!MINQ) return;
 
-            function correct(result) {
+            function correct(result, rosterId) {
                 if (!result || !result.posAssessment) return result;
                 const pa = result.posAssessment;
+                // Count confirmed NFL starters per position from the depth chart
+                // (Sleeper depth_chart_order === 0 = that player is his NFL team's
+                // starter). This fixes upstream's count, which is based on last
+                // season's points and misses rookies / down-year starters.
+                const confirmedByPos = (() => {
+                    const out = {};
+                    try {
+                        const roster = (window.S?.rosters || []).find(r => String(r.roster_id) === String(rosterId));
+                        const players = roster?.players || [];
+                        const cache = window.App?._playersCache || {};
+                        const normPos = window.App?.normPos;
+                        for (const pid of players) {
+                            const p = cache[pid];
+                            if (!p || p.depth_chart_order !== 0) continue; // 0 = NFL starter
+                            const np = normPos ? normPos(p.position) : p.position;
+                            if (!np) continue;
+                            out[np] = (out[np] || 0) + 1;
+                        }
+                    } catch (_) { /* fall through to upstream counts */ }
+                    return out;
+                })();
                 for (const [pos, data] of Object.entries(pa)) {
                     if (!data || MINQ[pos] == null) continue;
                     const req = MINQ[pos];
                     const ideal = (IDEAL && IDEAL[pos] != null) ? IDEAL[pos] : data.ideal;
-                    const nflStarters = data.nflStarters ?? data.actual ?? 0;
                     const actual = data.actual ?? 0;
+                    // Take the better of upstream's count and confirmed NFL starters,
+                    // capped at the number actually rostered. Only ever increases the
+                    // count, so this can fix undercounts but never invent starters.
+                    const upstreamStarters = data.nflStarters ?? 0;
+                    const confirmed = confirmedByPos[pos] || 0;
+                    const nflStarters = Math.min(actual, Math.max(upstreamStarters, confirmed));
                     // Recompute status with our requirement (mirrors assessTeamLocal).
                     let status;
                     if (nflStarters === 0) status = 'deficit';
@@ -86,6 +112,7 @@
                     else if (actual >= ideal) status = 'surplus';
                     else status = 'ok';
                     if ((status === 'ok' || status === 'surplus') && actual < ideal) status = 'thin';
+                    data.nflStarters = nflStarters;
                     data.startingReq = req;
                     data.minQuality = req;
                     data.ideal = ideal;
@@ -107,7 +134,7 @@
             }
 
             const wrapped = function (rosterId) {
-                return correct(upstream.apply(this, arguments));
+                return correct(upstream.apply(this, arguments), rosterId);
             };
             // Proxy ._cache through to the real upstream function so existing
             // cache-clear calls (window.assessTeamFromGlobal._cache = {}) keep
