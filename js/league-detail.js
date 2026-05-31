@@ -50,6 +50,84 @@
         }
     }
 
+    // ── Starter-requirement correction over the upstream assessor ─────
+    // The shared assessTeamFromGlobal (loaded from the ReconAI CDN) computes
+    // per-position starter requirements with its own targets — including QB:3,
+    // which is unreachable in deeper leagues and makes nearly every team read
+    // "thin/exposed at QB". This repo's roster constants are the source of truth
+    // (QB:2, etc.), so we wrap the upstream function and recompute the affected
+    // fields from our MIN_STARTER_QUALITY before any page uses the result.
+    //
+    // This NEVER modifies the upstream code — it only post-processes the object
+    // the upstream function returns, at runtime, in the browser.
+    let _assessorWrapped = false;
+    function installStarterReqCorrection() {
+        try {
+            if (_assessorWrapped) return;
+            const upstream = window.assessTeamFromGlobal;
+            if (typeof upstream !== 'function') return; // upstream not loaded yet
+            const MINQ = window.App?.PlayerValue?.MIN_STARTER_QUALITY;
+            const IDEAL = window.App?.PlayerValue?.IDEAL_ROSTER;
+            if (!MINQ) return;
+
+            function correct(result) {
+                if (!result || !result.posAssessment) return result;
+                const pa = result.posAssessment;
+                for (const [pos, data] of Object.entries(pa)) {
+                    if (!data || MINQ[pos] == null) continue;
+                    const req = MINQ[pos];
+                    const ideal = (IDEAL && IDEAL[pos] != null) ? IDEAL[pos] : data.ideal;
+                    const nflStarters = data.nflStarters ?? data.actual ?? 0;
+                    const actual = data.actual ?? 0;
+                    // Recompute status with our requirement (mirrors assessTeamLocal).
+                    let status;
+                    if (nflStarters === 0) status = 'deficit';
+                    else if (nflStarters < req) status = 'thin';
+                    else if (actual >= ideal) status = 'surplus';
+                    else status = 'ok';
+                    if ((status === 'ok' || status === 'surplus') && actual < ideal) status = 'thin';
+                    data.startingReq = req;
+                    data.minQuality = req;
+                    data.ideal = ideal;
+                    data.status = status;
+                }
+                // Rebuild needs/strengths from the corrected statuses so every
+                // consumer (market read, trade fit, chips) stays consistent.
+                result.needs = Object.entries(pa)
+                    .filter(([, v]) => v.status === 'deficit' || v.status === 'thin')
+                    .sort((a, b) => {
+                        const aGap = (a[1].nflStarters || 0) - (a[1].startingReq || 1);
+                        const bGap = (b[1].nflStarters || 0) - (b[1].startingReq || 1);
+                        return aGap !== bGap ? aGap - bGap : (a[1].diff || 0) - (b[1].diff || 0);
+                    })
+                    .map(([pos, v]) => ({ pos, urgency: v.status, gap: Math.max(0, (v.startingReq || 1) - (v.nflStarters || 0)), diff: v.diff }))
+                    .slice(0, 5);
+                result.strengths = Object.entries(pa).filter(([, v]) => v.status === 'surplus').map(([pos]) => pos);
+                return result;
+            }
+
+            const wrapped = function (rosterId) {
+                return correct(upstream.apply(this, arguments));
+            };
+            // Proxy ._cache through to the real upstream function so existing
+            // cache-clear calls (window.assessTeamFromGlobal._cache = {}) keep
+            // working against the upstream cache instead of a stale copy.
+            Object.defineProperty(wrapped, '_cache', {
+                get() { return upstream._cache; },
+                set(v) { upstream._cache = v; },
+                configurable: true,
+            });
+            wrapped._wrappedUpstream = upstream;
+            window.assessTeamFromGlobal = wrapped;
+            _assessorWrapped = true;
+            if (typeof DEV_MODE !== 'undefined' && DEV_MODE) {
+                console.log('[War Room] Starter-requirement correction installed (QB:' + MINQ.QB + ')');
+            }
+        } catch (e) {
+            console.warn('[War Room] installStarterReqCorrection failed:', e);
+        }
+    }
+
     function wrCanPageScroll() {
         const doc = document.documentElement;
         const body = document.body;
@@ -1840,6 +1918,7 @@
                         await window.App.loadLeagueIntel();
                         console.log('[War Room] DHQ engine loaded:', Object.keys(window.App.LI?.playerScores || {}).length, 'players valued');
                         applyRolePenalties(); // discount players buried on the depth chart
+                        installStarterReqCorrection(); // correct upstream QB:3 → our MIN_STARTER_QUALITY
                         setDhqStatus({ loading: false, step: 'Complete!', progress: 100 });
                         setStatsData(prev => ({ ...prev })); // force re-render
                         setTimeRecomputeTs(Date.now()); // refresh KPIs and rankings
@@ -1848,6 +1927,11 @@
                         setDhqStatus({ loading: false, step: 'Error: ' + e.message, progress: 0 });
                     }
                 }
+
+                // Ensure the starter-requirement correction is installed even when
+                // intel was already loaded on a prior mount/league switch (the block
+                // above is skipped when LI_LOADED is already true). Idempotent.
+                installStarterReqCorrection();
 
                 // Load rookie prospect data from enrichment CSVs (fire-and-forget)
                 if (typeof window.loadRookieProspects === 'function') {
