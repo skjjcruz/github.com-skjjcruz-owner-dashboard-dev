@@ -223,6 +223,33 @@ window.App.PlayerValue = (function () {
         return ROLE_PENALTY_STEPS[Math.min(stepsBeyond, ROLE_PENALTY_STEPS.length - 1)];
     }
 
+    // ── Unrealized-upside damper (QB) ────────────────────────────────
+    // Some QBs rank in the top 32 on pedigree + youth alone (high draft
+    // capital, inside the long QB build window, pulled toward the high QB
+    // value ceiling) despite little actual NFL production — e.g. Spencer
+    // Rattler, Anthony Richardson. This discounts a QB's value by how UNPROVEN
+    // his most recent NFL production is, so pedigree can't carry him over real
+    // starters. Keyed on last completed season's games + fantasy points
+    // (always available — offseason-safe; not depth_chart_order).
+    //
+    //   nPos      — normalized position
+    //   prevGp    — games played last completed NFL season
+    //   prevTotal — total fantasy points last completed season
+    // Returns a multiplier in (0, 1]; 1 = fully proven (no discount).
+    function computeUpsideDamper(nPos, prevGp, prevTotal) {
+        if (nPos !== 'QB') return 1.0;            // QB-only for now
+        const gp = Number(prevGp) || 0;
+        const pts = Number(prevTotal) || 0;
+        // A proven starter plays ~15+ games and scores ~250+ pts. Build a
+        // 0..1 "proven" signal from each, take the better of the two so a
+        // genuine starter is never penalized, then floor the discount at 0.55
+        // so even a total unknown keeps real (handcuff-level) QB value.
+        const gpProven  = Math.max(0, Math.min(1, gp / 14));        // 14+ GP = fully proven
+        const ptsProven = Math.max(0, Math.min(1, pts / 240));      // 240+ pts = fully proven
+        const proven = Math.max(gpProven, ptsProven);
+        return 0.55 + 0.45 * proven;              // proven→1.0, unproven→0.55
+    }
+
     // ── projectPlayerValue ───────────────────────────────────────────
     // Projects (or retro-jects) a player's DHQ value `delta` seasons away.
     // Uses position-specific peak windows, usage-adjusted decay rates, and
@@ -371,5 +398,6 @@ window.App.PlayerValue = (function () {
         projectPlayerValue,
         computeRolePenalty,
         ROLE_STARTER_DEPTH,
+        computeUpsideDamper,
     };
 })();

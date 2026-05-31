@@ -17,33 +17,47 @@
         return escapeHtml(str).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
     }
 
-    // Discount players buried on the NFL depth chart (Sleeper depth_chart_order).
-    // Applied once to LI.playerScores after the DHQ engine loads, so every module
-    // that reads playerScores (grading, trade math, rankings) inherits the role
-    // penalty. Idempotent: keeps an unpenalized backup and re-derives from it.
+    // Adjust LI.playerScores once after the DHQ engine loads, so every module
+    // that reads playerScores (grading, trade math, rankings) inherits it.
+    // Applies two in-repo corrections:
+    //   1. Depth-chart role penalty — discounts players buried behind starters
+    //      (Sleeper depth_chart_order; mostly offseason-null, so a no-op then).
+    //   2. Unrealized-upside damper — discounts QBs whose top-32 value rests on
+    //      pedigree/youth rather than actual NFL production (keyed on last
+    //      season's games + points, so it works year-round).
+    // Idempotent: keeps an unpenalized backup and re-derives from it.
     function applyRolePenalties() {
         try {
             const LI = window.App?.LI;
             const players = window.App?._playersCache;
-            const penalize = window.App?.PlayerValue?.computeRolePenalty;
+            const PV = window.App?.PlayerValue;
+            const penalize = PV?.computeRolePenalty;
+            const damper = PV?.computeUpsideDamper;
             const normPos = window.App?.normPos;
             if (!LI?.playerScores || !players || typeof penalize !== 'function') return;
             // Preserve the engine's raw scores so the time machine projects from
             // clean base values and the penalty never compounds across reloads.
             if (!LI._preRolePenaltyScores) LI._preRolePenaltyScores = { ...LI.playerScores };
             const base = LI._preRolePenaltyScores;
+            const stats = window.S?.playerStats || {};
             const adjusted = {};
-            let demoted = 0;
+            let demoted = 0, damped = 0;
             for (const [pid, score] of Object.entries(base)) {
                 const p = players[pid];
                 const nPos = normPos ? normPos(p?.position) : p?.position;
-                const mult = penalize(nPos, p?.depth_chart_order);
-                if (mult < 1) demoted++;
-                adjusted[pid] = Math.round(score * mult);
+                const roleMult = penalize(nPos, p?.depth_chart_order);
+                if (roleMult < 1) demoted++;
+                let upsideMult = 1;
+                if (typeof damper === 'function') {
+                    const st = stats[pid];
+                    upsideMult = damper(nPos, st?.prevRawStats?.gp ?? st?.gp, st?.prevTotal);
+                    if (upsideMult < 1) damped++;
+                }
+                adjusted[pid] = Math.round(score * roleMult * upsideMult);
             }
             LI.playerScores = adjusted;
             if (typeof DEV_MODE !== 'undefined' && DEV_MODE) {
-                console.log('[War Room] Role penalty applied to ' + demoted + ' depth-chart-buried players');
+                console.log('[War Room] playerScores adjusted — role penalty: ' + demoted + ', upside damper: ' + damped);
             }
         } catch (e) {
             console.warn('[War Room] applyRolePenalties failed:', e);

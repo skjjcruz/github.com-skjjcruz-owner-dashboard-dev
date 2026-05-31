@@ -155,7 +155,7 @@ process.stdout.write('OK\n\n');
 // ── Grab references from context ──────────────────────────────────
 const { normPos, calcRawPts, calcPPG }                         = ctx.App;
 const LeagueSkin                                               = ctx.App.LeagueSkin;
-const { getPickValue, projectPlayerValue, PICK_VALUES, computeRolePenalty } = ctx.App.PlayerValue;
+const { getPickValue, projectPlayerValue, PICK_VALUES, computeRolePenalty, computeUpsideDamper } = ctx.App.PlayerValue;
 const computeWeightedDNA                                       = ctx.computeWeightedDNA;
 const buildEmpirePortfolioModel                                = ctx.buildEmpirePortfolioModel;
 // getUserTier / canAccess are top-level function declarations in core.js
@@ -428,6 +428,23 @@ test('RB3 (order 2) → 0.60',           () => eq(computeRolePenalty('RB', 2), 0
 // Unknown position → defaults to starter depth 1
 test('unknown pos order 0 → full',     () => eq(computeRolePenalty('ZZ', 0), 1.0));
 test('unknown pos order 1 → 0.60',     () => eq(computeRolePenalty('ZZ', 1), 0.60));
+
+group('computeUpsideDamper');
+// Non-QB positions are never damped (QB-only for now)
+test('RB → no damp',                   () => eq(computeUpsideDamper('RB', 0, 0), 1.0));
+test('WR → no damp',                   () => eq(computeUpsideDamper('WR', 1, 50), 1.0));
+// Proven QB starter (full season, high points) → no discount
+test('QB 17gp/320pts → full',          () => eq(computeUpsideDamper('QB', 17, 320), 1.0));
+test('QB 14gp → full (GP threshold)',  () => eq(computeUpsideDamper('QB', 14, 0), 1.0));
+test('QB 0gp/240pts → full (pts thr)', () => eq(computeUpsideDamper('QB', 0, 240), 1.0));
+// Never-played pedigree QB → floored discount (0.55)
+test('QB 0gp/0pts → 0.55 floor',       () => eq(computeUpsideDamper('QB', 0, 0), 0.55));
+test('QB missing stats → 0.55 floor',  () => eq(computeUpsideDamper('QB', undefined, undefined), 0.55));
+// Partial production scales between floor and full
+test('QB 7gp/0pts → 0.775',            () => eq(computeUpsideDamper('QB', 7, 0), 0.55 + 0.45 * 0.5));
+test('QB 0gp/120pts → 0.775',          () => eq(computeUpsideDamper('QB', 0, 120), 0.55 + 0.45 * 0.5));
+// Takes the better of GP vs points signal (never double-penalizes)
+test('QB 14gp/0pts → full (GP wins)',  () => eq(computeUpsideDamper('QB', 14, 0), 1.0));
 
 // ══════════════════════════════════════════════════════════════════
 // 5. getPickValue
