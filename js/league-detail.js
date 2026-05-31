@@ -61,6 +61,35 @@
     // This NEVER modifies the upstream code — it only post-processes the object
     // the upstream function returns, at runtime, in the browser.
     let _assessorWrapped = false;
+    let _dhqStarterSet = null; // cached league-wide DHQ-ranked starter set; reset on intel reload
+    // Build the league-wide "startable player" set, ranked by DHQ dynasty value:
+    // for each position, the top NFL_STARTER_POOL[pos] players by value are the
+    // legitimate NFL starters. This works year-round (DHQ values are always
+    // loaded), unlike Sleeper depth_chart_order which is mostly null in the
+    // offseason. Mirrors calcNflStarterSet() in trade-calc.js.
+    function buildDhqStarterSet() {
+        try {
+            const players = window.App?._playersCache || {};
+            const dhqScores = window.App?.LI?.playerScores || {};
+            const POOL = window.App?.PlayerValue?.NFL_STARTER_POOL;
+            const normPos = window.App?.normPos;
+            if (!POOL || !normPos || !Object.keys(players).length) return null;
+            const byPos = {};
+            for (const [id, p] of Object.entries(players)) {
+                const pos = normPos(p?.position);
+                if (!pos || !(pos in POOL) || !p?.team) continue;
+                const score = dhqScores[id];
+                if (!(score > 0)) continue; // no DHQ value → can't rank; skip
+                (byPos[pos] = byPos[pos] || []).push({ id, score });
+            }
+            const set = {};
+            for (const [pos, arr] of Object.entries(byPos)) {
+                arr.sort((a, b) => b.score - a.score);
+                set[pos] = new Set(arr.slice(0, POOL[pos]).map(x => x.id));
+            }
+            return set;
+        } catch (_) { return null; }
+    }
     function installStarterReqCorrection() {
         try {
             if (_assessorWrapped) return;
@@ -73,23 +102,26 @@
             function correct(result, rosterId) {
                 if (!result || !result.posAssessment) return result;
                 const pa = result.posAssessment;
-                // Count confirmed NFL starters per position from the depth chart
-                // (Sleeper depth_chart_order === 0 = that player is his NFL team's
-                // starter). This fixes upstream's count, which is based on last
-                // season's points and misses rookies / down-year starters.
+                // Count starter-quality players per position by DHQ value: a
+                // rostered player counts if he ranks among the league-wide top
+                // NFL_STARTER_POOL[pos] by dynasty value. This catches rookies and
+                // down-year starters that upstream's last-season-points count misses
+                // (e.g. mwitkowski's Stroud/Young/Daniels), and works in the
+                // offseason when depth charts aren't set.
                 const confirmedByPos = (() => {
                     const out = {};
                     try {
+                        const starterSet = _dhqStarterSet || (_dhqStarterSet = buildDhqStarterSet());
+                        if (!starterSet) return out;
                         const roster = (window.S?.rosters || []).find(r => String(r.roster_id) === String(rosterId));
                         const players = roster?.players || [];
                         const cache = window.App?._playersCache || {};
                         const normPos = window.App?.normPos;
                         for (const pid of players) {
                             const p = cache[pid];
-                            if (!p || p.depth_chart_order !== 0) continue; // 0 = NFL starter
-                            const np = normPos ? normPos(p.position) : p.position;
-                            if (!np) continue;
-                            out[np] = (out[np] || 0) + 1;
+                            const np = p ? (normPos ? normPos(p.position) : p.position) : null;
+                            if (!np || !starterSet[np]) continue;
+                            if (starterSet[np].has(pid)) out[np] = (out[np] || 0) + 1;
                         }
                     } catch (_) { /* fall through to upstream counts */ }
                     return out;
@@ -758,6 +790,7 @@
                     // Clear assessTeamFromGlobal cache so health scores recompute with fresh data.
                     if (window.assessTeamFromGlobal?._cache) window.assessTeamFromGlobal._cache = {};
                     if (window.assessAllTeamsFromGlobal?._cache) window.assessAllTeamsFromGlobal._cache = {};
+                    _dhqStarterSet = null; // rebuild DHQ starter set with refreshed values
                     if (window.S) {
                         window.S._timeContextTs = Date.now();
                     }
@@ -1945,6 +1978,7 @@
                         await window.App.loadLeagueIntel();
                         console.log('[War Room] DHQ engine loaded:', Object.keys(window.App.LI?.playerScores || {}).length, 'players valued');
                         applyRolePenalties(); // discount players buried on the depth chart
+                        _dhqStarterSet = null; // rebuild DHQ starter set with freshly-loaded values
                         installStarterReqCorrection(); // correct upstream QB:3 → our MIN_STARTER_QUALITY
                         setDhqStatus({ loading: false, step: 'Complete!', progress: 100 });
                         setStatsData(prev => ({ ...prev })); // force re-render
