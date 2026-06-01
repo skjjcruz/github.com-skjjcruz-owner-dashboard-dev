@@ -42,6 +42,9 @@
             const stats = window.S?.playerStats || {};
             const adjusted = {};
             let demoted = 0, damped = 0;
+            // Dev diagnostic: collect QB rows when ?qbdiag is in the URL.
+            const QB_DIAG = (() => { try { return new URLSearchParams(window.location.search).has('qbdiag'); } catch { return false; } })();
+            const qbRows = [];
             for (const [pid, score] of Object.entries(base)) {
                 const p = players[pid];
                 const nPos = normPos ? normPos(p?.position) : p?.position;
@@ -54,8 +57,31 @@
                     if (upsideMult < 1) damped++;
                 }
                 adjusted[pid] = Math.round(score * roleMult * upsideMult);
+                if (QB_DIAG && nPos === 'QB' && score > 0) {
+                    const st = stats[pid];
+                    const gp = st?.prevRawStats?.gp ?? st?.gp ?? 0;
+                    const pts = st?.prevTotal ?? 0;
+                    qbRows.push({
+                        QB: p?.full_name || pid,
+                        age: p?.age ?? '',
+                        gp,
+                        ppg: gp > 0 ? +(pts / gp).toFixed(1) : 0,
+                        pts,
+                        depth: p?.depth_chart_order ?? '',
+                        baseDHQ: Math.round(score),
+                        roleMult: +roleMult.toFixed(2),
+                        dampMult: +upsideMult.toFixed(2),
+                        finalDHQ: adjusted[pid],
+                    });
+                }
             }
             LI.playerScores = adjusted;
+            if (QB_DIAG) {
+                qbRows.sort((a, b) => b.finalDHQ - a.finalDHQ);
+                qbRows.forEach((r, i) => { r.rank = i + 1; });
+                console.log('%c[QB DIAG] base vs damped (sorted by final DHQ)', 'color:#D4AF37;font-weight:700');
+                console.table(qbRows.map(r => ({ rank: r.rank, QB: r.QB, age: r.age, gp: r.gp, ppg: r.ppg, pts: r.pts, depth: r.depth, baseDHQ: r.baseDHQ, dampMult: r.dampMult, finalDHQ: r.finalDHQ })));
+            }
             if (typeof DEV_MODE !== 'undefined' && DEV_MODE) {
                 console.log('[War Room] playerScores adjusted — role penalty: ' + demoted + ', upside damper: ' + damped);
             }
