@@ -25,6 +25,43 @@
     //   2. Unrealized-upside damper — discounts QBs whose top-32 value rests on
     //      pedigree/youth rather than actual NFL production (keyed on last
     //      season's games + points, so it works year-round).
+    // Dev-only: render the QB diagnostic as an on-screen overlay (iPad has no
+    // console). Top 40 QBs by final DHQ; tap the × to dismiss. Temporary.
+    function renderQbDiagOverlay(rows) {
+        const existing = document.getElementById('qb-diag-overlay');
+        if (existing) existing.remove();
+        const top = rows.slice(0, 40);
+        const wrap = document.createElement('div');
+        wrap.id = 'qb-diag-overlay';
+        wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.94);overflow:auto;padding:16px;font-family:monospace;color:#eee;-webkit-overflow-scrolling:touch';
+        const rowsHtml = top.map(r =>
+            `<tr><td style="padding:3px 8px;color:#D4AF37">${r.rank}</td>`
+            + `<td style="padding:3px 8px;white-space:nowrap">${r.QB}</td>`
+            + `<td style="padding:3px 8px;text-align:center">${r.age}</td>`
+            + `<td style="padding:3px 8px;text-align:center">${r.gp}</td>`
+            + `<td style="padding:3px 8px;text-align:center">${r.ppg}</td>`
+            + `<td style="padding:3px 8px;text-align:center">${r.pts}</td>`
+            + `<td style="padding:3px 8px;text-align:center">${r.depth}</td>`
+            + `<td style="padding:3px 8px;text-align:right">${r.baseDHQ}</td>`
+            + `<td style="padding:3px 8px;text-align:center;color:${r.dampMult < 1 ? '#E74C3C' : '#2ECC71'}">${r.dampMult}</td>`
+            + `<td style="padding:3px 8px;text-align:right;font-weight:700">${r.finalDHQ}</td></tr>`
+        ).join('');
+        wrap.innerHTML =
+            `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">`
+            + `<strong style="color:#D4AF37;font-size:15px">QB DIAGNOSTIC — base vs damped</strong>`
+            + `<button id="qb-diag-close" style="background:#D4AF37;color:#000;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:14px">Close ×</button></div>`
+            + `<table style="border-collapse:collapse;font-size:12px;width:100%">`
+            + `<thead><tr style="color:#888;text-align:left">`
+            + `<th style="padding:3px 8px">#</th><th style="padding:3px 8px">QB</th><th style="padding:3px 8px">age</th>`
+            + `<th style="padding:3px 8px">gp</th><th style="padding:3px 8px">ppg</th><th style="padding:3px 8px">pts</th>`
+            + `<th style="padding:3px 8px">depth</th><th style="padding:3px 8px">base</th><th style="padding:3px 8px">damp</th>`
+            + `<th style="padding:3px 8px">final</th></tr></thead><tbody>${rowsHtml}</tbody></table>`
+            + `<div style="color:#888;font-size:11px;margin-top:10px">damp&lt;1 (red) = faded · gp/ppg/pts = last completed season · depth = Sleeper depth_chart_order (blank = unset)</div>`;
+        document.body.appendChild(wrap);
+        const closeBtn = document.getElementById('qb-diag-close');
+        if (closeBtn) closeBtn.onclick = () => wrap.remove();
+    }
+
     // Idempotent: keeps an unpenalized backup and re-derives from it.
     function applyRolePenalties() {
         try {
@@ -81,6 +118,7 @@
                 qbRows.forEach((r, i) => { r.rank = i + 1; });
                 console.log('%c[QB DIAG] base vs damped (sorted by final DHQ)', 'color:#D4AF37;font-weight:700');
                 console.table(qbRows.map(r => ({ rank: r.rank, QB: r.QB, age: r.age, gp: r.gp, ppg: r.ppg, pts: r.pts, depth: r.depth, baseDHQ: r.baseDHQ, dampMult: r.dampMult, finalDHQ: r.finalDHQ })));
+                try { renderQbDiagOverlay(qbRows); } catch (e) { console.warn('[QB DIAG] overlay failed:', e); }
             }
             if (typeof DEV_MODE !== 'undefined' && DEV_MODE) {
                 console.log('[War Room] playerScores adjusted — role penalty: ' + demoted + ', upside damper: ' + damped);
