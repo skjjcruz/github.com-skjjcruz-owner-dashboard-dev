@@ -226,28 +226,38 @@ window.App.PlayerValue = (function () {
     // ── Unrealized-upside damper (QB) ────────────────────────────────
     // Some QBs rank in the top 32 on pedigree + youth alone (high draft
     // capital, inside the long QB build window, pulled toward the high QB
-    // value ceiling) despite little actual NFL production — e.g. Spencer
-    // Rattler, Anthony Richardson. This discounts a QB's value by how UNPROVEN
-    // his most recent NFL production is, so pedigree can't carry him over real
-    // starters. Keyed on last completed season's games + fantasy points
-    // (always available — offseason-safe; not depth_chart_order).
+    // value ceiling) despite little real NFL production — e.g. Spencer
+    // Rattler, Anthony Richardson. This discounts a QB by how UNPROVEN he is,
+    // so pedigree can't carry him over real starters.
+    //
+    // "Proven" is keyed on EFFICIENCY (fantasy points PER GAME), gated by
+    // volume — not raw games. A QB who started a chunk of games but scored
+    // poorly (low PPG) is an inefficient ex-starter, not a quality starter, so
+    // games alone shouldn't prove him. A high-PPG young starter clears it
+    // cleanly. Uses last completed season's games + points (offseason-safe;
+    // not depth_chart_order, which is null before NFL charts are set).
     //
     //   nPos      — normalized position
     //   prevGp    — games played last completed NFL season
     //   prevTotal — total fantasy points last completed season
     // Returns a multiplier in (0, 1]; 1 = fully proven (no discount).
+    const QB_DAMP_LOW_PPG  = 11;  // PPG at/below this = no efficiency credit
+    const QB_DAMP_FULL_PPG = 18;  // PPG at/above this = fully efficient
+    const QB_DAMP_MIN_GP   = 8;   // games needed to fully trust the PPG read
+    const QB_DAMP_FLOOR    = 0.55; // value retained by a totally unproven QB
     function computeUpsideDamper(nPos, prevGp, prevTotal) {
         if (nPos !== 'QB') return 1.0;            // QB-only for now
         const gp = Number(prevGp) || 0;
         const pts = Number(prevTotal) || 0;
-        // A proven starter plays ~15+ games and scores ~250+ pts. Build a
-        // 0..1 "proven" signal from each, take the better of the two so a
-        // genuine starter is never penalized, then floor the discount at 0.55
-        // so even a total unknown keeps real (handcuff-level) QB value.
-        const gpProven  = Math.max(0, Math.min(1, gp / 14));        // 14+ GP = fully proven
-        const ptsProven = Math.max(0, Math.min(1, pts / 240));      // 240+ pts = fully proven
-        const proven = Math.max(gpProven, ptsProven);
-        return 0.55 + 0.45 * proven;              // proven→1.0, unproven→0.55
+        if (gp <= 0) return QB_DAMP_FLOOR;        // never played → floor
+        const ppg = pts / gp;
+        // Efficiency 0..1 between the low and full PPG bars.
+        const eff = Math.max(0, Math.min(1, (ppg - QB_DAMP_LOW_PPG) / (QB_DAMP_FULL_PPG - QB_DAMP_LOW_PPG)));
+        // Volume gate: a high-PPG cameo over 1-2 games shouldn't fully prove a
+        // QB; needs ~half a season for the efficiency read to be trusted.
+        const vol = Math.max(0, Math.min(1, gp / QB_DAMP_MIN_GP));
+        const proven = eff * vol;
+        return QB_DAMP_FLOOR + (1 - QB_DAMP_FLOOR) * proven; // proven→1.0, unproven→floor
     }
 
     // ── projectPlayerValue ───────────────────────────────────────────
