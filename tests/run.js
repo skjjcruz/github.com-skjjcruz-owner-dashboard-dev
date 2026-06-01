@@ -430,21 +430,35 @@ test('unknown pos order 0 → full',     () => eq(computeRolePenalty('ZZ', 0), 1
 test('unknown pos order 1 → 0.60',     () => eq(computeRolePenalty('ZZ', 1), 0.60));
 
 group('computeUpsideDamper');
+// damper(gp,pts): eff = clamp((ppg-11)/(18-11)); vol = clamp(gp/8); proven = eff*vol;
+// mult = 0.55 + 0.45*proven.
+const FLOOR = 0.55;
+const upMult = (gp, pts) => {
+  if (gp <= 0) return FLOOR;
+  const ppg = pts / gp;
+  const eff = Math.max(0, Math.min(1, (ppg - 11) / 7));
+  const vol = Math.max(0, Math.min(1, gp / 8));
+  return FLOOR + 0.45 * eff * vol;
+};
 // Non-QB positions are never damped (QB-only for now)
 test('RB → no damp',                   () => eq(computeUpsideDamper('RB', 0, 0), 1.0));
-test('WR → no damp',                   () => eq(computeUpsideDamper('WR', 1, 50), 1.0));
-// Proven QB starter (full season, high points) → no discount
-test('QB 17gp/320pts → full',          () => eq(computeUpsideDamper('QB', 17, 320), 1.0));
-test('QB 14gp → full (GP threshold)',  () => eq(computeUpsideDamper('QB', 14, 0), 1.0));
-test('QB 0gp/240pts → full (pts thr)', () => eq(computeUpsideDamper('QB', 0, 240), 1.0));
-// Never-played pedigree QB → floored discount (0.55)
-test('QB 0gp/0pts → 0.55 floor',       () => eq(computeUpsideDamper('QB', 0, 0), 0.55));
-test('QB missing stats → 0.55 floor',  () => eq(computeUpsideDamper('QB', undefined, undefined), 0.55));
-// Partial production scales between floor and full
-test('QB 7gp/0pts → 0.775',            () => eq(computeUpsideDamper('QB', 7, 0), 0.55 + 0.45 * 0.5));
-test('QB 0gp/120pts → 0.775',          () => eq(computeUpsideDamper('QB', 0, 120), 0.55 + 0.45 * 0.5));
-// Takes the better of GP vs points signal (never double-penalizes)
-test('QB 14gp/0pts → full (GP wins)',  () => eq(computeUpsideDamper('QB', 14, 0), 1.0));
+test('WR → no damp',                   () => eq(computeUpsideDamper('WR', 17, 380), 1.0));
+// Never played → floor
+test('QB 0gp → 0.55 floor',            () => eq(computeUpsideDamper('QB', 0, 0), FLOOR));
+test('QB missing stats → 0.55 floor',  () => eq(computeUpsideDamper('QB', undefined, undefined), FLOOR));
+// Efficient full-season starter → ~full value (18+ PPG, full volume)
+test('QB 17gp/380 (22ppg) → 1.0',      () => eq(computeUpsideDamper('QB', 17, 380), 1.0));
+test('QB 17gp/306 (18ppg) → 1.0',      () => eq(computeUpsideDamper('QB', 17, 306), 1.0));
+// Inefficient ex-starter (Rattler-like, ~11.5 PPG) → heavily faded
+test('QB 10gp/135 (13.5ppg) faded',    () => eq(computeUpsideDamper('QB', 10, 135), upMult(10, 135)));
+test('QB 10gp/135 stays below 0.75',   () => ok(computeUpsideDamper('QB', 10, 135) < 0.75));
+// Low PPG can never prove regardless of games (efficiency gate)
+test('QB 16gp/176 (11ppg) → floor',    () => eq(computeUpsideDamper('QB', 16, 176), FLOOR));
+// Volume gate: high PPG but tiny sample can't fully prove
+test('QB 2gp/50 (25ppg) volume-gated', () => eq(computeUpsideDamper('QB', 2, 50), upMult(2, 50)));
+test('QB 2gp/50 below full',           () => ok(computeUpsideDamper('QB', 2, 50) < 1.0));
+// Mid starter (~15 PPG, full season) → partial credit, not floored, not full
+test('QB 14gp/210 (15ppg) partial',    () => { const m = computeUpsideDamper('QB', 14, 210); ok(m > FLOOR && m < 1.0); });
 
 // ══════════════════════════════════════════════════════════════════
 // 5. getPickValue
