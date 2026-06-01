@@ -2,7 +2,7 @@
 // Resolves ReconAI shared scripts for local War Room dev and production.
 
 (function() {
-    const REMOTE_BASE = 'https://jcc100218.github.io/ReconAI/shared/';
+    const REMOTE_BASE = 'https://c2-football.github.io/ReconAI/shared/';
     const DEFAULT_VERSION = '20260517rookie-fano';
     const config = {
         localBase: null,
@@ -84,7 +84,7 @@
             window.ROOKIE_DATA_BASE = `${window.location.origin}/draft-war-room`;
             return;
         }
-        if (window.location.hostname === 'jcc100218.github.io') {
+        if (window.location.hostname === 'c2-football.github.io') {
             const firstSegment = path.split('/').filter(Boolean)[0];
             window.ROOKIE_DATA_BASE = firstSegment
                 ? `${window.location.origin}/${firstSegment}/draft-war-room`

@@ -154,7 +154,7 @@ function simulateReconAIPath(ctx) {
     const mentality = ctx.teamTier === 'REBUILDING' ? 'rebuild' : ctx.teamTier === 'CONTENDER' || ctx.teamTier === 'ELITE' ? 'winnow' : 'balanced';
 
     // What we DO NOT know (blocked by CDN):
-    const dhqIdentity = 'UNKNOWN - CDN BLOCKED (https://jcc100218.github.io/ReconAI/shared/dhq-ai.js)';
+    const dhqIdentity = 'UNKNOWN - CDN BLOCKED (https://c2-football.github.io/ReconAI/shared/dhq-ai.js)';
     const dhqContextOutput = 'UNKNOWN - CDN BLOCKED (contents of dhqContext() unknown)';
 
     // What we can infer from loadMentality():
