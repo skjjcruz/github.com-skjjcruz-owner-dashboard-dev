@@ -554,7 +554,7 @@
             ? (customDisplayName || sleeperUser.display_name || sleeperUser.username || sleeperUsername).toUpperCase()
             : (customDisplayName || 'COMMANDER').toUpperCase();
 
-        const RECONAI_BASE = 'https://jcc100218.github.io/ReconAI/';
+        const RECONAI_BASE = 'https://c2-football.github.io/ReconAI/';
         function reconUrl(leagueId) {
             return leagueId ? RECONAI_BASE + '?league=' + leagueId : RECONAI_BASE;
         }
