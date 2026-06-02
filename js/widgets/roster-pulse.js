@@ -133,8 +133,8 @@
                         marginTop: '6px', fontSize: fs(0.72), fontWeight: 700,
                         padding: '2px 8px',
                         borderRadius: theme.card?.radius === '0px' ? '0' : '10px',
-                        background: tierCol + '18', color: tierCol,
-                        border: '1px solid ' + tierCol + '44',
+                        background: wrAlpha(tierCol, '18'), color: tierCol,
+                        border: '1px solid ' + wrAlpha(tierCol, '44'),
                         fontFamily: fonts.ui,
                     }}>{tier}</div>
                 </div>
@@ -196,7 +196,7 @@
                         <span style={{ fontSize: '1.1rem' }}>💊</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(1.0), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>Roster Pulse</span>
                         <Badge label={tier + ' · #' + (healthRank || '—')} color={tierCol} theme={theme} />
-                        <button onClick={openMyRoster} title="Open My Roster" style={{ padding: '3px 8px', background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.22)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.58), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Roster</button>
+                        <button onClick={openMyRoster} title="Open My Roster" style={{ padding: '3px 8px', minHeight: '44px', marginTop: '-12px', marginBottom: '-12px', display: 'flex', alignItems: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.58), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Roster</button>
                     </div>
 
                     {/* Vital signs grid */}
@@ -206,8 +206,8 @@
                     }}>
                         {vitals.map((v, i) => (
                             <div key={i} style={{
-                                background: 'rgba(255,255,255,0.02)',
-                                border: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'),
+                                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                                border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                                 borderRadius: theme.card?.radius === '0px' ? '0' : '6px',
                                 padding: '6px 4px', textAlign: 'center',
                             }}>
@@ -231,14 +231,14 @@
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '4px' }}>
                             {posBreakdown.map((p, i) => (
                                 <div key={i} style={{
-                                    background: 'rgba(255,255,255,0.02)',
-                                    border: '1px solid ' + p.col + '33',
+                                    background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                                    border: '1px solid ' + wrAlpha(p.col, '33'),
                                     borderRadius: '4px',
                                     padding: '4px 2px', textAlign: 'center',
                                 }}>
                                     <div style={{ fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, fontFamily: fonts.ui, lineHeight: 1 }}>{window.App?.posLabel?.(p.pos) || (p.pos === 'DEF' ? 'D/ST' : p.pos)}</div>
                                     <div style={{ fontFamily: fonts.mono, fontSize: fs(1.05), fontWeight: 800, color: p.col, lineHeight: 1, margin: '2px 0' }}>{p.grade}</div>
-                                    <div style={{ height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+                                    <div style={{ height: 3, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 2, overflow: 'hidden' }}>
                                         <div style={{ width: p.pct + '%', height: '100%', background: p.col, transition: '0.3s' }} />
                                     </div>
                                     <div style={{ fontSize: fs(0.54), color: colors.textFaint, marginTop: '1px', fontFamily: fonts.mono }}>#{p.rank}/{p.totalTeams}</div>
@@ -334,8 +334,8 @@
             <div style={{
                 marginTop: 'auto',
                 padding: '10px 12px',
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'),
+                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                 borderRadius: theme.card?.radius === '0px' ? '0' : '6px',
                 flexShrink: 0,
             }}>
@@ -378,7 +378,7 @@
                                 <span style={{ fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, width: 22, fontFamily: fonts.ui }}>{window.App?.posLabel?.(p.pos) || (p.pos === 'DEF' ? 'D/ST' : p.pos)}</span>
                                 <span style={{ flex: 1, minWidth: 0, fontSize: fs(0.66), fontWeight: 600, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
                                 {p.age && <span style={{ fontSize: fs(0.54), color: colors.textFaint, fontFamily: fonts.mono, minWidth: 16, textAlign: 'right' }}>{p.age}</span>}
-                                <div style={{ width: 60, height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
+                                <div style={{ width: 60, height: 5, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
                                     <div style={{ width: pct + '%', height: '100%', background: col }} />
                                 </div>
                                 <span style={{ fontSize: fs(0.6), fontWeight: 700, color: col, fontFamily: fonts.mono, minWidth: 32, textAlign: 'right' }}>{p.dhq >= 1000 ? (p.dhq / 1000).toFixed(1) + 'k' : p.dhq}</span>
@@ -424,8 +424,8 @@
                     const players = posGroups[pos] || [];
                     if (!players.length) return (
                         <div key={pos} style={{
-                            background: 'rgba(255,255,255,0.02)',
-                            border: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'),
+                            background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                            border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                             borderRadius: '4px', padding: '6px 8px',
                             opacity: 0.4,
                         }}>
@@ -435,8 +435,8 @@
                     );
                     return (
                         <div key={pos} style={{
-                            background: 'rgba(255,255,255,0.02)',
-                            border: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'),
+                            background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                            border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                             borderRadius: '4px', padding: '6px 8px',
                             display: 'flex', flexDirection: 'column', gap: '3px', minHeight: 0,
                             overflow: 'hidden',
@@ -449,7 +449,7 @@
                                 <div key={pl.pid} role="button" tabIndex={0} title="Open player card" onClick={() => onPlayerClick(pl.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPlayerClick(pl.pid); } }} style={{
                                     display: 'flex', alignItems: 'center', gap: '4px',
                                     cursor: 'pointer', padding: '1px 0',
-                                    borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                                    borderTop: i > 0 ? '1px solid var(--ov-3, rgba(255,255,255,0.04))' : 'none',
                                     paddingTop: i > 0 ? '3px' : '0',
                                 }}>
                                     <span style={{
@@ -492,7 +492,7 @@
                             width={barW}
                             height={h}
                             rx={barW > 3 ? 1 : 0}
-                            fill={isMe ? (colors.accent || '#D4AF37') : 'rgba(255,255,255,0.12)'}
+                            fill={isMe ? (colors.accent || 'var(--k-d4af37, #d4af37)') : 'var(--ov-6, rgba(255,255,255,0.12))'}
                             opacity={isMe ? 1 : 0.6}
                         >
                             {isMe && <title>Your health: {v}</title>}
@@ -511,9 +511,9 @@
                 fontWeight: 700,
                 padding: '2px 6px',
                 borderRadius: t.card?.radius === '0px' ? '0' : '10px',
-                background: (color || '#D4AF37') + '18',
-                color: color || '#D4AF37',
-                border: '1px solid ' + (color || '#D4AF37') + '44',
+                background: (color || 'var(--k-d4af37, #d4af37)') + '18',
+                color: color || 'var(--k-d4af37, #d4af37)',
+                border: '1px solid ' + (color || 'var(--k-d4af37, #d4af37)') + '44',
                 fontFamily: t.fonts?.ui || 'DM Sans, sans-serif',
                 whiteSpace: 'nowrap',
             }}>{label}</span>

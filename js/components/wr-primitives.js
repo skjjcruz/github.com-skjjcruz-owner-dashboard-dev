@@ -23,21 +23,21 @@
     // ── Token tables ──────────────────────────────────────────────
     const KIND_COLORS = {
         // positions
-        qb: '#60a5fa', rb: '#2ECC71', wr: '#D4AF37', te: '#fbbf24',
-        k: '#a8acb8', dl: '#fb923c', lb: '#a78bfa', db: '#f472b6',
-        def: '#f87171',
+        qb: 'var(--k-60a5fa, #60a5fa)', rb: 'var(--k-2ecc71, #2ecc71)', wr: 'var(--k-d4af37, #d4af37)', te: 'var(--k-fbbf24, #fbbf24)',
+        k: 'var(--k-a8acb8, #a8acb8)', dl: 'var(--k-fb923c, #fb923c)', lb: 'var(--k-a78bfa, #a78bfa)', db: 'var(--k-f472b6, #f472b6)',
+        def: 'var(--k-f87171, #f87171)',
         // transaction / event types
-        trade: '#9b8afb', waiver: '#2ECC71', fa: '#3498DB',
-        injury: '#E74C3C', news: '#D0D0D0', draft: '#F0A500',
+        trade: 'var(--k-9b8afb, #9b8afb)', waiver: 'var(--k-2ecc71, #2ecc71)', fa: 'var(--k-3498db, #3498db)',
+        injury: 'var(--k-e74c3c, #e74c3c)', news: 'var(--k-d0d0d0, #d0d0d0)', draft: 'var(--k-f0a500, #f0a500)',
         // fallback / neutral
-        neutral: '#D0D0D0',
+        neutral: 'var(--k-d0d0d0, #d0d0d0)',
     };
 
     const SEVERITY = {
-        warning:     { color: '#E74C3C', icon: '\u26A0',  label: 'WARNING' },
-        edge:        { color: '#2ECC71', icon: '\u25CE',  label: 'EDGE' },
-        pattern:     { color: '#F0A500', icon: '\u3030',  label: 'PATTERN' },
-        opportunity: { color: '#3498DB', icon: '\uD83D\uDCA1', label: 'OPPORTUNITY' },
+        warning:     { color: 'var(--k-e74c3c, #e74c3c)', icon: '\u26A0',  label: 'WARNING' },
+        edge:        { color: 'var(--k-2ecc71, #2ecc71)', icon: '\u25CE',  label: 'EDGE' },
+        pattern:     { color: 'var(--k-f0a500, #f0a500)', icon: '\u3030',  label: 'PATTERN' },
+        opportunity: { color: 'var(--k-3498db, #3498db)', icon: '\uD83D\uDCA1', label: 'OPPORTUNITY' },
     };
 
     // ── Card ──────────────────────────────────────────────────────
@@ -45,8 +45,8 @@
     // card backgrounds scattered across surfaces.
     function Card({ children, padding, style, accent, onClick, ...rest }) {
         const css = {
-            background: 'var(--off-black, #1A1A1A)',
-            border: accent ? ('1px solid ' + accent + '33') : '1px solid rgba(255,255,255,0.08)',
+            background: 'var(--off-black, var(--k-1a1a1a, #1a1a1a))',
+            border: accent ? ('1px solid ' + accent + '33') : '1px solid var(--ov-5, rgba(255,255,255,0.08))',
             borderRadius: '10px',
             padding: padding || '14px 16px',
             transition: 'background 0.15s',
@@ -66,7 +66,7 @@
                 display: 'inline-flex', alignItems: 'center',
                 fontSize: s.fs, fontWeight: 700,
                 padding: s.pad, borderRadius: '3px',
-                background: color + '22', color: color,
+                background: wrAlpha(color, '22'), color: color,
                 letterSpacing: '0.04em', textTransform: 'uppercase',
                 fontFamily: 'JetBrains Mono, monospace',
                 whiteSpace: 'nowrap',
@@ -77,18 +77,18 @@
     // ── Chip (priority / generic pill) ────────────────────────────
     function Chip({ level, label }) {
         const tbl = {
-            high:   { c: '#E74C3C', l: label || 'HIGH' },
-            medium: { c: '#F0A500', l: label || 'MEDIUM' },
-            low:    { c: '#D0D0D0', l: label || 'LOW' },
+            high:   { c: 'var(--k-e74c3c, #e74c3c)', l: label || 'HIGH' },
+            medium: { c: 'var(--k-f0a500, #f0a500)', l: label || 'MEDIUM' },
+            low:    { c: 'var(--k-d0d0d0, #d0d0d0)', l: label || 'LOW' },
         };
         const t = tbl[(level || 'medium').toLowerCase()] || tbl.medium;
         return h('span', {
             style: {
                 display: 'inline-flex', alignItems: 'center',
-                fontSize: '0.58rem', fontWeight: 700,
+                fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700,
                 padding: '1px 7px', borderRadius: '10px',
-                background: t.c + '22', color: t.c,
-                border: '1px solid ' + t.c + '4d',
+                background: wrAlpha(t.c, '22'), color: t.c,
+                border: '1px solid ' + wrAlpha(t.c, '4d'),
                 letterSpacing: '0.08em',
                 fontFamily: 'JetBrains Mono, monospace',
             }
@@ -101,19 +101,19 @@
         const n = Math.max(0, Math.min(100, Math.round(pct || 0)));
         const level = n >= 80 ? 'hi' : n >= 55 ? 'med' : 'lo';
         const tbl = {
-            hi:  { c: '#2ECC71', label: 'HIGH' },
-            med: { c: '#F0A500', label: 'MEDIUM' },
-            lo:  { c: '#D0D0D0', label: 'LOW' },
+            hi:  { c: 'var(--k-2ecc71, #2ecc71)', label: 'HIGH' },
+            med: { c: 'var(--k-f0a500, #f0a500)', label: 'MEDIUM' },
+            lo:  { c: 'var(--k-d0d0d0, #d0d0d0)', label: 'LOW' },
         };
         const t = tbl[level];
         const text = compact ? (n + '%') : (n + '% \u00B7 ' + t.label);
         return h('span', {
             style: {
                 fontFamily: 'JetBrains Mono, monospace',
-                fontSize: '0.6rem', letterSpacing: '0.08em',
+                fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '0.08em',
                 padding: '1px 7px', borderRadius: '10px',
-                background: t.c + '26', color: t.c,
-                border: '1px solid ' + t.c + '4d',
+                background: wrAlpha(t.c, '26'), color: t.c,
+                border: '1px solid ' + wrAlpha(t.c, '4d'),
                 fontWeight: 600,
             }
         }, text);
@@ -134,7 +134,7 @@
         }
         // Nothing to render — silent self-hide prevents empty chrome.
         if (from == null && to == null && magnitude == null) return null;
-        const color = dir === 'up' ? '#2ECC71' : dir === 'down' ? '#E74C3C' : '#D0D0D0';
+        const color = dir === 'up' ? 'var(--good)' : dir === 'down' ? 'var(--bad)' : 'var(--silver)';
         const arrow = dir === 'up' ? '\u2191' : dir === 'down' ? '\u2193' : '\u2192';
         const body = magnitude != null
             ? String(magnitude)
@@ -142,7 +142,7 @@
         return h('span', {
             style: {
                 display: 'inline-flex', alignItems: 'center', gap: '4px',
-                fontSize: '0.7rem', color: color,
+                fontSize: 'var(--text-label, 0.75rem)', color: color,
                 fontFamily: 'JetBrains Mono, monospace',
                 ...style,
             }
@@ -154,18 +154,18 @@
     // (preferred) or a static sub string underneath.
     //   tone: 'win'|'loss'|'gold'|'mute'|'plain'
     function Kpi({ label, value, sub, tone, delta, onClick }) {
-        const valColor = tone === 'win' ? '#2ECC71'
-                       : tone === 'loss' ? '#E74C3C'
-                       : tone === 'gold' ? '#D4AF37'
-                       : tone === 'mute' ? '#D0D0D0'
+        const valColor = tone === 'win' ? 'var(--k-2ecc71, #2ecc71)'
+                       : tone === 'loss' ? 'var(--k-e74c3c, #e74c3c)'
+                       : tone === 'gold' ? 'var(--k-d4af37, #d4af37)'
+                       : tone === 'mute' ? 'var(--k-d0d0d0, #d0d0d0)'
                        : 'var(--white)';
         const deltaEl = delta ? h(DeltaLine, delta) : null;
         const subEl = !deltaEl && sub
-            ? h('div', { style: { fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.6, marginTop: '6px', fontFamily: 'JetBrains Mono, monospace' } }, sub)
+            ? h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '6px', fontFamily: 'JetBrains Mono, monospace' } }, sub)
             : null;
         return h(Card, { padding: '14px 16px', onClick },
             h('div', {
-                style: { fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: '8px' }
+                style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: '8px' }
             }, label),
             h('div', {
                 style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.85rem', fontWeight: 700, lineHeight: 1, color: valColor, letterSpacing: 0 }
@@ -183,8 +183,8 @@
     function InsightCard({ severity, confidence, title, body, ctaLabel, ctaOnClick, icon, compact }) {
         const s = SEVERITY[(severity || 'pattern').toLowerCase()] || SEVERITY.pattern;
         const color = s.color;
-        const bg = color + '1a';
-        const border = color + '59';
+        const bg = wrAlpha(color, '1a');
+        const border = wrAlpha(color, '59');
         const iconSize = compact ? 34 : 44;
         const titleSize = compact ? '0.88rem' : '1rem';
         const bodySize = compact ? '0.74rem' : '0.82rem';
@@ -194,7 +194,7 @@
                 position: 'relative', overflow: 'hidden',
                 display: 'grid', gridTemplateColumns: iconSize + 'px 1fr',
                 gap: compact ? '12px' : '14px', alignItems: 'flex-start',
-                background: 'var(--off-black, #1A1A1A)', border: '1px solid rgba(255,255,255,0.06)',
+                background: 'var(--off-black, var(--k-1a1a1a, #1a1a1a))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))',
                 borderRadius: '12px', padding: pad,
             }
         },
@@ -210,8 +210,8 @@
             }, icon || s.icon),
             h('div', { style: { position: 'relative', zIndex: 1, minWidth: 0 } },
                 h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px', flexWrap: 'wrap' } },
-                    h('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '0.62rem', fontWeight: 700, color: color, letterSpacing: '0.12em', textTransform: 'uppercase' } }, s.label),
-                    confidence != null && h('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.6, letterSpacing: '0.06em' } },
+                    h('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: color, letterSpacing: '0.12em', textTransform: 'uppercase' } }, s.label),
+                    confidence != null && h('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, letterSpacing: '0.06em' } },
                         'CONF ',
                         h('strong', { style: { color: 'var(--silver)', opacity: 0.9, fontWeight: 700 } }, confidence + '%')
                     )
@@ -222,9 +222,9 @@
                     onClick: ctaOnClick,
                     style: {
                         display: 'inline-flex', alignItems: 'center', gap: '6px',
-                        padding: '6px 12px', borderRadius: '5px',
+                        padding: '6px 12px', borderRadius: '5px', minHeight: '44px',
                         background: bg, border: '1px solid ' + border, color: color,
-                        fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer',
+                        fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, cursor: 'pointer',
                         fontFamily: 'DM Sans, sans-serif',
                     }
                 }, ctaLabel, h('span', { style: { fontSize: '1rem', lineHeight: 0.8 } }, '\u203A'))

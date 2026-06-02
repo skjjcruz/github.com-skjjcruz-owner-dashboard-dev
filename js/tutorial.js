@@ -7,7 +7,7 @@ const WR_TUTORIAL_CONFIG = {
     productKey: 'warroom',
     version: 'gm-brief-v1',
     legacyKeys: ['wr_tutorial_done_v1'],
-    accent: '#D4AF37',
+    accent: 'var(--k-d4af37, #d4af37)',
     alexPicker: true,
     title: 'Welcome to the GM Room',
     kicker: 'Alex Ingram / War Room Briefing',

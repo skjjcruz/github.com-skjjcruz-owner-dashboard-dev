@@ -3,6 +3,13 @@
 // ══════════════════════════════════════════════════════════════════
     const DRAFT_WR_KEYS  = window.App.WR_KEYS;
     const DraftStorage = window.App.WrStorage;
+    // Seeded phrase variation so two notes from the same template branch never
+    // read identically. Seed off something stable (pid + position) and a row
+    // keeps its wording across re-renders while its neighbours differ.
+    const avPick = (seed, arr) => (window.AlexVoice ? window.AlexVoice.pick(seed, arr) : arr[0]);
+    // Rotated pick — spreads variants across rows by index so same-tier
+    // neighbours don't open with the same sentence on a hash collision.
+    const avPickRot = (seed, arr, off) => (window.AlexVoice ? window.AlexVoice.pickRot(seed, arr, off) : arr[(off | 0) % arr.length]);
     // ══════════════════════════════════════════════════════════════════════════
     // END FREE AGENCY TAB
     // ══════════════════════════════════════════════════════════════════════════
@@ -59,6 +66,7 @@
         const [boardMode, setBoardMode] = useState('dhq'); // 'dhq' | 'ai' | 'my'
         const [myBoardOrder, setMyBoardOrder] = useState([]); // custom ordered pid array
         const [boardPosFilter, setBoardPosFilter] = useState(''); // '' | 'QB' | 'RB' | 'WR' | 'TE' | 'DL' | 'LB' | 'DB'
+        const [boardSearch, setBoardSearch] = useState(''); // player/team/college lookup
         const [boardTeamFilter, setBoardTeamFilter] = useState(''); // '' | NFL team abbr
         const [boardRoundFilter, setBoardRoundFilter] = useState(''); // '' | '1'..'7' | 'UDFA'
         const [boardSort, setBoardSort] = useState({ key: 'dhq', dir: -1 }); // sortable columns
@@ -71,6 +79,9 @@
             try { return localStorage.getItem(draftStrategyKey) || ''; } catch(e) { return ''; }
         });
         const [pickFocus, setPickFocus] = useState(() => window._wrDraftPickFocus || null);
+        // AI-upgraded roster-target notes, keyed by position. Empty until/unless
+        // a real AI call resolves; the seeded template always renders underneath.
+        const [aiRosterNotes, setAiRosterNotes] = useState({});
         const [flashAnalystPresetId, setFlashAnalystPresetId] = useState('league-history');
         const [flashAnalystRoundLimit, setFlashAnalystRoundLimit] = useState('1');
         const [flashAnalystReports, setFlashAnalystReports] = useState([]);
@@ -114,6 +125,21 @@
             window.addEventListener('wr:open-draft-pick-context', openPickFocus);
             openPickFocus({ detail: window._wrDraftPickFocus });
             return () => window.removeEventListener('wr:open-draft-pick-context', openPickFocus);
+        }, []);
+
+        // Jump straight into Follow Live Draft when the league header "Draft Live"
+        // chip is clicked. The chip lives in league-detail, so it sets a flag +
+        // fires this event; the mount-time flag check covers the case where the
+        // Draft tab (and this module) wasn't mounted yet when the chip was clicked.
+        useEffect(() => {
+            const openLive = () => {
+                window._wrOpenLiveDraft = false;
+                setLiveAutoStartToken(Date.now());
+                setDraftView('live');
+            };
+            window.addEventListener('wr:open-live-draft', openLive);
+            if (window._wrOpenLiveDraft) openLive();
+            return () => window.removeEventListener('wr:open-live-draft', openLive);
         }, []);
 
         const normPos = window.App.normPos;
@@ -320,7 +346,12 @@
                                 height: csv.size ? parseInt(csv.size.replace("'", "").split('"')[0]) * 12 + parseInt((csv.size.match(/'(\d+)/)?.[1]) || 0) : null,
                                 weight: csv.weight ? parseInt(csv.weight) : null,
                             },
-                            dhq: csv.draftScore || 0,
+                            // Use the canonical 0–10000 dynasty value so CSV-only
+                            // prospects sit on the same axis as Sleeper-matched rookies.
+                            // draftScore is a 0–~15 scale and would sort these to the
+                            // bottom as if worthless. Fall back to draftScore only if no
+                            // canonical value exists.
+                            dhq: Math.min(10000, Math.max(0, csv.dynastyValue || csv.baseDynastyValue || csv.draftCapitalValue || csv.draftScore || 0)),
                             csv,
                             isCSVOnly: true,
                         });
@@ -328,7 +359,22 @@
                 }
             }
 
-            return [...sleeperRookies, ...csvOnly].sort((a, b) => {
+            // Consolidate any duplicate identities (e.g. a Sleeper-matched rookie and
+            // a CSV-only synthetic that slipped past the name dedup above). Keep one
+            // row per normalized name, preferring the real Sleeper entry, then the
+            // higher dynasty value.
+            const byName = new Map();
+            [...sleeperRookies, ...csvOnly].forEach(row => {
+                const key = normName(row.p.full_name || ((row.p.first_name || '') + ' ' + (row.p.last_name || '')).trim());
+                if (!key) { byName.set(Symbol(), row); return; }
+                const existing = byName.get(key);
+                if (!existing) { byName.set(key, row); return; }
+                const better = (!row.isCSVOnly && existing.isCSVOnly) ? row
+                    : (row.isCSVOnly && !existing.isCSVOnly) ? existing
+                    : (row.dhq || 0) >= (existing.dhq || 0) ? row : existing;
+                byName.set(key, better);
+            });
+            return Array.from(byName.values()).sort((a, b) => {
                 // Sort by CSV rank first (if available), then DHQ
                 const aRank = a.csv?.rank || 9999;
                 const bRank = b.csv?.rank || 9999;
@@ -929,18 +975,43 @@
             const target = targetName || 'a clean tier fit';
             const dhqText = targetDhq ? ' (' + fmtDhq(targetDhq) + ' ' + valueShortLabel + ')' : '';
             const pickText = nextPickLabel || 'our next pick';
+            const seed = 'arn:' + p + ':' + (targetName || '');
             if (priorityScore >= 300) {
-                if (p === 'QB') return 'I see QB as a real lineup pressure point. If ' + target + dhqText + ' reaches ' + pickText + ', I would rather solve the weekly ceiling problem than chase a luxury tier.';
-                if (p === 'TE') return 'I see TE as the cleanest way to change our roster shape. If ' + target + dhqText + ' survives to ' + pickText + ', I want to attack it before the cliff turns ugly.';
-                if (['DL', 'LB', 'DB'].includes(p)) return 'I see ' + p + ' as an IDP pressure spot, not a vanity pick. If ' + target + dhqText + ' is there, it keeps us from paying future capital after the room realizes the tier is gone.';
-                return 'I see ' + p + ' as a real roster pressure point. If ' + target + dhqText + ' reaches ' + pickText + ', I want to close that gap while the ' + valueShortLabel + ' value still lines up.';
+                if (p === 'QB') return avPick(seed, [
+                    'QB is the spot that decides our weeks. If ' + target + dhqText + ' gets to ' + pickText + ', I\'m taking the ceiling over some luxury pick every time.',
+                    'We need to solve QB, plain and simple. ' + target + dhqText + ' at ' + pickText + ' fixes the weekly floor — I don\'t want to chase a shinier name and leave the hole open.',
+                ]);
+                if (p === 'TE') return avPick(seed, [
+                    'TE is the fastest way to change our roster shape. If ' + target + dhqText + ' falls to ' + pickText + ', I want him before the cliff gets ugly.',
+                    'I\'d attack TE here — ' + target + dhqText + ' at ' + pickText + ' is the kind of swing that separates us once the position dries up.',
+                ]);
+                if (['DL', 'LB', 'DB'].includes(p)) return avPick(seed, [
+                    p + ' is a real IDP pressure spot, not a vanity grab. Get ' + target + dhqText + ' now and we don\'t pay future capital once the room wakes up to the tier.',
+                    'Don\'t sleep on ' + p + '. ' + target + dhqText + ' keeps us from overpaying later when everyone realizes the IDP tier is gone.',
+                ]);
+                return avPick(seed, [
+                    p + ' is a real pressure point for us. If ' + target + dhqText + ' reaches ' + pickText + ', I want to close that gap while the ' + valueShortLabel + ' value still lines up.',
+                    'We can\'t keep ignoring ' + p + '. ' + target + dhqText + ' at ' + pickText + ' is the clean fix while the value\'s still there.',
+                ]);
             }
             if (priorityScore >= 200) {
-                if (p === 'RB') return 'I read RB as a depth and age-risk lane. I do not want to force it, but ' + target + dhqText + ' should be a tie-breaker if the board flattens.';
-                if (p === 'WR') return 'I read WR as a depth squeeze more than an emergency. Keep ' + target + dhqText + ' active, but only jump if the tier holds real value at ' + pickText + '.';
-                return 'I read ' + p + ' as an active lane, not a panic spot. ' + target + dhqText + ' matters if the board gives us the value, but I would still let ' + valueShortLabel + ' settle the tie.';
+                if (p === 'RB') return avPick(seed, [
+                    'RB is a depth-and-age question for us. I won\'t force it, but ' + target + dhqText + ' is the tie-breaker if the board flattens.',
+                    'I\'m not reaching for RB, but keep ' + target + dhqText + ' in mind — a younger swing against our age curve is worth it if value cooperates.',
+                ]);
+                if (p === 'WR') return avPick(seed, [
+                    'WR is more of a squeeze than an emergency. Keep ' + target + dhqText + ' live, but only jump if the tier still holds value at ' + pickText + '.',
+                    'No panic at WR — ' + target + dhqText + ' is worth a look at ' + pickText + ' if the value\'s real, otherwise let it ride.',
+                ]);
+                return avPick(seed, [
+                    p + ' is an active lane, not a panic spot. ' + target + dhqText + ' matters if the board hands us the value, but I\'d still let ' + valueShortLabel + ' settle the tie.',
+                    'I\'ve got ' + p + ' on the radar. ' + target + dhqText + ' is in play, just don\'t let it pull us off a cleaner ' + valueShortLabel + ' value.',
+                ]);
             }
-            return 'I would keep ' + p + ' on the watch list. ' + target + dhqText + ' is useful if the room lets value fall, but this should not pull us away from a better tier.';
+            return avPick(seed, [
+                p + ' stays on the watch list. ' + target + dhqText + ' is useful if the room lets value fall, but it shouldn\'t pull us off a better tier.',
+                'I\'d keep ' + p + ' in the back pocket — ' + target + dhqText + ' only if he slides, never at the cost of a stronger pick.',
+            ]);
         }, [normPos, nextPickLabel, fmtDhq, valueShortLabel]);
 
         const pressureProjectionReport = useMemo(() => {
@@ -1013,21 +1084,53 @@
                 DEF: 'pressure rate, turnover chances, schedule pockets, and matchup streamability',
             };
             const role = roleByPos[pos] || 'weekly role, team context, and replacement-level gap';
-            const ageText = age ? ' At age ' + age + ', the risk lens is durability and role stability more than long-term development.' : '';
+            const seed = 'scout:' + pos + ':' + (row.pid || name);
+            const ageText = age ? ' ' + avPick(seed + ':age', [
+                'At ' + age + ', I\'m watching durability and role stability more than upside.',
+                'He\'s ' + age + ', so this is about staying healthy and holding the role, not projection.',
+                'Age ' + age + ' means the question is consistency, not ceiling.',
+            ]) : '';
             const teamText = team && team !== 'FA'
-                ? name + ' is tied to ' + team + ', so the scouting question is ' + role + '.'
-                : name + ' is not carrying a clean team label here, so I would treat the board value as stronger than the environment tag until news clarifies it.';
+                ? avPick(seed + ':team', [
+                    name + ' lands in ' + team + ', so the real question is ' + role + '.',
+                    'Tied to ' + team + ', what I care about with ' + name + ' is ' + role + '.',
+                    'With ' + name + ' in ' + team + ', it comes down to ' + role + '.',
+                  ])
+                : avPick(seed + ':noteam', [
+                    name + ' doesn\'t have a clean landing spot yet, so I\'d trust the board value over the situation until news clears it up.',
+                    'No firm team for ' + name + ' right now — I\'d lean on the value tier and wait for the role to clarify.',
+                  ]);
             const planText = tier.label === 'Elite'
-                ? 'Draft plan: treat him as an anchor. Do not overthink small fit nits if he falls below his value tier.'
+                ? avPick(seed + ':plan', [
+                    'Plan: treat him as an anchor. Don\'t overthink small fit nits if he ever slips below tier.',
+                    'Plan: this is a cornerstone — take him and don\'t let little concerns talk you out of it.',
+                  ])
                 : tier.label === 'Core'
-                    ? 'Draft plan: take him when roster construction needs a bankable weekly starter and the board is leaving the tier intact.'
+                    ? avPick(seed + ':plan', [
+                        'Plan: grab him when we need a bankable weekly starter and the tier\'s still intact.',
+                        'Plan: he\'s a starter you can count on — pull the trigger when the board leaves the tier sitting.',
+                      ])
                     : tier.label === 'Starter'
-                        ? 'Draft plan: useful if the build needs points now; pass if a cleaner ceiling tier is still available.'
-                        : 'Draft plan: this is a bench/streaming decision. Let ADP, roster need, and schedule break the tie.';
+                        ? avPick(seed + ':plan', [
+                            'Plan: fine if we need points now; pass if a cleaner ceiling tier is still on the board.',
+                            'Plan: useful for the build, but don\'t reach past a higher-upside name to get him.',
+                          ])
+                        : avPick(seed + ':plan', [
+                            'Plan: this is a bench/streaming call — let ADP, need, and schedule break the tie.',
+                            'Plan: depth dart. Take him late if the matchup math or roster need says so.',
+                          ]);
+            const gradeText = avPick(seed + ':grade', [
+                name + ' grades out as a ' + tier.label.toLowerCase() + ' ' + posLabel(pos) + ' in this format (' + rankText + ', ' + fmtDhq(row.dhq) + ' ' + valueShortLabel + ').',
+                'I\'ve got ' + name + ' as a ' + tier.label.toLowerCase() + ' ' + posLabel(pos) + ' for us — ' + rankText + ', ' + fmtDhq(row.dhq) + ' ' + valueShortLabel + '.',
+            ]);
+            const readText = avPick(seed + ':read', [
+                'My read: it\'s about ' + role + '. The value tier tells you how far above replacement he is; the need tells you whether we should be the one paying for it.',
+                'Bottom line — focus on ' + role + '. Value says how good, need says whether it\'s our problem to solve.',
+            ]);
             return [
-                name + ' grades as a ' + tier.label.toLowerCase() + ' ' + posLabel(pos) + ' in this format (' + rankText + ', ' + fmtDhq(row.dhq) + ' ' + valueShortLabel + ').',
+                gradeText,
                 teamText + ageText,
-                'Alex read: focus on ' + role + '. Value tier says how far above replacement he is; roster need says whether we should be the one paying that price.',
+                readText,
                 planText,
             ];
         }, [normPos, valueTierMeta, valueShortLabel]);
@@ -1182,19 +1285,54 @@
                 const cliffDhq = cliffPlayer?.dhq > 0 ? fmtDhq(cliffPlayer.dhq) : '';
                 const pedigreeBits = [topCapital, topCollege].filter(Boolean);
                 const pedigree = pedigreeBits.length ? ' (' + pedigreeBits.join(' / ') + ')' : '';
+                const posName = posLabel(row.pos);
+                const seed = 'cd:' + row.pos + ':' + (row.topPid || topName);
                 const sentences = [];
                 if (row.count >= 14) {
-                    sentences.push(row.count + ' top-60 ' + posLabel(row.pos) + ' prospects after adjusting for ' + formatLabel + ' — real depth at this position.');
-                    if (topName) sentences.push(topName + pedigree + ' anchors the tier' + (cliffName && cliffName !== topName ? '; depth still lives down to ' + cliffName + (cliffDhq ? ' (' + cliffDhq + ')' : '') : '') + '.');
-                    sentences.push('We can stay patient, let the room spend early capital, then attack the value pocket before the tier dries up.');
+                    sentences.push(avPick(seed + ':deep', [
+                        'This is a deep ' + posName + ' class — ' + row.count + ' in the top 60 once you adjust for ' + formatLabel + '.',
+                        row.count + ' ' + posName + 's crack the top 60 in ' + formatLabel + ', so there\'s real meat on the bone here.',
+                        'No shortage of ' + posName + 's this year: ' + row.count + ' of them grade top-60 for our format.',
+                    ]));
+                    if (topName) sentences.push(avPick(seed + ':deeptop', [
+                        topName + pedigree + ' is the headliner' + (cliffName && cliffName !== topName ? ', and the depth runs all the way to ' + cliffName + (cliffDhq ? ' (' + cliffDhq + ')' : '') : '') + '.',
+                        topName + pedigree + ' leads it off' + (cliffName && cliffName !== topName ? '; you can still find a body as late as ' + cliffName + (cliffDhq ? ' (' + cliffDhq + ')' : '') : '') + '.',
+                    ]));
+                    sentences.push(avPick(seed + ':deepplan', [
+                        'I\'d let the room burn early capital here and pick off the value pocket before the tier dries up.',
+                        'No reason to rush — sit back, let others overpay, then strike when the value lands in our lap.',
+                        'Patience pays at ' + posName + '. Let it come to us instead of reaching.',
+                    ]));
                 } else if (row.count <= 6) {
-                    sentences.push('Only ' + row.count + ' top-60 ' + posLabel(row.pos) + ' prospect' + (row.count === 1 ? '' : 's') + ' under ' + formatLabel + (starterCount ? ' — and the lineup starts ' + starterCount + ' ' + posLabel(row.pos) + '.' : '.'));
-                    if (topName) sentences.push(topName + pedigree + ' is the top name; nothing should be assumed to fall.');
-                    sentences.push('If this position matters to our build, we move on the tier early rather than wait for value.');
+                    sentences.push(avPick(seed + ':thin', [
+                        posName + ' is bone-dry this class — only ' + row.count + ' top-60 name' + (row.count === 1 ? '' : 's') + ' in ' + formatLabel + (starterCount ? ', and we start ' + starterCount + ' of them.' : '.'),
+                        'There\'s barely a ' + posName + ' tier here: ' + row.count + ' top-60 prospect' + (row.count === 1 ? '' : 's') + ' under ' + formatLabel + (starterCount ? ' against ' + starterCount + ' starting slot' + (starterCount === 1 ? '' : 's') + '.' : '.'),
+                        'Thin at ' + posName + ' — ' + row.count + ' top-60 option' + (row.count === 1 ? '' : 's') + ' for ' + formatLabel + (starterCount ? ', and the lineup demands ' + starterCount + '.' : '.'),
+                    ]));
+                    if (topName) sentences.push(avPick(seed + ':thintop', [
+                        topName + pedigree + ' is basically the tier — don\'t assume anyone falls.',
+                        topName + pedigree + ' is the name, and I wouldn\'t bet on him sliding.',
+                    ]));
+                    sentences.push(avPick(seed + ':thinplan', [
+                        'If ' + posName + ' matters to our build, we take the tier early instead of praying for value.',
+                        'This is a "go get it" spot — wait on ' + posName + ' and we get left out.',
+                        'When it\'s this shallow, you move first and ask questions later.',
+                    ]));
                 } else {
-                    sentences.push(row.count + ' top-60 ' + posLabel(row.pos) + ' prospects after adjusting for ' + formatLabel + ' — workable but not deep.');
-                    if (topName) sentences.push(topName + pedigree + ' is the headliner' + (cliffName && cliffName !== topName ? '; ' + cliffName + ' marks the next tier break' + (cliffDhq ? ' (' + cliffDhq + ')' : '') : '') + '.');
-                    sentences.push('Track the cliff, then let ' + valueShortLabel + ' decide if the board stays flat.');
+                    sentences.push(avPick(seed + ':mid', [
+                        posName + ' is workable but not deep — ' + row.count + ' top-60 names in ' + formatLabel + '.',
+                        'Middle-of-the-road ' + posName + ' class: ' + row.count + ' top-60 prospects for our format.',
+                        row.count + ' ' + posName + 's grade top-60 in ' + formatLabel + ' — enough to work with, not enough to sleep on.',
+                    ]));
+                    if (topName) sentences.push(avPick(seed + ':midtop', [
+                        topName + pedigree + ' headlines it' + (cliffName && cliffName !== topName ? ', and ' + cliffName + ' marks where the next tier breaks' + (cliffDhq ? ' (' + cliffDhq + ')' : '') : '') + '.',
+                        topName + pedigree + ' is the top of the board' + (cliffName && cliffName !== topName ? '; watch for the drop-off around ' + cliffName + (cliffDhq ? ' (' + cliffDhq + ')' : '') : '') + '.',
+                    ]));
+                    sentences.push(avPick(seed + ':midplan', [
+                        'Keep an eye on the cliff and let ' + valueShortLabel + ' tell us whether to pounce or wait.',
+                        'Track where it falls off, then let the board value make the call.',
+                        'I\'d watch the tier break and stay flexible.',
+                    ]));
                 }
                 return { ...row, alexBlurb: sentences.join(' ') };
             });
@@ -1214,13 +1352,12 @@
             // landing team, age, and which player at this position the room is
             // about to take before our pick. Falls back gracefully when fields
             // are missing.
-            const buildRosterNote = (target, pos, priorityScore) => {
+            const buildRosterNote = (target, pos, priorityScore, rowIdx) => {
                 if (!target) {
                     return 'No clean ' + pos + ' target survives our pick — let the board come to us and reassess.';
                 }
                 const name = pName(target.p);
                 const firstName = target.p?.first_name || name.split(' ')[0];
-                const college = target.csv?.college || target.p?.college || target.p?.metadata?.college || '';
                 const nflTeam = target.csv?.nflTeam || target.p?.team || '';
                 const dRound = Number(target.csv?.draftRound) || 0;
                 const isUDFA = !!target.csv?.isUDFA && !dRound;
@@ -1229,15 +1366,15 @@
                 const dhqText = target.dhq > 0 ? fmtDhq(target.dhq) + ' ' + valueShortLabel : '';
                 const slot = nextPickLabel || 'our next pick';
 
-                let capital = '';
-                if (dRound === 1) capital = 'Round 1 NFL capital';
-                else if (dRound === 2) capital = 'Round 2 capital';
-                else if (dRound === 3) capital = 'Round 3 capital';
-                else if (dRound >= 4) capital = 'Day 3 (R' + dRound + ') capital';
-                else if (isUDFA) capital = 'UDFA dart throw';
+                let pickShort = '';
+                if (dRound === 1) pickShort = 'R1';
+                else if (dRound === 2) pickShort = 'R2';
+                else if (dRound === 3) pickShort = 'R3';
+                else if (dRound >= 4) pickShort = 'Day 3';
+                else if (isUDFA) pickShort = 'UDFA';
 
-                const pedigreeBits = [capital, college, nflTeam ? 'in ' + nflTeam : ''].filter(Boolean);
-                const pedigree = pedigreeBits.length ? ' (' + pedigreeBits.join(' / ') + ')' : '';
+                const pedigreeBits = [pickShort, nflTeam].filter(Boolean);
+                const pedigree = pedigreeBits.length ? ' (' + pedigreeBits.join(', ') + ')' : '';
 
                 const posGone = projectedPicks
                     .filter(p => Number(p.overall) < (nextPickOverall || Infinity)
@@ -1248,26 +1385,86 @@
                     ? lastGone.round + '.' + String(lastGone.slot).padStart(2, '0')
                     : '';
 
+                const seed = 'rn:' + pos + ':' + (target.pid || name);
+                const ri = rowIdx | 0;
+                const val = dhqText ? dhqText + ' of value' : '';
                 const sentences = [];
                 if (priorityScore >= 300) {
-                    sentences.push(pos + ' is a real lineup pressure point — ' + name + pedigree + ' is the clean way to close it at ' + slot + (dhqText ? ' (' + dhqText + ' value)' : '') + '.');
+                    sentences.push(avPickRot(seed + ':crit', [
+                        pos + ' is where this roster actually hurts, and ' + name + pedigree + ' is the cleanest patch on the board at ' + slot + (dhqText ? ' — ' + val : '') + '.',
+                        'We can\'t keep punting ' + pos + '. ' + name + pedigree + ' is the one I\'d lock in at ' + slot + (dhqText ? ', and ' + dhqText + ' is honest money there' : '') + '.',
+                        name + pedigree + ' is my answer at ' + pos + ' — it\'s a real pressure point for us and he\'s sitting right there at ' + slot + (dhqText ? ' for ' + dhqText : '') + '.',
+                        'If I\'m honest, ' + pos + ' is the hole that costs us weeks. ' + name + pedigree + ' fixes it at ' + slot + (dhqText ? ' (' + dhqText + ')' : '') + '.',
+                    ], ri));
                 } else if (priorityScore >= 200) {
-                    sentences.push(pos + ' is a depth squeeze, not a panic spot. ' + name + pedigree + ' is the active target' + (dhqText ? ' at ' + dhqText : '') + '.');
+                    sentences.push(avPickRot(seed + ':high', [
+                        pos + ' isn\'t an emergency yet, but it\'s thinning out. ' + name + pedigree + ' keeps us honest there' + (dhqText ? ' at ' + dhqText : '') + '.',
+                        'I like ' + name + pedigree + ' as our ' + pos + ' play — no need to panic, just don\'t let the tier walk past you' + (dhqText ? ' (' + dhqText + ')' : '') + '.',
+                        'We could use another ' + pos + ', and ' + name + pedigree + ' is the name I\'d circle' + (dhqText ? ' — ' + dhqText : '') + '.',
+                        name + pedigree + ' shores up ' + pos + ' without making us reach' + (dhqText ? '; ' + dhqText + ' is fair here' : '') + '.',
+                    ], ri));
                 } else {
-                    sentences.push(pos + ' stays on watch — ' + name + pedigree + ' is the name to monitor if value falls' + (dhqText ? ' (' + dhqText + ')' : '') + '.');
+                    sentences.push(avPickRot(seed + ':watch', [
+                        pos + ' stays on the back burner — ' + name + pedigree + ' is who I\'d watch if the value falls to us' + (dhqText ? ' (' + dhqText + ')' : '') + '.',
+                        'No rush at ' + pos + ', but keep ' + name + pedigree + ' in your back pocket' + (dhqText ? ' at ' + dhqText : '') + '.',
+                        'I\'m not chasing ' + pos + ' here. ' + name + pedigree + ' only matters if he slides' + (dhqText ? ', and ' + dhqText + ' would make it easy' : '') + '.',
+                    ], ri));
                 }
 
                 if (lastGone && posGone.length >= 2) {
-                    sentences.push(posGone.length + ' ' + pos + 's are projected off before our pick (' + lastGone.name + ' at ' + lastGoneSlot + '), so this tier could move fast.');
+                    sentences.push(avPick(seed + ':run', [
+                        'Heads up — ' + posGone.length + ' ' + pos + 's are projected gone by then (' + lastGone.name + ' at ' + lastGoneSlot + '), so this tier can dry up fast.',
+                        'The room is hammering ' + pos + ': ' + posGone.length + ' off the board before us, ' + lastGone.name + ' the last at ' + lastGoneSlot + '. Don\'t wait too long.',
+                        posGone.length + ' ' + pos + 's come off ahead of us (' + lastGone.name + ' around ' + lastGoneSlot + ') — if you want this tier, you move early.',
+                    ]));
                 } else if (lastGone) {
-                    sentences.push(lastGone.name + ' is projected to come off at ' + lastGoneSlot + '; ' + firstName + ' sits in the next tier behind him.');
+                    sentences.push(avPick(seed + ':one', [
+                        lastGone.name + ' is the one projected to go just ahead of us at ' + lastGoneSlot + '; ' + firstName + ' is the next man up.',
+                        'Once ' + lastGone.name + ' goes around ' + lastGoneSlot + ', ' + firstName + ' is sitting right behind him.',
+                    ]));
                 }
 
                 if (age && age <= 21) {
-                    sentences.push('Age curve still in front of him at ' + age + '.');
+                    sentences.push(avPick(seed + ':age', [
+                        'And he\'s only ' + age + ' — the whole runway is still in front of him.',
+                        'At ' + age + ', you\'re buying the front of the age curve, not the back.',
+                        firstName + '\'s ' + age + ', so the dynasty math works for us for years.',
+                    ]));
                 }
 
                 return sentences.join(' ');
+            };
+
+            // Structured facts for a target — same inputs the template uses, but
+            // exposed so the AI upgrade can advocate with real data instead of
+            // re-evaluating the pick from a bare name + value.
+            const targetFacts = (target, pos) => {
+                if (!target) return null;
+                const college = target.csv?.college || target.p?.college || target.p?.metadata?.college || '';
+                const nflTeam = target.csv?.nflTeam || target.p?.team || '';
+                const dRound = Number(target.csv?.draftRound) || 0;
+                const isUDFA = !!target.csv?.isUDFA && !dRound;
+                const ageRaw = Number(target.p?.age) || (target.csv?.age ? parseFloat(target.csv.age) : 0);
+                const age = ageRaw > 0 && ageRaw < 35 ? Math.round(ageRaw) : null;
+                let capital = '';
+                if (dRound === 1) capital = 'NFL Round 1 capital';
+                else if (dRound === 2) capital = 'NFL Round 2 capital';
+                else if (dRound === 3) capital = 'NFL Round 3 capital';
+                else if (dRound >= 4) capital = 'NFL Day 3 (R' + dRound + ') capital';
+                else if (isUDFA) capital = 'UDFA';
+                const posGone = (draftPredictionReport?.picks || [])
+                    .filter(p => Number(p.overall) < (nextPickOverall || Infinity) && (normPos(p.pos) || p.pos) === pos)
+                    .sort((a, b) => Number(b.overall) - Number(a.overall));
+                const lastGone = posGone[0];
+                return {
+                    capital: capital || null,
+                    college: college || null,
+                    team: nflTeam || null,
+                    age,
+                    goneBeforePick: posGone.length,
+                    lastGoneName: lastGone?.name || null,
+                    lastGoneSlot: lastGone ? lastGone.round + '.' + String(lastGone.slot).padStart(2, '0') : null,
+                };
             };
 
             return (assess?.needs || [])
@@ -1279,7 +1476,7 @@
                     const score = urgencyScore(urgency) + Math.max(0, 40 - idx * 8) + (Number(item?.count || 0) ? Math.max(0, 18 - Number(item.count) * 3) : 0);
                     const targetName = target ? pName(target.p) : null;
                     const priorityScore = urgencyScore(urgency);
-                    const alexBlurb = buildRosterNote(target, pos, priorityScore);
+                    const alexBlurb = buildRosterNote(target, pos, priorityScore, idx);
                     return {
                         ...item,
                         pos,
@@ -1289,6 +1486,7 @@
                         targetName,
                         targetPid: target?.pid || '',
                         targetDhq: target?.dhq || 0,
+                        targetFacts: targetFacts(target, pos),
                         alexBlurb,
                     };
                 })
@@ -1296,6 +1494,68 @@
                 .sort((a, b) => b.score - a.score)
                 .slice(0, 6);
         }, [rosterState.isUsable, assess, scoredAvailable, draftPredictionReport, nextPickOverall, nextPickLabel, normPos]);
+
+        // Template-first AI upgrade for the Roster Targeting notes. One batched
+        // dhqAI call (not six) returns a line per position in Alex's configured
+        // voice; we parse "POS: note" lines and swap them in over the seeded
+        // template. If AI is unavailable or the call fails, the template stands.
+        useEffect(() => {
+            const AV = window.AlexVoice;
+            if (!AV || !AV.hasAI() || !needLabels.length) return;
+            const targets = needLabels.filter(n => n.targetName);
+            if (!targets.length) return;
+            const sig = targets.map(n => n.pos + ':' + n.targetName + ':' + (n.priorityLabel || '')).join('|')
+                + '@' + (nextPickLabel || '') + '#' + (leagueKey || '');
+            const cacheKey = 'flash-targets:' + sig;
+            const cached = AV.getCached(cacheKey);
+            if (cached) { setAiRosterNotes(cached); return; }
+            let cancelled = false;
+            const context = JSON.stringify({
+                pick: nextPickLabel || 'our next pick',
+                valueLabel: valueShortLabel,
+                targets: targets.map(n => ({
+                    pos: n.pos,
+                    priority: n.priorityLabel,
+                    target: n.targetName,
+                    value: n.targetDhq || null,
+                    capital: n.targetFacts?.capital || undefined,
+                    college: n.targetFacts?.college || undefined,
+                    landingTeam: n.targetFacts?.team || undefined,
+                    age: n.targetFacts?.age || undefined,
+                    samePositionGoneBeforeOurPick: n.targetFacts?.goneBeforePick || undefined,
+                    lastOneOffTheBoard: n.targetFacts?.lastGoneName
+                        ? n.targetFacts.lastGoneName + ' at ' + n.targetFacts.lastGoneSlot
+                        : undefined,
+                })),
+            });
+            const message = 'These are MY pre-set roster targets for the upcoming draft — one per position, each already chosen as the best player likely to reach our pick. '
+                + 'For each one, sell me on the pick in your own voice, like you\'re leaning over my shoulder in the war room. '
+                + 'IMPORTANT: do not second-guess, re-rank, or suggest looking elsewhere — assume the listed player IS our pick and make the case FOR him. '
+                + 'Build the case from the data I gave you: his NFL draft capital, college, landing team, age (younger = more runway), the position\'s priority for us, and how many at his position are projected gone before our pick (a thinning tier = move now). '
+                + 'Use the specific numbers and names. Confident and decisive, never wishy-washy. '
+                + 'Max two sentences each. No bullet symbols, no preamble. Return exactly one line per position formatted as "POS: note" (e.g. "QB: ...").';
+            AV.enhance({
+                type: 'strategy-analysis',
+                message,
+                context,
+                cacheKey,
+                fallback: null,
+                transform: (raw) => {
+                    // Scan for "POS: note" segments. Works whether the model
+                    // returns one line per position or a single run-on string
+                    // (sanitize() collapses newlines), and skips any preamble.
+                    const map = {};
+                    const re = /\b(QB|RB|WR|TE|DL|LB|DB|FB|K)\s*[:\-—]\s*([\s\S]*?)(?=\b(?:QB|RB|WR|TE|DL|LB|DB|FB|K)\s*[:\-—]|$)/gi;
+                    let m;
+                    while ((m = re.exec(raw))) {
+                        const note = m[2].trim().replace(/\s+/g, ' ');
+                        if (note.length > 4) map[m[1].toUpperCase()] = note;
+                    }
+                    return Object.keys(map).length ? map : null;
+                },
+            }).then(map => { if (!cancelled && map) setAiRosterNotes(map); });
+            return () => { cancelled = true; };
+        }, [needLabels, nextPickLabel, leagueKey, valueShortLabel]);
 
         const userMockRows = useMemo(() => {
             const picks = (draftPredictionReport?.picks || []).filter(p =>
@@ -1340,13 +1600,29 @@
             const label = pick ? compactPickLabel(pick) : (idx ? 'later pick' : nextPickLabel);
             const needWord = targetNeed?.priorityLabel ? targetNeed.priorityLabel.toLowerCase() : 'board value';
             const posName = posLabel(pos);
+            const seed = 'app:' + pos + ':' + (targetName || '') + ':' + label;
             if (targetNeed) {
-                return 'At ' + label + ', I want ' + targetName + ' because ' + posName + ' is already one of our real roster pressure points. This is not just taking the top name left; it is using the pick to fix a lineup problem while the value is still defendable.';
+                return avPick(seed, [
+                    'At ' + label + ', I want ' + targetName + ' because ' + posName + ' is already a real pressure point for us. This isn\'t taking the top name left — it\'s using the pick to fix a lineup problem while the value still holds.',
+                    'At ' + label + ', give me ' + targetName + '. ' + posName + ' is a hole we have to close, and the value\'s still defendable here.',
+                ]);
             }
-            if (pos === 'QB') return 'At ' + label + ', I would only take ' + targetName + ' if the room leaves us a real QB value pocket. The point is insulation and weekly ceiling, not collecting another name.';
-            if (pos === 'RB') return 'At ' + label + ', ' + targetName + ' makes sense if we need a younger value swing against the roster age curve. I would not force RB over a cleaner tier at another position.';
-            if (['DL', 'LB', 'DB'].includes(pos)) return 'At ' + label + ', ' + targetName + ' is an IDP value bet. I would take it only if the room has not already drained the tier before our pick.';
-            return 'At ' + label + ', I would use ' + targetName + ' as a ' + needWord + ' checkpoint. If the board is flat, this is the kind of pick that keeps our build flexible without sacrificing ' + valueShortLabel + '.';
+            if (pos === 'QB') return avPick(seed, [
+                'At ' + label + ', I\'d only take ' + targetName + ' if the room leaves us a real QB value pocket. It\'s about insulation and weekly ceiling, not collecting another name.',
+                'At ' + label + ', ' + targetName + ' is a yes only if QB value falls to us — I\'m chasing ceiling, not a roster trophy.',
+            ]);
+            if (pos === 'RB') return avPick(seed, [
+                'At ' + label + ', ' + targetName + ' works if we want a younger swing against our age curve. I won\'t force RB over a cleaner tier somewhere else.',
+                'At ' + label + ', I\'d take ' + targetName + ' as an age-curve bet — but not at the cost of a better tier at another spot.',
+            ]);
+            if (['DL', 'LB', 'DB'].includes(pos)) return avPick(seed, [
+                'At ' + label + ', ' + targetName + ' is an IDP value bet — only if the room hasn\'t already drained the tier before us.',
+                'At ' + label + ', I\'ll grab ' + targetName + ' on the IDP side, provided the tier survives to our pick.',
+            ]);
+            return avPick(seed, [
+                'At ' + label + ', I\'d treat ' + targetName + ' as a ' + needWord + ' checkpoint. If the board\'s flat, this is the kind of pick that keeps us flexible without giving up ' + valueShortLabel + '.',
+                'At ' + label + ', ' + targetName + ' is my ' + needWord + ' fallback — flexible value when the board doesn\'t give us anything cleaner.',
+            ]);
         }, [compactPickLabel, nextPickLabel]);
 
         // Alex's Recommended Draft — simulates Alex's pick at each of the user's
@@ -1377,7 +1653,6 @@
                 const need = needLabels.find(n => n.pos === pos);
                 const alreadyClaimed = claimedByPos[pos] || 0;
 
-                const college = r.csv?.college || r.p?.college || r.p?.metadata?.college || '';
                 const nflTeam = r.csv?.nflTeam || r.p?.team || '';
                 const dRound = Number(r.csv?.draftRound) || 0;
                 const isUDFA = !!r.csv?.isUDFA && !dRound;
@@ -1386,21 +1661,15 @@
                 const consensusRank = r.consensusRank || r.csv?.rank || 0;
                 const risk = r.csv?.risk || '';
 
-                let capital = '';
-                if (dRound === 1) capital = 'Round 1 NFL capital';
-                else if (dRound === 2) capital = 'Round 2 capital';
-                else if (dRound === 3) capital = 'Round 3 capital';
-                else if (dRound >= 4) capital = 'Day 3 (R' + dRound + ') capital';
-                else if (isUDFA) capital = 'UDFA dart throw';
+                let pickShort = '';
+                if (dRound === 1) pickShort = 'R1';
+                else if (dRound === 2) pickShort = 'R2';
+                else if (dRound === 3) pickShort = 'R3';
+                else if (dRound >= 4) pickShort = 'Day 3';
+                else if (isUDFA) pickShort = 'UDFA';
 
-                let pedigree = '';
-                if (capital && college && nflTeam) pedigree = ' — ' + capital + ', ' + college + ' / ' + nflTeam;
-                else if (capital && college) pedigree = ' — ' + capital + ' out of ' + college;
-                else if (capital && nflTeam) pedigree = ' — ' + capital + ' / ' + nflTeam;
-                else if (college && nflTeam) pedigree = ' — ' + college + ' to ' + nflTeam;
-                else if (capital) pedigree = ' (' + capital + ')';
-                else if (college) pedigree = ' out of ' + college;
-                else if (nflTeam) pedigree = ' (landing in ' + nflTeam + ')';
+                const pedBits = [pickShort, nflTeam].filter(Boolean);
+                const pedigree = pedBits.length ? ' (' + pedBits.join(', ') + ')' : '';
 
                 const posGone = projectedPicks
                     .filter(p => Number(p.overall) < pickOverall && (normPos(p.pos) || p.pos) === pos)
@@ -1412,38 +1681,76 @@
 
                 const dhqText = r.dhq > 0 ? fmtDhq(r.dhq) + ' ' + valueShortLabel : '';
 
+                const seed = 'pr:' + pos + ':' + (r.pid || name) + ':' + pickOverall;
                 const sentences = [];
                 if (alreadyClaimed >= 1) {
-                    sentences.push('At ' + slot + ', ' + name + pedigree + ' doubles up the ' + pos + ' room — second swing now that we have already anchored the position.');
+                    sentences.push(avPick(seed + ':dbl', [
+                        'At ' + slot + ', I\'m doubling up on ' + pos + ' with ' + name + pedigree + ' — second swing now that we\'ve already anchored the spot.',
+                        'We\'ve got the ' + pos + ' anchor, so at ' + slot + ' I take another bite with ' + name + pedigree + '.',
+                    ]));
                 } else if (lastGone && posGone.length >= 2) {
-                    sentences.push('At ' + slot + ', ' + posGone.length + ' ' + pos + 's are off the board (' + lastGone.name + ' just went at ' + lastGoneSlot + '); ' + name + pedigree + ' is the next clean tier for us.');
+                    sentences.push(avPick(seed + ':run', [
+                        'At ' + slot + ', ' + posGone.length + ' ' + pos + 's are already gone (' + lastGone.name + ' just went at ' + lastGoneSlot + '), so ' + name + pedigree + ' is our next clean tier.',
+                        'The ' + pos + ' run is on — ' + posGone.length + ' off the board by ' + slot + ', ' + lastGone.name + ' the last at ' + lastGoneSlot + '. ' + name + pedigree + ' is who I grab.',
+                    ]));
                 } else if (lastGone) {
-                    sentences.push('At ' + slot + ', ' + name + pedigree + ' is our ' + pos + ' answer after ' + lastGone.name + ' came off at ' + lastGoneSlot + '.');
+                    sentences.push(avPick(seed + ':after', [
+                        'At ' + slot + ', ' + name + pedigree + ' is our ' + pos + ' answer right after ' + lastGone.name + ' came off at ' + lastGoneSlot + '.',
+                        'Once ' + lastGone.name + ' goes at ' + lastGoneSlot + ', I\'m on ' + name + pedigree + ' at ' + slot + ' to cover ' + pos + '.',
+                    ]));
                 } else if (need?.urgency === 'deficit') {
-                    sentences.push('At ' + slot + ', ' + name + pedigree + ' closes our ' + pos + ' deficit before the position run forces our hand.');
+                    sentences.push(avPick(seed + ':def', [
+                        'At ' + slot + ', ' + name + pedigree + ' closes our ' + pos + ' deficit before the run forces our hand.',
+                        'I take ' + name + pedigree + ' at ' + slot + ' to patch ' + pos + ' while we still can.',
+                    ]));
                 } else if (need) {
-                    sentences.push('At ' + slot + ', ' + name + pedigree + ' shores up a ' + pos + ' depth squeeze without reaching past the tier.');
+                    sentences.push(avPick(seed + ':shore', [
+                        'At ' + slot + ', ' + name + pedigree + ' shores up ' + pos + ' without making us reach.',
+                        name + pedigree + ' at ' + slot + ' adds the ' + pos + ' depth we want, no reach required.',
+                    ]));
                 } else {
-                    sentences.push('At ' + slot + ', ' + name + pedigree + ' is the strongest piece left on our board.');
+                    sentences.push(avPick(seed + ':bpa', [
+                        'At ' + slot + ', ' + name + pedigree + ' is simply the best piece left on our board.',
+                        'Easy call at ' + slot + ' — ' + name + pedigree + ' is the strongest name available to us.',
+                    ]));
                 }
 
                 // Second sentence: value + need framing, or pure BPA framing
                 if (need && alreadyClaimed === 0 && dhqText) {
                     const needWord = need.urgency === 'deficit' ? 'a deficit slot' : 'a real depth squeeze';
-                    sentences.push(pos + ' is ' + needWord + ' on our build, and ' + dhqText + ' is honest value at this pick.');
+                    sentences.push(avPick(seed + ':val', [
+                        pos + ' is ' + needWord + ' for us, and ' + dhqText + ' is honest value right here.',
+                        'With ' + pos + ' being ' + needWord + ', ' + dhqText + ' is more than fair at this pick.',
+                    ]));
                 } else if (alreadyClaimed >= 1 && dhqText) {
-                    sentences.push('At ' + dhqText + ', this is the kind of depth move that keeps the build flexible.');
+                    sentences.push(avPick(seed + ':val2', [
+                        'At ' + dhqText + ', this is the kind of depth move that keeps our build flexible.',
+                        dhqText + ' for a depth swing like this is exactly how we stay nimble.',
+                    ]));
                 } else if (dhqText) {
-                    sentences.push(dhqText + ' on the board — value over a positional reach.');
+                    sentences.push(avPick(seed + ':val3', [
+                        dhqText + ' on the board — I\'ll take value over a positional reach every time.',
+                        'That\'s ' + dhqText + ' sitting there; value wins over forcing a position.',
+                    ]));
                 }
 
                 // Optional third sentence: risk/age tag if it adds something
                 if (risk && /high|long.?shot|boom|bust/i.test(risk)) {
-                    sentences.push('Risk tag: ' + risk + (age ? ' at age ' + age : '') + '.');
+                    sentences.push(avPick(seed + ':risk', [
+                        'Fair warning — he\'s a ' + risk.toLowerCase() + (age ? ' at ' + age : '') + ', so know what you\'re signing up for.',
+                        'Risk\'s real here: ' + risk.toLowerCase() + (age ? ' at age ' + age : '') + '.',
+                    ]));
                 } else if (age && age <= 21 && firstName) {
-                    sentences.push(firstName + ' is a ' + age + '-year-old prospect — age curve still in front of him.');
+                    sentences.push(avPick(seed + ':age', [
+                        firstName + '\'s only ' + age + ' — the whole age curve is still in front of him.',
+                        'And at ' + age + ', ' + firstName + ' has years of runway left.',
+                    ]));
                 } else if (consensusRank && consensusRank <= 36) {
-                    sentences.push('Consensus board has him in the top ' + (consensusRank <= 12 ? '12' : consensusRank <= 24 ? '24' : '36') + ' of this class.');
+                    const band = consensusRank <= 12 ? '12' : consensusRank <= 24 ? '24' : '36';
+                    sentences.push(avPick(seed + ':rank', [
+                        'Consensus has him top ' + band + ' in this class, so we\'re not out on a limb.',
+                        'The industry\'s got him top ' + band + ' too — this isn\'t just my board talking.',
+                    ]));
                 }
 
                 return sentences.join(' ');
@@ -1529,10 +1836,27 @@
             compactPickLabel, needLabels,
         ]);
 
+        // Saved Alex reports (draft plans / class reads) — local cache + server sync.
+        const [savedReports, setSavedReports] = useState([]);
+        useEffect(() => {
+            let alive = true;
+            const load = () => {
+                const lid = window.S?.currentLeagueId || null;
+                const SR = window.WR?.SavedReports;
+                if (SR?.syncFromServer) {
+                    SR.syncFromServer(lid).then(rows => { if (alive) setSavedReports(rows || []); }).catch(() => {});
+                } else if (SR?.listLocal) {
+                    if (alive) setSavedReports(SR.listLocal(lid));
+                }
+            };
+            load();
+            const onSaved = () => load();
+            window.addEventListener('wr:report-saved', onSaved);
+            return () => { alive = false; window.removeEventListener('wr:report-saved', onSaved); };
+        }, []);
+
         const requestFullDraftReport = useCallback(() => {
-            if (typeof setReconPanelOpen !== 'function' || typeof sendReconMessage !== 'function') return;
             if (!rosterState.isUsable) { alert(rosterState.message); return; }
-            setReconPanelOpen(true);
             const needs = needLabels.map(n => n.pos + (n.urgency === 'deficit' ? ' critical' : '')).join(', ') || 'balanced';
             const picks = myPicks.filter(p => p.year === leagueSeason).map(fmtPick).join(', ') || 'unknown';
             const prompt = isRookieDraft
@@ -1542,21 +1866,18 @@
                 : `Generate a full ${leagueSeason} redraft plan from the current player pool.\n\n` +
                     `League size: ${leagueSize}\nMy needs: ${needs}\nMy draft slots: ${picks}\n\n` +
                     `Cover: positional tiers, early-round build paths, mid-round targets, late values, kicker/DST timing, and avoid zones. Use specific player names from the board.`;
-            sendReconMessage(prompt);
-        }, [setReconPanelOpen, sendReconMessage, rosterState.isUsable, rosterState.message, needLabels, myPicks, leagueSeason, leagueSize, fmtPick, isRookieDraft, skinFeatures.showDynastyValue]);
+            window.dispatchEvent(new CustomEvent('wr:ask-open', { detail: { title: leagueSeason + ' Draft Plan', prompt, kind: 'draft-plan' } }));
+        }, [rosterState.isUsable, rosterState.message, needLabels, myPicks, leagueSeason, leagueSize, fmtPick, isRookieDraft, skinFeatures.showDynastyValue]);
 
         const requestClassOverview = useCallback(() => {
-            if (typeof setReconPanelOpen !== 'function' || typeof sendReconMessage !== 'function') return;
-            setReconPanelOpen(true);
-            sendReconMessage(
-                isRookieDraft
-                    ? 'Give me a concise ' + leagueSeason + ' rookie class overview by position, including class strengths, cliff points, and where my current picks should attack.'
-                    : 'Give me a concise ' + leagueSeason + ' redraft board overview by position, including tier cliffs, scarce pockets, and where my draft slots should attack.'
-            );
-        }, [setReconPanelOpen, sendReconMessage, leagueSeason, isRookieDraft]);
+            const prompt = isRookieDraft
+                ? 'Give me a concise ' + leagueSeason + ' rookie class overview by position, including class strengths, cliff points, and where my current picks should attack.'
+                : 'Give me a concise ' + leagueSeason + ' redraft board overview by position, including tier cliffs, scarce pockets, and where my draft slots should attack.';
+            window.dispatchEvent(new CustomEvent('wr:ask-open', { detail: { title: leagueSeason + ' Class Read', prompt, kind: 'class-read' } }));
+        }, [leagueSeason, isRookieDraft]);
 
         // Tag button helper
-        const tagDefs = { target: { icon: '\u2605', color: '#2ECC71', label: 'Target' }, avoid: { icon: '\u2717', color: '#E74C3C', label: 'Avoid' }, sleeper: { icon: '\u26A1', color: '#3498DB', label: 'Sleeper' }, must: { icon: '\u2B50', color: '#D4AF37', label: 'Must' } };
+        const tagDefs = { target: { icon: '\u2605', color: 'var(--good)', label: 'Target' }, avoid: { icon: '\u2717', color: 'var(--bad)', label: 'Avoid' }, sleeper: { icon: '\u26A1', color: 'var(--k-3498db, #3498db)', label: 'Sleeper' }, must: { icon: '\u2B50', color: 'var(--gold)', label: 'Must' } };
 
         const draftViewLabels = { command: 'Flash Brief', board: 'Big Board', mock: 'Mock Draft Center', live: 'Live Draft' };
         const draftViewContext = {
@@ -1604,9 +1925,9 @@
                         <span>Rounds</span>
                         <select value={flashAnalystRoundLimit} onChange={e => setFlashAnalystRoundLimit(e.target.value)}>
                             {flashRoundOptions.map(round => (
-                                <option key={round} value={round} style={{ background: '#111' }}>{round}R</option>
+                                <option key={round} value={round} style={{ background: 'var(--k-111111, #111111)' }}>{round}R</option>
                             ))}
-                            <option value="full" style={{ background: '#111' }}>Full</option>
+                            <option value="full" style={{ background: 'var(--k-111111, #111111)' }}>Full</option>
                         </select>
                     </label>
                 </div>
@@ -1671,7 +1992,7 @@
         );
 
         return (
-            <div style={{ padding: 'var(--card-pad, 14px 16px)' }}>
+            <div style={{ padding: 'var(--card-pad, 16px 18px)' }}>
                 <div className={'wr-module-strip' + (activeView === 'live' || activeView === 'mock' ? ' is-compact' : '')}>
                     {(activeView !== 'live' && activeView !== 'mock') && (
                         <div className="wr-module-context">
@@ -1691,13 +2012,13 @@
                 </div>
 
                 {pickFocus && (
-                    <div className="draft-pick-context-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.24)', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
+                    <div className="draft-pick-context-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-md)', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: 'var(--card-radius-sm)', padding: 'var(--card-pad-sm)', marginBottom: 'var(--space-md)' }}>
                         <div style={{ minWidth: 0 }}>
-                            <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Pick Focus</span>
-                            <strong style={{ display: 'block', color: 'var(--white)', fontSize: '0.9rem', fontFamily: 'Rajdhani, sans-serif' }}>{pickFocusLabel}</strong>
+                            <span style={{ display: 'block', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Pick Focus</span>
+                            <strong style={{ display: 'block', color: 'var(--white)', fontSize: '0.9rem', fontFamily: 'var(--font-title)' }}>{pickFocusLabel}</strong>
                             <em style={{ display: 'block', color: 'var(--silver)', fontSize: '0.74rem', fontStyle: 'normal' }}>{pickFocusSummary || 'Opened from the pick ledger.'}</em>
                         </div>
-                        <button type="button" onClick={clearPickFocus} style={{ background: 'transparent', border: '1px solid rgba(212,175,55,0.32)', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
+                        <button type="button" onClick={clearPickFocus} style={{ background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: 'var(--card-radius-sm)', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', minHeight: '44px', textTransform: 'uppercase' }}>Clear</button>
                     </div>
                 )}
 
@@ -1767,13 +2088,13 @@
                                             <em>
                                                 {n.targetName ? (
                                                     <>
-                                                        <button type="button" onClick={() => openDraftPlayer(n.targetPid)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(212,175,55,0.35)' }}>{n.targetName}</button>
+                                                        <button type="button" onClick={() => openDraftPlayer(n.targetPid)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--acc-line2, rgba(212,175,55,0.35))' }}>{n.targetName}</button>
                                                         {n.targetDhq ? ' - ' + fmtDhq(n.targetDhq) + ' ' + valueShortLabel : ''}
-                                                        <button type="button" onClick={() => setBoardTags(prev => ({ ...prev, [n.targetPid]: 'target' }))} style={{ marginLeft: 6, border: '1px solid rgba(212,175,55,0.24)', background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', borderRadius: 5, padding: '2px 5px', fontSize: '0.54rem', fontFamily: 'var(--font-body)', cursor: 'pointer' }}>Tag</button>
+                                                        <button type="button" onClick={() => setBoardTags(prev => ({ ...prev, [n.targetPid]: 'target' }))} style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: 5, padding: '1px 7px', fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', cursor: 'pointer' }}>Tag</button>
                                                     </>
                                                 ) : (n.count ? n.count + ' players' : 'no clean target loaded')}
                                             </em>
-                                            <p>{n.alexBlurb}</p>
+                                            <p>{aiRosterNotes[n.pos] || n.alexBlurb}</p>
                                         </div>
                                     )) : <div className="draft-empty">No urgent roster gaps detected. Bias to value and tiers.</div>}
                                 </div>
@@ -1793,6 +2114,19 @@
                                             <button type="button" disabled={!aiRecommendedOrder.length || !boardPosFilter} onClick={() => applyAiOrderToUserBoard('position')}>Apply Position</button>
                                         </div>
                                     </div>
+                                    {savedReports.length > 0 && (
+                                        <div style={{ marginTop: 10, borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop: 8 }}>
+                                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--silver)', opacity: 0.6, marginBottom: 6 }}>Saved Reports</div>
+                                            {savedReports.slice(0, 6).map(r => (
+                                                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+                                                    <button type="button" title="Reopen report" onClick={() => window.dispatchEvent(new CustomEvent('wr:ask-show', { detail: { title: r.title, prompt: r.prompt, answer: r.content, kind: r.kind } }))} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 0, color: 'var(--silver)', cursor: 'pointer', font: 'inherit', fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0 }}>
+                                                        <span style={{ color: 'var(--gold)' }}>{'★'}</span> {r.title} <span style={{ opacity: 0.45 }}>{new Date(r.createdAt).toLocaleDateString()}</span>
+                                                    </button>
+                                                    <button type="button" title="Remove from list" onClick={() => { const lid = window.S?.currentLeagueId || null; window.WR?.SavedReports?.remove?.(lid, r.id); setSavedReports(prev => prev.filter(x => x.id !== r.id)); }} style={{ flexShrink: 0, background: 'transparent', border: 0, color: 'var(--silver)', opacity: 0.5, cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: '0 2px' }}>{'✕'}</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 {renderAnalystFlash()}
                             </aside>
@@ -1866,8 +2200,8 @@
                                             <strong style={{ color: posColors[row.pos] || 'var(--gold)' }}>{row.pos}</strong>
                                             <span>{row.count} top-60 {draftPoolNoun}</span>
                                             <em>
-                                                <button type="button" onClick={() => openDraftPlayer(row.topPid)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(212,175,55,0.35)' }}>{row.top}</button>
-                                                <button type="button" onClick={() => setBoardTags(prev => ({ ...prev, [row.topPid]: 'target' }))} style={{ marginLeft: 6, border: '1px solid rgba(212,175,55,0.24)', background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', borderRadius: 5, padding: '2px 5px', fontSize: '0.54rem', fontFamily: 'var(--font-body)', cursor: 'pointer' }}>Tag</button>
+                                                <button type="button" onClick={() => openDraftPlayer(row.topPid)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--acc-line2, rgba(212,175,55,0.35))' }}>{row.top}</button>
+                                                <button type="button" onClick={() => setBoardTags(prev => ({ ...prev, [row.topPid]: 'target' }))} style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: 5, padding: '1px 7px', fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', cursor: 'pointer' }}>Tag</button>
                                             </em>
                                             <p>{row.alexBlurb}</p>
                                         </div>
@@ -1916,8 +2250,8 @@
                             // Drawer shows one player; tier coloring lived on the Big Board column
                             // for scannability. Here we just keep the value readable in white.
                             const dhqC = 'var(--white)';
-                            const detailLabel = { display: 'block', color: 'var(--gold)', fontSize: '0.58rem', fontFamily: 'var(--font-body)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 };
-                            const detailBox = { border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.025)', borderRadius: 8, padding: '9px 10px', minWidth: 0 };
+                            const detailLabel = { display: 'block', color: 'var(--gold)', fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 };
+                            const detailBox = { border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: 'var(--card-radius-sm)', padding: '9px 10px', minWidth: 0 };
                             return (
                                 <div className="draft-scout-drawer-backdrop" onClick={() => setScoutDrawerPid(null)}>
                                     <div className="draft-scout-drawer" onClick={e => e.stopPropagation()}>
@@ -1943,9 +2277,9 @@
                                                             ['Age', age || '-'],
                                                             ['Profile', profileStr],
                                                         ].map(([label, value]) => (
-                                                            <div key={label} style={{ border: '1px solid rgba(255,255,255,0.055)', borderRadius: 6, padding: '6px 7px', background: 'rgba(255,255,255,0.02)' }}>
-                                                                <em style={{ display: 'block', color: 'var(--silver)', opacity: 0.58, fontStyle: 'normal', fontSize: '0.52rem', textTransform: 'uppercase' }}>{label}</em>
-                                                                <strong style={{ display: 'block', color: label === valueShortLabel ? dhqC : 'var(--white)', fontSize: '0.68rem', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</strong>
+                                                            <div key={label} style={{ border: '1px solid var(--ov-4, rgba(255,255,255,0.055))', borderRadius: 6, padding: '6px 7px', background: 'var(--ov-1, rgba(255,255,255,0.02))' }}>
+                                                                <em style={{ display: 'block', color: 'var(--silver)', opacity: 0.58, fontStyle: 'normal', fontSize: 'var(--text-micro)', textTransform: 'uppercase' }}>{label}</em>
+                                                                <strong style={{ display: 'block', color: label === valueShortLabel ? dhqC : 'var(--white)', fontSize: 'var(--text-micro, 0.6875rem)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</strong>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -1954,18 +2288,18 @@
                                                     <span style={detailLabel}>Scouting Report</span>
                                                     <div style={{ display: 'grid', gap: 6 }}>
                                                         {reportBits.map((bit, bi) => (
-                                                            <div key={bi} style={{ color: 'var(--white)', opacity: 0.92, fontSize: '0.72rem', lineHeight: 1.45, border: '1px solid rgba(255,255,255,0.055)', borderRadius: 6, padding: '7px 8px', background: 'rgba(255,255,255,0.018)' }}>{bit}</div>
+                                                            <div key={bi} style={{ color: 'var(--white)', opacity: 0.92, fontSize: '0.72rem', lineHeight: 1.45, border: '1px solid var(--ov-4, rgba(255,255,255,0.055))', borderRadius: 6, padding: '7px 8px', background: 'var(--ov-1, rgba(255,255,255,0.018))' }}>{bit}</div>
                                                         ))}
                                                     </div>
-                                                    {compText && <div style={{ color: 'var(--white)', opacity: 0.82, fontSize: '0.68rem', marginTop: 7 }}>Comp: {compText}</div>}
+                                                    {compText && <div style={{ color: 'var(--white)', opacity: 0.82, fontSize: 'var(--text-micro, 0.6875rem)', marginTop: 7 }}>Comp: {compText}</div>}
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                                                <button type="button" onClick={() => { setScoutDrawerPid(null); openInBigBoard(r.pid); }} style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(212,175,55,0.12)', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>OPEN IN BIG BOARD</button>
-                                                <a href={(isSeasonalDraftCtx ? 'https://www.pro-football-reference.com/search/search.fcgi?search=' : 'https://www.sports-reference.com/cfb/search/search.fcgi?search=') + encodeURIComponent(pName(r.p))} target="_blank" rel="noopener" style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.12)', color: '#3498DB', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>{isSeasonalDraftCtx ? 'PRO STATS' : 'COLLEGE STATS'}</a>
-                                                <a href={'https://www.youtube.com/results?search_query=' + encodeURIComponent(pName(r.p) + ' highlights ' + leagueSeason)} target="_blank" rel="noopener" style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.12)', color: '#E74C3C', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>HIGHLIGHTS</a>
-                                                <a href={'https://www.fantasypros.com/nfl/players/' + encodeURIComponent(((r.p.first_name || '') + '-' + (r.p.last_name || '')).toLowerCase().replace(/[^a-z-]/g, '')) + '.php'} target="_blank" rel="noopener" style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.15)', color: '#3498DB', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>FANTASYPROS</a>
-                                                <button type="button" onClick={() => { setBoardTags(prev => ({ ...prev, [r.pid]: prev[r.pid] === 'target' ? undefined : 'target' })); }} style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(46,204,113,0.12)', color: '#2ECC71', border: '1px solid rgba(46,204,113,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>{boardTags[r.pid] === 'target' ? 'UNTAG TARGET' : 'TAG TARGET'}</button>
+                                                <button type="button" onClick={() => { setScoutDrawerPid(null); openInBigBoard(r.pid); }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>OPEN IN BIG BOARD</button>
+                                                <a href={(isSeasonalDraftCtx ? 'https://www.pro-football-reference.com/search/search.fcgi?search=' : 'https://www.sports-reference.com/cfb/search/search.fcgi?search=') + encodeURIComponent(pName(r.p))} target="_blank" rel="noopener" style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.12)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>{isSeasonalDraftCtx ? 'PRO STATS' : 'COLLEGE STATS'}</a>
+                                                <a href={'https://www.youtube.com/results?search_query=' + encodeURIComponent(pName(r.p) + ' highlights ' + leagueSeason)} target="_blank" rel="noopener" style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.12)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>HIGHLIGHTS</a>
+                                                <a href={'https://www.fantasypros.com/nfl/players/' + encodeURIComponent(((r.p.first_name || '') + '-' + (r.p.last_name || '')).toLowerCase().replace(/[^a-z-]/g, '')) + '.php'} target="_blank" rel="noopener" style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.15)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>FANTASYPROS</a>
+                                                <button type="button" onClick={() => { setBoardTags(prev => ({ ...prev, [r.pid]: prev[r.pid] === 'target' ? undefined : 'target' })); }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(46,204,113,0.12)', color: 'var(--good)', border: '1px solid rgba(46,204,113,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>{boardTags[r.pid] === 'target' ? 'UNTAG TARGET' : 'TAG TARGET'}</button>
                                             </div>
                                         </div>
                                     </div>
@@ -2139,6 +2473,14 @@
                     const toggleSort = (key) => setBoardSort(prev => prev.key === key ? { ...prev, dir: prev.dir * -1 } : { key, dir: ['name','school','team','rank','tier','draft','speed','age'].includes(key) ? 1 : -1 });
                     const sortHdr = { cursor: 'pointer', userSelect: 'none' };
                     const renderCompactBoard = (players, isDhq) => {
+                        // Auto cross-off players already taken in the live draft (parallel to
+                        // the live Command Center board), merged with manual "Off" marks.
+                        const liveDrafted = (() => {
+                            try {
+                                const lid = window.S?.currentLeagueId || currentLeague?.league_id || currentLeague?.id;
+                                return window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids || null;
+                            } catch (e) { return null; }
+                        })();
                         const boardGridCols = isSeasonalDraft
                             ? '58px minmax(220px, 1.25fr) 96px 88px 68px 72px 64px minmax(156px, 0.95fr) 92px'
                             : '58px minmax(205px, 1.15fr) minmax(128px, 0.82fr) 88px 64px 58px 82px 64px 58px minmax(156px, 0.95fr) 92px';
@@ -2148,20 +2490,20 @@
                             </div>
                         );
                         const chip = (label, color, bg) => (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 16, padding: '0 5px', borderRadius: 4, background: bg || 'rgba(255,255,255,0.045)', color: color || 'var(--silver)', fontSize: '0.54rem', fontFamily: 'var(--font-body)', fontWeight: 800, whiteSpace: 'nowrap' }}>{label}</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 16, padding: '0 5px', borderRadius: 4, background: bg || 'var(--ov-3, rgba(255,255,255,0.045))', color: color || 'var(--silver)', fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', fontWeight: 800, whiteSpace: 'nowrap' }}>{label}</span>
                         );
                         const snapshotCell = (value, color, extra = {}) => (
                             <div style={{ padding: '4px 7px', minWidth: 0, ...extra }}>
                                 <strong style={{ display: 'block', color: color || 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.72rem', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value || '-'}</strong>
                             </div>
                         );
-                        const detailLabel = { display: 'block', color: 'var(--gold)', fontSize: '0.58rem', fontFamily: 'var(--font-body)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 };
-                        const detailBox = { border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.025)', borderRadius: 8, padding: '9px 10px', minWidth: 0 };
+                        const detailLabel = { display: 'block', color: 'var(--gold)', fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 };
+                        const detailBox = { border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: 'var(--card-radius-sm)', padding: '9px 10px', minWidth: 0 };
 
                         return (
-		                        <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '8px', maxHeight: 'none', overflowX: 'auto', overflowY: 'clip' }}>
+		                        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: 'var(--card-radius-sm)', maxHeight: 'none', overflowX: 'auto', WebkitOverflowScrolling: 'touch', overflowY: 'clip' }}>
 	                          <div style={{ minWidth: '100%' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: boardGridCols, minHeight: '34px', background: 'rgba(212,175,55,0.08)', borderBottom: '2px solid rgba(212,175,55,0.2)', fontSize: '0.66rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: boardGridCols, minHeight: '34px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1 }}>
                                 <div style={{ textAlign: 'center' }}>#</div>
                                 {boardHeaderCell('Player', 'name', { padding: '0 8px' })}
                                 {boardHeaderCell(isSeasonalDraft ? 'NFL Team' : 'College', isSeasonalDraft ? 'team' : 'school', { padding: '0 8px' })}
@@ -2176,8 +2518,8 @@
                             </div>
                             {players.map((r, idx) => {
                                 const pos = normPos(r.p.position) || r.p.position;
-                                const dhqC = r.dhq >= 7000 ? '#2ECC71' : r.dhq >= 4000 ? '#3498DB' : r.dhq >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.3)';
-                                const isDrafted = draftedPids.has(r.pid);
+                                const dhqC = r.dhq >= 7000 ? 'var(--good)' : r.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : r.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))';
+                                const isDrafted = draftedPids.has(r.pid) || !!(liveDrafted && liveDrafted[r.pid]);
                                 const tag = boardTags[r.pid];
                                 const note = boardNotes[r.pid] || '';
                                 const isExp = expandedDraftPid === r.pid;
@@ -2193,7 +2535,7 @@
                                 const draftStr = draftRound
                                     ? 'R' + draftRound + (draftPick ? '.' + String(draftPick).padStart(2,'0') : '')
                                     : draftPick ? '#' + draftPick : isTrueUdfa(cs) ? 'UDFA' : '';
-                                const draftCol = draftRound === 1 ? '#2ECC71' : draftRound && draftRound <= 3 ? 'var(--gold)' : isTrueUdfa(cs) ? 'var(--silver)' : 'rgba(255,255,255,0.42)';
+                                const draftCol = draftRound === 1 ? 'var(--good)' : draftRound && draftRound <= 3 ? 'var(--gold)' : isTrueUdfa(cs) ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.42))';
                                 const valueRank = valueRankMap.get(String(r.pid)) || null;
                                 const posRankList = posRankMaps[pos] || [];
                                 const posRank = posRankList.indexOf(String(r.pid)) >= 0 ? posRankList.indexOf(String(r.pid)) + 1 : null;
@@ -2258,52 +2600,52 @@
                                         onDragOver={!isDhq ? handleDragOver : undefined}
                                         onDrop={!isDhq ? () => handleDrop(r.pid) : undefined}
                                         onClick={openPlayerDetail}
-                                        style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : 1, borderBottom: isExp ? 'none' : '1px solid rgba(255,255,255,0.035)', cursor: 'pointer', background: isExp ? 'rgba(212,175,55,0.065)' : idx % 2 === 1 ? 'rgba(255,255,255,0.016)' : 'transparent', transition: 'background 0.1s', position: 'relative' }}
-                                        onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = 'rgba(212,175,55,0.04)'; }}
-                                        onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'rgba(255,255,255,0.016)' : 'transparent'; }}>
+                                        style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : 1, borderBottom: isExp ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: 'pointer', background: isExp ? 'var(--acc-fill1, rgba(212,175,55,0.065))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent', transition: 'background 0.1s', position: 'relative' }}
+                                        onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.04))'; }}
+                                        onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>
                                             <span>{idx + 1}</span>
                                             {!isDhq && (
                                                 <span style={{ display: 'inline-grid', gap: 2 }}>
-                                                    <button type="button" title="Move up" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, -1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid rgba(212,175,55,0.25)', borderRadius: 3, background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', cursor: 'pointer', fontSize: '0.52rem', padding: 0 }}>▲</button>
-                                                    <button type="button" title="Move down" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, 1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid rgba(212,175,55,0.25)', borderRadius: 3, background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', cursor: 'pointer', fontSize: '0.52rem', padding: 0 }}>▼</button>
+                                                    <button type="button" title="Move up" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, -1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▲</button>
+                                                    <button type="button" title="Move down" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, 1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▼</button>
                                                 </span>
                                             )}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, padding: '5px 7px' }}>
                                             <div style={{ width: 28, height: 28, flexShrink: 0 }}>
-                                                <img src={photoSrc} alt="" onError={e => e.target.style.display='none'} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', objectPosition: 'top', border: '1px solid rgba(212,175,55,0.22)' }} />
+                                                <img src={photoSrc} alt="" onError={e => e.target.style.display='none'} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', objectPosition: 'top', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))' }} />
                                             </div>
                                             <div style={{ minWidth: 0 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                                                     <strong style={{ color: 'var(--white)', fontSize: '0.76rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: isDrafted ? 'line-through' : 'none' }}>{pName(r.p)}</strong>
-                                                    {chip(pos, posColors[pos] || 'var(--silver)', (posColors[pos] || '#666') + '22')}
+                                                    {chip(pos, posColors[pos] || 'var(--silver)', (posColors[pos] || 'var(--k-666666, #666666)') + '22')}
                                                 </div>
                                             </div>
                                         </div>
-                                        {snapshotCell(isSeasonalDraft ? (team || 'FA') : (college || 'School TBD'), isSeasonalDraft && team ? '#2ECC71' : 'var(--silver)')}
+                                        {snapshotCell(isSeasonalDraft ? (team || 'FA') : (college || 'School TBD'), isSeasonalDraft && team ? 'var(--good)' : 'var(--silver)')}
                                         {snapshotCell(r.dhq > 0 ? r.dhq.toLocaleString() : '-', dhqC)}
                                         {snapshotCell(rankStr)}
                                         {snapshotCell(tierStr)}
                                         {showDraftCapitalColumn && snapshotCell(draftStr || 'Capital TBD', draftCol)}
-                                        {showDraftCapitalColumn && snapshotCell(team || 'TBD', team ? '#2ECC71' : 'var(--silver)')}
+                                        {showDraftCapitalColumn && snapshotCell(team || 'TBD', team ? 'var(--good)' : 'var(--silver)')}
                                         {snapshotCell(age || '-')}
-                                        {snapshotCell(profileStr, speedStr && parseFloat(speedStr) <= 4.45 ? '#2ECC71' : 'var(--white)')}
+                                        {snapshotCell(profileStr, speedStr && parseFloat(speedStr) <= 4.45 ? 'var(--good)' : 'var(--white)')}
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 6px' }}>
                                             <button type="button" onClick={e => { e.stopPropagation(); openPlayerDetail(); }}
-                                                style={{ fontSize: '0.55rem', padding: '3px 6px', border: '1px solid rgba(212,175,55,0.22)', borderRadius: 5, cursor: 'pointer', background: isExp ? 'rgba(212,175,55,0.14)' : 'rgba(255,255,255,0.035)', color: isExp ? 'var(--gold)' : 'var(--silver)', fontFamily: 'var(--font-body)', fontWeight: 800 }}>
+                                                style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '3px 6px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 5, cursor: 'pointer', background: isExp ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'var(--ov-3, rgba(255,255,255,0.035))', color: isExp ? 'var(--gold)' : 'var(--silver)', fontFamily: 'var(--font-body)', fontWeight: 800 }}>
                                                 {isExp ? 'Hide' : 'Open'}
                                             </button>
                                             {!isDhq && (
                                                 <button type="button" onClick={e => { e.stopPropagation(); setDraftedPids(prev => { const n = new Set(prev); if (n.has(r.pid)) n.delete(r.pid); else n.add(r.pid); return n; }); }}
-                                                    style={{ fontSize: '0.55rem', padding: '3px 6px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 5, cursor: 'pointer', background: isDrafted ? 'rgba(231,76,60,0.15)' : 'rgba(255,255,255,0.035)', color: isDrafted ? '#E74C3C' : 'var(--silver)', fontFamily: 'var(--font-body)', fontWeight: 800 }}>
+                                                    style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '3px 6px', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 5, cursor: 'pointer', background: isDrafted ? 'rgba(231,76,60,0.15)' : 'var(--ov-3, rgba(255,255,255,0.035))', color: isDrafted ? 'var(--bad)' : 'var(--silver)', fontFamily: 'var(--font-body)', fontWeight: 800 }}>
                                                     {isDrafted ? 'Undo' : 'Off'}
                                                 </button>
                                             )}
                                         </div>
                                     </div>
                                     {isExp && (
-                                        <div style={{ borderBottom: '2px solid rgba(212,175,55,0.25)', background: 'rgba(0,0,0,0.28)', padding: '13px 14px 15px', animation: 'wrFadeIn 0.2s ease' }}>
+                                        <div style={{ borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'rgba(0,0,0,0.28)', padding: '13px 14px 15px', animation: 'wrFadeIn 0.2s ease' }}>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 0.72fr) minmax(420px, 1.28fr)', gap: 9, marginBottom: 10 }}>
                                                 <div style={detailBox}>
                                                     <span style={detailLabel}>Card Snapshot</span>
@@ -2317,9 +2659,9 @@
                                                             ['Age', age || '-'],
                                                             ['Profile', [sizeStr, wtStr && wtStr + ' lb', speedStr && speedStr + ' 40'].filter(Boolean).join(' / ') || '-'],
                                                         ].map(([label, value]) => (
-                                                            <div key={label} style={{ border: '1px solid rgba(255,255,255,0.055)', borderRadius: 6, padding: '6px 7px', background: 'rgba(255,255,255,0.02)' }}>
-                                                                <em style={{ display: 'block', color: 'var(--silver)', opacity: 0.58, fontStyle: 'normal', fontSize: '0.52rem', textTransform: 'uppercase' }}>{label}</em>
-                                                                <strong style={{ display: 'block', color: label === valueShortLabel ? dhqC : 'var(--white)', fontSize: '0.68rem', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</strong>
+                                                            <div key={label} style={{ border: '1px solid var(--ov-4, rgba(255,255,255,0.055))', borderRadius: 6, padding: '6px 7px', background: 'var(--ov-1, rgba(255,255,255,0.02))' }}>
+                                                                <em style={{ display: 'block', color: 'var(--silver)', opacity: 0.58, fontStyle: 'normal', fontSize: 'var(--text-micro)', textTransform: 'uppercase' }}>{label}</em>
+                                                                <strong style={{ display: 'block', color: label === valueShortLabel ? dhqC : 'var(--white)', fontSize: 'var(--text-micro, 0.6875rem)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</strong>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -2328,13 +2670,13 @@
                                                     <span style={detailLabel}>Scouting Report</span>
                                                     <div style={{ display: 'grid', gap: 6 }}>
                                                         {reportBits.map((bit, bi) => (
-                                                            <div key={bi} style={{ color: 'var(--silver)', fontSize: '0.72rem', lineHeight: 1.45, border: '1px solid rgba(255,255,255,0.055)', borderRadius: 6, padding: '7px 8px', background: 'rgba(255,255,255,0.018)' }}>{bit}</div>
+                                                            <div key={bi} style={{ color: 'var(--silver)', fontSize: '0.72rem', lineHeight: 1.45, border: '1px solid var(--ov-4, rgba(255,255,255,0.055))', borderRadius: 6, padding: '7px 8px', background: 'var(--ov-1, rgba(255,255,255,0.018))' }}>{bit}</div>
                                                         ))}
                                                     </div>
-                                                    {compText && <div style={{ color: 'var(--white)', opacity: 0.82, fontSize: '0.68rem', marginTop: 7 }}>Comp: {compText}</div>}
+                                                    {compText && <div style={{ color: 'var(--white)', opacity: 0.82, fontSize: 'var(--text-micro, 0.6875rem)', marginTop: 7 }}>Comp: {compText}</div>}
                                                     {teamFitInsight && (
                                                         <div style={{ border: '1px solid rgba(46,204,113,0.18)', background: 'rgba(46,204,113,0.045)', borderRadius: 6, padding: '7px 8px', marginTop: 7 }}>
-                                                            <span style={{ display: 'block', color: '#2ECC71', fontSize: '0.56rem', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Alex NFL Fit</span>
+                                                            <span style={{ display: 'block', color: 'var(--good)', fontSize: 'var(--text-micro)', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Alex NFL Fit</span>
                                                             <div style={{ color: 'var(--silver)', fontSize: '0.7rem', lineHeight: 1.42 }}>{teamFitInsight}</div>
                                                         </div>
                                                     )}
@@ -2346,19 +2688,19 @@
                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,1fr) minmax(260px,0.9fr)', gap: 10, alignItems: 'start', marginTop: 10 }}>
                                                 <div style={detailBox}>
                                                     <span style={detailLabel}>Front Office Notes</span>
-                                                    <textarea value={note} onChange={e => setBoardNotes(prev => ({...prev, [r.pid]: e.target.value}))} onClick={e => e.stopPropagation()} placeholder={'Add your scouting notes on ' + pName(r.p) + '...'} style={{ width: '100%', minHeight: 82, padding: '8px 10px', fontSize: '0.76rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, color: 'var(--silver)', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5, outline: 'none' }} />
+                                                    <textarea value={note} onChange={e => setBoardNotes(prev => ({...prev, [r.pid]: e.target.value}))} onClick={e => e.stopPropagation()} placeholder={'Add your scouting notes on ' + pName(r.p) + '...'} style={{ width: '100%', minHeight: 82, padding: '8px 10px', fontSize: '0.76rem', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 6, color: 'var(--silver)', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5, outline: 'none' }} />
                                                 </div>
                                                 <div style={detailBox}>
                                                     <span style={detailLabel}>Research / Actions</span>
                                                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 9 }}>
                                                         {Object.entries(tagDefs).map(([tKey, tDef]) => (
-                                                            <button key={tKey} type="button" onClick={(e) => { e.stopPropagation(); const wasActive = boardTags[r.pid] === tKey; setBoardTags(prev => ({ ...prev, [r.pid]: prev[r.pid] === tKey ? undefined : tKey })); if (!wasActive) { window.wrLogAction?.('TAG', 'Tagged ' + pName(r.p) + ' on draft board', 'draft', { players: [{ name: pName(r.p) }], actionType: 'board-tag' }); } }} style={{ padding: '4px 9px', fontSize: '0.64rem', fontFamily: 'var(--font-body)', fontWeight: 800, borderRadius: 6, cursor: 'pointer', border: '1px solid ' + (tag === tKey ? tDef.color : 'rgba(255,255,255,0.12)'), background: tag === tKey ? tDef.color + '25' : 'rgba(255,255,255,0.03)', color: tag === tKey ? tDef.color : 'var(--silver)' }}>{tDef.label}</button>
+                                                            <button key={tKey} type="button" onClick={(e) => { e.stopPropagation(); const wasActive = boardTags[r.pid] === tKey; setBoardTags(prev => ({ ...prev, [r.pid]: prev[r.pid] === tKey ? undefined : tKey })); if (!wasActive) { window.wrLogAction?.('TAG', 'Tagged ' + pName(r.p) + ' on draft board', 'draft', { players: [{ name: pName(r.p) }], actionType: 'board-tag' }); } }} style={{ padding: '4px 9px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', fontWeight: 800, borderRadius: 6, cursor: 'pointer', border: '1px solid ' + (tag === tKey ? tDef.color : 'var(--ov-6, rgba(255,255,255,0.12))'), background: tag === tKey ? wrAlpha(tDef.color, '25') : 'var(--ov-2, rgba(255,255,255,0.03))', color: tag === tKey ? tDef.color : 'var(--silver)' }}>{tDef.label}</button>
                                                         ))}
                                                     </div>
                                                     <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                                                        <a href={(isSeasonalDraft ? 'https://www.pro-football-reference.com/search/search.fcgi?search=' : 'https://www.sports-reference.com/cfb/search/search.fcgi?search=') + encodeURIComponent(pName(r.p))} target="_blank" rel="noopener" title={isSeasonalDraft ? 'Open Pro Football Reference player search in a new tab' : 'Open Sports Reference college stats in a new tab'} onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.12)', color: '#3498DB', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>{isSeasonalDraft ? 'PRO STATS' : 'COLLEGE STATS'}</a>
-                                                        <a href={'https://www.youtube.com/results?search_query=' + encodeURIComponent(pName(r.p) + ' highlights ' + leagueSeason)} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.12)', color: '#E74C3C', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>HIGHLIGHTS</a>
-                                                        <a href={'https://www.fantasypros.com/nfl/players/' + encodeURIComponent(((r.p.first_name || '') + '-' + (r.p.last_name || '')).toLowerCase().replace(/[^a-z-]/g, '')) + '.php'} target="_blank" rel="noopener" title="Open FantasyPros player news and profile in a new tab" aria-label={'Open FantasyPros news for ' + pName(r.p)} onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.15)', color: '#3498DB', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>FANTASYPROS NEWS</a>
+                                                        <a href={(isSeasonalDraft ? 'https://www.pro-football-reference.com/search/search.fcgi?search=' : 'https://www.sports-reference.com/cfb/search/search.fcgi?search=') + encodeURIComponent(pName(r.p))} target="_blank" rel="noopener" title={isSeasonalDraft ? 'Open Pro Football Reference player search in a new tab' : 'Open Sports Reference college stats in a new tab'} onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.12)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>{isSeasonalDraft ? 'PRO STATS' : 'COLLEGE STATS'}</a>
+                                                        <a href={'https://www.youtube.com/results?search_query=' + encodeURIComponent(pName(r.p) + ' highlights ' + leagueSeason)} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.12)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>HIGHLIGHTS</a>
+                                                        <a href={'https://www.fantasypros.com/nfl/players/' + encodeURIComponent(((r.p.first_name || '') + '-' + (r.p.last_name || '')).toLowerCase().replace(/[^a-z-]/g, '')) + '.php'} target="_blank" rel="noopener" title="Open FantasyPros player news and profile in a new tab" aria-label={'Open FantasyPros news for ' + pName(r.p)} onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.15)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>FANTASYPROS NEWS</a>
                                                         <button type="button" onClick={e => {
                                                             e.stopPropagation();
                                                             const name = pName(r.p);
@@ -2375,8 +2717,8 @@
                                                                 const context = isSeasonalDraft ? (posLabel(pos) + ', ' + (team || 'FA') + ', age ' + (age || 'unknown') + ', ' + rankStr + ' board rank, ' + tierStr + ' tier') : (posLabel(pos) + ', ' + college);
                                                                 sendReconMessage('Give me a full ' + (isSeasonalDraft ? 'redraft NFL player scouting report' : 'rookie scouting report') + ' on ' + name + ' (' + context + '). Include role, production profile, weekly floor, ceiling, risk, comparable players, and where I should draft him in this league format.');
                                                             }
-                                                        }} style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: '#9b8afb', border: '1px solid rgba(124,107,248,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>ASK ALEX</button>
-                                                        <button type="button" onClick={e => { e.stopPropagation(); setExpandedDraftPid(null); }} style={{ padding: '7px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>COLLAPSE</button>
+                                                        }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: 'var(--purple)', border: '1px solid rgba(124,107,248,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>ASK ALEX</button>
+                                                        <button type="button" onClick={e => { e.stopPropagation(); setExpandedDraftPid(null); }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>COLLAPSE</button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2401,16 +2743,23 @@
                         { k: 'my', label: 'User Board', sub: 'editable front office board', detail: myBoardOrder.length ? 'Manual order with your notes, tags, and draft prep.' : 'Starts from AI Recommended, then becomes yours when edited.' },
                     ];
                     const activeBoardInfo = boardModeOptions.find(opt => opt.k === boardMode) || boardModeOptions[0];
-                    const visibleBoardPlayers = boardMode === 'my' ? myBoardPlayers : boardMode === 'ai' ? aiBoardPlayers : dhqBoardPlayers;
+                    const allBoardPlayers = boardMode === 'my' ? myBoardPlayers : boardMode === 'ai' ? aiBoardPlayers : dhqBoardPlayers;
+                    const boardQuery = boardSearch.trim().toLowerCase();
+                    const visibleBoardPlayers = !boardQuery ? allBoardPlayers : allBoardPlayers.filter(r => {
+                        const name = pName(r.p).toLowerCase();
+                        const team = String(r.csv?.nflTeam || r.p?.team || '').toLowerCase();
+                        const college = String(r.csv?.college || r.p?.college || r.p?.metadata?.college || '').toLowerCase();
+                        return name.includes(boardQuery) || team.includes(boardQuery) || college.includes(boardQuery);
+                    });
                     const manualSignalCount = Object.keys(boardNotes || {}).length + Object.values(boardTags || {}).filter(Boolean).length;
 
                     return (
                     <div>
-                        <section style={{ border: '1px solid rgba(212,175,55,0.18)', borderRadius: 10, background: 'linear-gradient(135deg, rgba(212,175,55,0.08), rgba(255,255,255,0.018))', padding: '14px 15px', marginBottom: 12 }}>
+                        <section style={{ border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: 'var(--card-radius)', background: 'linear-gradient(135deg, var(--acc-fill2, rgba(212,175,55,0.08)), var(--ov-1, rgba(255,255,255,0.018)))', padding: '14px 15px', marginBottom: 12 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
                                 <div style={{ minWidth: 0 }}>
-	                                    <div style={{ color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: '0.66rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>{isRookieDraft ? 'Draft Big Board' : 'Redraft Big Board'}</div>
-                                    <h3 style={{ margin: 0, color: 'var(--white)', fontFamily: 'Rajdhani, sans-serif', fontSize: '1.22rem', lineHeight: 1.05 }}>{activeBoardInfo.label}</h3>
+	                                    <div style={{ color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>{isRookieDraft ? 'Draft Big Board' : 'Redraft Big Board'}</div>
+                                    <h3 style={{ margin: 0, color: 'var(--white)', fontFamily: 'var(--font-title)', fontSize: '1.22rem', lineHeight: 1.05 }}>{activeBoardInfo.label}</h3>
                                     <p style={{ margin: '4px 0 0', color: 'var(--silver)', opacity: 0.72, fontSize: '0.76rem', lineHeight: 1.45 }}>{activeBoardInfo.detail}</p>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(74px,1fr))', gap: 6, minWidth: 250 }}>
@@ -2419,9 +2768,9 @@
                                         { label: 'Notes/Tags', value: manualSignalCount },
                                         { label: 'AI Seed', value: aiBoardPlayers.length ? 'Ready' : 'Build' },
                                     ].map(item => (
-                                        <div key={item.label} style={{ padding: '7px 8px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.18)' }}>
-                                            <span style={{ display: 'block', color: 'var(--silver)', opacity: 0.6, fontSize: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{item.label}</span>
-                                            <strong style={{ display: 'block', color: 'var(--gold)', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', marginTop: 2 }}>{item.value}</strong>
+                                        <div key={item.label} style={{ padding: '7px 8px', borderRadius: 'var(--card-radius-sm)', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', background: 'rgba(0,0,0,0.18)' }}>
+                                            <span style={{ display: 'block', color: 'var(--silver)', opacity: 0.6, fontSize: 'var(--text-micro)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{item.label}</span>
+                                            <strong style={{ display: 'block', color: 'var(--gold)', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', marginTop: 2 }}>{item.value}</strong>
                                         </div>
                                     ))}
                                 </div>
@@ -2430,42 +2779,56 @@
                                 {boardModeOptions.map(opt => (
                                     <button key={opt.k} type="button" onClick={() => setBoardMode(opt.k)} style={{
                                         padding: '9px 11px',
-                                        borderRadius: 8,
-                                        border: '1px solid ' + (boardMode === opt.k ? 'rgba(212,175,55,0.52)' : 'rgba(255,255,255,0.08)'),
-                                        background: boardMode === opt.k ? 'rgba(212,175,55,0.14)' : 'rgba(255,255,255,0.025)',
+                                        borderRadius: 'var(--card-radius-sm)',
+                                        border: '1px solid ' + (boardMode === opt.k ? 'var(--acc-line4, rgba(212,175,55,0.52))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                                        background: boardMode === opt.k ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'var(--ov-2, rgba(255,255,255,0.025))',
                                         color: boardMode === opt.k ? 'var(--gold)' : 'var(--silver)',
                                         cursor: 'pointer',
                                         textAlign: 'left',
                                         fontFamily: 'var(--font-body)',
                                     }}>
                                         <strong style={{ display: 'block', color: boardMode === opt.k ? 'var(--gold)' : 'var(--white)', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{opt.label}</strong>
-                                        <span style={{ display: 'block', opacity: 0.66, fontSize: '0.62rem', marginTop: 2 }}>{opt.sub}</span>
+                                        <span style={{ display: 'block', opacity: 0.66, fontSize: 'var(--text-micro, 0.6875rem)', marginTop: 2 }}>{opt.sub}</span>
                                     </button>
                                 ))}
                             </div>
                         </section>
 
+                        {/* Player search */}
+                        <div style={{ position: 'relative', marginBottom: '8px' }}>
+                            <input
+                                type="text"
+                                value={boardSearch}
+                                onChange={e => setBoardSearch(e.target.value)}
+                                placeholder="Search players, teams, colleges..."
+                                style={{ width: '100%', padding: '9px 30px 9px 12px', minHeight: '44px', fontSize: '0.8rem', fontFamily: 'var(--font-body)', background: 'var(--ov-2, rgba(255,255,255,0.03))', color: 'var(--white)', border: '1px solid ' + (boardSearch ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), borderRadius: '10px', outline: 'none', boxSizing: 'border-box' }}
+                            />
+                            {boardSearch && (
+                                <button onClick={() => setBoardSearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--silver)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '4px' }} aria-label="Clear search">{'×'}</button>
+                            )}
+                        </div>
+
                         {/* Position filters */}
                         <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <button onClick={() => setBoardPosFilter('')} style={{ padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (!boardPosFilter ? 'rgba(212,175,55,0.3)' : 'rgba(255,255,255,0.08)'), background: !boardPosFilter ? 'rgba(212,175,55,0.12)' : 'transparent', color: !boardPosFilter ? 'var(--gold)' : 'var(--silver)' }}>Master</button>
+                            <button onClick={() => setBoardPosFilter('')} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (!boardPosFilter ? 'var(--acc-line2, rgba(212,175,55,0.3))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: !boardPosFilter ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent', color: !boardPosFilter ? 'var(--gold)' : 'var(--silver)' }}>Master</button>
                             {(typeof getLeaguePositions === 'function' ? getLeaguePositions() : ['QB','RB','WR','TE','K','DEF','DL','LB','DB']).map(pos => (
-                                <button key={pos} onClick={() => setBoardPosFilter(boardPosFilter === pos ? '' : pos)} style={{ padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (boardPosFilter === pos ? (posColors[pos] || '#666') + '55' : 'rgba(255,255,255,0.08)'), background: boardPosFilter === pos ? (posColors[pos] || '#666') + '18' : 'transparent', color: boardPosFilter === pos ? posColors[pos] : 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</button>
+                                <button key={pos} onClick={() => setBoardPosFilter(boardPosFilter === pos ? '' : pos)} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '55' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '18' : 'transparent', color: boardPosFilter === pos ? posColors[pos] : 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</button>
                             ))}
-                            <span style={{ marginLeft: 'auto', fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Use arrows or drag to reorder My Board</span>
+                            <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Use arrows or drag to reorder My Board</span>
                         </div>
 
                         {/* Team & Round filters */}
                         <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Team</span>
-                                <select value={boardTeamFilter} onChange={e => setBoardTeamFilter(e.target.value)} style={{ padding: '3px 6px', fontSize: '0.7rem', fontFamily: 'JetBrains Mono, monospace', background: 'rgba(255,255,255,0.04)', color: boardTeamFilter ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (boardTeamFilter ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.1)'), borderRadius: '6px', cursor: 'pointer', outline: 'none' }}>
+                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Team</span>
+                                <select value={boardTeamFilter} onChange={e => setBoardTeamFilter(e.target.value)} style={{ padding: '3px 6px', minHeight: '44px', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: boardTeamFilter ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (boardTeamFilter ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', outline: 'none' }}>
                                     <option value="">All teams</option>
                                     {availableTeams.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                             </div>
 	                            {isRookieDraft && (
 	                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-	                                <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: '2px' }}>Round</span>
+	                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: '2px' }}>Round</span>
 	                                {[
 	                                    { k: '', label: 'All' },
 	                                    { k: '1', label: 'R1' },
@@ -2477,17 +2840,17 @@
 	                                    { k: '7', label: 'R7' },
 	                                    { k: 'UDFA', label: 'UDFA' },
 	                                ].map(opt => (
-	                                    <button key={opt.k} onClick={() => setBoardRoundFilter(boardRoundFilter === opt.k ? '' : opt.k)} style={{ padding: '3px 8px', fontSize: '0.66rem', fontFamily: 'var(--font-body)', borderRadius: '10px', cursor: 'pointer', border: '1px solid ' + (boardRoundFilter === opt.k ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'), background: boardRoundFilter === opt.k ? 'rgba(212,175,55,0.14)' : 'transparent', color: boardRoundFilter === opt.k ? 'var(--gold)' : 'var(--silver)' }}>{opt.label}</button>
+	                                    <button key={opt.k} onClick={() => setBoardRoundFilter(boardRoundFilter === opt.k ? '' : opt.k)} style={{ padding: '3px 8px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', borderRadius: '10px', cursor: 'pointer', border: '1px solid ' + (boardRoundFilter === opt.k ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardRoundFilter === opt.k ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'transparent', color: boardRoundFilter === opt.k ? 'var(--gold)' : 'var(--silver)' }}>{opt.label}</button>
 	                                ))}
 	                            </div>
 	                            )}
                             {(boardTeamFilter || boardRoundFilter) && (
-                                <button onClick={() => { setBoardTeamFilter(''); setBoardRoundFilter(''); }} style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: '0.64rem', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', cursor: 'pointer' }}>Clear</button>
+                                <button onClick={() => { setBoardTeamFilter(''); setBoardRoundFilter(''); }} style={{ marginLeft: 'auto', padding: '3px 10px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '10px', cursor: 'pointer' }}>Clear</button>
                             )}
                         </div>
 
                         <div style={{ marginBottom: '14px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 8, color: 'var(--silver)', opacity: 0.65, fontSize: '0.68rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 8, color: 'var(--silver)', opacity: 0.65, fontSize: 'var(--text-micro, 0.6875rem)' }}>
                                 <span>{activeBoardInfo.label} - {visibleBoardPlayers.length} visible players</span>
                                 <span>{boardMode === 'my' ? 'Drag rows to reorder - click a player for notes' : 'Switch to User Board to edit rank order'}</span>
                             </div>
@@ -2512,7 +2875,7 @@
                         );
                     }
                     return (
-                        <div style={{ padding: '20px', color: '#E74C3C', textAlign: 'center', fontSize: '0.9rem' }}>
+                        <div style={{ padding: '20px', color: 'var(--bad)', textAlign: 'center', fontSize: '0.9rem' }}>
                             Mock Draft Center failed to load. Check console for errors.
                         </div>
                     );
@@ -2534,11 +2897,17 @@
                         );
                     }
                     return (
-                        <div style={{ padding: '20px', color: '#E74C3C', textAlign: 'center', fontSize: '0.9rem' }}>
+                        <div style={{ padding: '20px', color: 'var(--bad)', textAlign: 'center', fontSize: '0.9rem' }}>
                             Live Draft Follower failed to load. Check console for errors.
                         </div>
                     );
                 })()}
+
+                {/* Dedicated Alex answer window for Flash Brief report buttons —
+                    command-center (which normally mounts this) isn't rendered on this view. */}
+                {activeView === 'command' && window.DraftCC && window.DraftCC.AskAnswerWindow
+                    ? React.createElement(window.DraftCC.AskAnswerWindow, { state: null })
+                    : null}
 
             </div>
         );

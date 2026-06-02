@@ -269,7 +269,7 @@ function IntelligenceBriefWidget({
         return map[key] || '\u{1F9E0}';
     })();
 
-    const cardStyle = { background: 'var(--black)', border: 'var(--card-border, 1px solid rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius, 10px)', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
+    const cardStyle = { background: 'var(--black)', border: 'var(--card-border, 1px solid var(--acc-line1, rgba(212,175,55,0.2)))', borderRadius: 'var(--card-radius, 10px)', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
     const goTo = (target) => {
         if (navigateWidget) navigateWidget(target);
         else if (setActiveTab) setActiveTab(target);
@@ -292,7 +292,7 @@ function IntelligenceBriefWidget({
             icon: '🎯', tab: 'fa',
 	            title: p.waiver(waiverTarget.name, waiverTarget.pos, waiverTarget.dhq),
 	            detail: [
-	                React.createElement('span', { key: 'n', style: { color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }, onClick: e => { e.stopPropagation(); if (typeof window.openPlayerModal === 'function' && waiverTarget.pid) window.openPlayerModal(waiverTarget.pid); } }, waiverTarget.name),
+	                React.createElement('span', { key: 'n', style: { color: 'var(--gold)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }, onClick: e => { e.stopPropagation(); if (typeof window.openPlayerModal === 'function' && waiverTarget.pid) window.openPlayerModal(waiverTarget.pid); } }, waiverTarget.name),
 	                ` · ${waiverTarget.pos} · DHQ ${waiverTarget.dhq.toLocaleString()} · ${waiverTarget.why || ('Fills your ' + waiverTarget.pos + ' gap.')}`,
 	            ],
 	        });
@@ -304,7 +304,7 @@ function IntelligenceBriefWidget({
             detail: [
                 ...keyDrops.map((d, i) => [
                     i > 0 ? ', ' : '',
-                    React.createElement('span', { key: d.pid || i, style: { color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }, onClick: e => { e.stopPropagation(); if (typeof window.openPlayerModal === 'function' && d.pid) window.openPlayerModal(d.pid); } }, `${d.name} (${d.pos}, ${d.dhq.toLocaleString()})`),
+                    React.createElement('span', { key: d.pid || i, style: { color: 'var(--gold)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }, onClick: e => { e.stopPropagation(); if (typeof window.openPlayerModal === 'function' && d.pid) window.openPlayerModal(d.pid); } }, `${d.name} (${d.pos}, ${d.dhq.toLocaleString()})`),
                 ]).flat(),
                 '. Might be worth scooping up before someone else does.',
             ],
@@ -332,25 +332,26 @@ function IntelligenceBriefWidget({
     }
 
     // ── Reusable action button ───────────────────────────────────────
-    const baseBtn = { background: 'rgba(212,175,55,0.05)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '10px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500, textAlign: 'left', display: 'flex', alignItems: 'flex-start', gap: '10px', transition: 'all 0.15s', lineHeight: 1.4 };
+    const baseBtn = { background: 'var(--acc-fill1, rgba(212,175,55,0.05))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '10px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500, textAlign: 'left', display: 'flex', alignItems: 'flex-start', gap: '10px', transition: 'all 0.15s', lineHeight: 1.4 };
     function renderActionBtn(a, key, opts = {}) {
         const compact = !!opts.compact;
         const btnStyle = {
             ...baseBtn,
             padding: compact ? '6px 10px' : '12px 16px',
+            minHeight: '44px',
             fontSize: compact ? '0.72rem' : '0.82rem',
             ...(opts.style || {}),
         };
         return React.createElement('button', {
             key,
             onClick: () => goTo(a.tab), style: btnStyle,
-            onMouseEnter: e => e.currentTarget.style.background = 'rgba(212,175,55,0.15)',
-            onMouseLeave: e => e.currentTarget.style.background = 'rgba(212,175,55,0.05)',
+            onMouseEnter: e => e.currentTarget.style.background = 'var(--acc-fill3, rgba(212,175,55,0.15))',
+            onMouseLeave: e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))',
         },
             React.createElement('span', { style: { fontSize: compact ? '0.85rem' : '1rem', flexShrink: 0 } }, a.icon),
             React.createElement('div', { style: { minWidth: 0, flex: 1 } },
                 React.createElement('div', { style: { fontWeight: 600, color: 'var(--white)', fontSize: compact ? '0.74rem' : '0.85rem' } }, a.title),
-                !compact && React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--silver)', marginTop: '2px' } },
+                !compact && React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '2px' } },
                     Array.isArray(a.detail) ? a.detail : a.detail
                 ),
             ),
@@ -360,7 +361,7 @@ function IntelligenceBriefWidget({
     // ── Reusable header ─────────────────────────────────────────────
     function header(opts = {}) {
         const tight = !!opts.tight;
-        return React.createElement('div', { style: { padding: tight ? '8px 14px 6px' : '20px 20px 0', borderBottom: '1px solid rgba(212,175,55,0.1)', paddingBottom: tight ? '6px' : '12px', flexShrink: 0 } },
+        return React.createElement('div', { style: { padding: tight ? '8px 14px 6px' : '20px 20px 0', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', paddingBottom: tight ? '6px' : '12px', flexShrink: 0 } },
             React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: tight ? '0.62rem' : '0.72rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: tight ? '2px' : '4px', display: 'flex', alignItems: 'center', gap: '6px' } },
                 React.createElement('span', { style: { fontSize: tight ? '0.8rem' : '0.9rem' } }, alexAvatar),
                 'INTELLIGENCE BRIEFING',
@@ -374,7 +375,7 @@ function IntelligenceBriefWidget({
         return React.createElement('div', { onClick: () => goTo('alex'), style: { ...cardStyle, cursor: 'pointer' } },
             header({ tight: true }),
             React.createElement('div', { style: { padding: '10px 14px', flex: 1, display: 'flex', alignItems: 'center', overflow: 'hidden' } },
-                React.createElement('div', { style: { fontSize: '0.78rem', color: 'var(--silver)', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' } }, threeSentence),
+                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' } }, threeSentence),
             ),
         );
     }
@@ -385,7 +386,7 @@ function IntelligenceBriefWidget({
         return React.createElement('div', { style: cardStyle },
             header({ tight: true }),
             React.createElement('div', { style: { padding: '10px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden' } },
-                React.createElement('div', { style: { fontSize: '0.78rem', color: 'var(--silver)', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, oneSentence),
+                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, oneSentence),
                 React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, minHeight: 0 } },
                     ...top3.map((a, i) => renderActionBtn(a, 'lg-' + i, { compact: true, titleClamp: 1 })),
                 ),
@@ -398,7 +399,7 @@ function IntelligenceBriefWidget({
         return React.createElement('div', { style: cardStyle },
             header(),
             React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
-                React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
+                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
                 React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
                     ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'tall-' + i)),
                 ),
@@ -412,7 +413,7 @@ function IntelligenceBriefWidget({
         return React.createElement('div', { style: cardStyle },
             header({ tight: true }),
             React.createElement('div', { style: { padding: '10px 14px', flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' } },
-                React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.65, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 9, WebkitBoxOrient: 'vertical' } }, briefText),
+                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.65, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 9, WebkitBoxOrient: 'vertical' } }, briefText),
                 React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', minHeight: 0 } },
                     ...top4.map((a, i) => renderActionBtn(a, 'xl-' + i, { compact: true, titleClamp: 2 })),
                 ),
@@ -426,12 +427,12 @@ function IntelligenceBriefWidget({
 
         const myDHQ = (myRoster?.players || []).reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0);
         const kpis = [
-            { label: 'HEALTH', value: hs, col: hs >= 80 ? '#2ECC71' : hs >= 60 ? '#D4AF37' : hs >= 40 ? '#F0A500' : '#E74C3C' },
-            { label: 'RANK', value: '#' + (myRank || '—'), col: '#D4AF37' },
-            { label: 'TIER', value: tier, col: tier === 'ELITE' ? '#2ECC71' : tier === 'CONTENDER' ? '#D4AF37' : tier === 'CROSSROADS' ? '#F0A500' : '#E74C3C' },
-            { label: 'ELITES', value: elites, col: '#2ECC71' },
-            { label: 'DHQ', value: myDHQ >= 1000 ? Math.round(myDHQ / 1000) + 'k' : myDHQ, col: '#D4AF37' },
-            { label: 'FAAB', value: budget > 0 ? '$' + faabRemaining : '—', col: '#7C6BF8' },
+            { label: 'HEALTH', value: hs, col: hs >= 80 ? 'var(--good)' : hs >= 60 ? 'var(--gold)' : hs >= 40 ? 'var(--warn)' : 'var(--bad)' },
+            { label: 'RANK', value: '#' + (myRank || '—'), col: 'var(--gold)' },
+            { label: 'TIER', value: tier, col: tier === 'ELITE' ? 'var(--good)' : tier === 'CONTENDER' ? 'var(--gold)' : tier === 'CROSSROADS' ? 'var(--warn)' : 'var(--bad)' },
+            { label: 'ELITES', value: elites, col: 'var(--good)' },
+            { label: 'DHQ', value: myDHQ >= 1000 ? Math.round(myDHQ / 1000) + 'k' : myDHQ, col: 'var(--gold)' },
+            { label: 'FAAB', value: budget > 0 ? '$' + faabRemaining : '—', col: 'var(--k-7c6bf8, #7c6bf8)' },
         ];
 
         return React.createElement('div', { style: cardStyle },
@@ -440,32 +441,32 @@ function IntelligenceBriefWidget({
                 React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px', flexShrink: 0 } },
                     ...kpis.map((k, i) => React.createElement('div', {
                         key: i,
-                        style: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', padding: '8px 6px', textAlign: 'center' },
+                        style: { background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', padding: '8px 6px', textAlign: 'center' },
                     },
                         React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', fontWeight: 700, color: k.col, lineHeight: 1.1 } }, String(k.value)),
-                        React.createElement('div', { style: { fontSize: '0.6rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, k.label),
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, k.label),
                     )),
                 ),
                 React.createElement('div', { style: { flexShrink: 0 } },
-                    React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' } }, 'Position Health'),
+                    React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' } }, 'Position Health'),
                     React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '6px' } },
                         ...posBars.map((pb, i) => React.createElement('div', { key: i, style: { textAlign: 'center' } },
-                            React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--silver)' } }, pb.pos),
+                            React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--silver)' } }, pb.pos),
                             React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1rem', fontWeight: 700, color: pb.col, lineHeight: 1, margin: '2px 0' } }, pb.grade),
-                            React.createElement('div', { style: { height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' } },
+                            React.createElement('div', { style: { height: 4, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 2, overflow: 'hidden' } },
                                 React.createElement('div', { style: { width: pb.pct + '%', height: '100%', background: pb.col } }),
                             ),
-                            React.createElement('div', { style: { fontSize: '0.55rem', color: 'var(--silver)', opacity: 0.6, marginTop: '2px', fontFamily: 'JetBrains Mono, monospace' } }, '#' + pb.rank + '/' + pb.totalTeams),
+                            React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '2px', fontFamily: 'JetBrains Mono, monospace' } }, '#' + pb.rank + '/' + pb.totalTeams),
                         )),
                     ),
                 ),
                 React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' } },
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 } },
-                        React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Alex\u2019s Read'),
-                        React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.7, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 7, WebkitBoxOrient: 'vertical' } }, briefText),
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Alex\u2019s Read'),
+                        React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.7, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 7, WebkitBoxOrient: 'vertical' } }, briefText),
                     ),
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 } },
-                        React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Action Items'),
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Action Items'),
                         ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'xxl-' + i, { compact: true, titleClamp: 2 })),
                     ),
                 ),
@@ -477,7 +478,7 @@ function IntelligenceBriefWidget({
     return React.createElement('div', { style: cardStyle },
         header(),
         React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
-            React.createElement('div', { style: { fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
+            React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
             React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
                 ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'def-' + i)),
             ),
@@ -513,14 +514,14 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
     // Group entries by their `category` field (set when the action is logged).
     // Fall back to source-based grouping when category is missing.
     const CATEGORY_META = {
-        roster:    { label: 'Roster moves',  color: '#2ECC71' },
-        trade:     { label: 'Trade activity', color: '#7C6BF8' },
-        waiver:    { label: 'Waiver moves',  color: '#00c8b4' },
-        draft:     { label: 'Draft prep',     color: '#F0A500' },
-        research:  { label: 'Research',       color: '#D4AF37' },
-        league:    { label: 'League intel',   color: '#5DADE2' },
-        scout:     { label: 'Scout sessions', color: '#00c8b4' },
-        warroom:   { label: 'War Room',       color: '#D4AF37' },
+        roster:    { label: 'Roster moves',  color: 'var(--good)' },
+        trade:     { label: 'Trade activity', color: 'var(--k-7c6bf8, #7c6bf8)' },
+        waiver:    { label: 'Waiver moves',  color: 'var(--k-00c8b4, #00c8b4)' },
+        draft:     { label: 'Draft prep',     color: 'var(--warn)' },
+        research:  { label: 'Research',       color: 'var(--gold)' },
+        league:    { label: 'League intel',   color: 'var(--info)' },
+        scout:     { label: 'Scout sessions', color: 'var(--k-00c8b4, #00c8b4)' },
+        warroom:   { label: 'War Room',       color: 'var(--gold)' },
     };
     const classify = (e) => {
         const cat = (e.category || '').toLowerCase();
@@ -544,7 +545,7 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
 
     const totalCount = fieldEntries.length;
     const monoFont = "'JetBrains Mono', monospace";
-    const cardStyle = { background: 'var(--black)', border: 'var(--card-border, 1px solid rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius, 10px)', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
+    const cardStyle = { background: 'var(--black)', border: 'var(--card-border, 1px solid var(--acc-line1, rgba(212,175,55,0.2)))', borderRadius: 'var(--card-radius, 10px)', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
     const openNotes = () => navigateWidget && navigateWidget('fieldNotes');
     const noteCardStyle = { ...cardStyle, cursor: navigateWidget ? 'pointer' : 'default' };
 
@@ -555,10 +556,10 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
     }
 
     function renderEntry(e, i) {
-        return React.createElement('div', { key: e.id || i, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', fontSize: '0.7rem', fontFamily: monoFont, borderBottom: '1px solid rgba(255,255,255,0.03)' } },
-            React.createElement('span', { style: { fontSize: '0.78rem' } }, e.icon || '📋'),
+        return React.createElement('div', { key: e.id || i, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))' } },
+            React.createElement('span', { style: { fontSize: 'var(--text-label, 0.75rem)' } }, e.icon || '📋'),
             React.createElement('span', { style: { flex: 1, color: 'var(--silver)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, e.text || ''),
-            React.createElement('span', { style: { fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)' } }, fmtTime(e.ts)),
+            React.createElement('span', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.4))' } }, fmtTime(e.ts)),
         );
     }
 
@@ -572,7 +573,7 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
 	            !tight && React.createElement('button', {
 	                type: 'button',
 	                onClick: e => { e.stopPropagation(); openNotes(); },
-	                style: { marginTop: '4px', border: '1px solid rgba(212,175,55,0.35)', background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', borderRadius: '6px', padding: '7px 10px', fontSize: '0.66rem', fontFamily: monoFont, fontWeight: 800, letterSpacing: '0.04em', cursor: navigateWidget ? 'pointer' : 'default' },
+	                style: { marginTop: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '6px', padding: '7px 10px', minHeight: '44px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, fontWeight: 800, letterSpacing: '0.04em', cursor: navigateWidget ? 'pointer' : 'default' },
 	            }, 'OPEN GM OFFICE'),
 	        );
 	    }
@@ -581,21 +582,21 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
     if (size === 'slim') {
         const maxCount = Math.max(...groups.map(g => g.entries.length), 1);
         return React.createElement('div', { onClick: openNotes, title: 'Open GM\'s Office', style: noteCardStyle },
-            React.createElement('div', { style: { padding: '8px 8px 4px', textAlign: 'center', flexShrink: 0, borderBottom: '1px solid rgba(212,175,55,0.08)' } },
-                React.createElement('div', { style: { fontFamily: monoFont, fontSize: '0.58rem', color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700, marginBottom: '1px' } }, 'NOTES'),
+            React.createElement('div', { style: { padding: '8px 8px 4px', textAlign: 'center', flexShrink: 0, borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.08))' } },
+                React.createElement('div', { style: { fontFamily: monoFont, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700, marginBottom: '1px' } }, 'NOTES'),
                 React.createElement('div', { style: { fontSize: '1.5rem', fontWeight: 700, color: 'var(--white)', fontFamily: monoFont, lineHeight: 1 } }, totalCount),
             ),
             React.createElement('div', { style: { flex: 1, padding: '6px 6px', display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' } },
                 groups.length === 0
-                    ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--silver)', opacity: 0.5, fontSize: '0.6rem', fontFamily: monoFont, padding: '8px 0' } }, 'No notes yet')
+                    ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--silver)', opacity: 0.5, fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, padding: '8px 0' } }, 'No notes yet')
                     : groups.slice(0, 5).map(g => {
                         const pct = (g.entries.length / maxCount) * 100;
                         return React.createElement('div', { key: g.key, style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
-                            React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.56rem', fontFamily: monoFont } },
+                            React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont } },
                                 React.createElement('span', { style: { color: g.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, g.label.split(' ')[0]),
                                 React.createElement('span', { style: { color: 'var(--white)', fontWeight: 700 } }, g.entries.length),
                             ),
-                            React.createElement('div', { style: { height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' } },
+                            React.createElement('div', { style: { height: 4, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 2, overflow: 'hidden' } },
                                 React.createElement('div', { style: { width: pct + '%', height: '100%', background: g.color, transition: '0.3s' } }),
                             ),
                         );
@@ -608,22 +609,22 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
     if (size === 'narrow') {
         const latest = fieldEntries.slice(0, 5);
         return React.createElement('div', { onClick: openNotes, title: 'Open GM\'s Office', style: noteCardStyle },
-            React.createElement('div', { style: { padding: '8px 8px 6px', borderBottom: '1px solid rgba(212,175,55,0.1)', flexShrink: 0 } },
-                React.createElement('div', { style: { fontFamily: monoFont, fontSize: '0.64rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 700 } }, 'FIELD NOTES'),
-                React.createElement('div', { style: { fontSize: '0.62rem', color: 'var(--silver)', marginTop: '1px', fontFamily: monoFont } }, totalCount + ' total'),
+            React.createElement('div', { style: { padding: '8px 8px 6px', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', flexShrink: 0 } },
+                React.createElement('div', { style: { fontFamily: monoFont, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 700 } }, 'FIELD NOTES'),
+                React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '1px', fontFamily: monoFont } }, totalCount + ' total'),
             ),
             React.createElement('div', { style: { flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden' } },
                 groups.length === 0 ? emptyState({ tight: true }) : React.createElement(React.Fragment, null,
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px' } },
-                        ...groups.slice(0, 6).map(g => React.createElement('div', { key: g.key, style: { display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.6rem', fontFamily: monoFont } },
+                        ...groups.slice(0, 6).map(g => React.createElement('div', { key: g.key, style: { display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont } },
                             React.createElement('div', { style: { width: 4, height: 4, borderRadius: 2, background: g.color, flexShrink: 0 } }),
                             React.createElement('span', { style: { color: 'var(--silver)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, g.label),
                             React.createElement('span', { style: { fontWeight: 700, color: 'var(--white)' } }, g.entries.length),
                         )),
                     ),
-                    React.createElement('div', { style: { borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '4px', flex: 1, minHeight: 0, overflow: 'hidden' } },
-                        React.createElement('div', { style: { fontSize: '0.56rem', color: 'var(--gold)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 700, marginBottom: '3px', fontFamily: monoFont } }, 'Recent'),
-                        ...latest.map((e, i) => React.createElement('div', { key: i, style: { fontSize: '0.6rem', color: 'var(--silver)', fontFamily: monoFont, padding: '1px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, (e.icon || '·') + ' ' + (e.text || ''))),
+                    React.createElement('div', { style: { borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop: '4px', flex: 1, minHeight: 0, overflow: 'hidden' } },
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 700, marginBottom: '3px', fontFamily: monoFont } }, 'Recent'),
+                        ...latest.map((e, i) => React.createElement('div', { key: i, style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: monoFont, padding: '1px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, (e.icon || '·') + ' ' + (e.text || ''))),
                     ),
                 ),
             ),
@@ -633,16 +634,16 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
     // ── LG (2×2): grouped sections — top 2 groups, top 3 each ──
     if (size === 'lg') {
         return React.createElement('div', { onClick: openNotes, title: 'Open GM\'s Office', style: noteCardStyle },
-            React.createElement('div', { style: { padding: '12px 16px 8px', borderBottom: '1px solid rgba(212,175,55,0.1)', flexShrink: 0 } },
+            React.createElement('div', { style: { padding: '12px 16px 8px', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', flexShrink: 0 } },
                 React.createElement('div', { style: { fontFamily: monoFont, fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700 } }, 'FIELD NOTES'),
-                React.createElement('div', { style: { fontSize: '0.7rem', color: 'var(--silver)', fontFamily: monoFont, marginTop: '2px' } }, totalCount + ' entries · ' + groups.length + ' types'),
+                React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: monoFont, marginTop: '2px' } }, totalCount + ' entries · ' + groups.length + ' types'),
             ),
             React.createElement('div', { style: { padding: '8px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden' } },
                 groups.length === 0 ? emptyState() :
                     groups.slice(0, 3).map(g => React.createElement('div', { key: g.key, style: { borderLeft: '2px solid ' + g.color, paddingLeft: '8px' } },
                         React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' } },
-                            React.createElement('span', { style: { fontSize: '0.62rem', fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: monoFont } }, g.label),
-                            React.createElement('span', { style: { fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)', fontFamily: monoFont } }, g.entries.length),
+                            React.createElement('span', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: monoFont } }, g.label),
+                            React.createElement('span', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.4))', fontFamily: monoFont } }, g.entries.length),
                         ),
                         ...g.entries.slice(0, 2).map((e, i) => renderEntry(e, i)),
                     )),
@@ -653,16 +654,16 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
     // ── TALL (2×4): all groups, more entries each, no scroll ──
     if (size === 'tall') {
         return React.createElement('div', { onClick: openNotes, title: 'Open GM\'s Office', style: noteCardStyle },
-            React.createElement('div', { style: { padding: '14px 18px 10px', borderBottom: '1px solid rgba(212,175,55,0.1)', flexShrink: 0 } },
+            React.createElement('div', { style: { padding: '14px 18px 10px', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', flexShrink: 0 } },
                 React.createElement('div', { style: { fontFamily: monoFont, fontSize: '1.1rem', color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700 } }, 'FIELD NOTES'),
-                React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--silver)', fontFamily: monoFont, marginTop: '2px' } }, 'Intel grouped by type · ' + totalCount + ' entries'),
+                React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: monoFont, marginTop: '2px' } }, 'Intel grouped by type · ' + totalCount + ' entries'),
             ),
             React.createElement('div', { style: { padding: '10px 16px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden' } },
                 groups.length === 0 ? emptyState() :
                     groups.slice(0, 5).map(g => React.createElement('div', { key: g.key, style: { borderLeft: '2px solid ' + g.color, paddingLeft: '8px' } },
                         React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' } },
-                            React.createElement('span', { style: { fontSize: '0.66rem', fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: monoFont } }, g.label),
-                            React.createElement('span', { style: { fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', fontFamily: monoFont } }, g.entries.length),
+                            React.createElement('span', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: monoFont } }, g.label),
+                            React.createElement('span', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.4))', fontFamily: monoFont } }, g.entries.length),
                         ),
                         ...g.entries.slice(0, 3).map((e, i) => renderEntry(e, i)),
                     )),

@@ -6,7 +6,7 @@ const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
 
-const LIVE_AI_ENDPOINT = 'https://hovnqztlbsgsywrbidbh.supabase.co/functions/v1/ai-analyze';
+const LIVE_AI_ENDPOINT = 'https://sxshiqyxhhifvtfqawbq.supabase.co/functions/v1/ai-analyze';
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -218,6 +218,10 @@ async function callGemini(provider, request) {
     body: JSON.stringify({
       model: provider.model,
       max_tokens: request.maxTokens,
+      // Gemini 2.5 "thinking" silently consumes the token budget, truncating
+      // short advisory blurbs. These prompts don't need reasoning — disable it
+      // so the cap goes to visible output.
+      reasoning_effort: 'none',
       messages: [{ role: 'system', content: request.system }, ...request.messages],
     }),
   });

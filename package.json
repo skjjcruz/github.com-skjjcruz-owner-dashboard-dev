@@ -38,7 +38,7 @@
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android",
     "cap:build:android": "npx cap build android",
-    "prepare": "husky",
+    "prepare": "husky || true",
     "start": "npm run sync:shared && node scripts/serve-static.cjs --port=3001",
     "dev": "npm run sync:shared && node scripts/serve-static.cjs --port=3001",
     "landing:edit": "node scripts/serve-static.cjs --port=3011 --open=landing-editor.html"

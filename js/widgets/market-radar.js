@@ -168,7 +168,7 @@
                         <div style={{
                             marginTop: '4px', fontSize: fs(0.6), color: colors.textMuted,
                             fontFamily: fonts.ui, lineHeight: 1.3, padding: '0 4px',
-                            borderTop: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'),
+                            borderTop: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                             paddingTop: '4px', width: '100%',
                         }}>
                             Top: <span style={{ color: colors.text, fontWeight: 700 }}>{(topTarget.name || '').slice(0, 12)}</span>
@@ -189,10 +189,10 @@
         if (size === 'md') {
             const top2 = tradeTargets.slice(0, 2);
             return (
-                <div onClick={onClick} style={{ ...cardStyle, padding: '12px 14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div onClick={onClick} style={{ ...cardStyle, padding: 'var(--card-pad, 12px 14px)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexShrink: 0 }}>
                         <span style={{ fontSize: '0.95rem' }}>📡</span>
-                        <span style={{ fontFamily: fonts.display, fontSize: fs(0.85), fontWeight: 700, color: colors.purple || '#7C6BF8', letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Surplus Match</span>
+                        <span style={{ fontFamily: fonts.display, fontSize: fs(0.85), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Surplus Match</span>
                         <span style={{ fontSize: fs(0.6), color: colors.textMuted, fontFamily: fonts.ui }}>{dealCount} fits</span>
                     </div>
                     {!top2.length && (
@@ -203,8 +203,8 @@
                     {top2.length > 0 && (
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', minHeight: 0 }}>
                             {top2.map((t, i) => (
-                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px', borderLeft: '2px solid ' + (colors.purple || '#7C6BF8') }}>
-                                    {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0 }} alt="" /> : <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', flexShrink: 0 }} />}
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '4px', borderLeft: '2px solid ' + (colors.purple || 'var(--k-7c6bf8, #7c6bf8)') }}>
+                                    {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0 }} alt="" /> : <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--ov-3, rgba(255,255,255,0.05))', flexShrink: 0 }} />}
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontSize: fs(0.7), fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
                                         <div style={{ fontSize: fs(0.6), color: colors.textMuted, fontFamily: fonts.ui }}>
@@ -232,12 +232,13 @@
                     <div key={i} onClick={openTrades} style={{
                         display: 'flex', alignItems: 'center', gap: '6px',
                         padding: '3px 6px',
-                        background: 'rgba(255,255,255,0.02)',
+                        minHeight: '32px',
+                        background: 'var(--ov-1, rgba(255,255,255,0.02))',
                         borderRadius: '4px',
                         borderLeft: '2px solid ' + compatCol,
                         cursor: 'pointer',
                     }}>
-                        {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0 }} alt="" /> : <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', flexShrink: 0 }} />}
+                        {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0 }} alt="" /> : <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--ov-3, rgba(255,255,255,0.05))', flexShrink: 0 }} />}
                         <span style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 80, maxWidth: 120 }}>{t.name}</span>
                         <span style={{ fontSize: fs(0.56), color: colors.textMuted, fontFamily: fonts.ui, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             <span style={{ color: colors.positive, fontWeight: 700 }}>{t.theySurplus.join('/') || '—'}</span>
@@ -252,7 +253,8 @@
             return (
                 <div key={i} onClick={openTrades} style={{
                     padding: compact ? '4px 6px' : '6px 8px',
-                    background: 'rgba(255,255,255,0.02)',
+                    minHeight: '32px',
+                    background: 'var(--ov-1, rgba(255,255,255,0.02))',
                     borderRadius: '4px',
                     borderLeft: '2px solid ' + compatCol,
                     marginBottom: '4px',
@@ -269,7 +271,7 @@
                         you offer: <span style={{ color: colors.warn, fontWeight: 700 }}>{t.myOffers.join('/') || '—'}</span>
                     </div>
                     {!compact && swap && (
-                        <div style={{ fontSize: fs(0.58), color: colors.purple || '#7C6BF8', fontFamily: fonts.ui, marginTop: '2px' }}>
+                        <div style={{ fontSize: fs(0.58), color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', fontFamily: fonts.ui, marginTop: '2px' }}>
                             Swap idea: <span style={{ fontWeight: 700 }}>{swap.name}</span> ({swap.pos})
                         </div>
                     )}
@@ -281,7 +283,7 @@
         function renderWaiver(p, i, compact) {
             const fillsNeed = myNeedPositions.includes(p.pos);
             return (
-                <div key={i} role="button" tabIndex={0} onClick={() => openCard(p.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(p.pid); } }} title="Open player card" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: fs(compact ? 0.62 : 0.66), cursor: 'pointer' }}>
+                <div key={i} role="button" tabIndex={0} onClick={() => openCard(p.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(p.pid); } }} title="Open player card" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 0', minHeight: '32px', borderBottom: '1px solid var(--ov-1, rgba(255,255,255,0.02))', fontSize: fs(compact ? 0.62 : 0.66), cursor: 'pointer' }}>
                     <span style={{ flex: 1, fontWeight: 700, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: fonts.ui }}>{p.name}</span>
                     <span style={{ fontSize: fs(0.5), padding: '0px 4px', borderRadius: 3, background: (window.App?.POS_COLORS?.[p.pos] || colors.accent) + '22', color: window.App?.POS_COLORS?.[p.pos] || colors.accent, fontWeight: 700 }}>{p.pos}</span>
                     {fillsNeed && <span style={{ fontSize: fs(0.5), fontWeight: 700, color: colors.positive }}>NEED</span>}
@@ -298,7 +300,7 @@
                         <span>FAAB</span>
                         <span>${faab.remaining} / ${faab.budget} ({Math.round(faab.pct)}%)</span>
                     </div>
-                    <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: 6, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 3, overflow: 'hidden' }}>
                         <div style={{ width: faab.pct + '%', height: '100%', background: faab.pct > 50 ? colors.positive : faab.pct > 25 ? colors.warn : colors.negative }} />
                     </div>
                 </div>
@@ -310,10 +312,10 @@
             return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                     <span style={{ fontSize: opts.large ? '1.1rem' : '1rem' }}>📡</span>
-                    <span style={{ fontFamily: fonts.display, fontSize: fs(opts.large ? 1.05 : 0.95), fontWeight: 700, color: colors.purple || '#7C6BF8', letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>Market Radar</span>
+                    <span style={{ fontFamily: fonts.display, fontSize: fs(opts.large ? 1.05 : 0.95), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>Market Radar</span>
                     <span style={{ fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui }}>{dealCount} targets · ${faab.remaining}</span>
-                    <button onClick={openTrades} title="Open Trade Center" style={{ padding: '3px 8px', background: 'rgba(124,107,248,0.10)', color: colors.purple || '#7C6BF8', border: '1px solid rgba(124,107,248,0.28)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Trades</button>
-                    <button onClick={openFreeAgency} title="Open Free Agency" style={{ padding: '3px 8px', background: 'rgba(52,152,219,0.10)', color: colors.info || '#3498DB', border: '1px solid rgba(52,152,219,0.28)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>FA</button>
+                    <button onClick={openTrades} title="Open Trade Center" style={{ padding: '3px 8px', background: 'rgba(124,107,248,0.10)', color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', border: '1px solid rgba(124,107,248,0.28)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Trades</button>
+                    <button onClick={openFreeAgency} title="Open Free Agency" style={{ padding: '3px 8px', background: 'rgba(52,152,219,0.10)', color: colors.info || 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.28)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>FA</button>
                 </div>
             );
         }
@@ -321,7 +323,7 @@
         // ── LG: 4 single-line partners + 4 waivers + FAAB (no scroll, 320px) ──
         if (size === 'lg') {
             return (
-                <div style={{ ...cardStyle, padding: '12px 14px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ ...cardStyle, padding: 'var(--card-pad, 12px 14px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {header()}
                     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden' }}>
                         <div style={{ flexShrink: 0 }}>
@@ -348,7 +350,7 @@
                 targetPos: t.theySurplus[0] || t.theirNeeds[0] || '?',
             }));
             return (
-                <div style={{ ...cardStyle, padding: '12px 14px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ ...cardStyle, padding: 'var(--card-pad, 12px 14px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {header()}
                     <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' }}>
                         {/* Col 1: Trade Partners */}
@@ -369,7 +371,7 @@
                                     const t = idea.partner;
                                     const compatCol = t.compat >= 60 ? colors.positive : t.compat >= 30 ? colors.accent : colors.warn;
                                     return (
-                                        <div key={i} style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.02)', border: '1px solid ' + compatCol + '44', borderRadius: '4px' }}>
+                                        <div key={i} style={{ padding: '6px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + wrAlpha(compatCol, '44'), borderRadius: '4px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
                                                 {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 14, height: 14, borderRadius: '50%' }} alt="" /> : null}
                                                 <span style={{ flex: 1, fontSize: fs(0.62), fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
@@ -429,13 +431,13 @@
             })();
 
             return (
-                <div style={{ ...cardStyle, padding: '14px 16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ ...cardStyle, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {header({ large: true })}
                     {/* Top strip: Surplus matrix (left) + FAAB context (right) */}
                     <div style={{ marginBottom: '10px', flexShrink: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '10px' }}>
                         {matrix.length > 0 ? (
                             <div style={{ padding: '8px 10px', background: 'rgba(124,107,248,0.06)', border: '1px solid rgba(124,107,248,0.2)', borderRadius: '6px' }}>
-                                <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.purple || '#7C6BF8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Surplus by Position (your needs)</div>
+                                <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Surplus by Position (your needs)</div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '6px' }}>
                                     {matrix.map((m, i) => (
                                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: fs(0.62), fontFamily: fonts.ui }}>
@@ -449,13 +451,13 @@
                             </div>
                         ) : <div />}
                         {faabContext && (
-                            <div style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'), borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'), borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: fonts.ui }}>FAAB · You vs League</div>
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', fontFamily: fonts.mono }}>
                                     <span style={{ fontSize: fs(1.2), fontWeight: 700, color: faab.pct > 50 ? colors.positive : faab.pct > 25 ? colors.warn : colors.negative }}>${faab.remaining}</span>
                                     <span style={{ fontSize: fs(0.6), color: colors.textMuted }}>vs ${faabContext.avg} avg</span>
                                 </div>
-                                <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+                                <div style={{ height: 6, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
                                     <div style={{ width: faab.pct + '%', height: '100%', background: faab.pct > 50 ? colors.positive : faab.pct > 25 ? colors.warn : colors.negative }} />
                                 </div>
                                 <div style={{ fontSize: fs(0.58), color: colors.textMuted, fontFamily: fonts.ui }}>
@@ -473,7 +475,7 @@
                                     const t = idea.partner;
                                     const compatCol = t.compat >= 60 ? colors.positive : t.compat >= 30 ? colors.accent : colors.warn;
                                     return (
-                                        <div key={i} style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid ' + compatCol + '44', borderRadius: '6px' }}>
+                                        <div key={i} style={{ padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + wrAlpha(compatCol, '44'), borderRadius: '6px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                                                 {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 18, height: 18, borderRadius: '50%' }} alt="" /> : null}
                                                 <span style={{ flex: 1, fontSize: fs(0.7), fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>

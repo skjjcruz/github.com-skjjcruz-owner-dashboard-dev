@@ -24,42 +24,42 @@
         NONE: { label: '— Not Set —', color: 'var(--silver)', desc: '', taxes: [] },
         FLEECER: {
             label: 'The Fleecer',
-            color: '#E74C3C',
+            color: 'var(--k-e74c3c, #e74c3c)',
             desc: 'High activity, always hunting asymmetric value.',
             taxes: ['Endowment -5 pts', 'Surplus hunter'],
         },
         DOMINATOR: {
             label: 'The Dominator',
-            color: '#E67E22',
+            color: 'var(--k-e67e22, #e67e22)',
             desc: 'High ego, requires visible surplus to pull the trigger.',
             taxes: ['Status Tax -18', 'Endowment -14', 'Loss Aversion -8'],
         },
         STALWART: {
             label: 'The Stalwart',
-            color: '#5DADE2',
+            color: 'var(--k-5dade2, #5dade2)',
             desc: 'High stability, emotionally attached to their roster.',
             taxes: ['Endowment -10', 'Loss Aversion -8'],
         },
         ACCEPTOR: {
             label: 'The Acceptor',
-            color: '#2ECC71',
+            color: 'var(--k-2ecc71, #2ecc71)',
             desc: 'Low attachment, willing to sell for futures.',
             taxes: ['Rebuilding Discount +10', 'Endowment -3'],
         },
         DESPERATE: {
             label: 'The Desperate',
-            color: '#BB8FCE',
+            color: 'var(--k-bb8fce, #bb8fce)',
             desc: 'High urgency triggered by injuries, bye-weeks, or playoff push.',
             taxes: ['Panic Premium +14 to +26', 'Endowment -8'],
         },
     };
 
     const POSTURES = {
-        DESPERATE: { key: 'DESPERATE', label: 'Desperate',    color: '#BB8FCE', desc: 'Panic-mode — will overpay for immediate help.' },
-        BUYER:     { key: 'BUYER',     label: 'Active Buyer', color: '#F0A500', desc: 'Contender upgrading — open to deals.' },
-        NEUTRAL:   { key: 'NEUTRAL',   label: 'Neutral',      color: '#95A5A6', desc: 'No strong push. Fair offers only.' },
-        SELLER:    { key: 'SELLER',    label: 'Active Seller',color: '#5DADE2', desc: 'Moving assets for futures.' },
-        LOCKED:    { key: 'LOCKED',    label: 'Locked In',    color: '#7F8C8D', desc: 'Satisfied roster, high attachment.' },
+        DESPERATE: { key: 'DESPERATE', label: 'Desperate',    color: 'var(--k-bb8fce, #bb8fce)', desc: 'Panic-mode — will overpay for immediate help.' },
+        BUYER:     { key: 'BUYER',     label: 'Active Buyer', color: 'var(--k-f0a500, #f0a500)', desc: 'Contender upgrading — open to deals.' },
+        NEUTRAL:   { key: 'NEUTRAL',   label: 'Neutral',      color: 'var(--k-95a5a6, #95a5a6)', desc: 'No strong push. Fair offers only.' },
+        SELLER:    { key: 'SELLER',    label: 'Active Seller',color: 'var(--k-5dade2, #5dade2)', desc: 'Moving assets for futures.' },
+        LOCKED:    { key: 'LOCKED',    label: 'Locked In',    color: 'var(--k-7f8c8d, #7f8c8d)', desc: 'Satisfied roster, high attachment.' },
     };
 
     // ── calcOwnerPosture (SYNCED-WITH: trade-calc.js:288) ────────────
@@ -218,13 +218,13 @@
         userSide = userSide || 1;
         otherSide = otherSide || 0;
         const ratio = otherSide / userSide; // >1 = user gains, <1 = user loses
-        if (ratio >= 1.30) return { grade: 'A+', label: 'Steal', col: '#2ECC71' };
-        if (ratio >= 1.15) return { grade: 'A',  label: 'Win',   col: '#2ECC71' };
-        if (ratio >= 1.05) return { grade: 'B+', label: 'Favor', col: '#2ECC71' };
-        if (ratio >= 0.95) return { grade: 'B',  label: 'Fair',  col: '#D4AF37' };
-        if (ratio >= 0.85) return { grade: 'C',  label: 'Slight loss', col: '#F0A500' };
-        if (ratio >= 0.75) return { grade: 'D',  label: 'Reach', col: '#E67E22' };
-        return { grade: 'F', label: 'Bad', col: '#E74C3C' };
+        if (ratio >= 1.30) return { grade: 'A+', label: 'Steal', col: 'var(--k-2ecc71, #2ecc71)' };
+        if (ratio >= 1.15) return { grade: 'A',  label: 'Win',   col: 'var(--k-2ecc71, #2ecc71)' };
+        if (ratio >= 1.05) return { grade: 'B+', label: 'Favor', col: 'var(--k-2ecc71, #2ecc71)' };
+        if (ratio >= 0.95) return { grade: 'B',  label: 'Fair',  col: 'var(--k-d4af37, #d4af37)' };
+        if (ratio >= 0.85) return { grade: 'C',  label: 'Slight loss', col: 'var(--k-f0a500, #f0a500)' };
+        if (ratio >= 0.75) return { grade: 'D',  label: 'Reach', col: 'var(--k-e67e22, #e67e22)' };
+        return { grade: 'F', label: 'Bad', col: 'var(--k-e74c3c, #e74c3c)' };
     }
 
     window.DraftCC = window.DraftCC || {};

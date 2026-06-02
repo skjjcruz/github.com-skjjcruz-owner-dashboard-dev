@@ -51,7 +51,7 @@
         };
         const onClick = () => { if (isClickable) openAnalytics(); };
         function analyticsButton() {
-            return <button onClick={openAnalytics} title="Open League Analytics" style={{ padding: '3px 8px', background: 'rgba(212,175,55,0.08)', color: colors.accent || 'var(--gold)', border: '1px solid rgba(212,175,55,0.22)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Analytics</button>;
+            return <button onClick={openAnalytics} title="Open League Analytics" style={{ padding: '3px 8px', minHeight: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: colors.accent || 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Analytics</button>;
         }
 
         // Tier distribution
@@ -94,7 +94,7 @@
                     </div>
                     <div style={{
                         fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui,
-                        borderTop: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'),
+                        borderTop: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                         paddingTop: '4px', marginTop: '2px', width: '100%',
                     }}>
                         <span style={{ fontWeight: 700, color: colors.text }}>{txnCount}</span> league moves recently
@@ -123,7 +123,7 @@
                             return (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <span style={{ fontSize: fs(0.7), color: i < 3 ? colors.accent : colors.textMuted, fontWeight: 700, width: 14, textAlign: 'right', fontFamily: fonts.mono }}>{i + 1}</span>
-                                    <div style={{ flex: 1, minWidth: 0, position: 'relative', height: 18, borderRadius: theme.card?.radius === '0px' ? '0' : '3px', overflow: 'hidden', background: 'rgba(255,255,255,0.04)' }}>
+                                    <div style={{ flex: 1, minWidth: 0, position: 'relative', height: 18, borderRadius: theme.card?.radius === '0px' ? '0' : '3px', overflow: 'hidden', background: 'var(--ov-3, rgba(255,255,255,0.04))' }}>
                                         <div style={{ width: pct + '%', height: '100%', background: isMe ? colors.accent : tc, opacity: isMe ? 1 : 0.3, borderRadius: 'inherit' }} />
                                         <span style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', fontSize: fs(0.62), fontWeight: isMe ? 800 : 600, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%', fontFamily: fonts.ui }}>{isMe ? '★ ' : ''}{(name || '').slice(0, 16)}</span>
                                     </div>
@@ -144,7 +144,7 @@
 
         function renderTxnRow(tx, key) {
             const type = tx.type || 'move';
-            const typeCol = type === 'trade' ? (colors.purple || '#7C6BF8') : type === 'waiver' ? (colors.info || '#00c8b4') : colors.positive;
+            const typeCol = type === 'trade' ? (colors.purple || 'var(--k-7c6bf8, #7c6bf8)') : type === 'waiver' ? (colors.info || 'var(--k-00c8b4, #00c8b4)') : colors.positive;
             let desc = tx.description || tx.type || '—';
             if (tx.adds || tx.drops) {
                 const addNames = Object.keys(tx.adds || {}).map(pid => playersData?.[pid]?.full_name || pid).slice(0, 2);
@@ -154,8 +154,8 @@
                 else if (dropNames.length) desc = 'Dropped ' + dropNames.join(', ');
             }
             return (
-                <div key={key} style={{ display: 'flex', gap: '6px', padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: fs(0.66), fontFamily: fonts.ui, alignItems: 'center' }}>
-                    <span style={{ ...window.WrTheme?.badgeStyle?.(typeCol) || {}, fontSize: fs(0.54), padding: '1px 5px', borderRadius: 3, background: typeCol + '18', color: typeCol, fontWeight: 700 }}>{(type === 'free_agent' ? 'FA' : type).toUpperCase()}</span>
+                <div key={key} style={{ display: 'flex', gap: '6px', padding: '3px 0', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', fontSize: fs(0.66), fontFamily: fonts.ui, alignItems: 'center' }}>
+                    <span style={{ fontSize: fs(0.54), padding: '1px 5px', borderRadius: 3, background: wrAlpha(typeCol, '18'), color: typeCol, fontWeight: 700 }}>{(type === 'free_agent' ? 'FA' : type).toUpperCase()}</span>
                     <span style={{ flex: 1, color: colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{desc}</span>
                     {tx.created && <span style={{ fontSize: fs(0.54), color: colors.textFaint }}>{timeAgo ? timeAgo(tx.created) : ''}</span>}
                 </div>
@@ -168,7 +168,7 @@
             const showCols = opts.cols || 'all'; // 'all' | 'minimal'
             return (
                 <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0 4px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0 4px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                         <span style={{ width: 14 }} />
                         <span style={{ flex: 1, fontSize: fs(0.54), color: colors.textFaint, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: fonts.ui }}>Owner</span>
                         {showCols === 'all' && <span style={{ fontSize: fs(0.54), color: colors.textFaint, textTransform: 'uppercase', fontFamily: fonts.ui, minWidth: 32, textAlign: 'right' }}>Tier</span>}
@@ -185,14 +185,14 @@
                         return (
                             <div key={i} style={{
                                 display: 'flex', alignItems: 'center', gap: '6px', padding: compact ? '2px 0' : '3px 0',
-                                borderBottom: '1px solid rgba(255,255,255,0.03)',
-                                background: isMe ? 'rgba(212,175,55,0.04)' : 'transparent',
+                                borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))',
+                                background: isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent',
                             }}>
                                 <span style={{ fontSize: fs(0.62), color: i < 3 ? colors.accent : colors.textMuted, fontWeight: 700, width: 14, textAlign: 'right', fontFamily: fonts.mono }}>{i + 1}</span>
                                 <span style={{ flex: 1, fontSize: fs(0.66), fontWeight: isMe ? 700 : 500, color: isMe ? colors.accent : colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {isMe ? '★ ' : ''}{(name || '').slice(0, 18)}
                                 </span>
-                                {showCols === 'all' && <span style={{ fontSize: fs(0.54), padding: '1px 4px', borderRadius: 3, background: tc + '18', color: tc, fontWeight: 700, minWidth: 32, textAlign: 'center' }}>{(a.tier || '—').slice(0, 4)}</span>}
+                                {showCols === 'all' && <span style={{ fontSize: fs(0.54), padding: '1px 4px', borderRadius: 3, background: wrAlpha(tc, '18'), color: tc, fontWeight: 700, minWidth: 32, textAlign: 'center' }}>{(a.tier || '—').slice(0, 4)}</span>}
                                 {showCols === 'all' && <span style={{ fontSize: fs(0.54), color: colors.textMuted, minWidth: 28, textAlign: 'right', fontFamily: fonts.mono }}>{rosterDHQ >= 1000 ? Math.round(rosterDHQ / 1000) + 'k' : rosterDHQ}</span>}
                                 <span style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.textMuted, minWidth: 22, textAlign: 'right', fontFamily: fonts.mono }}>{a.healthScore || 0}</span>
                             </div>
@@ -207,8 +207,8 @@
             return (
                 <div style={{
                     display: 'flex', gap: '8px', padding: '6px 8px',
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'),
+                    background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                    border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                     borderRadius: theme.card?.radius === '0px' ? '0' : '6px',
                     flexWrap: 'wrap',
                 }}>
@@ -344,7 +344,7 @@
                                     {ownerData.map((o, i) => (
                                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                             <span style={{ flex: 1, fontSize: fs(0.54), color: o.isMe ? colors.accent : colors.textMuted, fontWeight: o.isMe ? 700 : 500, fontFamily: fonts.ui, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(o.name || '').slice(0, 12)}</span>
-                                            <div style={{ width: 80, height: 6, background: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+                                            <div style={{ width: 80, height: 6, background: 'var(--ov-3, rgba(255,255,255,0.04))', borderRadius: 2, overflow: 'hidden' }}>
                                                 <div style={{ width: ((o.dhq / maxDHQ) * 100) + '%', height: '100%', background: tierCol(o.tier), opacity: o.isMe ? 1 : 0.6 }} />
                                             </div>
                                             <span style={{ fontSize: fs(0.5), color: colors.textFaint, fontFamily: fonts.mono, minWidth: 28, textAlign: 'right' }}>{o.dhq >= 1000 ? Math.round(o.dhq / 1000) + 'k' : o.dhq}</span>

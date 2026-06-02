@@ -13,6 +13,10 @@
 (function() {
     const { FONT_UI, FONT_DISPL, panelCard } = window.DraftCC.styles;
 
+    // High-signal room events (run / tier break / value cliff). Module-scoped and
+    // exported so the header "Alex Whisper" shares the exact same gate (no dupes).
+    const HIGH_SIGNAL = new Set(['🔥', '⛰', '⬇']);
+
     const CHIP_PROMPTS = [
         { label: 'Who should I target?',  text: 'Who should I target with my next pick given the current board?' },
         { label: 'Is this a reach?',       text: 'Was my last pick a reach? Explain.' },
@@ -37,7 +41,7 @@
                     event: {
                         type: 'scouting',
                         badge: '🔎',
-                        color: '#9b8afb',
+                        color: 'var(--k-9b8afb, #9b8afb)',
                         title: playerName ? ('Scouting Report — ' + playerName + (pos ? ' (' + pos + ')' : '')) : 'Scouting Report',
                         text: summary || text || 'Scouting report ready. Tap to expand.',
                         fullText: fullText || text || summary || '',
@@ -54,8 +58,8 @@
         const flashUsed = state.alex.alexSpend.flash || 0;
         const budgetPct = (sonnetUsed / budget) * 100;
         const budgetCol =
-            sonnetUsed >= budget ? '#E74C3C' :
-            sonnetUsed >= budget * 0.7 ? '#F0A500' : '#2ECC71';
+            sonnetUsed >= budget ? 'var(--k-e74c3c, #e74c3c)' :
+            sonnetUsed >= budget * 0.7 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-2ecc71, #2ecc71)';
 
         // Send an "Ask Alex" request via Gemini Flash (draft-chat route)
         const sendAsk = async (text) => {
@@ -66,7 +70,7 @@
                     event: {
                         type: 'user',
                         badge: '?',
-                        color: '#E74C3C',
+                        color: 'var(--k-e74c3c, #e74c3c)',
                         title: 'AI unavailable',
                         text: 'dhqAI is not loaded. Try reloading the page.',
                     },
@@ -80,7 +84,7 @@
                 event: {
                     type: 'user',
                     badge: '?',
-                    color: '#9b8afb',
+                    color: 'var(--k-9b8afb, #9b8afb)',
                     title: 'You asked',
                     text,
                 },
@@ -91,18 +95,14 @@
             dispatch({ type: 'ALEX_SET_THINKING', thinking: true });
 
             try {
-                // Build short context from current state
-                const myPicks = state.picks.filter(p => p.rosterId === state.userRosterId || p.isUser);
-                const currentSlot = state.pickOrder[state.currentIdx];
-                const contextLines = [
-                    `Round ${currentSlot?.round || '?'}, pick ${currentSlot?.overall || '?'} / ${state.pickOrder.length}.`,
-                    `User has made ${myPicks.length} picks: ${myPicks.map(p => p.pos + ' ' + p.name).join(', ') || 'none'}.`,
-                    state.pinnedRosterId ? `Pinned team: ${state.personas[state.pinnedRosterId]?.teamName} — DNA ${state.personas[state.pinnedRosterId]?.draftDna?.label}, posture ${state.personas[state.pinnedRosterId]?.posture?.label}.` : '',
-                ].filter(Boolean).join(' ');
+                // Rich, board-aware context (shared with the Ask windows)
+                const contextLines = window.DraftCC.buildAskContext
+                    ? window.DraftCC.buildAskContext(state)
+                    : '';
 
-                const messages = [
-                    { role: 'user', content: contextLines + '\n\n' + text },
-                ];
+                // Pass the bare question as the message; dhqAI injects the
+                // context itself, so don't duplicate it into the message.
+                const messages = [{ role: 'user', content: text }];
                 const response = await window.dhqAI('draft-chat', text, contextLines, { messages });
                 dispatch({ type: 'ALEX_SPEND_FLASH' });
                 window.OD?.track?.('alex_response_actioned', {
@@ -114,7 +114,7 @@
                     metadata: { action: 'draft_alex_asked', quickPrompt: CHIP_PROMPTS.some(p => p.text === text) },
                 });
 
-                const replyText = typeof response === 'string' ? response : (response?.content || response?.text || JSON.stringify(response).slice(0, 400));
+                const replyText = typeof response === 'string' ? response : (response?.content || response?.text || JSON.stringify(response));
                 dispatch({
                     type: 'ALEX_EVENT_ADD',
                     event: {
@@ -122,7 +122,9 @@
                         badge: '✦',
                         color: 'var(--gold)',
                         title: 'Alex',
-                        text: replyText.slice(0, 400),
+                        text: replyText,
+                        fullText: replyText,
+                        expandable: replyText.length > 160,
                     },
                 });
             } catch (e) {
@@ -131,7 +133,7 @@
                     event: {
                         type: 'user',
                         badge: '!',
-                        color: '#E74C3C',
+                        color: 'var(--k-e74c3c, #e74c3c)',
                         title: 'Alex error',
                         text: String(e?.message || e).slice(0, 200),
                     },
@@ -152,7 +154,7 @@
             height: '100%',
             display: 'flex',
             flexDirection: 'column',
-            padding: '8px 10px',
+            padding: '10px 12px',
             overflow: 'hidden',
         });
 
@@ -174,14 +176,14 @@
             <div style={containerCss}>
                 {/* Header with budget */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', flexShrink: 0 }}>
-                    <div style={{ fontFamily: FONT_DISPL, fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
+                    <div style={{ fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
                         Alex Stream
                     </div>
                     <span title={`Premium Alex calls: ${sonnetUsed}/${budget} · Quick replies: ${flashUsed}`} style={{
-                        fontSize: '0.5rem',
+                        fontSize: 'var(--text-label, 0.75rem)',
                         padding: '1px 6px',
                         background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid ' + budgetCol + '44',
+                        border: '1px solid ' + wrAlpha(budgetCol, '44'),
                         borderRadius: '3px',
                         color: budgetCol,
                         fontFamily: FONT_MONO_SAFE(),
@@ -192,11 +194,11 @@
                 </div>
 
                 {/* Stream feed */}
-                <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingRight: '3px', marginBottom: '6px' }}>
+                <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', paddingRight: '3px', marginBottom: '6px' }}>
                     {state.alex.thinking && (
                         <div style={{
                             padding: '5px 8px',
-                            fontSize: '0.6rem',
+                            fontSize: 'var(--text-label, 0.75rem)',
                             color: 'var(--gold)',
                             fontStyle: 'italic',
                             opacity: 0.7,
@@ -211,7 +213,7 @@
                             textAlign: 'center',
                             color: 'var(--silver)',
                             opacity: 0.4,
-                            fontSize: '0.68rem',
+                            fontSize: 'var(--text-label, 0.75rem)',
                             fontFamily: FONT_UI,
                         }}>
                             Alex's commentary will<br />appear here during the draft
@@ -250,19 +252,25 @@
                             .map(part => part.trim())
                             .filter(Boolean)
                             .slice(0, 8);
+                        // High-signal room events get a colored left accent + faint
+                        // tint so they pop (HIGH_SIGNAL is module-scoped, see top).
+                        const isHighlight = HIGH_SIGNAL.has(item.badge);
                         return (
                             <div key={item.id} onClick={toggle} style={{
                                 display: 'flex',
                                 gap: '6px',
-                                padding: '5px 2px',
-                                borderBottom: '1px solid rgba(255,255,255,0.025)',
+                                padding: '6px 4px 6px ' + (isHighlight ? '6px' : '4px'),
+                                borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.025))',
+                                borderLeft: isHighlight ? '2px solid ' + wrAlpha(item.color, 'aa') : '2px solid transparent',
                                 fontFamily: FONT_UI,
                                 cursor: isExpandable ? 'pointer' : 'default',
-                                background: isExpanded ? 'rgba(124,107,248,0.06)' : 'transparent',
+                                background: isExpanded
+                                    ? 'rgba(124,107,248,0.06)'
+                                    : (isHighlight ? wrAlpha(item.color, '12') : 'transparent'),
                             }}>
                                 <span style={{
                                     color: item.color,
-                                    fontSize: '0.7rem',
+                                    fontSize: 'var(--text-label, 0.75rem)',
                                     fontWeight: 700,
                                     width: 10,
                                     textAlign: 'center',
@@ -271,7 +279,7 @@
                                 }}>{item.badge}</span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{
-                                        fontSize: '0.62rem',
+                                        fontSize: 'var(--text-label, 0.75rem)',
                                         fontWeight: 700,
                                         color: 'var(--white)',
                                         whiteSpace: 'nowrap',
@@ -281,12 +289,12 @@
                                     }}>
                                         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</span>
                                         {isExpandable && (
-                                            <span style={{ fontSize: '0.5rem', opacity: 0.6, color: item.color }}>{isExpanded ? '▾' : '▸'}</span>
+                                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', opacity: 0.6, color: item.color }}>{isExpanded ? '▾' : '▸'}</span>
                                         )}
                                     </div>
                                     {item.text && (
                                         <div style={{
-                                            fontSize: '0.56rem',
+                                            fontSize: 'var(--text-label, 0.75rem)',
                                             color: 'var(--silver)',
                                             opacity: 0.8,
                                             marginTop: '1px',
@@ -304,16 +312,16 @@
                                         }}>
                                             {fullTextBlocks.map((block, bi) => (
                                                 <div key={bi} style={{
-                                                    fontSize: '0.56rem',
+                                                    fontSize: 'var(--text-label, 0.75rem)',
                                                     color: 'var(--silver)',
                                                     opacity: 0.85,
                                                     lineHeight: 1.45,
                                                     wordBreak: 'break-word',
                                                     whiteSpace: 'normal',
-                                                    border: '1px solid rgba(255,255,255,0.055)',
-                                                    borderRadius: '5px',
+                                                    border: '1px solid var(--ov-4, rgba(255,255,255,0.055))',
+                                                    borderRadius: 'var(--card-radius-sm)',
                                                     padding: '5px 6px',
-                                                    background: 'rgba(255,255,255,0.018)',
+                                                    background: 'var(--ov-1, rgba(255,255,255,0.018))',
                                                 }}>{block}</div>
                                             ))}
                                         </div>
@@ -325,23 +333,25 @@
                     <div ref={streamEndRef} />
                 </div>
 
-                {/* Ask Alex chips */}
+                {/* Ask Alex chips — open a dedicated, dismissible answer window
+                    instead of posting into this shared stream. */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '5px', flexShrink: 0 }}>
                     {CHIP_PROMPTS.map(chip => (
                         <button
                             key={chip.label}
-                            disabled={pendingAsk}
-                            onClick={() => sendAsk(chip.text)}
+                            onClick={() => window.dispatchEvent(new CustomEvent('wr:ask-open', {
+                                detail: { title: chip.label, prompt: chip.text },
+                            }))}
                             style={{
-                                fontSize: '0.52rem',
+                                fontSize: 'var(--text-label)',
                                 padding: '3px 6px',
+                                minHeight: '44px',
                                 background: 'rgba(124,107,248,0.08)',
                                 border: '1px solid rgba(124,107,248,0.2)',
                                 color: 'rgba(155,138,251,0.9)',
                                 borderRadius: '10px',
-                                cursor: pendingAsk ? 'not-allowed' : 'pointer',
+                                cursor: 'pointer',
                                 fontFamily: FONT_UI,
-                                opacity: pendingAsk ? 0.5 : 1,
                             }}
                         >{chip.label}</button>
                     ))}
@@ -358,11 +368,12 @@
                         style={{
                             flex: 1,
                             padding: '5px 8px',
-                            background: 'rgba(255,255,255,0.03)',
-                            border: '1px solid rgba(255,255,255,0.08)',
+                            minHeight: '44px',
+                            background: 'var(--ov-2, rgba(255,255,255,0.03))',
+                            border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                             borderRadius: '4px',
                             color: 'var(--white)',
-                            fontSize: '0.64rem',
+                            fontSize: 'var(--text-label)',
                             fontFamily: FONT_UI,
                             outline: 'none',
                             minWidth: 0,
@@ -373,11 +384,12 @@
                         disabled={pendingAsk || !inputValue.trim()}
                         style={{
                             padding: '5px 10px',
-                            background: (pendingAsk || !inputValue.trim()) ? 'rgba(212,175,55,0.3)' : 'var(--gold)',
+                            minHeight: '44px',
+                            background: (pendingAsk || !inputValue.trim()) ? 'var(--acc-line2, rgba(212,175,55,0.3))' : 'var(--gold)',
                             color: 'var(--black)',
                             border: 'none',
                             borderRadius: '4px',
-                            fontSize: '0.6rem',
+                            fontSize: 'var(--text-label)',
                             fontWeight: 700,
                             cursor: (pendingAsk || !inputValue.trim()) ? 'not-allowed' : 'pointer',
                             fontFamily: FONT_UI,
@@ -404,4 +416,6 @@
 
     window.DraftCC = window.DraftCC || {};
     window.DraftCC.AlexStreamPanel = AlexStreamPanel;
+    window.DraftCC.AnimatedDots = AnimatedDots;
+    window.DraftCC.HIGH_SIGNAL_BADGES = HIGH_SIGNAL;
 })();

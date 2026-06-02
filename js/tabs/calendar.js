@@ -197,8 +197,8 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
     }
 
     // ── Styles ──
-    const cardStyle = { background: 'var(--black)', border: '2px solid rgba(212,175,55,0.3)', borderRadius: 'var(--card-radius, 10px)', overflow: 'hidden' };
-    const headerStyle = { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.85rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' };
+    const cardStyle = { background: 'var(--black)', border: 'var(--card-border)', borderRadius: 'var(--card-radius, 10px)', overflow: 'hidden' };
+    const headerStyle = { fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-hero, 2rem)', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' };
 
     const now = Date.now();
 
@@ -206,20 +206,20 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
         // Header with Add button
         React.createElement('div', { style: { display: 'flex', alignItems: 'center', marginBottom: '12px' } },
             React.createElement('div', { style: { ...headerStyle, flex: 1 } }, 'LEAGUE CALENDAR'),
-            React.createElement('button', { title: 'Add custom calendar event', onClick: () => setShowAdd(!showAdd), style: { background: 'none', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', color: 'var(--gold)', fontSize: '0.72rem', fontWeight: 700, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' } }, showAdd ? 'Cancel' : '+ Add Event'),
+            React.createElement('button', { title: 'Add custom calendar event', onClick: () => setShowAdd(!showAdd), style: { background: 'none', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm)', color: 'var(--gold)', fontSize: 'var(--text-label)', fontWeight: 700, padding: '10px 14px', minHeight: '44px', cursor: 'pointer', fontFamily: 'inherit' } }, showAdd ? 'Cancel' : '+ Add Event'),
         ),
 
         // Add event form
         showAdd && React.createElement('div', { style: { ...cardStyle, padding: '12px', marginBottom: '12px' } },
-            React.createElement('input', { value: newTitle, onChange: e => setNewTitle(e.target.value), placeholder: 'Event title (e.g. "League Meeting")', style: { width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'var(--white)', fontSize: '0.82rem', fontFamily: 'inherit', marginBottom: '8px', boxSizing: 'border-box' } }),
-            React.createElement('input', { type: 'date', value: newDate, onChange: e => setNewDate(e.target.value), style: { width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'var(--white)', fontSize: '0.82rem', fontFamily: 'inherit', marginBottom: '8px', boxSizing: 'border-box' } }),
-            React.createElement('button', { onClick: addEvent, style: { width: '100%', padding: '8px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' } }, 'Add to Calendar'),
+            React.createElement('input', { value: newTitle, onChange: e => setNewTitle(e.target.value), placeholder: 'Event title (e.g. "League Meeting")', style: { width: '100%', padding: '8px 10px', minHeight: '44px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm)', color: 'var(--white)', fontSize: 'var(--text-label)', fontFamily: 'inherit', marginBottom: '8px', boxSizing: 'border-box' } }),
+            React.createElement('input', { type: 'date', value: newDate, onChange: e => setNewDate(e.target.value), style: { width: '100%', padding: '8px 10px', minHeight: '44px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm)', color: 'var(--white)', fontSize: 'var(--text-label)', fontFamily: 'inherit', marginBottom: '8px', boxSizing: 'border-box' } }),
+            React.createElement('button', { onClick: addEvent, style: { width: '100%', padding: '8px', minHeight: '44px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm)', fontSize: 'var(--text-label)', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' } }, 'Add to Calendar'),
         ),
 
         // Events timeline
         React.createElement('div', { style: cardStyle },
             events.length === 0
-                ? React.createElement('div', { style: { padding: '30px', textAlign: 'center', color: 'var(--silver)', fontSize: '0.82rem' } }, 'No events yet. League dates will appear here once your league settings load.')
+                ? React.createElement('div', { style: { padding: '30px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-label)' } }, 'No events yet. League dates will appear here once your league settings load.')
                 : React.createElement('div', null,
                     events.map((event, i) => {
                         const isPast = event.date.getTime() < now;
@@ -228,19 +228,19 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                         const dateStr = event.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: event.date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined });
                         const countdown = !isPast && daysAway <= 30 ? (daysAway === 0 ? 'Today' : daysAway === 1 ? 'Tomorrow' : daysAway + ' days') : null;
 
-                        return React.createElement('div', { key: event.id, style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderBottom: i < events.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', opacity: isPast ? 0.4 : 1, background: isNext ? 'rgba(212,175,55,0.06)' : 'transparent' } },
+                        return React.createElement('div', { key: event.id, style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderBottom: i < events.length - 1 ? '1px solid var(--ov-3, rgba(255,255,255,0.04))' : 'none', opacity: isPast ? 0.4 : 1, background: isNext ? 'var(--acc-fill1, rgba(212,175,55,0.06))' : 'transparent' } },
                             // Timeline dot
                             React.createElement('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: '28px', flexShrink: 0 } },
                                 React.createElement('span', { style: { fontSize: '1.1rem' } }, event.icon),
                             ),
                             // Content
                             React.createElement('div', { style: { flex: 1 } },
-                                React.createElement('div', { style: { fontSize: '0.85rem', fontWeight: 600, color: isNext ? 'var(--gold)' : 'var(--white)' } }, event.title, isNext && React.createElement('span', { style: { fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: 'var(--gold)', color: 'var(--black)', marginLeft: '6px' } }, 'NEXT')),
-                                React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--silver)', marginTop: '2px' } }, dateStr, event.detail ? ' \u00B7 ' + event.detail : ''),
+                                React.createElement('div', { style: { fontSize: 'var(--text-body)', fontWeight: 600, color: isNext ? 'var(--gold)' : 'var(--white)' } }, event.title, isNext && React.createElement('span', { style: { fontSize: 'var(--text-micro)', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: 'var(--gold)', color: 'var(--black)', marginLeft: '6px' } }, 'NEXT')),
+                                React.createElement('div', { style: { fontSize: 'var(--text-label)', color: 'var(--silver)', marginTop: '2px' } }, dateStr, event.detail ? ' \u00B7 ' + event.detail : ''),
                             ),
                             // Countdown or delete
-                            countdown && React.createElement('span', { style: { fontSize: '0.72rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 } }, countdown),
-                            event.isCustom && React.createElement('button', { title: 'Remove custom calendar event', onClick: () => removeEvent(event.id), style: { background: 'none', border: 'none', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.9rem', padding: '4px', flexShrink: 0, opacity: 0.5 } }, '\u2715'),
+                            countdown && React.createElement('span', { style: { fontSize: 'var(--text-label)', fontWeight: 700, color: 'var(--gold)', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 } }, countdown),
+                            event.isCustom && React.createElement('button', { title: 'Remove custom calendar event', onClick: () => removeEvent(event.id), style: { background: 'none', border: 'none', color: 'var(--silver)', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: 0.7 } }, '\u2715'),
                         );
                     })
                 ),

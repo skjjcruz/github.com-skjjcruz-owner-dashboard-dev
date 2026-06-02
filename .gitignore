@@ -1,6 +1,7 @@
 supabase/.temp/
 node_modules/
 dist-preview/
+dist-deploy/
 reconai-shared/
 output/
 .env

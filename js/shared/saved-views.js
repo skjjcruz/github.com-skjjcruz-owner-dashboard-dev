@@ -158,15 +158,16 @@
         const lbl = label || 'VIEW';
 
         const btnBase = {
-            padding: '3px 10px', fontSize: '0.7rem', fontFamily: 'var(--font-body)',
-            textTransform: 'uppercase', background: 'rgba(255,255,255,0.04)',
-            color: 'var(--silver)', border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '3px', cursor: 'pointer', letterSpacing: '0.03em',
+            padding: '3px 10px', fontSize: 'var(--text-label)', fontFamily: 'var(--font-body)',
+            textTransform: 'uppercase', background: 'var(--ov-3, rgba(255,255,255,0.04))',
+            color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
+            borderRadius: 'var(--card-radius-sm)', cursor: 'pointer', letterSpacing: '0.03em',
+            minHeight: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         };
         const btnActive = { ...btnBase, background: 'var(--gold)', color: 'var(--black)', border: '1px solid var(--gold)', fontWeight: 700 };
 
         return React.createElement('div', { style: { display: 'inline-flex', gap: '6px', alignItems: 'center', position: 'relative' } },
-            React.createElement('span', { style: { fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.65, fontFamily: 'var(--font-body)' } }, lbl + ':'),
+            React.createElement('span', { style: { fontSize: 'var(--text-label)', color: 'var(--silver)', opacity: 0.65, fontFamily: 'var(--font-body)' } }, lbl + ':'),
             // View selector (dropdown trigger)
             React.createElement('button', {
                 onClick: () => setMenuOpen(!menuOpen),
@@ -187,34 +188,34 @@
             menuOpen ? React.createElement('div', {
                 style: {
                     position: 'absolute', top: '28px', left: 0, zIndex: 50,
-                    background: '#0a0a0a', border: '1px solid rgba(212,175,55,0.3)',
+                    background: 'var(--k-0a0a0a, #0a0a0a)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
                     borderRadius: '6px', padding: '4px', minWidth: '240px',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.6)'
                 },
                 onClick: (e) => e.stopPropagation()
             },
                 views.length === 0
-                    ? React.createElement('div', { style: { padding: '8px 10px', fontSize: '0.76rem', color: 'var(--silver)', opacity: 0.6 } }, 'No saved views yet.')
+                    ? React.createElement('div', { style: { padding: '8px 10px', fontSize: 'var(--text-label)', color: 'var(--silver)', opacity: 0.6 } }, 'No saved views yet.')
                     : views.map(v => React.createElement('div', {
                         key: v.id,
                         style: {
                             display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 8px',
-                            borderRadius: '4px', cursor: 'pointer',
-                            background: v.id === activeId ? 'rgba(212,175,55,0.12)' : 'transparent'
+                            borderRadius: 'var(--card-radius-sm)', cursor: 'pointer', minHeight: '44px',
+                            background: v.id === activeId ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent'
                         },
                         onClick: () => doApply(v)
                     },
-                        React.createElement('span', { style: { flex: 1, fontSize: '0.8rem', color: v.id === activeId ? 'var(--gold)' : 'var(--white)' } }, v.name),
-                        v.isDefault ? React.createElement('span', { style: { fontSize: '0.62rem', color: 'var(--gold)', letterSpacing: '0.05em', textTransform: 'uppercase' } }, 'default') : null,
+                        React.createElement('span', { style: { flex: 1, fontSize: 'var(--text-body)', color: v.id === activeId ? 'var(--gold)' : 'var(--white)' } }, v.name),
+                        v.isDefault ? React.createElement('span', { style: { fontSize: 'var(--text-micro)', color: 'var(--gold)', letterSpacing: '0.05em', textTransform: 'uppercase' } }, 'default') : null,
                         React.createElement('button', {
                             title: v.isDefault ? 'Unset as default' : 'Set as default for this league',
                             onClick: (e) => { e.stopPropagation(); doToggleDefault(v.id); },
-                            style: { ...btnBase, padding: '1px 6px', fontSize: '0.66rem' }
+                            style: { ...btnBase, padding: '1px 6px', fontSize: 'var(--text-label)', minWidth: '44px' }
                         }, v.isDefault ? '\u2605' : '\u2606'),
                         React.createElement('button', {
                             title: 'Delete view',
                             onClick: (e) => { e.stopPropagation(); doDelete(v.id); },
-                            style: { ...btnBase, padding: '1px 6px', fontSize: '0.66rem', color: '#E74C3C', border: '1px solid rgba(231,76,60,0.3)' }
+                            style: { ...btnBase, padding: '1px 6px', fontSize: 'var(--text-label)', minWidth: '44px', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.3)' }
                         }, '\u2715')
                     ))
             ) : null,
@@ -223,20 +224,20 @@
             saveDialog ? React.createElement('div', {
                 style: {
                     position: 'absolute', top: '28px', left: 0, zIndex: 60,
-                    background: '#0a0a0a', border: '1px solid rgba(212,175,55,0.3)',
+                    background: 'var(--k-0a0a0a, #0a0a0a)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
                     borderRadius: '6px', padding: '10px', minWidth: '260px',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.6)'
                 },
                 onClick: (e) => e.stopPropagation()
             },
-                React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--gold)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' } }, 'Save current view'),
+                React.createElement('div', { style: { fontSize: 'var(--text-label)', color: 'var(--gold)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' } }, 'Save current view'),
                 React.createElement('input', {
                     type: 'text', autoFocus: true,
                     value: saveDialog.name,
                     onChange: (e) => setSaveDialog({ ...saveDialog, name: e.target.value }),
                     onKeyDown: (e) => { if (e.key === 'Enter') doSaveNew(); if (e.key === 'Escape') setSaveDialog(null); },
                     placeholder: 'View name',
-                    style: { width: '100%', padding: '6px 8px', fontSize: '0.82rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'var(--white)', marginBottom: '8px', fontFamily: 'var(--font-body)' }
+                    style: { width: '100%', padding: '6px 8px', fontSize: 'var(--text-body)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm)', color: 'var(--white)', marginBottom: '8px', fontFamily: 'var(--font-body)', minHeight: '44px' }
                 }),
                 React.createElement('div', { style: { display: 'flex', gap: '6px', justifyContent: 'flex-end' } },
                     React.createElement('button', { onClick: () => setSaveDialog(null), style: btnBase }, 'Cancel'),

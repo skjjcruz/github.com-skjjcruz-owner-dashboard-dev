@@ -10,7 +10,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 (function() {
-    const { FONT_UI, FONT_DISPL, FONT_MONO, panelCard, dhqColor, tierColor } = window.DraftCC.styles;
+    const { FONT_UI, FONT_DISPL, FONT_MONO, panelCard, dhqColor, tierColor, bpBucket } = window.DraftCC.styles;
 
     const LANE_LABELS = {
         dhq: { label: 'DHQ Board', short: 'DHQ', sub: 'canonical value' },
@@ -18,19 +18,12 @@
         my:  { label: 'My Board', short: 'MY', sub: 'front-office prep' },
     };
 
-    const VIEW_LABELS = [
-        { key: 'compact', label: 'Compact' },
-        { key: 'scout', label: 'Scout' },
-        { key: 'fit', label: 'Fit' },
-        { key: 'value', label: 'Value' },
-    ];
-
     const TAG_META = {
-        target:  { label: 'Target', color: '#2ECC71' },
-        sleeper: { label: 'Watch', color: '#3498DB' },
-        fade:    { label: 'Fade', color: '#F0A500' },
-        avoid:   { label: 'DND', color: '#E74C3C' },
-        must:    { label: 'Must', color: '#D4AF37' },
+        target:  { label: 'Target', color: 'var(--k-2ecc71, #2ecc71)' },
+        sleeper: { label: 'Watch', color: 'var(--k-3498db, #3498db)' },
+        fade:    { label: 'Fade', color: 'var(--k-f0a500, #f0a500)' },
+        avoid:   { label: 'DND', color: 'var(--k-e74c3c, #e74c3c)' },
+        must:    { label: 'Must', color: 'var(--k-d4af37, #d4af37)' },
     };
     const TAG_CYCLE = ['target', 'sleeper', 'fade', 'avoid', 'must', null];
 
@@ -44,16 +37,23 @@
         return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n));
     }
 
-    function signed(value) {
-        const n = Number(value || 0);
-        if (!n) return '0';
-        return n > 0 ? '+' + n : String(n);
-    }
-
     function rankMap(order) {
         const out = {};
         (order || []).forEach((pid, idx) => { if (pid != null) out[String(pid)] = idx + 1; });
         return out;
+    }
+
+    function nflTeamOf(player) {
+        return player?.nflTeam || player?.team || player?.csv?.nflTeam || player?.p?.team || '';
+    }
+
+    function collegeOf(player) {
+        return player?.school || player?.college || player?.csv?.college || player?.p?.college || player?.p?.metadata?.college || '';
+    }
+
+    // Edge rushers (ED) group under DL on the board.
+    function normEdPos(pos) {
+        return pos === 'ED' ? 'DL' : pos;
     }
 
     function ageOf(player) {
@@ -78,10 +78,10 @@
         const [pLo, pHi] = curve.peak || [24, 29];
         const declineHi = curve.decline?.[1] || pHi + 3;
         if (!age) return { label: 'Window —', color: 'var(--silver)', years: null };
-        if (age < pLo) return { label: 'Rising', color: '#2ECC71', years: Math.max(0, pHi - age) };
+        if (age < pLo) return { label: 'Rising', color: 'var(--k-2ecc71, #2ecc71)', years: Math.max(0, pHi - age) };
         if (age <= pHi) return { label: 'Peak', color: 'var(--gold)', years: Math.max(0, pHi - age) };
-        if (age <= declineHi) return { label: 'Value', color: '#F0A500', years: Math.max(0, declineHi - age) };
-        return { label: 'Late', color: '#E74C3C', years: 0 };
+        if (age <= declineHi) return { label: 'Value', color: 'var(--k-f0a500, #f0a500)', years: Math.max(0, declineHi - age) };
+        return { label: 'Late', color: 'var(--k-e74c3c, #e74c3c)', years: 0 };
     }
 
     function projectionFor(player) {
@@ -108,8 +108,8 @@
         const [sortKey, setSortKey] = React.useState('board');
         const [sortDir, setSortDir] = React.useState(1);
         const [boardLane, setBoardLane] = React.useState(defaultLane);
-        const [boardView, setBoardView] = React.useState('compact');
         const [dragPid, setDragPid] = React.useState(null);
+        const [bucket, setBucket] = React.useState(() => bpBucket());
 
         React.useEffect(() => {
             if (boardContext?.activeLane && boardContext.activeLane !== boardLane) {
@@ -117,7 +117,18 @@
             }
         }, [boardContext?.activeLane]);
 
-        const activeLane = lanes[boardLane] ? boardLane : 'dhq';
+        // Re-read viewport bucket on resize so the iPad/narrow row cap stays accurate.
+        React.useEffect(() => {
+            const onResize = () => setBucket(bpBucket());
+            window.addEventListener('resize', onResize);
+            return () => window.removeEventListener('resize', onResize);
+        }, []);
+
+        // Allow the "my" lane to activate even before a manual order exists — it
+        // renders the DHQ order as a draggable starting point, and the first drag
+        // persists the manual order. (Otherwise an empty My Board silently falls
+        // back to DHQ and can never be reordered.)
+        const activeLane = (boardLane === 'my' || lanes[boardLane]) ? boardLane : 'dhq';
         const activeLaneData = lanes[activeLane] || lanes.dhq || { order: [] };
         const activeRanks = React.useMemo(() => rankMap(activeLaneData.order || []), [activeLaneData]);
         const dhqRanks = React.useMemo(() => rankMap(lanes.dhq?.order || []), [lanes.dhq]);
@@ -125,8 +136,8 @@
         const myRanks = React.useMemo(() => rankMap(lanes.my?.order || []), [lanes.my]);
 
         const posColors = window.App?.POS_COLORS || {
-            QB: '#FF6B6B', RB: '#4ECDC4', WR: '#45B7D1', TE: '#F7DC6F',
-            K: '#BB8FCE', DEF: '#85929E', DL: '#E67E22', LB: '#F0A500', DB: '#5DADE2',
+            QB: 'var(--k-ff6b6b, #ff6b6b)', RB: 'var(--k-4ecdc4, #4ecdc4)', WR: 'var(--k-45b7d1, #45b7d1)', TE: 'var(--k-f7dc6f, #f7dc6f)',
+            K: 'var(--k-bb8fce, #bb8fce)', DEF: 'var(--k-85929e, #85929e)', DL: 'var(--k-e67e22, #e67e22)', LB: 'var(--k-f0a500, #f0a500)', DB: 'var(--k-5dade2, #5dade2)',
         };
         const posLabel = window.App?.posLabel || (pos => pos === 'DEF' ? 'D/ST' : pos);
 
@@ -136,7 +147,15 @@
         }, [boardContext]);
 
         const decoratedPool = React.useMemo(() => {
-            return (state.pool || []).map(player => {
+            // Keep undrafted players exactly as state.pool provides them, then re-add
+            // any drafted players from the full original pool so they stay on the board
+            // (struck through) instead of vanishing the moment they're picked.
+            const drafted = state.draftedPids || {};
+            const live = state.pool || [];
+            const liveIds = new Set(live.map(p => String(idOf(p))));
+            const draftedExtra = (state.originalPool || [])
+                .filter(p => drafted[idOf(p)] && !liveIds.has(String(idOf(p))));
+            return [...live, ...draftedExtra].map(player => {
                 const pid = idOf(player);
                 const entry = boardContext?.entries?.[pid] || {};
                 const projections = projectionFor(player);
@@ -160,13 +179,14 @@
                         tier: entry.tier || player.tier || player.csv?.tier || null,
                         rankDelta: dhqRank && activeRank && activeRank < 99999 ? dhqRank - activeRank : 0,
                     },
+                    _drafted: !!drafted[pid],
                 };
             });
-        }, [state.pool, boardContext, activeLane, activeRanks, dhqRanks, aiRanks, myRanks]);
+        }, [state.pool, state.originalPool, state.draftedPids, boardContext, activeLane, activeRanks, dhqRanks, aiRanks, myRanks]);
 
         const available = React.useMemo(() => {
             const filtered = decoratedPool.filter(p => {
-                if (posFilter && p.pos !== posFilter) return false;
+                if (posFilter && normEdPos(p.pos) !== posFilter) return false;
                 if (search) {
                     const q = search.toLowerCase();
                     const hay = [p.name, p.team, p.nflTeam, p.college, p.csv?.college].filter(Boolean).join(' ').toLowerCase();
@@ -176,12 +196,13 @@
             });
             const sorted = filtered.slice().sort((a, b) => {
                 const dir = sortDir;
-                if (sortKey === 'board') return (a._board.activeRank - b._board.activeRank) || ((b.dhq || 0) - (a.dhq || 0));
-                if (sortKey === 'rank') return dir * ((a.consensusRank || a.rank || 9999) - (b.consensusRank || b.rank || 9999));
+                if (sortKey === 'board') return dir * ((a._board.activeRank - b._board.activeRank) || ((b.dhq || 0) - (a.dhq || 0)));
+                if (sortKey === 'name') return dir * String(a.name || '').localeCompare(String(b.name || ''));
+                if (sortKey === 'pos') { const x = normEdPos(a.pos) || '', y = normEdPos(b.pos) || ''; return x === y ? ((b.dhq || 0) - (a.dhq || 0)) : dir * x.localeCompare(y); }
                 if (sortKey === 'tier') return dir * ((a._board.tier || 99) - (b._board.tier || 99));
                 if (sortKey === 'age') return dir * ((ageOf(a) || 99) - (ageOf(b) || 99));
-                if (sortKey === 'fit') return dir * ((b.fit?.score || 0) - (a.fit?.score || 0));
-                if (sortKey === 'y5') return dir * ((b._board.projections.y5 || 0) - (a._board.projections.y5 || 0));
+                if (sortKey === 'team') { const x = nflTeamOf(a) || '', y = nflTeamOf(b) || ''; if (!x !== !y) return x ? -1 : 1; return dir * x.localeCompare(y); }
+                if (sortKey === 'college') { const x = collegeOf(a) || '', y = collegeOf(b) || ''; if (!x !== !y) return x ? -1 : 1; return dir * x.localeCompare(y); }
                 return dir * ((b.dhq || 0) - (a.dhq || 0));
             });
             return sorted.slice(0, 100);
@@ -189,16 +210,19 @@
 
         const availablePositions = React.useMemo(() => {
             const set = new Set();
-            (state.pool || []).slice(0, 120).forEach(p => { if (p.pos) set.add(p.pos); });
+            (state.pool || []).slice(0, 120).forEach(p => { if (p.pos) set.add(normEdPos(p.pos)); });
             const priority = { QB: 1, RB: 2, WR: 3, TE: 4, DL: 5, LB: 6, DB: 7, K: 8 };
             return Array.from(set).sort((a, b) => (priority[a] || 99) - (priority[b] || 99));
         }, [state.pool]);
 
         const persistBoardPatch = React.useCallback((patch) => {
-            const draftType = state.draftContext?.draftType || state.variant || 'startup';
+            // Key the board by the league draft VARIANT, never the live-sync MODE, so
+            // edits here land on the same store the Draft tab's Big Board reads/writes
+            // (state.draftContext.draftType is 'live-sync' during a live draft).
+            const draftType = state.variant || 'startup';
             const saved = window.DraftCC?.context?.saveBoardPatch?.(state.leagueId, draftType, patch);
             dispatch({ type: 'UPDATE_BOARD_CONTEXT', patch: { ...patch, ...(saved?.updatedAt ? { updatedAt: saved.updatedAt } : {}) } });
-        }, [state.leagueId, state.variant, state.draftContext?.draftType]);
+        }, [state.leagueId, state.variant]);
 
         const onLaneSelect = (lane) => {
             setBoardLane(lane);
@@ -312,21 +336,20 @@
             }
         };
 
-        const sortButton = (key, label, defaultDir) => (
-            <button key={key} onClick={() => {
+        // Google-Sheets-style sortable column header: click to sort, click again to flip.
+        const colHeader = (key, label, align) => (
+            <button onClick={() => {
                 if (sortKey === key) setSortDir(d => d * -1);
-                else { setSortKey(key); setSortDir(defaultDir); }
-            }} style={{
-                padding: '2px 7px',
-                fontSize: '0.6rem',
-                borderRadius: '3px',
-                border: '1px solid ' + (sortKey === key ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'),
-                background: sortKey === key ? 'rgba(212,175,55,0.15)' : 'transparent',
+                else { setSortKey(key); setSortDir((key === 'dhq' || key === 'board') ? -1 : 1); }
+            }} title={'Sort by ' + label} style={{
+                display: 'flex', alignItems: 'center', minWidth: 0,
+                justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
+                gap: 2, background: 'transparent', border: 0, padding: 0, cursor: 'pointer',
                 color: sortKey === key ? 'var(--gold)' : 'var(--silver)',
-                cursor: 'pointer',
-                fontFamily: FONT_UI,
-                fontWeight: sortKey === key ? 700 : 500,
-            }}>{label}{sortKey === key ? (sortDir === -1 ? ' ▼' : ' ▲') : ''}</button>
+                opacity: sortKey === key ? 1 : 0.62,
+                fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_UI, fontWeight: 800,
+                textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden',
+            }}>{label}{sortKey === key ? (sortDir === -1 ? ' ▾' : ' ▴') : ''}</button>
         );
 
         const containerCss = panelCard({
@@ -335,6 +358,13 @@
             flexDirection: 'column',
             padding: '10px 12px',
         });
+
+        // iPad / narrow cap: show ~15 player rows then scroll. Desktop is unrestricted
+        // (flex fills the panel). DHQ/AI rows are one line (~46px incl. padding+border);
+        // My Board adds a second control row (~38px) per visible row.
+        const ROWS_VISIBLE = 15;
+        const rowHeight = activeLane === 'my' ? 84 : 46;
+        const scrollMaxHeight = bucket === 'desktop' ? undefined : (ROWS_VISIBLE * rowHeight) + 'px';
 
         const laneSource = activeLaneData.source || '';
         const laneCopy = activeLane === 'my' && laneSource === 'seeded_from_ai'
@@ -351,7 +381,7 @@
                     <div style={{ fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
                         Big Board
                     </div>
-                    <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.65, fontFamily: FONT_UI }}>
+                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, fontFamily: FONT_UI }}>
                         {state.pool.length} avail
                     </div>
                 </div>
@@ -364,31 +394,31 @@
                                 minWidth: 0,
                                 padding: '5px 4px',
                                 borderRadius: '5px',
-                                border: '1px solid ' + (active ? 'rgba(212,175,55,0.55)' : 'rgba(255,255,255,0.08)'),
-                                background: active ? 'rgba(212,175,55,0.16)' : 'rgba(255,255,255,0.025)',
+                                border: '1px solid ' + (active ? 'var(--acc-line4, rgba(212,175,55,0.55))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                                background: active ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-2, rgba(255,255,255,0.025))',
                                 color: active ? 'var(--gold)' : 'var(--silver)',
                                 cursor: 'pointer',
                                 fontFamily: FONT_UI,
                                 textAlign: 'left',
                             }}>
-                                <div style={{ fontSize: '0.62rem', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{LANE_LABELS[lane].short}</div>
-                                <div style={{ fontSize: '0.48rem', opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{LANE_LABELS[lane].sub}</div>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{LANE_LABELS[lane].short}</div>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{LANE_LABELS[lane].sub}</div>
                             </button>
                         );
                     })}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '7px', minHeight: 18 }}>
-                    <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: '0.56rem', fontFamily: FONT_UI, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{laneCopy}</span>
+                    <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_UI, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{laneCopy}</span>
                     {activeLane === 'my' && boardContext?.canSeedMyBoardFromAi && (
                         <button onClick={onSeedMyBoardFromAi} style={{
                             padding: '2px 6px',
-                            border: '1px solid rgba(212,175,55,0.25)',
-                            background: 'rgba(212,175,55,0.08)',
+                            border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
                             color: 'var(--gold)',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '0.52rem',
+                            fontSize: 'var(--text-micro, 0.6875rem)',
                             fontFamily: FONT_UI,
                             fontWeight: 700,
                             flexShrink: 0,
@@ -404,8 +434,8 @@
                         width: '100%',
                         boxSizing: 'border-box',
                         padding: '6px 8px',
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.08)',
+                        background: 'var(--ov-2, rgba(255,255,255,0.03))',
+                        border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                         borderRadius: '4px',
                         color: 'var(--white)',
                         fontSize: '0.72rem',
@@ -415,50 +445,32 @@
                     }}
                 />
 
-                <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.65, fontFamily: FONT_UI, marginRight: '2px' }}>SORT:</span>
-                    {sortButton('board', 'Board', 1)}
-                    {sortButton('dhq', 'DHQ', -1)}
-                    {sortButton('tier', 'Tier', 1)}
-                    {sortButton('age', 'Age', 1)}
-                    {sortButton('fit', 'Fit', -1)}
-                    {sortButton('y5', 'Y5', -1)}
-                </div>
-
-                <div style={{ display: 'flex', gap: '3px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                    {VIEW_LABELS.map(view => (
-                        <button key={view.key} onClick={() => setBoardView(view.key)} style={{
-                            padding: '2px 7px',
-                            borderRadius: '10px',
-                            border: '1px solid ' + (boardView === view.key ? 'rgba(212,175,55,0.35)' : 'rgba(255,255,255,0.08)'),
-                            background: boardView === view.key ? 'rgba(212,175,55,0.12)' : 'transparent',
-                            color: boardView === view.key ? 'var(--gold)' : 'var(--silver)',
-                            cursor: 'pointer',
-                            fontSize: '0.56rem',
-                            fontFamily: FONT_UI,
-                            fontWeight: 700,
-                        }}>{view.label}</button>
-                    ))}
-                </div>
-
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '8px' }}>
                     <button onClick={() => setPosFilter('')} style={{
-                        padding: '2px 8px',
-                        fontSize: '0.62rem',
+                        padding: '2px 10px',
+                        minHeight: '40px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 'var(--text-micro, 0.6875rem)',
                         borderRadius: '10px',
-                        border: '1px solid ' + (posFilter === '' ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'),
-                        background: posFilter === '' ? 'rgba(212,175,55,0.15)' : 'transparent',
+                        border: '1px solid ' + (posFilter === '' ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                        background: posFilter === '' ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
                         color: posFilter === '' ? 'var(--gold)' : 'var(--silver)',
                         cursor: 'pointer',
                         fontFamily: FONT_UI,
                     }}>ALL</button>
                     {availablePositions.map(pos => (
                         <button key={pos} onClick={() => setPosFilter(posFilter === pos ? '' : pos)} style={{
-                            padding: '2px 8px',
-                            fontSize: '0.62rem',
+                            padding: '2px 10px',
+                            minHeight: '40px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 'var(--text-micro, 0.6875rem)',
                             borderRadius: '10px',
-                            border: '1px solid ' + (posFilter === pos ? (posColors[pos] || '#666') + '66' : 'rgba(255,255,255,0.08)'),
-                            background: posFilter === pos ? (posColors[pos] || '#666') + '22' : 'transparent',
+                            border: '1px solid ' + (posFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '66' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                            background: posFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '22' : 'transparent',
                             color: posFilter === pos ? (posColors[pos] || 'var(--silver)') : 'var(--silver)',
                             cursor: 'pointer',
                             fontFamily: FONT_UI,
@@ -467,7 +479,31 @@
                     ))}
                 </div>
 
-                <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', marginRight: '-4px', paddingRight: '4px' }}>
+                {activeLane === 'my' && (
+                    <div style={{ padding: '4px 2px 7px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', opacity: 0.72, fontFamily: FONT_UI, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ fontWeight: 900 }}>{'↕'}</span> Drag rows to reorder your board
+                    </div>
+                )}
+
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: (isUserTurn || state.overrideMode || state.mode === 'manual') ? '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 50px' : '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px',
+                    gap: '5px',
+                    alignItems: 'center',
+                    padding: '0 3px 4px 5px',
+                    borderBottom: '1px solid var(--ov-6, rgba(255,255,255,0.12))',
+                    marginBottom: '2px',
+                }}>
+                    {colHeader('board', '#', 'right')}
+                    {colHeader('name', 'Player', 'left')}
+                    {colHeader('team', 'Team', 'left')}
+                    {colHeader('college', 'College', 'left')}
+                    {colHeader('pos', 'Pos', 'center')}
+                    {colHeader('dhq', 'DHQ', 'right')}
+                    {(isUserTurn || state.overrideMode || state.mode === 'manual') && <span />}
+                </div>
+
+                <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', marginRight: '-4px', paddingRight: '4px', maxHeight: scrollMaxHeight }}>
                     {available.length === 0 && (
                         <div style={{ padding: '12px', textAlign: 'center', color: 'var(--silver)', opacity: 0.4, fontSize: '0.72rem' }}>
                             No players match filter
@@ -478,18 +514,17 @@
                         const tag = TAG_META[b.tag];
                         const col = dhqColor(p.dhq);
                         const tCol = tierColor(b.tier);
-                        const win = b.windowInfo || valueWindow(p);
                         const rowRank = b.activeRank < 99999 ? b.activeRank : idx + 1;
-                        const posColor = posColors[p.pos] || 'var(--silver)';
-                        const note = b.note || '';
-                        const showSecondLine = boardView !== 'compact' || note || tag;
+                        const posColor = posColors[normEdPos(p.pos)] || 'var(--silver)';
+                        const nflTeam = nflTeamOf(p);
+                        const college = collegeOf(p);
                         return (
                             <div
                                 key={p.pid}
                                 onClick={() => onOpenModal(p)}
-                                draggable={activeLane === 'my'}
+                                draggable={activeLane === 'my' && !p._drafted}
                                 onDragStart={e => {
-                                    if (activeLane !== 'my') return;
+                                    if (activeLane !== 'my' || p._drafted) return;
                                     setDragPid(idOf(p));
                                     e.dataTransfer.effectAllowed = 'move';
                                     try { e.dataTransfer.setData('text/plain', idOf(p)); } catch (_) {}
@@ -508,129 +543,52 @@
                                 }}
                                 style={{
                                     display: 'grid',
-                                    gridTemplateColumns: (isUserTurn || state.overrideMode || state.mode === 'manual') ? '24px minmax(0,1fr) 34px 44px 48px 44px 56px' : '24px minmax(0,1fr) 34px 44px 48px 44px',
+                                    gridTemplateColumns: (isUserTurn || state.overrideMode || state.mode === 'manual') ? '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 50px' : '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px',
                                     gap: '5px',
                                     alignItems: 'center',
-                                    padding: '6px 3px 6px 0',
-                                    borderBottom: '1px solid rgba(255,255,255,0.035)',
+                                    padding: '3px 3px 3px 0',
+                                    borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))',
                                     borderLeft: b.tier ? '2px solid ' + tCol : '2px solid transparent',
                                     paddingLeft: '5px',
-                                    cursor: activeLane === 'my' ? 'grab' : 'pointer',
-                                    opacity: dragPid === idOf(p) ? 0.52 : 1,
-                                    background: dragPid === idOf(p) ? 'rgba(212,175,55,0.10)' : (idx === 0 ? 'rgba(212,175,55,0.045)' : 'transparent'),
+                                    cursor: activeLane === 'my' && !p._drafted ? 'grab' : 'pointer',
+                                    opacity: p._drafted ? 0.4 : (dragPid === idOf(p) ? 0.52 : 1),
+                                    background: dragPid === idOf(p) ? 'var(--acc-fill2, rgba(212,175,55,0.10))' : (idx === 0 ? 'var(--acc-fill1, rgba(212,175,55,0.045))' : 'transparent'),
                                     transition: 'background 0.1s',
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.06)'}
-                                onMouseLeave={e => e.currentTarget.style.background = dragPid === idOf(p) ? 'rgba(212,175,55,0.10)' : (idx === 0 ? 'rgba(212,175,55,0.045)' : 'transparent')}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'}
+                                onMouseLeave={e => e.currentTarget.style.background = dragPid === idOf(p) ? 'var(--acc-fill2, rgba(212,175,55,0.10))' : (idx === 0 ? 'var(--acc-fill1, rgba(212,175,55,0.045))' : 'transparent')}
                             >
-                                <span style={{ fontSize: '0.62rem', color: rowRank <= 12 ? 'var(--gold)' : 'rgba(255,255,255,0.34)', textAlign: 'right', fontFamily: FONT_MONO }}>{rowRank}</span>
-                                <div style={{ minWidth: 0 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
-                                        <span style={{ color: 'var(--white)', fontWeight: 700, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                                        {b.rankDelta !== 0 && activeLane !== 'dhq' && (
-                                            <span style={{
-                                                flexShrink: 0,
-                                                color: b.rankDelta > 0 ? '#2ECC71' : '#E74C3C',
-                                                fontSize: '0.52rem',
-                                                fontFamily: FONT_MONO,
-                                                border: '1px solid rgba(255,255,255,0.08)',
-                                                borderRadius: '3px',
-                                                padding: '0 3px',
-                                            }}>{signed(b.rankDelta)}</span>
-                                        )}
-                                        {tag && (
-                                            <span style={{ flexShrink: 0, color: tag.color, fontSize: '0.5rem', fontWeight: 800, border: '1px solid ' + tag.color + '55', background: tag.color + '18', borderRadius: '3px', padding: '0 4px' }}>{tag.label}</span>
-                                        )}
-                                    </div>
-                                    {showSecondLine && (
-                                        <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: '0.56rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {boardView === 'fit' && p.fit?.score != null ? 'Fit ' + p.fit.score + ' · ' : ''}
-                                            {boardView === 'scout' && (p.college || p.team || p.nflTeam) ? (p.college || p.team || p.nflTeam) + ' · ' : ''}
-                                            {boardView === 'value' ? win.label + (win.years != null ? ' ' + win.years + 'yr · ' : ' · ') : ''}
-                                            {note || (b.tier ? 'Tier ' + b.tier : 'Click for player context')}
-                                        </div>
+                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rowRank <= 12 ? 'var(--gold)' : 'var(--ov-8, rgba(255,255,255,0.34))', textAlign: 'right', fontFamily: FONT_MONO }}>{rowRank}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+                                    <span style={{ color: 'var(--white)', fontWeight: 700, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: p._drafted ? 'line-through' : 'none' }}>{p.name}</span>
+                                    {tag && (
+                                        <span style={{ flexShrink: 0, color: tag.color, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, border: '1px solid ' + wrAlpha(tag.color, '55'), background: wrAlpha(tag.color, '18'), borderRadius: '3px', padding: '0 4px' }}>{tag.label}</span>
                                     )}
                                 </div>
-                                <span style={{ fontSize: '0.56rem', fontWeight: 800, padding: '1px 5px', borderRadius: '3px', background: posColor + '22', color: posColor, textAlign: 'center', fontFamily: FONT_UI }}>{p.pos}</span>
-                                <span style={{ color: col, fontSize: '0.62rem', fontWeight: 800, fontFamily: FONT_MONO, textAlign: 'right' }}>{fmt(p.dhq)}</span>
-                                <span style={{ color: b.projections?.y5 >= (p.dhq || 0) ? '#2ECC71' : 'var(--silver)', fontSize: '0.58rem', fontFamily: FONT_MONO, textAlign: 'right' }}>Y5 {fmt(b.projections?.y5)}</span>
-                                <span style={{ color: win.color, fontSize: '0.52rem', fontWeight: 800, textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '3px', padding: '1px 2px' }}>{win.label}</span>
+                                <span title={nflTeam} style={{ color: 'var(--silver)', opacity: 0.78, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nflTeam || '—'}</span>
+                                <span title={college} style={{ color: 'var(--silver)', opacity: 0.7, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{college || '—'}</span>
+                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '1px 5px', borderRadius: '3px', background: wrAlpha(posColor, '22'), color: posColor, textAlign: 'center', fontFamily: FONT_UI }}>{normEdPos(p.pos)}</span>
+                                <span style={{ color: col, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, fontFamily: FONT_MONO, textAlign: 'right' }}>{fmt(p.dhq)}</span>
                                 {(isUserTurn || state.overrideMode || state.mode === 'manual') && (
                                     <button
                                         onClick={e => { e.stopPropagation(); onDraft(p); }}
                                         title={state.overrideMode || state.mode === 'manual' ? 'Record the player for the team on the clock' : 'Make your pick'}
                                         style={{
-                                            padding: '4px 6px',
-                                            fontSize: '0.58rem',
+                                            padding: '10px 8px',
+                                            minHeight: '44px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: 'var(--text-micro, 0.6875rem)',
                                             fontFamily: FONT_UI,
                                             fontWeight: 800,
-                                            background: state.overrideMode ? '#9b8afb' : 'var(--gold)',
-                                            color: state.overrideMode ? '#fff' : 'var(--black)',
+                                            background: state.overrideMode ? 'var(--purple)' : 'var(--gold)',
+                                            color: state.overrideMode ? 'var(--k-ffffff, #ffffff)' : 'var(--black)',
                                             border: 'none',
                                             borderRadius: '3px',
                                             cursor: 'pointer',
                                         }}
                                     >{state.mode === 'live-sync' && state.overrideMode ? 'APPLY' : state.mode === 'manual' ? 'PICK' : (state.overrideMode ? 'FORCE' : 'DRAFT')}</button>
-                                )}
-                                {activeLane === 'my' && (
-                                    <div style={{ gridColumn: '2 / -1', display: 'flex', gap: '5px', alignItems: 'center', marginTop: '-2px' }}>
-                                        <button onClick={e => { e.stopPropagation(); onMovePlayer(p, -1); }} style={{
-                                            padding: '2px 6px',
-                                            borderRadius: '3px',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            background: 'rgba(255,255,255,0.03)',
-                                            color: 'var(--silver)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.5rem',
-                                            fontFamily: FONT_UI,
-                                            fontWeight: 800,
-                                        }}>UP</button>
-                                        <button onClick={e => { e.stopPropagation(); onMovePlayer(p, 1); }} style={{
-                                            padding: '2px 6px',
-                                            borderRadius: '3px',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            background: 'rgba(255,255,255,0.03)',
-                                            color: 'var(--silver)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.5rem',
-                                            fontFamily: FONT_UI,
-                                            fontWeight: 800,
-                                        }}>DOWN</button>
-                                        <button onClick={e => { e.stopPropagation(); onEditTier(p); }} style={{
-                                            padding: '2px 6px',
-                                            borderRadius: '3px',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            background: b.tier ? tCol + '18' : 'rgba(255,255,255,0.03)',
-                                            color: b.tier ? tCol : 'var(--silver)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.5rem',
-                                            fontFamily: FONT_UI,
-                                            fontWeight: 800,
-                                        }}>TIER</button>
-                                        <button onClick={e => { e.stopPropagation(); onCycleTag(p); }} style={{
-                                            padding: '2px 6px',
-                                            borderRadius: '3px',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            background: tag ? tag.color + '18' : 'rgba(255,255,255,0.03)',
-                                            color: tag ? tag.color : 'var(--silver)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.5rem',
-                                            fontFamily: FONT_UI,
-                                            fontWeight: 800,
-                                        }}>TAG</button>
-                                        <button onClick={e => { e.stopPropagation(); onEditNote(p); }} style={{
-                                            padding: '2px 6px',
-                                            borderRadius: '3px',
-                                            border: '1px solid rgba(255,255,255,0.08)',
-                                            background: note ? 'rgba(212,175,55,0.10)' : 'rgba(255,255,255,0.03)',
-                                            color: note ? 'var(--gold)' : 'var(--silver)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.5rem',
-                                            fontFamily: FONT_UI,
-                                            fontWeight: 800,
-                                        }}>NOTE</button>
-                                        {note && <span style={{ minWidth: 0, flex: 1, color: 'var(--silver)', opacity: 0.58, fontSize: '0.52rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note}</span>}
-                                    </div>
                                 )}
                             </div>
                         );

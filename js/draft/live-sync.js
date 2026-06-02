@@ -60,6 +60,20 @@
                         if (metaResp.ok) meta = await metaResp.json();
                     }
                 } catch (_) {}
+                if (picks == null) {
+                    // Distinguish a dead/missing draft (null/404 from the fetch) from
+                    // a valid empty pre-draft feed ([]). A silent return here would
+                    // freeze the mirror on last-known state with no signal that the
+                    // draft id is wrong or the draft was deleted.
+                    if (onStatus) onStatus({
+                        status: 'error',
+                        error: 'Sleeper returned no draft for this draft id — check the draft id.',
+                        lastPollAt: _lastSuccessAt || null,
+                        stale: true,
+                    });
+                    if (window.wrLog) window.wrLog('liveSync.poll', 'null picks for draft ' + draftId);
+                    return;
+                }
                 if (!Array.isArray(picks)) return;
                 const snapshot = reconcilePicks(picks, {
                     initialPickNo: _lastPickNo,
@@ -177,24 +191,35 @@
             }
         }
 
-        sorted.forEach(pick => {
+        // Emit ONLY the contiguous run starting at initialPickNo + 1. If Sleeper's
+        // feed has a gap (a slot still showing player_id=null while a manager is on
+        // the clock or autodrafting, or picks arriving out of order), stop at the
+        // gap and do NOT mark later picks seen or advance the cursor past it.
+        //
+        // The reducer applies live-sync picks strictly in sequence (pick_no must ===
+        // currentIdx+1). Emitting past a gap gets those later picks hard-rejected
+        // while leaving them flagged "seen" here — so when the missing pick finally
+        // arrives it is treated as old and never applied, losing 3+ picks forever and
+        // freezing the mirror for the rest of the draft. Stopping at the gap lets the
+        // run self-heal once the feed fills in. missingPickNos (computed above) still
+        // raises the stale banner while we wait.
+        let expected = initialPickNo + 1;
+        for (const pick of sorted) {
             const pickNo = Number(pick.pick_no || 0);
             const key = pickKey(pick);
-            if (key && seen.has(key)) {
-                duplicateCount += 1;
+            if (pickNo < expected) {
+                // Already mirrored in a prior poll — count duplicates, keep cursor.
+                if (key && seen.has(key)) duplicateCount += 1;
+                else if (key) seen.add(key);
                 lastPickNo = Math.max(lastPickNo, pickNo);
-                return;
+                continue;
             }
-            if (pickNo <= initialPickNo) {
-                if (key) seen.add(key);
-                duplicateCount += 1;
-                lastPickNo = Math.max(lastPickNo, pickNo);
-                return;
-            }
+            if (pickNo > expected) break; // gap — stop; do NOT mark later picks seen
             if (key) seen.add(key);
             lastPickNo = Math.max(lastPickNo, pickNo);
             newPicks.push(pick);
-        });
+            expected += 1;
+        }
 
         return {
             newPicks,

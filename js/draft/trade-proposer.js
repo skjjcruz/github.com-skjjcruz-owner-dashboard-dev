@@ -246,9 +246,9 @@
         };
 
         const gradeCol = evaluation.grade?.col || 'var(--gold)';
-        const likelihoodCol = evaluation.likelihood >= 60 ? '#2ECC71'
-            : evaluation.likelihood >= 40 ? '#F0A500'
-            : '#E74C3C';
+        const likelihoodCol = evaluation.likelihood >= 60 ? 'var(--good)'
+            : evaluation.likelihood >= 40 ? 'var(--warn)'
+            : 'var(--bad)';
 
         const isSending = drawer.status === 'sending';
         const isAccepted = drawer.status === 'accepted';
@@ -294,14 +294,14 @@
                 {/* Header */}
                 <div style={{
                     padding: '14px 16px',
-                    borderBottom: '1px solid rgba(212,175,55,0.2)',
+                    borderBottom: 'var(--card-border)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '10px',
                     flexShrink: 0,
                 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '0.62rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Propose Trade</div>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Propose Trade</div>
                         <select
                             value={String(targetId)}
                             disabled={isSending || isAccepted}
@@ -311,8 +311,8 @@
                                 width: '100%',
                                 marginTop: 4,
                                 padding: '5px 7px',
-                                background: 'rgba(255,255,255,0.04)',
-                                border: '1px solid rgba(212,175,55,0.24)',
+                                background: 'var(--ov-3, rgba(255,255,255,0.04))',
+                                border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))',
                                 borderRadius: '5px',
                                 color: 'var(--white)',
                                 fontSize: '0.78rem',
@@ -327,17 +327,22 @@
                                 </option>
                             ))}
                         </select>
-                        <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.7 }}>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.9, marginTop: 3 }}>
                             {targetPersona.tradeDna?.label || '—'} · {targetPersona.posture?.label || '—'}
                         </div>
                     </div>
                     <button onClick={onClose} style={{
                         background: 'none',
-                        border: '1px solid rgba(255,255,255,0.1)',
+                        border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
                         color: 'var(--silver)',
                         fontSize: '0.9rem',
-                        width: 30,
-                        height: 30,
+                        width: 44,
+                        height: 44,
+                        minWidth: 44,
+                        minHeight: 44,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         borderRadius: '4px',
                         cursor: 'pointer',
                     }}>×</button>
@@ -352,7 +357,7 @@
                             background: 'rgba(124,107,248,0.08)',
                             border: '1px solid rgba(155,138,251,0.28)',
                             borderRadius: '5px',
-                            fontSize: '0.64rem',
+                            fontSize: 'var(--text-micro, 0.6875rem)',
                             color: 'rgba(214,208,255,0.94)',
                             marginBottom: '12px',
                             lineHeight: 1.35,
@@ -364,8 +369,8 @@
                     {isSending && (
                         <div style={{
                             padding: '10px',
-                            background: 'rgba(212,175,55,0.08)',
-                            border: '1px solid rgba(212,175,55,0.3)',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
+                            border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
                             borderRadius: '5px',
                             fontSize: '0.72rem',
                             color: 'var(--gold)',
@@ -382,7 +387,7 @@
                             border: '1px solid rgba(46,204,113,0.3)',
                             borderRadius: '5px',
                             fontSize: '0.72rem',
-                            color: '#2ECC71',
+                            color: 'var(--good)',
                             textAlign: 'center',
                             marginBottom: '12px',
                             fontWeight: 700,
@@ -397,7 +402,7 @@
                             border: '1px solid rgba(240,165,0,0.32)',
                             borderRadius: '5px',
                             fontSize: '0.72rem',
-                            color: '#F0A500',
+                            color: 'var(--warn)',
                             marginBottom: '12px',
                         }}>
                             <div style={{ fontWeight: 800, marginBottom: 5 }}>COUNTER OFFER</div>
@@ -411,7 +416,7 @@
                             border: '1px solid rgba(231,76,60,0.3)',
                             borderRadius: '5px',
                             fontSize: '0.72rem',
-                            color: '#E74C3C',
+                            color: 'var(--bad)',
                             textAlign: 'center',
                             marginBottom: '12px',
                         }}>
@@ -442,7 +447,7 @@
                                 <div style={{ marginTop: 4, color: 'var(--silver)', opacity: 0.82 }}>{plannedEvaluation.reason}</div>
                             )}
                             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                                <button onClick={onCopyPlanned} style={miniBtn('#2ECC71')}>{copyStatus || 'COPY SUMMARY'}</button>
+                                <button onClick={onCopyPlanned} style={miniBtn('var(--good)')}>{copyStatus || 'COPY SUMMARY'}</button>
                                 {state.sleeperDraftId && <button onClick={onOpenSleeper} style={miniBtn('rgba(155,138,251,1)')}>OPEN SLEEPER</button>}
                             </div>
                         </div>
@@ -466,43 +471,43 @@
                     }}>
                         <div style={{
                             padding: '8px',
-                            background: 'rgba(255,255,255,0.02)',
-                            border: '1px solid rgba(255,255,255,0.06)',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.1))',
+                            border: '1px solid var(--ov-6, rgba(255,255,255,0.14))',
                             borderRadius: '5px',
                             textAlign: 'center',
                         }}>
                             <div style={{ fontSize: '1.2rem', fontWeight: 700, color: gradeCol, fontFamily: FONT_DISPL }}>
                                 {evaluation.grade?.grade || '—'}
                             </div>
-                            <div style={{ fontSize: '0.54rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>
+                            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>
                                 {evaluation.grade?.label || 'Empty'}
                             </div>
                         </div>
                         <div style={{
                             padding: '8px',
-                            background: 'rgba(255,255,255,0.02)',
-                            border: '1px solid rgba(255,255,255,0.06)',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.1))',
+                            border: '1px solid var(--ov-6, rgba(255,255,255,0.14))',
                             borderRadius: '5px',
                             textAlign: 'center',
                         }}>
                             <div style={{ fontSize: '1.2rem', fontWeight: 700, color: likelihoodCol, fontFamily: FONT_DISPL }}>
                                 {evaluation.likelihood}%
                             </div>
-                            <div style={{ fontSize: '0.54rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>
+                            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>
                                 Acceptance
                             </div>
                         </div>
                         <div style={{
                             padding: '8px',
-                            background: 'rgba(255,255,255,0.02)',
-                            border: '1px solid rgba(255,255,255,0.06)',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.1))',
+                            border: '1px solid var(--ov-6, rgba(255,255,255,0.14))',
                             borderRadius: '5px',
                             textAlign: 'center',
                         }}>
                             <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--gold)', fontFamily: FONT_DISPL }}>
                                 {evaluation.acceptanceLine || 70}%
                             </div>
-                            <div style={{ fontSize: '0.54rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>
+                            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>
                                 Buyer Line
                             </div>
                         </div>
@@ -511,13 +516,13 @@
                     {evaluation.verdict && (
                         <div style={{
                             marginBottom: 12,
-                            padding: '7px 8px',
-                            border: '1px solid rgba(212,175,55,0.14)',
-                            background: 'rgba(212,175,55,0.045)',
+                            padding: '8px 10px',
+                            border: '1px solid var(--acc-line2, rgba(212,175,55,0.34))',
+                            background: 'var(--acc-fill3, rgba(212,175,55,0.14))',
                             borderRadius: 5,
                             color: 'var(--silver)',
-                            fontSize: '0.64rem',
-                            lineHeight: 1.35,
+                            fontSize: 'var(--text-label, 0.75rem)',
+                            lineHeight: 1.4,
                         }}>
                             <strong style={{ color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                 {evaluation.verdict === 'accepted' ? 'Likely accept' : evaluation.verdict === 'countered' ? 'Likely counter' : 'Likely decline'}
@@ -530,7 +535,7 @@
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
                             <PickSide
                                 label="Counter: you give"
-                                color="#E74C3C"
+                                color="var(--k-e74c3c, #e74c3c)"
                                 picks={counterOffer.myGive}
                                 playerIds={counterOffer.myGivePlayers}
                                 faab={counterOffer.myGiveFaab}
@@ -539,7 +544,7 @@
                             />
                             <PickSide
                                 label="Counter: you get"
-                                color="#2ECC71"
+                                color="var(--k-2ecc71, #2ecc71)"
                                 picks={counterOffer.theirGive}
                                 playerIds={counterOffer.theirGivePlayers}
                                 faab={counterOffer.theirGiveFaab}
@@ -553,7 +558,7 @@
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
                         <PickSide
                             label="You give"
-                            color="#E74C3C"
+                            color="var(--k-e74c3c, #e74c3c)"
                             picks={drawer.myGive}
                             playerIds={drawer.myGivePlayers}
                             faab={drawer.myGiveFaab}
@@ -562,7 +567,7 @@
                         />
                         <PickSide
                             label="You get"
-                            color="#2ECC71"
+                            color="var(--k-2ecc71, #2ecc71)"
                             picks={drawer.theirGive}
                             playerIds={drawer.theirGivePlayers}
                             faab={drawer.theirGiveFaab}
@@ -617,7 +622,7 @@
                     {evaluation.taxes && evaluation.taxes.length > 0 && (
                         <div style={{ marginTop: '12px' }}>
                             <div style={{
-                                fontSize: '0.56rem',
+                                fontSize: 'var(--text-label, 0.75rem)',
                                 fontWeight: 700,
                                 color: 'var(--gold)',
                                 textTransform: 'uppercase',
@@ -627,16 +632,15 @@
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                                 {evaluation.taxes.map((t, i) => {
                                     const isTax = (t.impact || 0) < 0;
-                                    const col = isTax ? '#E74C3C' : '#2ECC71';
+                                    const col = isTax ? 'var(--bad)' : 'var(--good)';
                                     return (
                                         <div key={i} title={t.desc || ''} style={{
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'space-between',
-                                            fontSize: '0.62rem',
-                                            padding: '3px 6px',
+                                            fontSize: 'var(--text-label, 0.75rem)',
+                                            padding: '6px 8px',
                                             borderLeft: '2px solid ' + col,
-                                            paddingLeft: '8px',
                                         }}>
                                             <span style={{
                                                 color: 'var(--silver)',
@@ -644,9 +648,9 @@
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
                                                 flex: 1,
-                                                opacity: 0.85,
+                                                opacity: 0.95,
                                             }}>{t.name}</span>
-                                            <span style={{ color: col, fontWeight: 700, marginLeft: '6px' }}>
+                                            <span style={{ color: col, fontWeight: 700, marginLeft: '8px', textAlign: 'right', flexShrink: 0 }}>
                                                 {(t.impact || 0) > 0 ? '+' : ''}{t.impact}{typeof t.impact === 'number' ? '%' : ''}
                                             </span>
                                         </div>
@@ -658,7 +662,7 @@
                     {evaluation.modifiers && evaluation.modifiers.length > 0 && (
                         <div style={{ marginTop: '12px' }}>
                             <div style={{
-                                fontSize: '0.56rem',
+                                fontSize: 'var(--text-label, 0.75rem)',
                                 fontWeight: 700,
                                 color: 'var(--gold)',
                                 textTransform: 'uppercase',
@@ -667,31 +671,58 @@
                             }}>Owner DNA Drivers</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                                 {evaluation.modifiers.slice(0, 6).map((m, i) => {
-                                    const col = (m.impact || 0) >= 0 ? '#2ECC71' : '#E74C3C';
+                                    const col = (m.impact || 0) >= 0 ? 'var(--good)' : 'var(--bad)';
                                     return (
                                         <div key={i} title={m.detail || ''} style={{
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'space-between',
-                                            fontSize: '0.62rem',
-                                            padding: '3px 6px',
+                                            fontSize: 'var(--text-label, 0.75rem)',
+                                            padding: '6px 8px',
                                             borderLeft: '2px solid ' + col,
-                                            paddingLeft: '8px',
                                         }}>
-                                            <span style={{ color: 'var(--silver)', opacity: 0.85 }}>{m.label}</span>
-                                            <span style={{ color: col, fontWeight: 700, marginLeft: '6px' }}>{(m.impact || 0) > 0 ? '+' : ''}{m.impact}%</span>
+                                            <span style={{ color: 'var(--silver)', opacity: 0.95, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.label}</span>
+                                            <span style={{ color: col, fontWeight: 700, marginLeft: '8px', textAlign: 'right', flexShrink: 0 }}>{(m.impact || 0) > 0 ? '+' : ''}{m.impact}%</span>
                                         </div>
                                     );
                                 })}
                             </div>
                         </div>
                     )}
+                    {/* Net modifier total — the analyzer's signature readout: the sum of
+                        every psych tax + owner-DNA driver applied to the base acceptance. */}
+                    {((evaluation.taxes && evaluation.taxes.length) || (evaluation.modifiers && evaluation.modifiers.length)) ? (
+                        <div style={{
+                            marginTop: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 10px',
+                            borderTop: '1px solid var(--ov-6, rgba(255,255,255,0.14))',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.1))',
+                            borderRadius: '5px',
+                        }}>
+                            <span style={{
+                                fontSize: 'var(--text-label, 0.75rem)',
+                                fontWeight: 700,
+                                color: 'var(--gold)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.08em',
+                            }}>Net Modifier</span>
+                            <span style={{
+                                fontSize: '0.95rem',
+                                fontWeight: 700,
+                                fontFamily: FONT_DISPL,
+                                color: (evaluation.netModifier || 0) >= 0 ? 'var(--good)' : 'var(--bad)',
+                            }}>{(evaluation.netModifier || 0) > 0 ? '+' : ''}{evaluation.netModifier || 0}%</span>
+                        </div>
+                    ) : null}
                 </div>
 
                 {/* Footer actions */}
                 <div style={{
                     padding: '12px 16px',
-                    borderTop: '1px solid rgba(212,175,55,0.2)',
+                    borderTop: 'var(--card-border)',
                     display: 'flex',
                     gap: '8px',
                     flexShrink: 0,
@@ -802,14 +833,18 @@
 
     function miniBtn(color) {
         return {
-            padding: '5px 7px',
-            background: 'rgba(255,255,255,0.04)',
+            padding: '10px 12px',
+            minHeight: '40px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'var(--ov-3, rgba(255,255,255,0.04))',
             border: '1px solid ' + color,
             borderRadius: '4px',
             color,
             cursor: 'pointer',
             fontFamily: FONT_UI,
-            fontSize: '0.56rem',
+            fontSize: '0.6875rem',
             fontWeight: 900,
             letterSpacing: '0.04em',
         };
@@ -830,12 +865,12 @@
             <div style={{
                 marginBottom: 12,
                 padding: '10px',
-                border: '1px solid rgba(212,175,55,0.16)',
-                background: 'rgba(255,255,255,0.025)',
+                border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))',
+                background: 'var(--ov-2, rgba(255,255,255,0.025))',
                 borderRadius: '6px',
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
-                    <div style={{ fontSize: '0.56rem', color: 'var(--gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                         Owner Trade Intel
                     </div>
                     <div style={{ color: 'var(--gold)', fontFamily: FONT_DISPL, fontWeight: 800, fontSize: '0.78rem' }}>
@@ -847,26 +882,26 @@
                         <span key={chip} style={{
                             padding: '2px 6px',
                             borderRadius: '4px',
-                            background: 'rgba(212,175,55,0.08)',
-                            border: '1px solid rgba(212,175,55,0.18)',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
+                            border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))',
                             color: 'var(--silver)',
-                            fontSize: '0.56rem',
+                            fontSize: 'var(--text-label, 0.75rem)',
                             fontWeight: 700,
                         }}>{chip}</span>
                     ))}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: '0.6rem', color: 'var(--silver)', lineHeight: 1.35 }}>
-                    <div>
-                        <strong style={{ display: 'block', color: 'var(--white)', fontSize: '0.58rem', marginBottom: 2 }}>Needs</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.4 }}>
+                    <div style={{ opacity: 0.9 }}>
+                        <strong style={{ display: 'block', color: 'var(--white)', fontSize: 'var(--text-label, 0.75rem)', marginBottom: 2, opacity: 1 }}>Needs</strong>
                         {needs.length ? needs.join(', ') : 'No clear needs'}
                     </div>
-                    <div>
-                        <strong style={{ display: 'block', color: 'var(--white)', fontSize: '0.58rem', marginBottom: 2 }}>Tradable</strong>
+                    <div style={{ opacity: 0.9 }}>
+                        <strong style={{ display: 'block', color: 'var(--white)', fontSize: 'var(--text-label, 0.75rem)', marginBottom: 2, opacity: 1 }}>Tradable</strong>
                         {[...picks, ...players].slice(0, 4).join(', ') || 'No obvious assets'}
                     </div>
                 </div>
                 {profile.ownerIntelSummary && (
-                    <div style={{ marginTop: 7, fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.78, lineHeight: 1.35 }}>
+                    <div style={{ marginTop: 7, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.9, lineHeight: 1.4 }}>
                         {profile.ownerIntelSummary}
                     </div>
                 )}
@@ -875,11 +910,14 @@
     }
 
     function SuggestionRail({ suggestions, onLoad, disabled }) {
+        // Render even when the only item is a MOONSHOT (the no-viable-deal
+        // fallback) — that is precisely the case where the user most needs a
+        // surfaced path "in." Only bail when the rail is genuinely empty.
         if (!suggestions || suggestions.length === 0) return null;
         return (
             <div style={{ marginBottom: 14 }}>
                 <div style={{
-                    fontSize: '0.56rem',
+                    fontSize: 'var(--text-label, 0.75rem)',
                     fontWeight: 800,
                     color: 'var(--gold)',
                     textTransform: 'uppercase',
@@ -888,9 +926,10 @@
                 }}>Quick Packages</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {suggestions.map(s => {
+                        const isMoonshot = !!s.isMoonshot;
                         const clears = s.likelihood >= s.acceptanceLine;
                         const near = !clears && s.verdict === 'countered';
-                        const color = clears ? '#2ECC71' : near ? '#F0A500' : '#E74C3C';
+                        const color = isMoonshot ? 'var(--warn)' : clears ? 'var(--good)' : near ? 'var(--warn)' : 'var(--bad)';
                         return (
                             <button
                                 key={s.id}
@@ -900,8 +939,8 @@
                                 style={{
                                     textAlign: 'left',
                                     padding: '8px',
-                                    background: 'rgba(255,255,255,0.03)',
-                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    background: isMoonshot ? 'var(--acc-fill2, rgba(240,165,0,0.1))' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                                    border: isMoonshot ? '1px solid ' + wrAlpha('var(--warn)', '55') : '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                                     borderLeft: '3px solid ' + color,
                                     borderRadius: '5px',
                                     color: 'var(--silver)',
@@ -911,18 +950,57 @@
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-                                    <strong style={{ color: 'var(--white)', fontSize: '0.68rem' }}>{s.label}</strong>
-                                    <span style={{ color, fontFamily: FONT_MONO, fontSize: '0.62rem', fontWeight: 800 }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                        <strong style={{ color: isMoonshot ? 'var(--warn)' : 'var(--white)', fontSize: 'var(--text-label, 0.75rem)' }}>{s.label}</strong>
+                                        {isMoonshot && (
+                                            <span style={{
+                                                fontSize: 'var(--text-micro, 0.6875rem)',
+                                                fontWeight: 900,
+                                                letterSpacing: '0.06em',
+                                                color: 'var(--black)',
+                                                background: 'var(--warn)',
+                                                padding: '1px 5px',
+                                                borderRadius: '3px',
+                                            }}>MOONSHOT</span>
+                                        )}
+                                    </span>
+                                    <span style={{ color, fontFamily: FONT_MONO, fontSize: 'var(--text-label, 0.75rem)', fontWeight: 800, flexShrink: 0 }}>
                                         {s.likelihood}% / {s.acceptanceLine}%
                                     </span>
                                 </div>
-                                <div style={{ fontSize: '0.58rem', color: 'var(--gold)', fontWeight: 700, marginBottom: 3 }}>
+                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 700, marginBottom: 4 }}>
                                     {s.intent}
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.56rem', lineHeight: 1.3 }}>
-                                    <span><strong style={{ color: '#E74C3C' }}>Give:</strong> {proposalAssets(s.proposal, 'my')}</span>
-                                    <span><strong style={{ color: '#2ECC71' }}>Get:</strong> {proposalAssets(s.proposal, 'their')}</span>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, marginBottom: 4 }}>
+                                    <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--bad)' }}>Give:</strong> {proposalAssets(s.proposal, 'my')}</span>
+                                    <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--good)' }}>Get:</strong> {proposalAssets(s.proposal, 'their')}</span>
                                 </div>
+                                {/* Why — trade-up reasoning (headline + tone-colored drivers) */}
+                                {s.reasoning && (
+                                    <div style={{
+                                        marginTop: 5,
+                                        paddingTop: 5,
+                                        borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
+                                    }}>
+                                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--white)', fontWeight: 700, lineHeight: 1.35, marginBottom: 3 }}>
+                                            Why: {s.reasoning.headline}
+                                        </div>
+                                        {(s.reasoning.drivers || []).slice(0, 4).map((d, i) => {
+                                            const tCol = d.tone === 'good' ? 'var(--good)' : d.tone === 'bad' ? 'var(--bad)' : 'var(--silver)';
+                                            return (
+                                                <div key={i} style={{ fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, opacity: 0.95 }}>
+                                                    <strong style={{ color: tCol }}>{d.label}:</strong>{' '}
+                                                    <span style={{ color: 'var(--silver)' }}>{d.detail}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                {isMoonshot && (
+                                    <div style={{ marginTop: 5, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--warn)', fontWeight: 600, lineHeight: 1.35 }}>
+                                        Low odds — but possible if they're desperate.
+                                    </div>
+                                )}
                             </button>
                         );
                     })}
@@ -939,36 +1017,42 @@
             const n = p?.full_name || ((p?.first_name || '') + ' ' + (p?.last_name || '')).trim();
             return n || pid;
         };
+        // Unmistakable directional cue: GIVE side gets a left red stripe + "→"
+        // (assets leaving you), GET side gets a left green stripe + "←"
+        // (assets coming to you).
+        const isGive = String(label || '').toLowerCase().includes('give');
+        const dirLabel = isGive ? (label + ' →') : ('← ' + label);
         return (
             <div style={{
                 padding: '10px',
-                background: color + '08',
-                border: '1px solid ' + color + '25',
+                background: wrAlpha(color, '08'),
+                border: '1px solid ' + wrAlpha(color, '25'),
+                borderLeft: '3px solid ' + color,
                 borderRadius: '6px',
                 minHeight: 66,
             }}>
-                <div style={{ fontSize: '0.52rem', color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>{label}</div>
+                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '5px' }}>{dirLabel}</div>
                 {hasAny ? (
                     <>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '4px' }}>
                             {(picks || []).map((p, i) => (
                                 <span key={'p'+i} style={{
-                                    fontSize: '0.58rem',
+                                    fontSize: 'var(--text-label, 0.75rem)',
                                     fontWeight: 700,
                                     padding: '2px 6px',
                                     borderRadius: '3px',
-                                    background: 'rgba(255,255,255,0.06)',
+                                    background: 'var(--ov-4, rgba(255,255,255,0.06))',
                                     color: 'var(--white)',
                                 }}>R{p.round}.{String(p.slot || 0).padStart(2, '0')}</span>
                             ))}
                             {(playerIds || []).map((pid) => (
                                 <span key={'pl'+pid} title={playerName(pid)} style={{
-                                    fontSize: '0.58rem',
+                                    fontSize: 'var(--text-label, 0.75rem)',
                                     fontWeight: 700,
                                     padding: '2px 6px',
                                     borderRadius: '3px',
                                     background: 'rgba(124,107,248,0.18)',
-                                    color: '#9b8afb',
+                                    color: 'var(--purple)',
                                     maxWidth: '100%',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
@@ -977,21 +1061,21 @@
                             ))}
                             {faab > 0 && (
                                 <span style={{
-                                    fontSize: '0.58rem',
+                                    fontSize: 'var(--text-label, 0.75rem)',
                                     fontWeight: 700,
                                     padding: '2px 6px',
                                     borderRadius: '3px',
                                     background: 'rgba(46,204,113,0.18)',
-                                    color: '#2ECC71',
+                                    color: 'var(--good)',
                                 }}>${faab} FAAB</span>
                             )}
                         </div>
-                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', fontFamily: FONT_MONO, opacity: 0.7 }}>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: FONT_MONO, opacity: 0.9 }}>
                             ≈ {(dhq || 0).toLocaleString()} DHQ
                         </div>
                     </>
                 ) : (
-                    <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.5, fontStyle: 'italic' }}>{empty}</div>
+                    <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, fontStyle: 'italic' }}>{empty}</div>
                 )}
             </div>
         );
@@ -1014,7 +1098,7 @@
         return (
             <div style={{ marginBottom: '10px' }}>
                 <div style={{
-                    fontSize: '0.54rem',
+                    fontSize: '0.6875rem',
                     fontWeight: 700,
                     color: 'var(--gold)',
                     textTransform: 'uppercase',
@@ -1034,12 +1118,15 @@
                                 title={playerName(pid) + ' · ' + pos + ' · ~' + val.toLocaleString() + ' DHQ'}
                                 style={{
                                     padding: '4px 8px',
-                                    fontSize: '0.6rem',
+                                    minHeight: '40px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    fontSize: '0.6875rem',
                                     fontWeight: 700,
-                                    background: isSel ? 'rgba(124,107,248,0.25)' : 'rgba(255,255,255,0.03)',
-                                    border: '1px solid ' + (isSel ? 'rgba(155,138,251,0.55)' : 'rgba(255,255,255,0.08)'),
+                                    background: isSel ? 'rgba(124,107,248,0.25)' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                                    border: '1px solid ' + (isSel ? 'rgba(155,138,251,0.55)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                                     borderRadius: '4px',
-                                    color: isSel ? '#9b8afb' : 'var(--silver)',
+                                    color: isSel ? 'var(--purple)' : 'var(--silver)',
                                     cursor: disabled ? 'not-allowed' : 'pointer',
                                     fontFamily: FONT_UI,
                                     opacity: disabled ? 0.5 : 1,
@@ -1062,8 +1149,8 @@
         const inputStyle = {
             width: '60px',
             padding: '4px 6px',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'var(--ov-3, rgba(255,255,255,0.04))',
+            border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
             borderRadius: '4px',
             color: 'var(--white)',
             fontFamily: FONT_MONO,
@@ -1072,12 +1159,12 @@
         };
         return (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.56rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.6875rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
                     <span style={{ flex: 1 }}>{myLabel}</span>
                     <span style={{ color: 'var(--silver)' }}>$</span>
                     <input type="number" min="0" max="1000" value={myFaab} onChange={e => onChange(e.target.value, 'my')} disabled={disabled} style={inputStyle} />
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.56rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.6875rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
                     <span style={{ flex: 1 }}>{theirLabel}</span>
                     <span style={{ color: 'var(--silver)' }}>$</span>
                     <input type="number" min="0" max="1000" value={theirFaab} onChange={e => onChange(e.target.value, 'their')} disabled={disabled} style={inputStyle} />
@@ -1091,7 +1178,7 @@
         return (
             <div style={{ marginBottom: '10px' }}>
                 <div style={{
-                    fontSize: '0.54rem',
+                    fontSize: '0.6875rem',
                     fontWeight: 700,
                     color: 'var(--gold)',
                     textTransform: 'uppercase',
@@ -1111,10 +1198,13 @@
                                 title={'Round ' + p.round + ' pick · ~' + val.toLocaleString() + ' DHQ'}
                                 style={{
                                     padding: '4px 8px',
-                                    fontSize: '0.62rem',
+                                    minHeight: '40px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    fontSize: '0.6875rem',
                                     fontWeight: 700,
-                                    background: isSel ? 'rgba(212,175,55,0.2)' : 'rgba(255,255,255,0.03)',
-                                    border: '1px solid ' + (isSel ? 'rgba(212,175,55,0.5)' : 'rgba(255,255,255,0.08)'),
+                                    background: isSel ? 'var(--acc-line1, rgba(212,175,55,0.2))' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                                    border: '1px solid ' + (isSel ? 'var(--acc-line3, rgba(212,175,55,0.5))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                                     borderRadius: '4px',
                                     color: isSel ? 'var(--gold)' : 'var(--silver)',
                                     cursor: disabled ? 'not-allowed' : 'pointer',
@@ -1127,7 +1217,7 @@
                         );
                     })}
                     {picks.length === 0 && (
-                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic' }}>
+                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic' }}>
                             no remaining picks
                         </div>
                     )}
@@ -1154,7 +1244,7 @@
         padding: '10px 16px',
         background: 'transparent',
         color: 'var(--silver)',
-        border: '1px solid rgba(255,255,255,0.1)',
+        border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
         borderRadius: '5px',
         fontSize: '0.78rem',
         fontWeight: 700,

@@ -179,15 +179,15 @@ function ReportSubView({
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
-          <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>CUSTOM REPORTS</div>
+          <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>CUSTOM REPORTS</div>
           <button onClick={handleNewReport} style={{ ...sortBtnStyle(false), marginLeft: 'auto', fontSize: '0.74rem' }}>+ New Report</button>
         </div>
         {reports.length === 0 && <div style={{ color: 'var(--silver)', fontSize: '0.82rem', padding: '24px', textAlign: 'center' }}>No reports yet. Create one to get started.</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {reports.map(r => (
-            <div key={r.id} role="button" tabIndex={0} title="Open report" data-report-id={r.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '8px', padding: '10px 14px', cursor: 'pointer', transition: 'border-color 0.15s', outline: 'none' }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,175,55,0.4)'}
-              onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(212,175,55,0.15)'}
+            <div key={r.id} role="button" tabIndex={0} title="Open report" data-report-id={r.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '8px', padding: '10px 14px', cursor: 'pointer', transition: 'border-color 0.15s', outline: 'none' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--acc-line3, rgba(212,175,55,0.4))'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--acc-fill3, rgba(212,175,55,0.15))'}
               onClick={() => handleViewReport(r)}
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewReport(r); } }}
             >
@@ -199,8 +199,8 @@ function ReportSubView({
                   {r.groupBy && <span> {'\u00B7'} grouped by {r.groupBy}</span>}
                 </div>
               </div>
-              <button onClick={(e) => { e.stopPropagation(); handleEditReport(r); }} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', padding: '3px 8px', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'var(--font-body)' }}>Edit</button>
-              {!r.id.startsWith('default_') && <button onClick={(e) => { e.stopPropagation(); handleDeleteReport(r.id); }} style={{ background: 'none', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', padding: '3px 8px', color: '#E74C3C', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'var(--font-body)' }}>Del</button>}
+              <button onClick={(e) => { e.stopPropagation(); handleEditReport(r); }} style={{ background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', padding: '3px 8px', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'var(--font-body)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Edit</button>
+              {!r.id.startsWith('default_') && <button onClick={(e) => { e.stopPropagation(); handleDeleteReport(r.id); }} style={{ background: 'none', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', padding: '3px 8px', color: 'var(--bad)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'var(--font-body)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Del</button>}
             </div>
           ))}
         </div>
@@ -284,20 +284,20 @@ function ReportSubView({
       updateDraft({ dataSource: ds, columns: newCols, filters: [], sort: newSort, groupBy: null });
     }
 
-    const inputStyle = { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '4px', padding: '5px 8px', color: 'var(--white)', fontSize: '0.78rem', fontFamily: 'var(--font-body)', outline: 'none' };
+    const inputStyle = { background: 'var(--ov-4, rgba(255,255,255,0.06))', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '4px', padding: '5px 8px', color: 'var(--white)', fontSize: '0.78rem', fontFamily: 'var(--font-body)', outline: 'none' };
     const selectStyle = { ...inputStyle, cursor: 'pointer' };
     const labelStyle = { fontSize: '0.72rem', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', display: 'block' };
 
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '14px' }}>
-          <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>{draft.id && reports.find(r => r.id === draft.id) ? 'EDIT REPORT' : 'NEW REPORT'}</div>
+          <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>{draft.id && reports.find(r => r.id === draft.id) ? 'EDIT REPORT' : 'NEW REPORT'}</div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
             <button onClick={() => { if (draft.name.trim()) handleSaveReport(draft); }} style={sortBtnStyle(true)} disabled={!draft.name.trim()}>Save</button>
             <button onClick={() => setReportView('list')} style={sortBtnStyle(false)}>Cancel</button>
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '10px', padding: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '10px', padding: '16px' }}>
           {/* Name */}
           <div>
             <label style={labelStyle}>Report Name</label>
@@ -318,7 +318,7 @@ function ReportSubView({
               {colDefs.map(c => {
                 const active = (draft.columns || []).includes(c.key);
                 return (
-                  <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.78rem', color: active ? 'var(--gold)' : 'var(--silver)', fontFamily: 'var(--font-body)', padding: '3px 8px', background: active ? 'rgba(212,175,55,0.1)' : 'rgba(255,255,255,0.03)', border: '1px solid ' + (active ? 'rgba(212,175,55,0.3)' : 'rgba(255,255,255,0.08)'), borderRadius: '4px' }}>
+                  <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.78rem', color: active ? 'var(--gold)' : 'var(--silver)', fontFamily: 'var(--font-body)', padding: '3px 8px', background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid ' + (active ? 'var(--acc-line2, rgba(212,175,55,0.3))' : 'var(--ov-5, rgba(255,255,255,0.08))'), borderRadius: '4px' }}>
                     <input type="checkbox" checked={active} onChange={() => toggleColumn(c.key)} style={{ display: 'none' }} />
                     {c.label}
                   </label>
@@ -348,7 +348,7 @@ function ReportSubView({
                 ) : (
                   <input value={f.value} onChange={e => updateFilter(i, { value: e.target.value })} placeholder={optSet && f.op === 'in' ? optSet.slice(0, 3).join(',') + '…' : 'value'} style={{ ...inputStyle, flex: 1 }} />
                 )}
-                <button onClick={() => removeFilter(i)} style={{ background: 'none', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', padding: '3px 8px', color: '#E74C3C', cursor: 'pointer', fontSize: '0.72rem', fontFamily: 'var(--font-body)' }}>X</button>
+                <button onClick={() => removeFilter(i)} style={{ background: 'none', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', padding: '3px 8px', color: 'var(--bad)', cursor: 'pointer', fontSize: '0.72rem', fontFamily: 'var(--font-body)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>X</button>
               </div>
               );
             })}
@@ -388,7 +388,7 @@ function ReportSubView({
   // ── Table View ──────────────────────────────────────────────────
   if (reportView === 'view' && viewResult) {
     const { report, rows, columns } = viewResult;
-    const tierColors = { ELITE: '#D4AF37', CONTENDER: '#2ECC71', CROSSROADS: '#F0A500', REBUILDING: '#E74C3C' };
+    const tierColors = { ELITE: 'var(--gold)', CONTENDER: 'var(--good)', CROSSROADS: 'var(--warn)', REBUILDING: 'var(--bad)' };
 
     function cellValue(row, col) {
       const val = row[col.key];
@@ -403,14 +403,14 @@ function ReportSubView({
     function cellColor(row, col) {
       const val = row[col.key];
       if (col.key === 'dhq' || col.key === 'totalDHQ') {
-        if (typeof val === 'number') return val >= 7000 ? '#2ECC71' : val >= 4000 ? '#3498DB' : val >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.35)';
+        if (typeof val === 'number') return val >= 7000 ? 'var(--good)' : val >= 4000 ? 'var(--k-3498db, #3498db)' : val >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.35))';
       }
       if (col.key === 'tier') return tierColors[val] || 'var(--silver)';
       if (col.key === 'healthScore') {
-        if (typeof val === 'number') return val >= 90 ? '#D4AF37' : val >= 80 ? '#2ECC71' : val >= 70 ? '#F0A500' : '#E74C3C';
+        if (typeof val === 'number') return val >= 90 ? 'var(--gold)' : val >= 80 ? 'var(--good)' : val >= 70 ? 'var(--warn)' : 'var(--bad)';
       }
       if (col.key === 'peakYrs') {
-        if (typeof val === 'number') return val >= 3 ? '#2ECC71' : val >= 1 ? '#F0A500' : '#E74C3C';
+        if (typeof val === 'number') return val >= 3 ? 'var(--good)' : val >= 1 ? 'var(--warn)' : 'var(--bad)';
       }
       return 'var(--silver)';
     }
@@ -418,16 +418,16 @@ function ReportSubView({
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px', gap: '8px' }}>
-          <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>{report.name || 'Report'}</div>
+          <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>{report.name || 'Report'}</div>
           <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>{rows.filter(r => !r._groupHeader).length} results</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
             <button onClick={() => handleEditReport(report)} style={sortBtnStyle(false)}>Edit</button>
             <button onClick={() => setReportView('list')} style={sortBtnStyle(false)}>Back</button>
           </div>
         </div>
-        <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflow: 'hidden' }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: columns.map(() => '1fr').join(' '), gap: '4px', padding: '6px 10px', background: 'rgba(212,175,55,0.08)', borderBottom: '2px solid rgba(212,175,55,0.2)', fontSize: '0.74rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: columns.map(() => '1fr').join(' '), gap: '4px', padding: '6px 10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: '0.74rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
             {columns.map(col => (
               <span key={col.key} style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleResort(col.key)}>
                 {col.label}{viewSort && viewSort.field === col.key ? (viewSort.dir === 'desc' ? ' \u25BC' : ' \u25B2') : ''}
@@ -440,7 +440,7 @@ function ReportSubView({
             {rows.map((row, idx) => {
               if (row._groupHeader) {
                 return (
-                  <div key={'gh_' + row._groupKey} style={{ padding: '8px 10px', background: 'rgba(212,175,55,0.06)', borderBottom: '1px solid rgba(212,175,55,0.15)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'Rajdhani, sans-serif', letterSpacing: '0.04em' }}>
+                  <div key={'gh_' + row._groupKey} style={{ padding: '8px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderBottom: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-title)', letterSpacing: '0.04em' }}>
                     {report.groupBy === 'pos' ? leagueMapPosLabel(row._groupKey) : row._groupKey} <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>({row._count})</span>
                   </div>
                 );
@@ -448,10 +448,10 @@ function ReportSubView({
               const canOpenPlayer = canOpenReportPlayer(row, report);
               const canOpenTeam = canOpenReportTeam(row, report);
               return (
-                <div key={idx} className={(canOpenPlayer || canOpenTeam) ? 'is-clickable-report-row' : ''} style={{ display: 'grid', gridTemplateColumns: columns.map(() => '1fr').join(' '), gap: '4px', padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.74rem', alignItems: 'center', transition: 'background 0.1s', cursor: (canOpenPlayer || canOpenTeam) ? 'pointer' : 'default', outline: 'none' }}
+                <div key={idx} className={(canOpenPlayer || canOpenTeam) ? 'is-clickable-report-row' : ''} style={{ display: 'grid', gridTemplateColumns: columns.map(() => '1fr').join(' '), gap: '4px', padding: '5px 10px', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', fontSize: '0.74rem', alignItems: 'center', transition: 'background 0.1s', cursor: (canOpenPlayer || canOpenTeam) ? 'pointer' : 'default', outline: 'none' }}
                   {...reportPlayerRowProps(row, report)}
                   {...reportTeamRowProps(row, report)}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.05)'}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   {columns.map(col => (
@@ -857,7 +857,7 @@ function LeagueMapTab({
   });
   const sortBtnStyle = (active) => ({
     padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', transition: 'all 0.15s',
-    border: '1px solid ' + (active ? 'var(--gold)' : 'rgba(212,175,55,0.3)'),
+    border: '1px solid ' + (active ? 'var(--gold)' : 'var(--acc-line2, rgba(212,175,55,0.3))'),
     background: active ? 'var(--gold)' : 'transparent',
     color: active ? 'var(--black)' : 'var(--gold)',
   });
@@ -984,22 +984,22 @@ function LeagueMapTab({
 
         // Power balance — top 3 teams for radar
         const top3 = ranked.slice(0, 3);
-        const tierColors = { ELITE: '#D4AF37', CONTENDER: '#2ECC71', CROSSROADS: '#F0A500', REBUILDING: '#E74C3C' };
+        const tierColors = { ELITE: 'var(--k-d4af37, #d4af37)', CONTENDER: 'var(--k-2ecc71, #2ecc71)', CROSSROADS: 'var(--k-f0a500, #f0a500)', REBUILDING: 'var(--k-e74c3c, #e74c3c)' };
 
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Tier Overview */}
             <div>
-              <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em', marginBottom: '10px' }}>COMPETITIVE TIERS</div>
+              <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em', marginBottom: '10px' }}>COMPETITIVE TIERS</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
                 {Object.entries(tiers).map(([tierName, teams]) => (
-                  <div key={tierName} className="wr-glass" style={{ background: 'var(--black)', border: '2px solid ' + (tierColors[tierName] || '#666') + '44', borderRadius: '10px', padding: '14px', borderLeft: '4px solid ' + (tierColors[tierName] || '#666') }}>
-                    <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: tierColors[tierName], marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={tierName} className="wr-glass" style={{ background: 'var(--black)', border: '2px solid ' + (tierColors[tierName] || 'var(--k-666666, #666666)') + '44', borderRadius: '10px', padding: '14px', borderLeft: '4px solid ' + (tierColors[tierName] || 'var(--k-666666, #666666)') }}>
+                    <div style={{ fontFamily: 'var(--font-title)', fontSize: '1rem', color: tierColors[tierName], marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       {tierName}
                       <span style={{ fontSize: '0.74rem', fontFamily: 'var(--font-body)', color: 'var(--silver)', fontWeight: 400 }}>{teams.length} team{teams.length !== 1 ? 's' : ''}</span>
                     </div>
                     {teams.length === 0 ? <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.5 }}>None</div> : teams.map(t => (
-                      <div key={t.rosterId} className={t.ownerId === sleeperUserId ? 'wr-my-row' : undefined} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', borderRadius: '4px' }}>
+                      <div key={t.rosterId} className={t.ownerId === sleeperUserId ? 'wr-my-row' : undefined} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))', borderRadius: '4px' }}>
                         <span style={{ fontSize: '0.82rem', color: 'var(--white)', fontWeight: t.ownerId === sleeperUserId ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{t.ownerName}{t.ownerId === sleeperUserId ? ' (You)' : ''}</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>{t.wins}-{t.losses}</span>
@@ -1030,21 +1030,21 @@ function LeagueMapTab({
               }).sort((a, b) => b.totalDhq - a.totalDhq);
 
               const views = [
-                { key: 'blended', label: 'Blended', data: ranked, valFn: t => t.healthScore, fmtFn: v => v, colFn: v => v >= 90 ? '#D4AF37' : v >= 80 ? '#2ECC71' : v >= 70 ? '#F0A500' : '#E74C3C', subFn: t => t.tier },
-                { key: 'contender', label: 'Contender', data: contenderRanked, valFn: t => t.ppg, fmtFn: v => v > 0 ? v.toFixed(1) : '\u2014', colFn: (v, i) => i < 3 ? '#2ECC71' : i < 8 ? 'var(--silver)' : '#E74C3C', subFn: t => (t.ppg > 0 ? t.ppg.toFixed(1) + ' PPG' : '') },
-                { key: 'dynasty', label: 'Dynasty', data: dynastyRanked, valFn: t => t.totalDhq, fmtFn: v => v > 0 ? (v/1000).toFixed(1)+'K' : '\u2014', colFn: (v, i) => i < 3 ? '#2ECC71' : i < 8 ? 'var(--silver)' : '#E74C3C', subFn: t => (t.totalDhq > 0 ? t.totalDhq.toLocaleString() + ' DHQ' : '') },
+                { key: 'blended', label: 'Blended', data: ranked, valFn: t => t.healthScore, fmtFn: v => v, colFn: v => v >= 90 ? 'var(--gold)' : v >= 80 ? 'var(--good)' : v >= 70 ? 'var(--warn)' : 'var(--bad)', subFn: t => t.tier },
+                { key: 'contender', label: 'Contender', data: contenderRanked, valFn: t => t.ppg, fmtFn: v => v > 0 ? v.toFixed(1) : '\u2014', colFn: (v, i) => i < 3 ? 'var(--good)' : i < 8 ? 'var(--silver)' : 'var(--bad)', subFn: t => (t.ppg > 0 ? t.ppg.toFixed(1) + ' PPG' : '') },
+                { key: 'dynasty', label: 'Dynasty', data: dynastyRanked, valFn: t => t.totalDhq, fmtFn: v => v > 0 ? (v/1000).toFixed(1)+'K' : '\u2014', colFn: (v, i) => i < 3 ? 'var(--good)' : i < 8 ? 'var(--silver)' : 'var(--bad)', subFn: t => (t.totalDhq > 0 ? t.totalDhq.toLocaleString() + ' DHQ' : '') },
               ];
               const prView = window._wrPrView || 'blended';
               const view = views.find(v => v.key === prView) || views[0];
 
               return <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                  <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>POWER RANKINGS</div>
+                  <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>POWER RANKINGS</div>
                   <div style={{ display: 'flex', gap: '4px', marginLeft: 'auto' }}>
-                    {views.map(v => <button key={v.key} onClick={() => { window._wrPrView = v.key; setTimeRecomputeTs(Date.now()); }} style={{ padding: '3px 10px', fontSize: '0.68rem', fontFamily: 'var(--font-body)', borderRadius: '4px', cursor: 'pointer', border: '1px solid ' + (prView === v.key ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'), background: prView === v.key ? 'rgba(212,175,55,0.12)' : 'transparent', color: prView === v.key ? 'var(--gold)' : 'var(--silver)' }}>{v.label}</button>)}
+                    {views.map(v => <button key={v.key} onClick={() => { window._wrPrView = v.key; setTimeRecomputeTs(Date.now()); }} style={{ padding: '3px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', borderRadius: '4px', cursor: 'pointer', border: '1px solid ' + (prView === v.key ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: prView === v.key ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent', color: prView === v.key ? 'var(--gold)' : 'var(--silver)' }}>{v.label}</button>)}
                   </div>
                 </div>
-                <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', overflow: 'hidden' }}>
+                <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', overflow: 'hidden' }}>
                   {(() => {
                     const top5 = view.data.slice(0, 5);
                     const myIdx = view.data.findIndex(t => t.ownerId === sleeperUserId);
@@ -1059,13 +1059,13 @@ function LeagueMapTab({
                         const maxVal = view.valFn(view.data[0]) || 1;
                         const pct = Math.min(100, Math.round((val / maxVal) * 100));
                         return (
-                          <div key={t.rosterId} className={isMe ? 'wr-my-row' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.03)', background: isMe ? 'rgba(212,175,55,0.04)' : 'transparent', ...(showMe && di === 5 ? { borderTop: '1px dashed rgba(212,175,55,0.2)' } : {}) }}>
+                          <div key={t.rosterId} className={isMe ? 'wr-my-row' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 10px', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', background: isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent', ...(showMe && di === 5 ? { borderTop: '1px dashed var(--acc-line1, rgba(212,175,55,0.2))' } : {}) }}>
                             <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: i < 3 ? 'var(--gold)' : 'var(--silver)', width: '20px', textAlign: 'center' }}>{i + 1}</span>
                             <div style={{ flex: 1, overflow: 'hidden' }}>
                               <span style={{ fontSize: '0.78rem', fontWeight: isMe ? 700 : 500, color: isMe ? 'var(--gold)' : 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.ownerName}{isMe ? ' (You)' : ''}</span>
                             </div>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.6, flexShrink: 0 }}>{t.tier}</span>
-                            <div style={{ width: '60px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden', flexShrink: 0 }}>
+                            <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, flexShrink: 0 }}>{t.tier}</span>
+                            <div style={{ width: '60px', height: '5px', borderRadius: '3px', background: 'var(--ov-4, rgba(255,255,255,0.06))', overflow: 'hidden', flexShrink: 0 }}>
                               <div style={{ width: pct + '%', height: '100%', borderRadius: '3px', background: view.colFn(val, i) }}></div>
                             </div>
                             <span style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-body)', color: view.colFn(val, i), width: '36px', textAlign: 'right' }}>{view.fmtFn(val)}</span>
@@ -1114,12 +1114,12 @@ function LeagueMapTab({
           return (
             <div key={team.rosterId} role="button" tabIndex={0} title="Open team context" onClick={() => openLeagueTeamContext(team, roster)} onKeyDown={e => handleLeagueTeamKey(e, team, roster)}
               style={{
-                background: 'var(--black)', border: '2px solid ' + (isMe ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'),
+                background: 'var(--black)', border: '2px solid ' + (isMe ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                 borderRadius: '10px', padding: '14px', cursor: 'pointer',
                 transition: 'all 0.15s', outline: 'none'
               }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = isMe ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.08)'; e.currentTarget.style.transform = 'none'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = isMe ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'; e.currentTarget.style.transform = 'none'; }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                 {user?.avatar && <img src={'https://sleepercdn.com/avatars/thumbs/' + user.avatar} style={{ width: '32px', height: '32px', borderRadius: '50%' }} />}
@@ -1139,7 +1139,7 @@ function LeagueMapTab({
                       const hist = window.App?.LI?.leagueUsersHistory || {};
                       let yrs = 0;
                       Object.values(hist).forEach(users => { (users || []).forEach(u => { if (u.user_id === team.userId) yrs++; }); });
-                      if (yrs <= 1) return <span style={{ fontSize: '0.76rem', color: '#F0A500', fontWeight: 700, marginLeft: '4px' }}>NEW</span>;
+                      if (yrs <= 1) return <span style={{ fontSize: '0.76rem', color: 'var(--warn)', fontWeight: 700, marginLeft: '4px' }}>NEW</span>;
                       if (yrs >= 4) return <span style={{ fontSize: '0.76rem', color: 'var(--silver)', opacity: 0.6, marginLeft: '4px' }}>{yrs}yr</span>;
                       return null;
                     })()}
@@ -1182,15 +1182,15 @@ function LeagueMapTab({
                 // Status tag from assessment
                 const teamAssess = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(roster?.roster_id) : null;
                 const tier2 = (teamAssess?.tier || '').toUpperCase();
-                const tierCol2 = tier2 === 'ELITE' ? '#D4AF37' : tier2 === 'CONTENDER' ? '#2ECC71' : tier2 === 'CROSSROADS' ? '#F0A500' : tier2 === 'REBUILDING' ? '#E74C3C' : 'var(--silver)';
+                const tierCol2 = tier2 === 'ELITE' ? 'var(--gold)' : tier2 === 'CONTENDER' ? 'var(--good)' : tier2 === 'CROSSROADS' ? 'var(--warn)' : tier2 === 'REBUILDING' ? 'var(--bad)' : 'var(--silver)';
                 const hs2 = teamAssess?.healthScore || 0;
 
                 return (
                   <div style={{ fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.4 }}>
                     {/* Status tag + health */}
                     <div style={{ display: 'flex', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
-                      {tier2 && <span style={{ fontSize: '0.7rem', fontWeight: 700, color: tierCol2, background: tierCol2 + '15', padding: '1px 8px', borderRadius: '4px', textTransform: 'uppercase', fontFamily: 'var(--font-body)' }}>{tier2}</span>}
-                      {hs2 > 0 && <span style={{ fontSize: '0.72rem', color: hs2 >= 75 ? '#2ECC71' : hs2 >= 55 ? '#F0A500' : '#E74C3C', fontWeight: 600 }}>{hs2} health</span>}
+                      {tier2 && <span style={{ fontSize: '0.7rem', fontWeight: 700, color: tierCol2, background: wrAlpha(tierCol2, '15'), padding: '1px 8px', borderRadius: '4px', textTransform: 'uppercase', fontFamily: 'var(--font-body)' }}>{tier2}</span>}
+                      {hs2 > 0 && <span style={{ fontSize: '0.72rem', color: hs2 >= 75 ? 'var(--good)' : hs2 >= 55 ? 'var(--warn)' : 'var(--bad)', fontWeight: 600 }}>{hs2} health</span>}
                     </div>
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', opacity: 0.7 }}>
                       <span>{rPlayers.length} players</span>
@@ -1198,12 +1198,12 @@ function LeagueMapTab({
                       <span>{'\u00B7'} {eliteCount} elite</span>
                     </div>
                     {posNeeds.length > 0 && <div style={{ display: 'flex', gap: '4px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                      {posNeeds.map(pos2 => <span key={pos2} style={{ fontSize: '0.68rem', color: '#E74C3C', background: 'rgba(231,76,60,0.1)', padding: '1px 6px', borderRadius: '3px', fontWeight: 600 }}>Need {leagueMapPosLabel(pos2)}</span>)}
+                      {posNeeds.map(pos2 => <span key={pos2} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--bad)', background: 'rgba(231,76,60,0.1)', padding: '1px 6px', borderRadius: '3px', fontWeight: 600 }}>Need {leagueMapPosLabel(pos2)}</span>)}
                     </div>}
                     {scored.sort((a2,b2) => b2.dhq - a2.dhq).slice(0, 3).map(x => (
                       <div key={x.pid} style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>{playersData[x.pid]?.full_name || '?'}</span>
-                        <span style={{ color: x.dhq >= 7000 ? '#2ECC71' : x.dhq >= 4000 ? '#3498DB' : 'var(--silver)', fontFamily: 'var(--font-body)' }}>{x.dhq > 0 ? x.dhq.toLocaleString() : '\u2014'}</span>
+                        <span style={{ color: x.dhq >= 7000 ? 'var(--good)' : x.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : 'var(--silver)', fontFamily: 'var(--font-body)' }}>{x.dhq > 0 ? x.dhq.toLocaleString() : '\u2014'}</span>
                       </div>
                     ))}
                   </div>
@@ -1308,15 +1308,15 @@ function LeagueMapTab({
                         value={lpSearch || ''}
                         onChange={e => setLpSearch && setLpSearch(e.target.value)}
                         placeholder="Search by player name or owner…"
-                        style={{ flex: '0 1 260px', padding: '5px 10px', fontSize: '0.76rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '4px', color: 'var(--white)', fontFamily: 'var(--font-body)', outline: 'none' }}
+                        style={{ flex: '0 1 260px', padding: '5px 10px', fontSize: '0.76rem', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '4px', color: 'var(--white)', fontFamily: 'var(--font-body)', outline: 'none', minHeight: '44px' }}
                     />
                     {['','QB','RB','WR','TE','K','DEF','DL','LB','DB'].map(pos => (
                         <button key={pos} onClick={() => setLpFilter(pos)} style={{
                             padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', textTransform: 'uppercase',
-                            background: lpFilter === pos ? 'var(--gold)' : 'rgba(255,255,255,0.04)',
+                            background: lpFilter === pos ? 'var(--gold)' : 'var(--ov-3, rgba(255,255,255,0.04))',
                             color: lpFilter === pos ? 'var(--black)' : 'var(--silver)',
-                            border: '1px solid ' + (lpFilter === pos ? 'var(--gold)' : 'rgba(255,255,255,0.08)'),
-                            borderRadius: '3px', cursor: 'pointer'
+                            border: '1px solid ' + (lpFilter === pos ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                            borderRadius: '3px', cursor: 'pointer', minHeight: '44px'
                         }}>{pos ? (window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)) : 'All'}</button>
                     ))}
                     <span style={{ fontSize: '0.72rem', color: 'var(--silver)', alignSelf: 'center' }}>{filtered.length} players</span>
@@ -1326,22 +1326,22 @@ function LeagueMapTab({
                         <button key={opt.k} onClick={() => setPpgWindow(opt.k)} title={opt.k === 'season' ? 'Season-to-date PPG' : 'Last ' + (opt.k === 'l5' ? 5 : 3) + ' games'} style={{
                             padding: '3px 8px', fontSize: '0.7rem', fontWeight: ppgWindow === opt.k ? 700 : 400,
                             fontFamily: 'var(--font-body)', textTransform: 'uppercase',
-                            background: ppgWindow === opt.k ? 'var(--gold)' : 'rgba(255,255,255,0.04)',
+                            background: ppgWindow === opt.k ? 'var(--gold)' : 'var(--ov-3, rgba(255,255,255,0.04))',
                             color: ppgWindow === opt.k ? 'var(--black)' : 'var(--silver)',
-                            border: '1px solid ' + (ppgWindow === opt.k ? 'var(--gold)' : 'rgba(255,255,255,0.08)'),
-                            borderRadius: '3px', cursor: 'pointer', letterSpacing: '0.03em'
+                            border: '1px solid ' + (ppgWindow === opt.k ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                            borderRadius: '3px', cursor: 'pointer', letterSpacing: '0.03em', minHeight: '44px'
                         }}>{opt.l}</button>
                     ))}
                     {/* Column picker */}
                     <div style={{ position: 'relative' }}>
                         <button onClick={() => setAllPlayersColPickerOpen(o => !o)} style={{
                             padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-body)',
-                            background: 'rgba(212,175,55,0.1)', color: 'var(--gold)',
-                            border: '1px solid rgba(212,175,55,0.3)', borderRadius: '3px', cursor: 'pointer',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.1))', color: 'var(--gold)',
+                            border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '3px', cursor: 'pointer',
                         }}>⚙ Columns ({allPlayersCols.length})</button>
                         {allPlayersColPickerOpen && (
-                            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', padding: '8px', zIndex: 20, minWidth: '180px', boxShadow: '0 6px 20px rgba(0,0,0,0.6)' }}>
-                                <div style={{ fontSize: '0.64rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '6px' }}>Visible Columns</div>
+                            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', padding: '8px', zIndex: 20, minWidth: '180px', boxShadow: '0 6px 20px rgba(0,0,0,0.6)' }}>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '6px' }}>Visible Columns</div>
                                 {ALL_PLAYERS_COLUMNS.map(c => {
                                     const on = allPlayersCols.includes(c.key);
                                     return (
@@ -1354,9 +1354,9 @@ function LeagueMapTab({
                                         </label>
                                     );
                                 })}
-                                <div style={{ display: 'flex', gap: '4px', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '6px' }}>
-                                    <button onClick={() => setAllPlayersCols(ALL_PLAYERS_COLUMNS.map(c => c.key))} style={{ flex: 1, padding: '4px', fontSize: '0.64rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '3px', color: 'var(--silver)', cursor: 'pointer', fontFamily: 'inherit' }}>All</button>
-                                    <button onClick={() => setAllPlayersCols(ALL_PLAYERS_DEFAULT_VISIBLE.slice())} style={{ flex: 1, padding: '4px', fontSize: '0.64rem', background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '3px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'inherit' }}>Reset</button>
+                                <div style={{ display: 'flex', gap: '4px', marginTop: '8px', borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))', paddingTop: '6px' }}>
+                                    <button onClick={() => setAllPlayersCols(ALL_PLAYERS_COLUMNS.map(c => c.key))} style={{ flex: 1, padding: '4px', fontSize: 'var(--text-micro, 0.6875rem)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '3px', color: 'var(--silver)', cursor: 'pointer', fontFamily: 'inherit' }}>All</button>
+                                    <button onClick={() => setAllPlayersCols(ALL_PLAYERS_DEFAULT_VISIBLE.slice())} style={{ flex: 1, padding: '4px', fontSize: 'var(--text-micro, 0.6875rem)', background: 'var(--acc-fill3, rgba(212,175,55,0.15))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '3px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'inherit' }}>Reset</button>
                                 </div>
                             </div>
                         )}
@@ -1382,6 +1382,10 @@ function LeagueMapTab({
                 {(() => {
                     const activeCols = ALL_PLAYERS_COLUMNS.filter(c => allPlayersCols.includes(c.key));
                     const gridTpl = ['24px', '28px'].concat(activeCols.map(c => c.width)).join(' ');
+                    // Sum fixed (px) column widths + index/avatar cols + a 140px floor for the 1fr name col,
+                    // so wide column selections scroll horizontally inside the card on iPad instead of crushing the name column.
+                    const fixedColPx = activeCols.reduce((sum, c) => sum + (/px$/.test(c.width) ? parseInt(c.width, 10) : 0), 0);
+                    const gridMinWidth = (24 + 28 + 140 + fixedColPx + (activeCols.length + 2) * 4) + 'px';
                     const tierOf = (rid) => {
                         const h = window.App?.LI?.teamHealth?.[rid];
                         return h?.tier || '';
@@ -1392,8 +1396,8 @@ function LeagueMapTab({
                         return Math.max(0, pw[1] - x.age);
                     };
                     return (
-                <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: gridTpl, gap: '4px', padding: '6px 10px', background: 'rgba(212,175,55,0.08)', borderBottom: '2px solid rgba(212,175,55,0.2)', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
+                <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: gridTpl, gap: '4px', padding: '6px 10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', minWidth: gridMinWidth }}>
                         <span>#</span><span></span>
                         {activeCols.map(c => {
                             if (c.sortable && c.sortKey) {
@@ -1423,23 +1427,23 @@ function LeagueMapTab({
                             return <span key={c.key}>{c.label}</span>;
                         })}
                     </div>
-                    <div style={_analyticsEmbed ? {} : { maxHeight: '600px', overflow: 'auto' }}>
+                    <div style={_analyticsEmbed ? { minWidth: gridMinWidth } : { maxHeight: '600px', overflowY: 'auto', minWidth: gridMinWidth }}>
                         {filtered.map((x, idx) => {
                             const pw = window.App?.peakWindows?.[x.pos];
-                            let peakColor = 'rgba(255,255,255,0.15)';
+                            let peakColor = 'var(--ov-6, rgba(255,255,255,0.15))';
                             let peakPct = 0;
                             if (pw && x.age) {
                                 const [lo, hi] = pw;
                                 const range = hi - lo;
                                 peakPct = Math.max(0, Math.min(1, (x.age - lo) / range));
-                                if (x.age >= lo && x.age <= hi) peakColor = '#2ECC71';
-                                else if (x.age >= lo - 2 && x.age <= hi + 2) peakColor = '#F1C40F';
-                                else peakColor = '#E74C3C';
+                                if (x.age >= lo && x.age <= hi) peakColor = 'var(--good)';
+                                else if (x.age >= lo - 2 && x.age <= hi + 2) peakColor = 'var(--k-f1c40f, #f1c40f)';
+                                else peakColor = 'var(--bad)';
                             }
 	                            const acq = x.isPool ? { method: 'Draft Pool', date: '' } : getAcquisitionInfo(x.pid, x.rosterId);
 	                            const acqMethod = acq?.method || (acq?.type === 'draft' ? 'Drafted' : acq?.type === 'trade' ? 'Traded' : acq?.type === 'add' ? 'FA' : '—');
 	                            const acqDate = acq?.date || '';
-	                            const acqColor = acqMethod === 'Draft Pool' ? 'var(--gold)' : acqMethod === 'Drafted' ? '#3498DB' : acqMethod === 'Traded' ? '#F0A500' : (acqMethod === 'FA' || acqMethod === 'Waiver') ? '#2ECC71' : 'rgba(255,255,255,0.25)';
+	                            const acqColor = acqMethod === 'Draft Pool' ? 'var(--gold)' : acqMethod === 'Drafted' ? 'var(--k-3498db, #3498db)' : acqMethod === 'Traded' ? 'var(--warn)' : (acqMethod === 'FA' || acqMethod === 'Waiver') ? 'var(--good)' : 'var(--ov-7, rgba(255,255,255,0.25))';
                             const yrs = peakYrsOf(x);
                             const tier = tierOf(x.rosterId);
                             const yoe = x.p.years_exp != null ? x.p.years_exp : '';
@@ -1459,16 +1463,16 @@ function LeagueMapTab({
                                         return (
                                             <span key={c.key} style={{ display: 'flex', alignItems: 'center' }}>
                                                 {pw && x.age ? (
-                                                    <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', position: 'relative', overflow: 'hidden' }}>
+                                                    <div style={{ width: '100%', height: '6px', background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '3px', position: 'relative', overflow: 'hidden' }}>
                                                         <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: (peakPct * 100) + '%', background: peakColor, borderRadius: '3px', transition: 'width 0.2s' }} />
                                                     </div>
-                                                ) : <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.68rem' }}>{'\u2014'}</span>}
+                                                ) : <span style={{ color: 'var(--ov-7, rgba(255,255,255,0.2))', fontSize: 'var(--text-micro, 0.6875rem)' }}>{'\u2014'}</span>}
                                             </span>
                                         );
                                     case 'peakYrs':
                                         return <span key={c.key} style={{ color: 'var(--silver)' }}>{yrs == null ? '\u2014' : yrs}</span>;
                                     case 'dhq':
-                                        return <span key={c.key} style={{ fontWeight: 700, fontFamily: 'var(--font-body)', color: x.dhq >= 7000 ? '#2ECC71' : x.dhq >= 4000 ? '#3498DB' : x.dhq >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.3)' }}>{x.dhq > 0 ? x.dhq.toLocaleString() : '\u2014'}</span>;
+                                        return <span key={c.key} style={{ fontWeight: 700, fontFamily: 'var(--font-body)', color: x.dhq >= 7000 ? 'var(--good)' : x.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : x.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{x.dhq > 0 ? x.dhq.toLocaleString() : '\u2014'}</span>;
                                     case 'ppg': {
                                         let shown = x.ppg;
                                         let marker = '';
@@ -1483,20 +1487,20 @@ function LeagueMapTab({
                                         return <span key={c.key} style={{ color: 'var(--silver)' }}>{shown || '\u2014'}{marker}</span>;
                                     }
                                     case 'tier':
-                                        return <span key={c.key} style={{ fontSize: '0.68rem', color: tier === 'ELITE' ? '#2ECC71' : tier === 'CONTENDER' ? '#3498DB' : tier === 'REBUILDING' ? '#E74C3C' : 'var(--silver)', fontWeight: 700, letterSpacing: '0.04em' }}>{tier || '\u2014'}</span>;
+                                        return <span key={c.key} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: tier === 'ELITE' ? 'var(--good)' : tier === 'CONTENDER' ? 'var(--k-3498db, #3498db)' : tier === 'REBUILDING' ? 'var(--bad)' : 'var(--silver)', fontWeight: 700, letterSpacing: '0.04em' }}>{tier || '\u2014'}</span>;
                                     case 'owner':
                                         return <span key={c.key} style={{ fontSize: '0.74rem', color: x.isMe ? 'var(--gold)' : 'var(--silver)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.teamName}{x.isMe ? ' (You)' : ''}</span>;
                                     case 'acq':
-                                        return <span key={c.key} title={acqDate} style={{ fontSize: '0.68rem', color: acqColor, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acqMethod}{acqDate ? ' · ' + acqDate : ''}</span>;
+                                        return <span key={c.key} title={acqDate} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: acqColor, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acqMethod}{acqDate ? ' · ' + acqDate : ''}</span>;
                                     default:
                                         return <span key={c.key}></span>;
                                 }
                             };
                             return (
                             <div key={x.pid} onClick={() => { if (window._wrSelectPlayer) window._wrSelectPlayer(x.pid); }}
-                                style={{ display: 'grid', gridTemplateColumns: gridTpl, gap: '4px', padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', fontSize: '0.72rem', alignItems: 'center', background: x.isMe ? 'rgba(212,175,55,0.04)' : 'transparent', transition: 'background 0.1s' }}
-                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.06)'}
-                                onMouseLeave={e => e.currentTarget.style.background = x.isMe ? 'rgba(212,175,55,0.04)' : 'transparent'}>
+                                style={{ display: 'grid', gridTemplateColumns: gridTpl, gap: '4px', padding: '5px 10px', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', cursor: 'pointer', fontSize: '0.72rem', alignItems: 'center', background: x.isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent', transition: 'background 0.1s' }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'}
+                                onMouseLeave={e => e.currentTarget.style.background = x.isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent'}>
                                 <span style={{ fontSize: '0.72rem', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>{idx+1}</span>
                                 <div style={{ width: '22px', height: '22px', flexShrink: 0 }}><img src={'https://sleepercdn.com/content/nfl/players/thumb/'+x.pid+'.jpg'} onError={e=>e.target.style.display='none'} style={{ width:'22px',height:'22px',borderRadius:'50%',objectFit:'cover' }} /></div>
                                 {activeCols.map(renderCell)}
@@ -1650,18 +1654,18 @@ function LeagueMapTab({
                 )}
                 {years.map(yr => (
                     <div key={yr} style={{ marginBottom: '16px' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.2rem', color: 'var(--gold)', marginBottom: '8px' }}>{yr} DRAFT PICKS</div>
-                        <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 1fr 90px 80px', gap: '4px', padding: '6px 10px', background: 'rgba(212,175,55,0.08)', borderBottom: '2px solid rgba(212,175,55,0.2)', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
+                        <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.2rem', color: 'var(--gold)', marginBottom: '8px' }}>{yr} DRAFT PICKS</div>
+                        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflow: 'hidden' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 1fr 90px 80px', gap: '4px', padding: '6px 10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
                                 <span>Pick</span><span>Current Owner</span><span>Original Owner</span><span>Status</span><span>Value</span>
                             </div>
                             <div style={_analyticsEmbed ? {} : { maxHeight: '500px', overflow: 'auto' }}>
                                 {filteredRows.filter(row => row.year === yr).map(row => (
                                             <div key={yr+'-'+row.round+'-'+row.originalRid} {...pickRowProps(row)} style={{
                                                 display: 'grid', gridTemplateColumns: '70px 1fr 1fr 90px 80px', gap: '4px',
-                                                padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                                padding: '5px 10px', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))',
                                                 fontSize: '0.72rem', alignItems: 'center',
-                                                background: row.isMyPick ? 'rgba(212,175,55,0.04)' : 'transparent',
+                                                background: row.isMyPick ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent',
                                                 cursor: 'pointer', outline: 'none'
                                             }}>
                                                 <span style={{ fontFamily: 'var(--font-body)', fontWeight: 700, color: row.round === 1 ? 'var(--gold)' : 'var(--silver)' }}>{row.label}</span>
@@ -1671,7 +1675,7 @@ function LeagueMapTab({
                                                 <span style={{ color: 'var(--silver)', opacity: row.traded ? 1 : 0.4 }}>
                                                     {getOwnerName(row.originalRid)}{row.isMyOriginal ? ' (You)' : ''}
                                                 </span>
-                                                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: row.status === 'Acquired' ? 'var(--gold)' : row.traded ? '#F0A500' : '#2ECC71' }}>
+                                                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: row.status === 'Acquired' ? 'var(--gold)' : row.traded ? 'var(--warn)' : 'var(--good)' }}>
                                                     {row.status}
                                                 </span>
                                                 <span style={{ color: row.round === 1 ? 'var(--gold)' : 'var(--silver)', fontFamily: 'var(--font-body)', fontWeight: 700 }}>{row.value.toLocaleString()}</span>
@@ -1718,10 +1722,10 @@ function LeagueMapTab({
 
     return (
       <div id="wr-export-team-roster" style={{ padding: '16px' }}>
-        <button onClick={() => { setSelectedTeam(null); setLeagueViewMode('roster'); }} style={{ background: 'none', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '4px', padding: '4px 12px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.78rem', marginBottom: '12px' }}>Back to League</button>
+        <button onClick={() => { setSelectedTeam(null); setLeagueViewMode('roster'); }} style={{ background: 'none', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '4px', padding: '4px 12px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.78rem', marginBottom: '12px' }}>Back to League</button>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.4rem', color: 'var(--gold)', marginBottom: '4px' }}>{team.displayName}</div>
-          <button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-team-roster'), 'team-' + (team.displayName || 'roster').replace(/\s+/g, '-').toLowerCase())} style={{ background:'none', border:'1px solid rgba(212,175,55,0.25)', borderRadius:'4px', padding:'2px 8px', color:'var(--gold)', fontSize:'0.68rem', cursor:'pointer', fontFamily: 'var(--font-body)' }}>Share</button>
+          <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.4rem', color: 'var(--gold)', marginBottom: '4px' }}>{team.displayName}</div>
+          <button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-team-roster'), 'team-' + (team.displayName || 'roster').replace(/\s+/g, '-').toLowerCase())} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', padding:'2px 8px', color:'var(--gold)', fontSize:'var(--text-micro, 0.6875rem)', cursor:'pointer', fontFamily: 'var(--font-body)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Share</button>
         </div>
         <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginBottom: '12px' }}>
           {roster?.settings?.wins ?? team.wins}-{roster?.settings?.losses ?? team.losses}{(roster?.settings?.ties > 0) ? '-' + roster.settings.ties : ''} Regular Season
@@ -1733,16 +1737,16 @@ function LeagueMapTab({
         <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
             <button onClick={() => setLeagueViewMode('roster')} style={{
                 padding: '5px 14px', fontSize: '0.76rem', fontFamily: 'var(--font-body)', textTransform: 'uppercase',
-                background: leagueViewMode === 'roster' ? 'var(--gold)' : 'rgba(255,255,255,0.04)',
+                background: leagueViewMode === 'roster' ? 'var(--gold)' : 'var(--ov-3, rgba(255,255,255,0.04))',
                 color: leagueViewMode === 'roster' ? 'var(--black)' : 'var(--silver)',
-                border: '1px solid ' + (leagueViewMode === 'roster' ? 'var(--gold)' : 'rgba(255,255,255,0.08)'),
+                border: '1px solid ' + (leagueViewMode === 'roster' ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                 borderRadius: '4px', cursor: 'pointer'
             }}>Roster</button>
             <button onClick={() => setLeagueViewMode('history')} style={{
                 padding: '5px 14px', fontSize: '0.76rem', fontFamily: 'var(--font-body)', textTransform: 'uppercase',
-                background: leagueViewMode === 'history' ? 'var(--gold)' : 'rgba(255,255,255,0.04)',
+                background: leagueViewMode === 'history' ? 'var(--gold)' : 'var(--ov-3, rgba(255,255,255,0.04))',
                 color: leagueViewMode === 'history' ? 'var(--black)' : 'var(--silver)',
-                border: '1px solid ' + (leagueViewMode === 'history' ? 'var(--gold)' : 'rgba(255,255,255,0.08)'),
+                border: '1px solid ' + (leagueViewMode === 'history' ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                 borderRadius: '4px', cursor: 'pointer'
             }}>History</button>
         </div>
@@ -1783,29 +1787,29 @@ function LeagueMapTab({
                     {/* Header stats */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
                         {[
-                            { label: 'Championships', value: h.championships, sub: h.champSeasons.join(', ') || 'None', color: h.championships > 0 ? '#D4AF37' : 'var(--silver)' },
-                            { label: 'Playoff Record', value: h.playoffRecord, sub: h.playoffAppearances + ' appearances', color: h.playoffWins > h.playoffLosses ? '#2ECC71' : 'var(--silver)' },
-                            { label: 'Draft Hit Rate', value: h.draftHitRate + '%', sub: h.draftHits + '/' + h.draftTotal + ' starters', color: h.draftHitRate >= 50 ? '#2ECC71' : h.draftHitRate >= 30 ? '#F0A500' : '#E74C3C' },
-                            { label: 'Trade Record', value: h.tradesWon + '-' + h.tradesLost + '-' + h.tradesFair, sub: (h.avgValueDiff >= 0 ? '+' : '') + h.avgValueDiff + ' avg DHQ', color: h.avgValueDiff >= 0 ? '#2ECC71' : '#E74C3C' },
+                            { label: 'Championships', value: h.championships, sub: h.champSeasons.join(', ') || 'None', color: h.championships > 0 ? 'var(--gold)' : 'var(--silver)' },
+                            { label: 'Playoff Record', value: h.playoffRecord, sub: h.playoffAppearances + ' appearances', color: h.playoffWins > h.playoffLosses ? 'var(--good)' : 'var(--silver)' },
+                            { label: 'Draft Hit Rate', value: h.draftHitRate + '%', sub: h.draftHits + '/' + h.draftTotal + ' starters', color: h.draftHitRate >= 50 ? 'var(--good)' : h.draftHitRate >= 30 ? 'var(--warn)' : 'var(--bad)' },
+                            { label: 'Trade Record', value: h.tradesWon + '-' + h.tradesLost + '-' + h.tradesFair, sub: (h.avgValueDiff >= 0 ? '+' : '') + h.avgValueDiff + ' avg DHQ', color: h.avgValueDiff >= 0 ? 'var(--good)' : 'var(--bad)' },
                         ].map((stat, i) => (
-                            <div key={i} style={{ background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                            <div key={i} style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
                                 <div style={{ fontSize: '0.78rem', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{stat.label}</div>
-                                <div style={{ fontSize: '1.2rem', fontWeight: 600, color: stat.color, fontFamily: 'JetBrains Mono, monospace' }}>{stat.value}</div>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 600, color: stat.color, fontFamily: 'var(--font-mono)' }}>{stat.value}</div>
                                 <div style={{ fontSize: '0.7rem', color: 'var(--silver)', marginTop: '2px' }}>{stat.sub}</div>
                             </div>
                         ))}
                     </div>
 
                     {/* Season by season */}
-                    <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', padding: '12px 16px' }}>
+                    <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', padding: '12px 16px' }}>
                         <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Season History</div>
                         {h.seasonHistory.map(s => (
-                            <div key={s.season} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.75rem' }}>
-                                <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', color: 'var(--gold)', minWidth: '40px' }}>{s.season}</span>
+                            <div key={s.season} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))', fontSize: '0.75rem' }}>
+                                <span style={{ fontFamily: 'var(--font-title)', fontSize: '0.95rem', color: 'var(--gold)', minWidth: '40px' }}>{s.season}</span>
                                 <span style={{
                                     fontSize: '0.74rem', fontWeight: 700, padding: '2px 8px', borderRadius: '4px',
-                                    background: s.finish === 'Champion' ? 'rgba(212,175,55,0.15)' : s.finish === 'Runner-Up' ? 'rgba(192,192,192,0.15)' : s.finish === 'Semi-Finals' ? 'rgba(205,127,50,0.15)' : s.finish === 'Playoffs' ? 'rgba(46,204,113,0.1)' : 'rgba(255,255,255,0.04)',
-                                    color: s.finish === 'Champion' ? '#D4AF37' : s.finish === 'Runner-Up' ? '#C0C0C0' : s.finish === 'Semi-Finals' ? '#CD7F32' : s.finish === 'Playoffs' ? '#2ECC71' : 'var(--silver)'
+                                    background: s.finish === 'Champion' ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : s.finish === 'Runner-Up' ? 'rgba(192,192,192,0.15)' : s.finish === 'Semi-Finals' ? 'rgba(205,127,50,0.15)' : s.finish === 'Playoffs' ? 'rgba(46,204,113,0.1)' : 'var(--ov-3, rgba(255,255,255,0.04))',
+                                    color: s.finish === 'Champion' ? 'var(--gold)' : s.finish === 'Runner-Up' ? 'var(--k-c0c0c0, #c0c0c0)' : s.finish === 'Semi-Finals' ? 'var(--k-cd7f32, #cd7f32)' : s.finish === 'Playoffs' ? 'var(--good)' : 'var(--silver)'
                                 }}>{s.finish}</span>
                                 {s.hadFirstPick && <span style={{ fontSize: '0.7rem', color: 'var(--gold)', fontWeight: 600 }}>#1 Overall Pick</span>}
                             </div>
@@ -1814,11 +1818,11 @@ function LeagueMapTab({
 
                     {/* #1 Overall Picks */}
                     {h.numberOnePicks.length > 0 && (
-                        <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', padding: '12px 16px' }}>
+                        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', padding: '12px 16px' }}>
                             <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>#1 Overall Picks</div>
                             {h.numberOnePicks.map((pk, i) => (
                                 <div key={i} style={{ fontSize: '0.75rem', color: 'var(--white)', padding: '4px 0' }}>
-                                    <span style={{ color: 'var(--gold)', fontFamily: 'Rajdhani, sans-serif', fontSize: '0.85rem' }}>{pk.season}</span> — {pk.player} <span style={{ color: 'var(--silver)', fontSize: '0.74rem' }}>({pk.pos})</span>
+                                    <span style={{ color: 'var(--gold)', fontFamily: 'var(--font-title)', fontSize: '0.85rem' }}>{pk.season}</span> — {pk.player} <span style={{ color: 'var(--silver)', fontSize: '0.74rem' }}>({pk.pos})</span>
                                 </div>
                             ))}
                         </div>
@@ -1828,14 +1832,14 @@ function LeagueMapTab({
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         {h.bestPick && (
                             <div style={{ background: 'rgba(46,204,113,0.06)', border: '1px solid rgba(46,204,113,0.15)', borderRadius: '8px', padding: '10px 14px' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#2ECC71', fontFamily: 'var(--font-body)', textTransform: 'uppercase', marginBottom: '4px' }}>Best Draft Pick</div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--good)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', marginBottom: '4px' }}>Best Draft Pick</div>
                                 <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--white)' }}>{h.bestPick.name}</div>
                                 <div style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>{h.bestPick.season} Round {h.bestPick.round} ({h.bestPick.pos})</div>
                             </div>
                         )}
                         {h.bustPicks.length > 0 && (
                             <div style={{ background: 'rgba(231,76,60,0.06)', border: '1px solid rgba(231,76,60,0.15)', borderRadius: '8px', padding: '10px 14px' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#E74C3C', fontFamily: 'var(--font-body)', textTransform: 'uppercase', marginBottom: '4px' }}>Draft Busts (R1-R2)</div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--bad)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', marginBottom: '4px' }}>Draft Busts (R1-R2)</div>
                                 {h.bustPicks.map((bp, i) => (
                                     <div key={i} style={{ fontSize: '0.72rem', color: 'var(--silver)', padding: '2px 0' }}>{bp.name} — {bp.season} R{bp.round}</div>
                                 ))}
@@ -1845,7 +1849,7 @@ function LeagueMapTab({
 
                     {/* Rivalries */}
                     {h.rivalries.length > 0 && (
-                        <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', padding: '12px 16px' }}>
+                        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', padding: '12px 16px' }}>
                             <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Playoff Rivalries</div>
                             {h.rivalries.map((r, i) => {
                                 const rivalUser = (currentLeague.users || []).find(u => {
@@ -1855,7 +1859,7 @@ function LeagueMapTab({
                                 return (
                                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', fontSize: '0.75rem' }}>
                                         <span style={{ fontWeight: 600, color: 'var(--white)' }}>{rivalUser?.display_name || 'Team ' + r.rosterId}</span>
-                                        <span style={{ color: r.wins > r.losses ? '#2ECC71' : r.wins < r.losses ? '#E74C3C' : 'var(--silver)', fontWeight: 700 }}>{r.wins}-{r.losses}</span>
+                                        <span style={{ color: r.wins > r.losses ? 'var(--good)' : r.wins < r.losses ? 'var(--bad)' : 'var(--silver)', fontWeight: 700 }}>{r.wins}-{r.losses}</span>
                                         <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>({r.seasons.join(', ')})</span>
                                     </div>
                                 );
@@ -1868,15 +1872,15 @@ function LeagueMapTab({
 
         {leagueViewMode === 'roster' && (
         <div>
-        <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '3px 28px 1fr 36px 32px 54px 42px 60px 52px', gap: '4px', padding: '6px 10px', background: 'rgba(212,175,55,0.08)', borderBottom: '2px solid rgba(212,175,55,0.2)', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
+        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '3px 28px 1fr 36px 32px 54px 42px 60px 52px', gap: '4px', padding: '6px 10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
             <span></span><span></span><span>Player</span><span>Pos</span><span>Age</span><span>DHQ</span><span>PPG</span><span>Acquired</span><span>Date</span>
           </div>
           <div style={{ maxHeight: '600px', overflow: 'auto' }}>
             {players.map(r => (
               <div key={r.pid} onClick={() => { if (window._wrSelectPlayer) window._wrSelectPlayer(r.pid); }}
-                style={{ display: 'grid', gridTemplateColumns: '3px 28px 1fr 36px 32px 54px 42px 60px 52px', gap: '4px', padding: '5px 10px', borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', fontSize: '0.72rem', alignItems: 'center', transition: 'background 0.1s' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.06)'}
+                style={{ display: 'grid', gridTemplateColumns: '3px 28px 1fr 36px 32px 54px 42px 60px 52px', gap: '4px', padding: '5px 10px', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', cursor: 'pointer', fontSize: '0.72rem', alignItems: 'center', transition: 'background 0.1s' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <div style={{ background: r.isStarter ? 'var(--gold)' : 'transparent', width: '3px', height: '100%' }}></div>
@@ -1887,10 +1891,10 @@ function LeagueMapTab({
                 </div>
                 <span style={{ fontSize: '0.7rem', fontWeight: 700, color: r.posCol }}>{leagueMapPosLabel(r.pos)}</span>
                 <span style={{ color: 'var(--silver)' }}>{r.p.age || '\u2014'}</span>
-                <span style={{ fontWeight: 700, fontFamily: 'var(--font-body)', color: r.dhq >= 7000 ? '#2ECC71' : r.dhq >= 4000 ? '#3498DB' : r.dhq >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.3)' }}>{r.dhq > 0 ? r.dhq.toLocaleString() : '\u2014'}</span>
+                <span style={{ fontWeight: 700, fontFamily: 'var(--font-body)', color: r.dhq >= 7000 ? 'var(--good)' : r.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : r.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{r.dhq > 0 ? r.dhq.toLocaleString() : '\u2014'}</span>
                 <span style={{ color: 'var(--silver)' }}>{r.ppg || '\u2014'}</span>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: r.acq.method === 'Drafted' ? 'var(--gold)' : r.acq.method === 'Traded' ? '#F0A500' : r.acq.method === 'Waiver' ? '#2ECC71' : r.acq.method === 'FA' ? '#1ABC9C' : 'var(--silver)' }}>{r.acq.method}{r.acq.cost ? ' ' + r.acq.cost : ''}</span>
-                <span style={{ fontSize: '0.56rem', color: 'var(--silver)', opacity: 0.65 }}>{r.acq.date}</span>
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: r.acq.method === 'Drafted' ? 'var(--gold)' : r.acq.method === 'Traded' ? 'var(--warn)' : r.acq.method === 'Waiver' ? 'var(--good)' : r.acq.method === 'FA' ? 'var(--k-1abc9c, #1abc9c)' : 'var(--silver)' }}>{r.acq.method}{r.acq.cost ? ' ' + r.acq.cost : ''}</span>
+                <span style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.65 }}>{r.acq.date}</span>
               </div>
             ))}
           </div>

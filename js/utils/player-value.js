@@ -10,9 +10,7 @@
 window.App.PlayerValue = (function () {
 
     // ── Roster construction targets ──────────────────────────────────
-    // QB ideal depth is 2 (1 starter + 1 backup): in single-QB leagues a 3rd QB
-    // is redundant, and league-wide there aren't enough startable QBs to expect 3.
-    const IDEAL_ROSTER = { QB:2, RB:7, WR:7, TE:4, K:2, DL:7, LB:6, DB:6 };
+    const IDEAL_ROSTER = { QB:3, RB:7, WR:7, TE:4, K:2, DL:7, LB:6, DB:6 };
     const DRAFT_ROUNDS  = 7;
     const PICK_HORIZON  = 3;
     const PICK_IDEAL    = DRAFT_ROUNDS * PICK_HORIZON;
@@ -26,7 +24,7 @@ window.App.PlayerValue = (function () {
 
     // ── Draft pick values (DHQ equivalent, used as fallback when DHQ engine absent) ──
     const PICK_VALUES = { 1:6250, 2:3150, 3:1650, 4:850, 5:450, 6:225, 7:125 };
-    const PICK_COLORS = { 1:'#D4AF37', 2:'#5DADE2', 3:'#2ECC71', 4:'#BB8FCE', 5:'#95A5A6', 6:'#7F8C8D', 7:'#6C7A7D' };
+    const PICK_COLORS = { 1:'var(--k-d4af37, #d4af37)', 2:'var(--k-5dade2, #5dade2)', 3:'var(--k-2ecc71, #2ecc71)', 4:'var(--k-bb8fce, #bb8fce)', 5:'var(--k-95a5a6, #95a5a6)', 6:'var(--k-7f8c8d, #7f8c8d)', 7:'var(--k-6c7a7d, #6c7a7d)' };
 
     // Slot-specific values (16-team × 7-round = 112 picks).
     // Dynamically generated from pick-value-model.js (industry consensus) when available.
@@ -198,68 +196,6 @@ window.App.PlayerValue = (function () {
         return Math.round(baseDhq * capped * 0.10);
     }
 
-    // ── Depth-chart role penalty ─────────────────────────────────────
-    // Sleeper exposes depth_chart_order (0-indexed: 0 = team's starter at the
-    // position, 1 = primary backup, 2+ = deeper). Barring injury, a player
-    // buried on the depth chart sees little real production, so dynasty value
-    // and starter grading should discount them.
-    //
-    // The penalty is position-aware: it only applies to players ranked BEYOND
-    // their position's real starter depth, so legit multi-start roles (WR3, RB2)
-    // are not punished. Returns a multiplier in (0, 1]; 1 = no penalty.
-    //
-    //   nPos  — normalized position (QB/RB/WR/TE/K/DL/LB/DB)
-    //   order — depth_chart_order (0-indexed) or null/undefined when unknown
-    const ROLE_STARTER_DEPTH = { QB:1, RB:2, WR:3, TE:1, K:1, DL:4, LB:4, DB:4 };
-    // Multiplier applied to the 1st / 2nd / 3rd-and-deeper non-starter slot.
-    const ROLE_PENALTY_STEPS = [0.60, 0.40, 0.25];
-    function computeRolePenalty(nPos, order) {
-        // Unknown depth (free agents, missing data) → no penalty; never punish on absent data.
-        if (order == null || typeof order !== 'number' || order < 0) return 1.0;
-        const starterDepth = ROLE_STARTER_DEPTH[nPos] ?? 1;
-        // Within the position's real starting slots → full value.
-        if (order < starterDepth) return 1.0;
-        const stepsBeyond = order - starterDepth; // 0 = first non-starter
-        return ROLE_PENALTY_STEPS[Math.min(stepsBeyond, ROLE_PENALTY_STEPS.length - 1)];
-    }
-
-    // ── Unrealized-upside damper (QB) ────────────────────────────────
-    // Some QBs rank in the top 32 on pedigree + youth alone (high draft
-    // capital, inside the long QB build window, pulled toward the high QB
-    // value ceiling) despite little real NFL production — e.g. Spencer
-    // Rattler, Anthony Richardson. This discounts a QB by how UNPROVEN he is,
-    // so pedigree can't carry him over real starters.
-    //
-    // "Proven" is keyed on EFFICIENCY (fantasy points PER GAME), gated by
-    // volume — not raw games. A QB who started a chunk of games but scored
-    // poorly (low PPG) is an inefficient ex-starter, not a quality starter, so
-    // games alone shouldn't prove him. A high-PPG young starter clears it
-    // cleanly. Uses last completed season's games + points (offseason-safe;
-    // not depth_chart_order, which is null before NFL charts are set).
-    //
-    //   nPos      — normalized position
-    //   prevGp    — games played last completed NFL season
-    //   prevTotal — total fantasy points last completed season
-    // Returns a multiplier in (0, 1]; 1 = fully proven (no discount).
-    const QB_DAMP_LOW_PPG  = 11;  // PPG at/below this = no efficiency credit
-    const QB_DAMP_FULL_PPG = 18;  // PPG at/above this = fully efficient
-    const QB_DAMP_MIN_GP   = 8;   // games needed to fully trust the PPG read
-    const QB_DAMP_FLOOR    = 0.55; // value retained by a totally unproven QB
-    function computeUpsideDamper(nPos, prevGp, prevTotal) {
-        if (nPos !== 'QB') return 1.0;            // QB-only for now
-        const gp = Number(prevGp) || 0;
-        const pts = Number(prevTotal) || 0;
-        if (gp <= 0) return QB_DAMP_FLOOR;        // never played → floor
-        const ppg = pts / gp;
-        // Efficiency 0..1 between the low and full PPG bars.
-        const eff = Math.max(0, Math.min(1, (ppg - QB_DAMP_LOW_PPG) / (QB_DAMP_FULL_PPG - QB_DAMP_LOW_PPG)));
-        // Volume gate: a high-PPG cameo over 1-2 games shouldn't fully prove a
-        // QB; needs ~half a season for the efficiency read to be trusted.
-        const vol = Math.max(0, Math.min(1, gp / QB_DAMP_MIN_GP));
-        const proven = eff * vol;
-        return QB_DAMP_FLOOR + (1 - QB_DAMP_FLOOR) * proven; // proven→1.0, unproven→floor
-    }
-
     // ── projectPlayerValue ───────────────────────────────────────────
     // Projects (or retro-jects) a player's DHQ value `delta` seasons away.
     // Uses position-specific peak windows, usage-adjusted decay rates, and
@@ -406,8 +342,5 @@ window.App.PlayerValue = (function () {
         getPickOverallSlot,
         resolvePickValue,
         projectPlayerValue,
-        computeRolePenalty,
-        ROLE_STARTER_DEPTH,
-        computeUpsideDamper,
     };
 })();

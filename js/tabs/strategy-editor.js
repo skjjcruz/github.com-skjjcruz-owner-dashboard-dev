@@ -145,13 +145,13 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     // ── Sync badge ─────────────────────────────────────────────────────────────
     const SyncBadge = () => {
         if (syncStatus === 'saving') return (
-            <span style={styles.badge('rgba(212,175,55,0.2)', '#D4AF37')}>Saving…</span>
+            <span style={styles.badge('var(--acc-line1, rgba(212,175,55,0.2))', 'var(--k-d4af37, #d4af37)')}>Saving…</span>
         );
         if (syncStatus === 'saved') return (
-            <span style={styles.badge('rgba(46,204,113,0.15)', '#2ECC71')}>✓ Synced to Scout</span>
+            <span style={styles.badge('rgba(46,204,113,0.15)', 'var(--k-2ecc71, #2ecc71)')}>✓ Synced to Scout</span>
         );
         if (syncStatus === 'error') return (
-            <span style={styles.badge('rgba(231,76,60,0.15)', '#E74C3C')}>Save failed</span>
+            <span style={styles.badge('rgba(231,76,60,0.15)', 'var(--k-e74c3c, #e74c3c)')}>Save failed</span>
         );
         return null;
     };
@@ -159,8 +159,8 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     // ── Section header ────────────────────────────────────────────────────────
     const SectionHeader = ({ title, sub }) => (
         <div style={{ marginBottom: 10 }}>
-            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.75rem', color: 'rgba(212,175,55,0.6)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>{title}</div>
-            {sub && <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{sub}</div>}
+            <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body, 1rem)', color: 'var(--acc-line4, rgba(212,175,55,0.6))', letterSpacing: '0.16em', textTransform: 'uppercase' }}>{title}</div>
+            {sub && <div style={{ fontSize: 'var(--text-label)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 2 }}>{sub}</div>}
         </div>
     );
 
@@ -171,13 +171,14 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                 const active = value === opt.value;
                 return (
                     <button key={opt.value} onClick={() => onChange(opt.value)} style={{
-                        padding: '7px 14px',
-                        border: active ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.12)',
+                        padding: '12px 16px',
+                        minHeight: 44,
+                        border: active ? '1px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.12))',
                         borderRadius: 6,
-                        background: active ? 'rgba(212,175,55,0.15)' : 'rgba(255,255,255,0.04)',
-                        color: active ? 'var(--gold)' : 'rgba(255,255,255,0.65)',
-                        fontSize: '0.82rem',
-                        fontFamily: 'DM Sans, sans-serif',
+                        background: active ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'var(--ov-3, rgba(255,255,255,0.04))',
+                        color: active ? 'var(--gold)' : 'var(--ov-9, rgba(255,255,255,0.65))',
+                        fontSize: 'var(--text-body, 1rem)',
+                        fontFamily: 'var(--font-body)',
                         fontWeight: active ? 600 : 400,
                         cursor: 'pointer',
                         transition: 'all 0.15s',
@@ -198,13 +199,14 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                 const active = (value || []).includes(opt);
                 return (
                     <button key={opt} onClick={() => onChange(opt)} style={{
-                        padding: '5px 10px',
-                        border: active ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.1)',
+                        padding: '10px 14px',
+                        minHeight: 44,
+                        border: active ? '1px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
                         borderRadius: 5,
-                        background: active ? 'rgba(212,175,55,0.18)' : 'rgba(255,255,255,0.03)',
-                        color: active ? 'var(--gold)' : 'rgba(255,255,255,0.55)',
-                        fontSize: '0.75rem',
-                        fontFamily: 'DM Sans, sans-serif',
+                        background: active ? 'var(--acc-fill3, rgba(212,175,55,0.18))' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                        color: active ? 'var(--gold)' : 'var(--ov-9, rgba(255,255,255,0.55))',
+                        fontSize: 'var(--text-label)',
+                        fontFamily: 'var(--font-body)',
                         fontWeight: active ? 600 : 400,
                         cursor: 'pointer',
                         transition: 'all 0.13s',
@@ -220,10 +222,10 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
 
     // ── Mode configs (Phase 1: 3 canonical presets + Custom) ──────────────────
     const MODES = [
-        { value: 'rebuild',  label: 'Rebuild',  desc: 'Youth, picks, and patience.', color: '#3498DB' },
-        { value: 'compete',  label: 'Compete',  desc: 'Build long-term while staying competitive.', color: '#D4AF37' },
-        { value: 'win_now',  label: 'Win Now',  desc: 'Spend it all to win this year.', color: '#E74C3C' },
-        { value: 'custom',   label: 'Custom',   desc: 'Hand-tune every variable below.', color: '#7C6BF8' },
+        { value: 'rebuild',  label: 'Rebuild',  desc: 'Youth, picks, and patience.', color: 'var(--k-3498db, #3498db)' },
+        { value: 'compete',  label: 'Compete',  desc: 'Build long-term while staying competitive.', color: 'var(--k-d4af37, #d4af37)' },
+        { value: 'win_now',  label: 'Win Now',  desc: 'Spend it all to win this year.', color: 'var(--k-e74c3c, #e74c3c)' },
+        { value: 'custom',   label: 'Custom',   desc: 'Hand-tune every variable below.', color: 'var(--k-7c6bf8, #7c6bf8)' },
     ];
 
     const AGGRESSION = [
@@ -267,8 +269,8 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Header ── */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
                 <div>
-                    <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.5rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>GM STRATEGY</div>
-                    <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.45)', fontFamily: 'DM Sans, sans-serif', marginTop: 2 }}>
+                    <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>GM STRATEGY</div>
+                    <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--ov-8, rgba(255,255,255,0.45))', fontFamily: 'var(--font-body)', marginTop: 2 }}>
                         Set your franchise direction — syncs to Scout so Alex knows how to advise you.
                     </div>
                 </div>
@@ -292,23 +294,23 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                                 else applyPreset(m.value);
                             }} style={{
                                 padding: '12px 14px',
-                                border: active ? `1px solid ${m.color}` : '1px solid rgba(255,255,255,0.1)',
+                                border: active ? `1px solid ${m.color}` : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
                                 borderRadius: 8,
-                                background: active ? (m.color + '18') : 'rgba(255,255,255,0.03)',
+                                background: active ? (wrAlpha(m.color, '18')) : 'var(--ov-2, rgba(255,255,255,0.03))',
                                 cursor: 'pointer',
                                 textAlign: 'left',
                                 transition: 'all 0.15s',
                                 position: 'relative',
                             }}>
                                 <div style={{ position: 'absolute', top: 10, right: 12, width: 8, height: 8, borderRadius: '50%', background: active ? m.color : 'transparent' }} />
-                                <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', fontWeight: 700, color: active ? m.color : 'rgba(255,255,255,0.8)', letterSpacing: '0.03em' }}>{m.label}</div>
-                                <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: 3, fontFamily: 'DM Sans, sans-serif', lineHeight: 1.3 }}>{m.desc}</div>
+                                <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? m.color : 'var(--ov-9, rgba(255,255,255,0.8))', letterSpacing: '0.03em' }}>{m.label}</div>
+                                <div style={{ fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 3, fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>{m.desc}</div>
                             </button>
                         );
                     })}
                 </div>
                 {!isCustom && (
-                    <div style={{ marginTop: 14, padding: '10px 12px', background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: 6, fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', fontFamily: 'DM Sans, sans-serif', lineHeight: 1.5 }}>
+                    <div style={{ marginTop: 14, padding: '10px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 6, fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.7))', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
                         <strong style={{ color: 'var(--gold)' }}>Preset applied:</strong> aggression <em>{draft.aggression}</em> · draft <em>{draft.draftStyle}</em> · market <em>{draft.marketPosture}</em> · timeline <em>{draft.timeline}</em> · personality <em>{draft.alexPersonality}</em>
                     </div>
                 )}
@@ -328,7 +330,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Priorities ── */}
             <div style={styles.card}>
                 <SectionHeader title="Priorities" />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
                     {/* Target Positions */}
                     <div>
                         <div style={styles.subLabel}>Target Positions</div>
@@ -359,7 +361,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                                 <button onClick={() => set('sellRules', draft.sellRules.filter((_, j) => j !== i))} style={styles.tagX}>×</button>
                             </span>
                         ))}
-                        {draft.sellRules.length === 0 && <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans, sans-serif' }}>No rules set</span>}
+                        {draft.sellRules.length === 0 && <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', fontFamily: 'var(--font-body)' }}>No rules set</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                         <input
@@ -378,12 +380,12 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                     <div style={styles.subLabel}>Untouchables</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                         {untouchableNames.map((name, i) => (
-                            <span key={i} style={{ ...styles.tag, borderColor: 'rgba(212,175,55,0.4)', color: 'var(--gold)' }}>
+                            <span key={i} style={{ ...styles.tag, borderColor: 'var(--acc-line3, rgba(212,175,55,0.4))', color: 'var(--gold)' }}>
                                 🛡 {name}
                                 <button onClick={() => set('untouchable', draft.untouchable.filter((_, j) => j !== i))} style={styles.tagX}>×</button>
                             </span>
                         ))}
-                        {draft.untouchable.length === 0 && <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans, sans-serif' }}>No untouchables set</span>}
+                        {draft.untouchable.length === 0 && <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', fontFamily: 'var(--font-body)' }}>No untouchables set</span>}
                     </div>
                     <div style={{ position: 'relative' }}>
                         <input
@@ -403,11 +405,11 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                                         setUntouchableSearch('');
                                         setShowUntouchablePicker(false);
                                     }} style={styles.dropdownItem}>
-                                        <span style={{ fontSize: '0.7rem', color: 'rgba(212,175,55,0.7)', fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, marginRight: 6 }}>{p.pos}</span>
+                                        <span style={{ fontSize: 'var(--text-micro)', color: 'var(--acc-line4, rgba(212,175,55,0.7))', fontFamily: 'var(--font-title)', fontWeight: 700, marginRight: 6 }}>{p.pos}</span>
                                         {p.name}
                                     </button>
                                 ))}
-                                <button onClick={() => setShowUntouchablePicker(false)} style={{ ...styles.dropdownItem, color: 'rgba(255,255,255,0.3)', fontSize: '0.72rem' }}>Close</button>
+                                <button onClick={() => setShowUntouchablePicker(false)} style={{ ...styles.dropdownItem, color: 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: 'var(--text-micro)' }}>Close</button>
                             </div>
                         )}
                     </div>
@@ -423,15 +425,15 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         return (
                             <button key={ds.value} onClick={() => set('draftStyle', ds.value)} style={{
                                 padding: '11px 13px',
-                                border: active ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.1)',
+                                border: active ? '1px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
                                 borderRadius: 8,
-                                background: active ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)',
+                                background: active ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                 cursor: 'pointer',
                                 textAlign: 'left',
                                 transition: 'all 0.15s',
                             }}>
-                                <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.9rem', fontWeight: 700, color: active ? 'var(--gold)' : 'rgba(255,255,255,0.8)' }}>{ds.label}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginTop: 2, fontFamily: 'DM Sans, sans-serif', lineHeight: 1.3 }}>{ds.desc}</div>
+                                <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? 'var(--gold)' : 'var(--ov-9, rgba(255,255,255,0.8))' }}>{ds.label}</div>
+                                <div style={{ fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 2, fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>{ds.desc}</div>
                             </button>
                         );
                     })}
@@ -447,15 +449,15 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         return (
                             <button key={mp.value} onClick={() => set('marketPosture', mp.value)} style={{
                                 padding: '11px 13px',
-                                border: active ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.1)',
+                                border: active ? '1px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
                                 borderRadius: 8,
-                                background: active ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)',
+                                background: active ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                 cursor: 'pointer',
                                 textAlign: 'left',
                                 transition: 'all 0.15s',
                             }}>
-                                <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.9rem', fontWeight: 700, color: active ? 'var(--gold)' : 'rgba(255,255,255,0.8)' }}>{mp.label}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginTop: 2, fontFamily: 'DM Sans, sans-serif', lineHeight: 1.3 }}>{mp.desc}</div>
+                                <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? 'var(--gold)' : 'var(--ov-9, rgba(255,255,255,0.8))' }}>{mp.label}</div>
+                                <div style={{ fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 2, fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>{mp.desc}</div>
                             </button>
                         );
                     })}
@@ -472,7 +474,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                     fullWidth
                 />
                 {TIMELINES.find(t => t.value === draft.timeline) && (
-                    <div style={{ marginTop: 8, fontSize: '0.78rem', color: 'rgba(255,255,255,0.45)', fontFamily: 'DM Sans, sans-serif' }}>
+                    <div style={{ marginTop: 8, fontSize: 'var(--text-label)', color: 'var(--ov-8, rgba(255,255,255,0.45))', fontFamily: 'var(--font-body)' }}>
                         {TIMELINES.find(t => t.value === draft.timeline).desc}
                     </div>
                 )}
@@ -487,15 +489,15 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         return (
                             <button key={p.value} onClick={() => set('alexPersonality', p.value)} style={{
                                 padding: '12px 14px',
-                                border: active ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.1)',
+                                border: active ? '1px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
                                 borderRadius: 8,
-                                background: active ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)',
+                                background: active ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                 cursor: 'pointer',
                                 textAlign: 'left',
                                 transition: 'all 0.15s',
                             }}>
-                                <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.92rem', fontWeight: 700, color: active ? 'var(--gold)' : 'rgba(255,255,255,0.8)' }}>{p.label}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginTop: 3, fontFamily: 'DM Sans, sans-serif', lineHeight: 1.3 }}>{p.desc}</div>
+                                <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? 'var(--gold)' : 'var(--ov-9, rgba(255,255,255,0.8))' }}>{p.label}</div>
+                                <div style={{ fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 3, fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>{p.desc}</div>
                             </button>
                         );
                     })}
@@ -517,16 +519,16 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
 // ── Shared style helpers ──────────────────────────────────────────────────────
 const styles = {
     card: {
-        background: 'var(--off-black, #0f0f14)',
-        border: '1px solid rgba(212,175,55,0.15)',
-        borderRadius: 10,
-        padding: '16px 18px',
-        marginBottom: 14,
+        background: 'var(--off-black, var(--k-0f0f14, #0f0f14))',
+        border: 'var(--card-border)',
+        borderRadius: 'var(--card-radius)',
+        padding: 'var(--card-pad)',
+        marginBottom: 'var(--card-gap)',
     },
     subLabel: {
-        fontSize: '0.72rem',
-        color: 'rgba(255,255,255,0.45)',
-        fontFamily: 'DM Sans, sans-serif',
+        fontSize: 'var(--text-micro)',
+        color: 'var(--ov-8, rgba(255,255,255,0.45))',
+        fontFamily: 'var(--font-body)',
         fontWeight: 600,
         letterSpacing: '0.06em',
         textTransform: 'uppercase',
@@ -534,24 +536,24 @@ const styles = {
     },
     input: {
         flex: 1,
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.12)',
+        background: 'var(--ov-3, rgba(255,255,255,0.05))',
+        border: '1px solid var(--ov-6, rgba(255,255,255,0.12))',
         borderRadius: 6,
         padding: '7px 10px',
-        color: '#fff',
-        fontSize: '0.82rem',
-        fontFamily: 'DM Sans, sans-serif',
+        color: 'var(--k-ffffff, #ffffff)',
+        fontSize: 'var(--text-body, 1rem)',
+        fontFamily: 'var(--font-body)',
         outline: 'none',
         width: '100%',
         boxSizing: 'border-box',
     },
     addBtn: {
-        background: 'rgba(212,175,55,0.15)',
-        border: '1px solid rgba(212,175,55,0.35)',
+        background: 'var(--acc-fill3, rgba(212,175,55,0.15))',
+        border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))',
         borderRadius: 6,
         color: 'var(--gold)',
-        fontSize: '0.8rem',
-        fontFamily: 'DM Sans, sans-serif',
+        fontSize: 'var(--text-body, 1rem)',
+        fontFamily: 'var(--font-body)',
         padding: '7px 14px',
         cursor: 'pointer',
         whiteSpace: 'nowrap',
@@ -562,19 +564,24 @@ const styles = {
         gap: 4,
         padding: '4px 9px',
         borderRadius: 5,
-        border: '1px solid rgba(255,255,255,0.18)',
-        background: 'rgba(255,255,255,0.06)',
-        color: 'rgba(255,255,255,0.75)',
-        fontSize: '0.76rem',
-        fontFamily: 'DM Sans, sans-serif',
+        border: '1px solid var(--ov-7, rgba(255,255,255,0.18))',
+        background: 'var(--ov-4, rgba(255,255,255,0.06))',
+        color: 'var(--ov-9, rgba(255,255,255,0.75))',
+        fontSize: 'var(--text-label)',
+        fontFamily: 'var(--font-body)',
     },
     tagX: {
         background: 'none',
         border: 'none',
-        color: 'rgba(255,255,255,0.45)',
+        color: 'var(--ov-8, rgba(255,255,255,0.45))',
         cursor: 'pointer',
-        fontSize: '0.85rem',
-        padding: '0 2px',
+        fontSize: 'var(--text-body, 1rem)',
+        padding: '8px',
+        minWidth: 32,
+        minHeight: 32,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         lineHeight: 1,
     },
     dropdown: {
@@ -583,8 +590,8 @@ const styles = {
         left: 0,
         right: 0,
         zIndex: 99,
-        background: '#1A1A1A',
-        border: '1px solid rgba(212,175,55,0.25)',
+        background: 'var(--k-1a1a1a, #1a1a1a)',
+        border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
         borderRadius: 8,
         marginTop: 4,
         maxHeight: 220,
@@ -596,10 +603,10 @@ const styles = {
         padding: '9px 14px',
         background: 'transparent',
         border: 'none',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        color: 'rgba(255,255,255,0.75)',
-        fontSize: '0.82rem',
-        fontFamily: 'DM Sans, sans-serif',
+        borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
+        color: 'var(--ov-9, rgba(255,255,255,0.75))',
+        fontSize: 'var(--text-body, 1rem)',
+        fontFamily: 'var(--font-body)',
         cursor: 'pointer',
         textAlign: 'left',
         display: 'flex',
@@ -607,12 +614,12 @@ const styles = {
     },
     saveBtn: (disabled) => ({
         padding: '9px 22px',
-        background: disabled ? 'rgba(212,175,55,0.1)' : 'rgba(212,175,55,0.2)',
-        border: '1px solid rgba(212,175,55,0.5)',
+        background: disabled ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--acc-line1, rgba(212,175,55,0.2))',
+        border: '1px solid var(--acc-line3, rgba(212,175,55,0.5))',
         borderRadius: 7,
-        color: disabled ? 'rgba(212,175,55,0.5)' : 'var(--gold)',
-        fontSize: '0.85rem',
-        fontFamily: 'DM Sans, sans-serif',
+        color: disabled ? 'var(--acc-line3, rgba(212,175,55,0.5))' : 'var(--gold)',
+        fontSize: 'var(--text-body, 1rem)',
+        fontFamily: 'var(--font-body)',
         fontWeight: 600,
         cursor: disabled ? 'not-allowed' : 'pointer',
         letterSpacing: '0.04em',
@@ -626,8 +633,8 @@ const styles = {
         background: bg,
         borderRadius: 20,
         color,
-        fontSize: '0.75rem',
-        fontFamily: 'DM Sans, sans-serif',
+        fontSize: 'var(--text-body, 1rem)',
+        fontFamily: 'var(--font-body)',
         fontWeight: 600,
     }),
 };

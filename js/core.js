@@ -20,7 +20,7 @@
 //     .calcOptimalPPG(roster, scoring) — from ReconAI
 //     .peakWindows     — { QB:[lo,hi], RB:[lo,hi], … } — set by ReconAI CDN;
 //                        core.js provides fallback default via PEAK_WINDOWS_DEFAULT
-//     .POS_COLORS      — { QB:'#E74C3C', … }  (set by core.js)
+//     .POS_COLORS      — { QB:'var(--k-e74c3c, #e74c3c)', … }  (set by core.js)
 //     .POS_GROUPS      — { DB:[…], DL:[…], LB:[…] }  (set by core.js)
 //     .PEAK_WINDOWS_DEFAULT — frozen copy of fallback values  (set by core.js)
 //     .normPos(pos)    — canonical position normalizer  (set by core.js)
@@ -144,6 +144,9 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // then resolves War Room's granular level from the profile tier field.
     // Falls back to local logic if shared/tier.js failed to load.
     function getUserTier() {
+        // Sandbox deploy unlocks every feature, including commissioner-only ones.
+        if (typeof window.isSandbox === 'function' && window.isSandbox()) return 'commissioner';
+
         // shared/tier.js returns 'free' | 'trial' | 'paid'
         const sharedTier = typeof window.getTier === 'function' ? window.getTier() : null;
 
@@ -200,7 +203,6 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         // To re-enable billing-tier gating (e.g. when subscriptions go live),
         // set window.__WR_ENFORCE_TIERS = true and the original matrix below applies.
         if (!(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true)) return true;
-
         // War Room's granular feature matrix is the primary gate
         const tier = getUserTier();
         if (TIER_FEATURES[tier]?.has(feature)) return true;
@@ -305,8 +307,8 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
     // Position colors — single source of truth (was copy-pasted across 6 locations)
     window.App.POS_COLORS = window.App.POS_COLORS || {
-        QB:'#E74C3C', RB:'#2ECC71', WR:'#3498DB', TE:'#F0A500',
-        K:'#9B59B6',  DEF:'#85929E', DL:'#E67E22', LB:'#1ABC9C', DB:'#E91E63'
+        QB:'var(--k-e74c3c, #e74c3c)', RB:'var(--k-2ecc71, #2ecc71)', WR:'var(--k-3498db, #3498db)', TE:'var(--k-f0a500, #f0a500)',
+        K:'var(--k-9b59b6, #9b59b6)',  DEF:'var(--k-85929e, #85929e)', DL:'var(--k-e67e22, #e67e22)', LB:'var(--k-1abc9c, #1abc9c)', DB:'var(--k-e91e63, #e91e63)'
     };
 
     // Position groups — canonical arrays for normPos (was inline in 20+ locations)
@@ -390,11 +392,11 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
             const rank = byTeam.findIndex(t => t.rosterId === myRosterId) + 1;
             let grade, col;
             const pct = totalTeams > 1 ? Math.round((1 - (rank - 1) / totalTeams) * 100) : 50;
-            if (rank <= Math.ceil(totalTeams * 0.2)) { grade = 'A'; col = '#2ECC71'; }
-            else if (rank <= Math.ceil(totalTeams * 0.4)) { grade = 'B'; col = '#D4AF37'; }
-            else if (rank <= Math.ceil(totalTeams * 0.6)) { grade = 'C'; col = '#F0A500'; }
-            else if (rank <= Math.ceil(totalTeams * 0.8)) { grade = 'D'; col = '#F0A500'; }
-            else { grade = 'F'; col = '#E74C3C'; }
+            if (rank <= Math.ceil(totalTeams * 0.2)) { grade = 'A'; col = 'var(--k-2ecc71, #2ecc71)'; }
+            else if (rank <= Math.ceil(totalTeams * 0.4)) { grade = 'B'; col = 'var(--k-d4af37, #d4af37)'; }
+            else if (rank <= Math.ceil(totalTeams * 0.6)) { grade = 'C'; col = 'var(--k-f0a500, #f0a500)'; }
+            else if (rank <= Math.ceil(totalTeams * 0.8)) { grade = 'D'; col = 'var(--k-f0a500, #f0a500)'; }
+            else { grade = 'F'; col = 'var(--k-e74c3c, #e74c3c)'; }
             return { pos, rank, totalTeams, mySum, grade, col, pct };
         });
     };
@@ -565,7 +567,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         const message = opts.message || state?.message || 'Roster data is not ready.';
         const detail = opts.detail || state?.detail || 'Refresh league data before acting on recommendations.';
         const style = {
-            background: opts.background || 'rgba(10,10,10,0.92)',
+            background: opts.background || 'var(--surf-solid, rgba(10,10,10,0.92))',
             border: opts.border || '1px solid rgba(240,165,0,0.35)',
             borderRadius: opts.radius || '8px',
             padding: compact ? '12px' : '18px',
@@ -583,7 +585,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         return ReactRef.createElement('div', { className: opts.className || 'wr-roster-data-blocker', style },
             ReactRef.createElement('div', {
                 style: {
-                    color: '#F0A500',
+                    color: 'var(--k-f0a500, #f0a500)',
                     fontFamily: 'Rajdhani, sans-serif',
                     fontSize: compact ? '0.85rem' : '1.1rem',
                     fontWeight: 800,
@@ -592,7 +594,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
                 },
             }, title),
             ReactRef.createElement('div', { style: { color: 'var(--white)', fontWeight: 700, fontSize: compact ? '0.78rem' : '0.92rem', lineHeight: 1.35 } }, message),
-            !compact && ReactRef.createElement('div', { style: { fontSize: '0.78rem', lineHeight: 1.55, opacity: 0.78 } }, detail),
+            !compact && ReactRef.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', lineHeight: 1.55, opacity: 0.78 } }, detail),
             opts.actionLabel && ReactRef.createElement('button', {
                 type: 'button',
                 onClick: opts.onAction || (() => window.location.reload()),
@@ -602,7 +604,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
                     padding: compact ? '5px 8px' : '7px 12px',
                     border: '1px solid rgba(240,165,0,0.45)',
                     background: 'rgba(240,165,0,0.12)',
-                    color: '#F0A500',
+                    color: 'var(--k-f0a500, #f0a500)',
                     borderRadius: '5px',
                     fontFamily: 'var(--font-body)',
                     fontSize: compact ? '0.62rem' : '0.72rem',

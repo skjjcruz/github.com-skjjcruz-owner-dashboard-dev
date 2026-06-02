@@ -403,7 +403,14 @@
         const leagueId = getLeagueId(data);
         const draftType = normalizeDraftType(data);
         const pool = asArray(data.pool || data.state?.pool);
-        const saved = loadStoredBoard(leagueId, draftType, data.boardData);
+        // The board store is keyed by the league draft VARIANT, not the live-sync
+        // MODE — so the Follow Live Draft board and the Draft tab's Big Board are one
+        // shared store (notes, tags, My Board order). Map a live-sync draftType down
+        // to the underlying variant for the storage key only.
+        const boardKeyType = draftType === 'live-sync'
+            ? normalizeDraftType({ draftType: data.variant || data.state?.variant })
+            : draftType;
+        const saved = loadStoredBoard(leagueId, boardKeyType, data.boardData);
         const strategyInfo = data.strategyInfo || loadStrategy(leagueId);
         const leagueFormat = data.leagueFormat || buildLeagueFormat({ ...data, draftType });
         const formatAdapter = data.formatAdapter || getDraftFormatAdapter({ ...data, draftType, leagueFormat });

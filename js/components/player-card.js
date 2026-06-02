@@ -21,10 +21,10 @@
 
     // Tier comes from DHQ score (same thresholds used in roster table)
     function tierFromDhq(dhq) {
-        if (dhq >= 7000) return { label: 'Elite', color: '#2ECC71' };
-        if (dhq >= 5000) return { label: 'Tier 1', color: '#3498DB' };
-        if (dhq >= 3500) return { label: 'Tier 2', color: '#D4AF37' };
-        if (dhq >= 2000) return { label: 'Tier 3', color: '#D0D0D0' };
+        if (dhq >= 7000) return { label: 'Elite', color: 'var(--k-2ecc71, #2ecc71)' };
+        if (dhq >= 5000) return { label: 'Tier 1', color: 'var(--k-3498db, #3498db)' };
+        if (dhq >= 3500) return { label: 'Tier 2', color: 'var(--k-d4af37, #d4af37)' };
+        if (dhq >= 2000) return { label: 'Tier 3', color: 'var(--k-d0d0d0, #d0d0d0)' };
         if (dhq > 0)    return { label: 'Depth', color: 'var(--text-muted)' };
         return { label: '—', color: 'var(--text-muted)' };
     }
@@ -123,6 +123,27 @@
     }
 
     // ── Main component ────────────────────────────────────────────
+    // Surface the user's private scouting note (written on the Draft Big Board) on
+    // the player card wherever it opens — incl. Follow Live Draft. Scans every board
+    // store for the current league (variant-suffixed + legacy keys) so we find the
+    // note regardless of which draft variant key it was saved under.
+    function draftScoutNote(pid) {
+        try {
+            const lid = window.S?.currentLeagueId;
+            if (!lid || pid == null) return '';
+            const want = String(pid);
+            const prefix = 'wr_bigboard_' + lid;
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (!k || k.indexOf(prefix) !== 0) continue;
+                const data = JSON.parse(localStorage.getItem(k) || '{}');
+                const n = data && data.notes && data.notes[want];
+                if (n && String(n).trim()) return String(n).trim();
+            }
+        } catch (e) {}
+        return '';
+    }
+
     function PlayerCard({ pid, playersData, statsData, scoringSettings, onClose, initialTab }) {
         const [tab, setTab] = useState(initialTab || 'overview');
         const [tagMenu, setTagMenu] = useState(false);
@@ -157,6 +178,7 @@
         const pos = p.position || '?';
         const nPos = normPos(pos);
         const name = playerName(p);
+        const scoutNote = draftScoutNote(pid);
         const age = p.age || 0;
         const team = p.team || 'FA';
         const dhq = window.App?.LI?.playerScores?.[pid] || 0;
@@ -170,16 +192,13 @@
         const peakYrs = Math.max(0, pHi - age);
         const valueYrs = Math.max(0, declineHi - age);
         const peakLabel = age < pLo ? 'Rising' : age <= pHi ? 'Prime' : age <= declineHi ? 'Veteran' : 'Post-Window';
-        const peakCol = age < pLo ? '#2ECC71' : age <= pHi ? '#D4AF37' : age <= declineHi ? '#F0A500' : '#E74C3C';
-        const dhqCol = dhq >= 7000 ? '#2ECC71' : dhq >= 4000 ? '#3498DB' : dhq >= 2000 ? '#D0D0D0' : 'var(--text-muted)';
+        const peakCol = age < pLo ? 'var(--k-2ecc71, #2ecc71)' : age <= pHi ? 'var(--k-d4af37, #d4af37)' : age <= declineHi ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+        const dhqCol = dhq >= 7000 ? 'var(--k-2ecc71, #2ecc71)' : dhq >= 4000 ? 'var(--k-3498db, #3498db)' : dhq >= 2000 ? 'var(--k-d0d0d0, #d0d0d0)' : 'var(--text-muted)';
         const currentLeague = window.S?.leagues?.find(l => l.league_id === window.S?.currentLeagueId) || window.S?.leagues?.[0] || {};
         const sc = scoringSettings || currentLeague?.scoring_settings || {};
         const leagueProfile = typeof window.App?.Intelligence?.buildLeagueProfile === 'function'
             ? window.App.Intelligence.buildLeagueProfile({ league: { ...currentLeague, scoring_settings: sc }, rosters: window.S?.rosters || [], platform: window.S?.platform || currentLeague?._platform })
             : null;
-        const leagueFormatBadges = leagueProfile && typeof window.App?.Intelligence?.buildFormatBadges === 'function'
-            ? window.App.Intelligence.buildFormatBadges(leagueProfile).filter(b => b.impact === 'major' || b.impact === 'scoring' || b.impact === 'confidence').slice(0, 4)
-            : [];
         const playerFormatReasons = leagueProfile && typeof window.App?.Intelligence?.buildPlayerFormatReasons === 'function'
             ? window.App.Intelligence.buildPlayerFormatReasons({ player: p, pos: nPos, profile: leagueProfile }).slice(0, 3)
             : [];
@@ -204,7 +223,7 @@
         const pa = typeof window.getPlayerAction === 'function' ? window.getPlayerAction(pid) : null;
         const rec = pa ? pa.label.toUpperCase() :
             (valueYrs <= 0 && trend <= -10 ? 'SELL NOW' : valueYrs <= 0 ? 'SELL' : peakYrs <= 1 ? 'SELL' : dhq >= 7000 && peakYrs >= 3 ? 'HOLD CORE' : 'HOLD');
-        const recCol = rec.includes('SELL') ? '#E74C3C' : rec.includes('BUY') ? '#2ECC71' : '#D4AF37';
+        const recCol = rec.includes('SELL') ? 'var(--k-e74c3c, #e74c3c)' : rec.includes('BUY') ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-d4af37, #d4af37)';
         const rosterRecommendation = typeof window.App?.Intelligence?.buildRosterRecommendation === 'function'
             ? window.App.Intelligence.buildRosterRecommendation({
                 id: 'player_card_' + pid,
@@ -230,12 +249,6 @@
         if (typeof window.App?.Intelligence?.publishRecommendations === 'function' && rosterRecommendation) {
             window.App.Intelligence.publishRecommendations('player-card', [rosterRecommendation], { surface: 'player-card', playerId: pid });
         }
-        const rosterWhyView = typeof window.App?.Intelligence?.buildWhyView === 'function'
-            ? window.App.Intelligence.buildWhyView(rosterRecommendation, { title: 'Why this player card', limit: 3 })
-            : null;
-        const rosterRecommendationWhy = rosterWhyView?.lines || (typeof window.App?.Intelligence?.recommendationWhyLines === 'function'
-            ? window.App.Intelligence.recommendationWhyLines(rosterRecommendation, 3)
-            : []);
         const tier = tierFromDhq(dhq);
         const depthChart = typeof p.depth_chart_order === 'number'
             ? (pos + (p.depth_chart_order + 1))
@@ -243,9 +256,9 @@
         const dhqContext = meta.statusReason
             ? (meta.statusReason + (meta.roleLabel ? ' · ' + meta.roleLabel : ''))
             : [meta.roleLabel, meta.opportunityLabel].filter(Boolean).join(' · ');
-        const dhqContextCol = meta.statusReason ? '#E74C3C'
-            : meta.roleMult && meta.roleMult < 0.9 ? '#F0A500'
-                : meta.opportunityMult && meta.opportunityMult < 1 ? '#F0A500'
+        const dhqContextCol = meta.statusReason ? 'var(--k-e74c3c, #e74c3c)'
+            : meta.roleMult && meta.roleMult < 0.9 ? 'var(--k-f0a500, #f0a500)'
+                : meta.opportunityMult && meta.opportunityMult < 1 ? 'var(--k-f0a500, #f0a500)'
                     : 'var(--text-muted)';
 
         // Roster context
@@ -307,62 +320,35 @@
             const compressed = compressHistory(historyRows || []);
             return React.createElement(React.Fragment, null,
                 // Stats grid
-                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' } },
+                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
                     [
                         { v: dhq > 0 ? dhq.toLocaleString() : '—', l: 'DHQ', c: dhqCol },
-                        { v: ppg || '—', l: 'PPG (curr)', c: ppg >= 10 ? '#2ECC71' : '#D0D0D0' },
+                        { v: ppg || '—', l: 'PPG (curr)', c: ppg >= 10 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-d0d0d0, #d0d0d0)' },
                         { v: peakYrs > 0 ? peakYrs + 'yr' : valueYrs + 'yr', l: peakYrs > 0 ? 'Peak Left' : 'Value Left', c: peakCol },
                         { v: tier.label, l: 'Tier', c: tier.color },
                         { v: rec, l: 'Action', c: recCol },
                     ].map((s, i) => React.createElement('div', { key: i, style: { textAlign: 'center' } },
                         React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.05rem', fontWeight: 700, color: s.c } }, s.v),
-                        React.createElement('div', { style: { fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, s.l)
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, s.l)
                     ))
                 ),
                 dhqContext && React.createElement('div', {
                     style: {
                         margin: '12px 20px 0',
                         padding: '9px 11px',
-                        border: '1px solid rgba(212,175,55,0.16)',
+                        border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))',
                         borderRadius: '7px',
-                        background: 'rgba(255,255,255,0.025)',
+                        background: 'var(--ov-2, rgba(255,255,255,0.025))',
                         color: dhqContextCol,
-                        fontSize: '0.76rem',
+                        fontSize: 'var(--text-body, 1rem)',
                         lineHeight: 1.45,
                     }
                 }, dhqContext),
-                playerFormatReasons.length > 0 && React.createElement('div', {
-                    style: {
-                        margin: '10px 20px 0',
-                        padding: '10px 11px',
-                        border: '1px solid rgba(52,152,219,0.18)',
-                        borderRadius: '7px',
-                        background: 'rgba(52,152,219,0.055)',
-                    }
-                },
-                    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' } },
-                        React.createElement('span', { style: { fontSize: '0.68rem', color: '#7DB7E8', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 800 } }, 'League Context'),
-                        leagueFormatBadges.map(badge => React.createElement('span', {
-                            key: badge.code,
-                            style: {
-                                fontSize: '0.62rem',
-                                color: '#D0E7FA',
-                                border: '1px solid rgba(125,183,232,0.22)',
-                                borderRadius: '4px',
-                                padding: '1px 5px',
-                                background: 'rgba(125,183,232,0.08)',
-                            }
-                        }, badge.label))
-                    ),
-                    React.createElement('div', { style: { fontSize: '0.75rem', color: 'var(--silver)', lineHeight: 1.45 } },
-                        playerFormatReasons.map(r => r.detail || r.label).join(' ')
-                    )
-                ),
                 // Age curve
-                React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' } },
+                React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
 	                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' } },
-	                        React.createElement('div', { style: { fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 } }, 'Age Curve'),
-	                        React.createElement('div', { style: { fontSize: '0.74rem', color: peakCol } },
+	                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 } }, 'Age Curve'),
+	                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: peakCol } },
 	                            peakLabel + ' · ' + (peakYrs > 0 ? peakYrs + 'yr peak left' : valueYrs > 0 ? valueYrs + 'yr value left' : 'Past value window'))
                     ),
                     React.createElement('div', { style: { display: 'flex', height: '18px', borderRadius: '4px', overflow: 'hidden', gap: '1px' } },
@@ -371,96 +357,75 @@
                             const col = a < pLo - 3 ? 'rgba(96,165,250,0.3)' :
                                 a < pLo ? 'rgba(46,204,113,0.45)' :
                                 (a >= pLo && a <= pHi) ? 'rgba(46,204,113,0.75)' :
-	                                a <= declineHi ? 'rgba(212,175,55,0.45)' : 'rgba(231,76,60,0.35)';
+	                                a <= declineHi ? 'var(--acc-line3, rgba(212,175,55,0.45))' : 'rgba(231,76,60,0.35)';
                             return React.createElement('div', {
                                 key: a,
                                 style: {
                                     flex: 1, background: col, opacity: a === age ? 1 : 0.55,
-                                    outline: a === age ? '2px solid #D4AF37' : 'none', outlineOffset: '-1px',
+                                    outline: a === age ? '2px solid var(--k-d4af37, #d4af37)' : 'none', outlineOffset: '-1px',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: '0.6rem', fontWeight: 700, color: a === age ? 'var(--text-primary)' : 'transparent'
+                                    fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: a === age ? 'var(--text-primary)' : 'transparent'
                                 }
                             }, a === age ? String(age) : '');
                         })
                     ),
-                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '4px' } },
+                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)', marginTop: '4px' } },
                         React.createElement('span', null, '20'),
                         React.createElement('span', null, 'Peak ' + pLo + '–' + pHi),
                         React.createElement('span', null, '36')
                     )
                 ),
                 // Attributes row (depth chart clarified, no "News" button)
-                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' } },
+                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
                     [
                         { l: 'Experience', v: (p.years_exp || 0) + ' yr' + ((p.years_exp || 0) === 1 ? '' : 's') },
                         { l: 'NFL Depth Chart', v: depthChart || '—' },
                         { l: 'Height / Weight', v: heightWeight || '—' },
                         { l: 'College', v: p.college || '—' },
                     ].map((s, i) => React.createElement('div', { key: i },
-                        React.createElement('div', { style: { fontSize: '0.64rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' } }, s.l),
-                        React.createElement('div', { style: { fontSize: '0.86rem', color: 'var(--text-primary)', fontWeight: 500 } }, s.v)
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' } }, s.l),
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-primary)', fontWeight: 500 } }, s.v)
                     ))
                 ),
                 // Team history
-                React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' } },
-                    React.createElement('div', { style: { fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '8px' } }, 'Team History'),
+                React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
+                    React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '8px' } }, 'Team History'),
                     historyLoading
-                        ? React.createElement('div', { style: { fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.55 } }, 'Loading…')
+                        ? React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.55 } }, 'Loading…')
                         : (compressed.length
                             ? React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } },
                                 compressed.map((r, i) => React.createElement('span', {
                                     key: i,
                                     style: {
-                                        padding: '4px 10px', background: 'rgba(212,175,55,0.08)',
-                                        border: '1px solid rgba(212,175,55,0.2)', borderRadius: '6px',
-                                        fontSize: '0.78rem', color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace'
+                                        padding: '4px 10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
+                                        border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '6px',
+                                        fontSize: 'var(--text-body, 1rem)', color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace'
                                     }
                                 }, r.team + ' ' + (r.start === r.end ? r.start : r.start + '–' + r.end)))
                             )
                             : React.createElement('div', null,
-                                React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--text-primary)' } },
+                                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--text-primary)' } },
                                     team === 'FA' ? 'Free Agent' : ('Current: ' + team)
                                 ),
-                                React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.55, marginTop: '4px' } },
+                                React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.55, marginTop: '4px' } },
                                     'Per-season history not available from the current data source.'
                                 )
                             )
                         )
                 ),
                 // Phase 9 deferred: custom awards from imported Chronicles
-                customAwards.length > 0 && React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' } },
-                    React.createElement('div', { style: { fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '8px' } }, 'Custom Awards'),
+                customAwards.length > 0 && React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
+                    React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '8px' } }, 'Custom Awards'),
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-                        customAwards.map((a, i) => React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', background: 'rgba(212,175,55,0.06)', borderRadius: '6px' } },
-                            React.createElement('span', { style: { fontSize: '0.95rem' } }, '\uD83C\uDFC5'),
+                        customAwards.map((a, i) => React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: '6px' } },
+                            React.createElement('span', { style: { fontSize: 'var(--text-body, 1rem)' } }, '\uD83C\uDFC5'),
                             React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-                                React.createElement('div', { style: { fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' } }, a.name),
-                                React.createElement('div', { style: { fontSize: '0.68rem', color: 'var(--silver)' } },
+                                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: 'var(--text-primary)' } }, a.name),
+                                React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' } },
                                     [a.year, a.stats, a.league].filter(Boolean).join(' · ')
                                 )
                             )
                         ))
-                    )
-                ),
-                // Shared recommendation
-                React.createElement('div', { style: { padding: '14px 20px', display: 'flex', gap: '10px', alignItems: 'flex-start' } },
-                    React.createElement('div', { style: { width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg, #D4AF37, #B8941E)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.55rem', fontWeight: 800, color: '#0A0A0A' } }, 'AI'),
-                    React.createElement('div', { style: { fontSize: '0.84rem', color: '#D0D0D0', lineHeight: 1.5 } },
-                        rosterRecommendation?.display?.detail || (() => {
-                            let insight;
-	                            if (isOnMyTeam && valueYrs <= 1 && dhq >= 3000) insight = 'Sell window closing — move before value drops.';
-                            else if (!isOnMyTeam && peakYrs >= 5 && dhq < 4000) insight = 'Buy-low candidate — young with room to grow.';
-                            else if (peakYrs >= 4) insight = 'Long dynasty window — cornerstone asset.';
-                            else if (peakYrs >= 1) insight = 'In production window.';
-	                            else if (valueYrs >= 1) insight = 'Veteran value window.';
-	                            else insight = 'Past value window — value declining.';
-                            if (trend >= 20) insight += ' Trending up ' + trend + '%.';
-                            else if (trend <= -15) insight += ' Production down ' + Math.abs(trend) + '%.';
-                            return insight;
-                        })(),
-                        rosterRecommendationWhy.length > 0 && React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '8px' } },
-                            rosterRecommendationWhy.map(line => React.createElement('span', { key: line, style: { color: '#D0E7FA', background: 'rgba(125,183,232,0.07)', border: '1px solid rgba(125,183,232,0.18)', borderRadius: '4px', padding: '2px 5px', fontSize: '0.6rem', lineHeight: 1.25 } }, line))
-                        )
                     )
                 )
             );
@@ -483,13 +448,13 @@
 
         // ── Render ────────────────────────────────────────────────
         const backdrop = {
-            position: 'fixed', inset: 0, background: 'rgba(5,6,9,0.72)',
+            position: 'fixed', inset: 0, background: 'var(--surf-solid, rgba(5,6,9,0.72))',
             zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: '24px', animation: 'wrFadeIn 0.15s ease'
         };
         const modal = {
             width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto',
-            background: '#0a0b0d', border: '1px solid rgba(212,175,55,0.3)',
+            background: 'var(--k-0a0b0d, #0a0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
             borderRadius: '14px', boxShadow: '0 24px 80px rgba(0,0,0,0.8)',
             animation: 'wrFadeIn 0.2s ease'
         };
@@ -497,8 +462,8 @@
         return React.createElement('div', { style: backdrop, onClick: (e) => { if (e.target === e.currentTarget) onClose && onClose(); } },
             React.createElement('div', { style: modal, onClick: (e) => e.stopPropagation() },
                 // Hero
-                React.createElement('div', { style: { padding: '18px 20px', background: 'linear-gradient(135deg, rgba(212,175,55,0.10), transparent 60%)', borderBottom: '1px solid rgba(212,175,55,0.2)', display: 'flex', gap: '14px', alignItems: 'center' } },
-                    React.createElement('div', { className: 'wr-ring wr-ring-' + nPos, style: { width: '60px', height: '60px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } },
+                React.createElement('div', { style: { padding: '18px 20px', background: 'linear-gradient(135deg, var(--acc-fill2, rgba(212,175,55,0.10)), transparent 60%)', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', display: 'flex', gap: '14px', alignItems: 'center' } },
+                    React.createElement('div', { className: 'wr-ring wr-ring-' + nPos, style: { width: '60px', height: '60px', borderRadius: '12px', overflow: 'hidden', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } },
                         React.createElement('img', {
                             src: 'https://sleepercdn.com/content/nfl/players/' + pid + '.jpg',
                             style: { width: '60px', height: '60px', objectFit: 'cover' },
@@ -506,28 +471,35 @@
                         })
                     ),
                     React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-                        React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.45rem', color: 'var(--text-primary)', letterSpacing: '0.02em' } }, name),
+                        React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-hero, 2rem)', color: 'var(--text-primary)', letterSpacing: '0.02em' } }, name),
                         // Single-row identity strip — no redundant profile block below
-                        React.createElement('div', { style: { fontSize: '0.82rem', color: '#D0D0D0', marginTop: '2px' } },
+                        React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--k-d0d0d0, #d0d0d0)', marginTop: '2px' } },
                             [nPos, team, 'Age ' + (age || '?'), heightWeight, p.college].filter(Boolean).join(' · ')
                         )
                     ),
                     React.createElement('button', {
                         ref: closeRef, onClick: onClose,
-                        style: { background: 'none', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.95rem', padding: '4px 10px' }
+                        style: { background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '6px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)', padding: '4px 10px', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }
                     }, '✕')
                 ),
+                // Private scouting note from the Draft Big Board (if any)
+                scoutNote && React.createElement('div', {
+                    style: { margin: '12px 20px 0', padding: '10px 12px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '8px' }
+                },
+                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gold)', marginBottom: '4px' } }, '📝 Your scouting note'),
+                    React.createElement('div', { style: { fontSize: 'var(--text-label, 0.8rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.45, whiteSpace: 'pre-wrap' } }, scoutNote)
+                ),
                 // Tabs
-                React.createElement('div', { style: { display: 'flex', gap: '2px', padding: '0 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' } },
+                React.createElement('div', { style: { display: 'flex', gap: '2px', padding: '0 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
                     ['overview', 'stats'].map(t =>
                         React.createElement('button', {
                             key: t,
                             onClick: () => setTab(t),
                             style: {
-                                padding: '10px 14px', background: 'transparent',
+                                padding: '10px 14px', minHeight: '44px', background: 'transparent',
                                 border: 'none', borderBottom: tab === t ? '2px solid var(--gold)' : '2px solid transparent',
                                 color: tab === t ? 'var(--gold)' : 'var(--silver)',
-                                fontFamily: 'var(--font-body)', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer'
+                                fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer'
                             }
                         }, t === 'overview' ? 'Overview' : 'Career Stats')
                     )
@@ -535,17 +507,17 @@
                 // Tab body
                 tab === 'overview' ? OverviewTab() : StatsTab(),
                 // Actions — Compare, Trade Finder, Tag As (no News button)
-                React.createElement('div', { style: { padding: '14px 20px', display: 'flex', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.06)', position: 'relative' } },
+                React.createElement('div', { style: { padding: '14px 20px', display: 'flex', gap: '8px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', position: 'relative' } },
                     React.createElement('button', { onClick: goCompare, style: btnStyle() }, 'Compare'),
                     React.createElement('button', { onClick: goTradeFinder, style: btnStyle('primary') }, isOnMyTeam ? 'Trade Finder' : 'Find Trade'),
                     React.createElement('button', { onClick: () => setTagMenu(!tagMenu), style: btnStyle() }, 'Tag As ▾'),
                     tagMenu ? React.createElement('div', {
-                        style: { position: 'absolute', bottom: '54px', right: '20px', background: '#0a0b0d', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '8px', padding: '6px', zIndex: 5, minWidth: '160px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }
+                        style: { position: 'absolute', bottom: '54px', right: '20px', background: 'var(--k-0a0b0d, #0a0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '8px', padding: '6px', zIndex: 5, minWidth: '160px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }
                     },
                         ['trade', 'cut', 'watch', 'untouchable'].map(t =>
                             React.createElement('button', {
                                 key: t, onClick: () => applyTag(t),
-                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', background: 'transparent', border: 'none', color: '#D0D0D0', fontSize: '0.82rem', cursor: 'pointer', borderRadius: '4px' }
+                                style: { display: 'block', width: '100%', textAlign: 'left', padding: '12px 10px', minHeight: '44px', background: 'transparent', border: 'none', color: 'var(--k-d0d0d0, #d0d0d0)', fontSize: 'var(--text-body, 1rem)', cursor: 'pointer', borderRadius: '4px' }
                             }, 'Tag as ' + t.charAt(0).toUpperCase() + t.slice(1))
                         )
                     ) : null,
@@ -557,13 +529,13 @@
 
     function btnStyle(variant, extra) {
         const base = {
-            padding: '9px 14px', border: '1px solid rgba(212,175,55,0.3)',
-            borderRadius: '6px', fontFamily: 'Rajdhani, sans-serif', fontSize: '0.88rem',
+            padding: '9px 14px', minHeight: '44px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
+            borderRadius: '6px', fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-body, 1rem)',
             letterSpacing: '0.03em', cursor: 'pointer'
         };
-        if (variant === 'primary') return { ...base, background: '#D4AF37', color: '#0A0A0A', border: '1px solid #D4AF37', ...(extra || {}) };
-        if (variant === 'ghost')   return { ...base, background: 'transparent', color: 'var(--silver)', border: '1px solid rgba(255,255,255,0.08)', ...(extra || {}) };
-        return { ...base, background: 'rgba(212,175,55,0.08)', color: 'var(--gold)', ...(extra || {}) };
+        if (variant === 'primary') return { ...base, background: 'var(--k-d4af37, #d4af37)', color: 'var(--k-0a0a0a, #0a0a0a)', border: '1px solid var(--k-d4af37, #d4af37)', ...(extra || {}) };
+        if (variant === 'ghost')   return { ...base, background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', ...(extra || {}) };
+        return { ...base, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', ...(extra || {}) };
     }
 
     // ── Host component: mounted once into a root container ────────

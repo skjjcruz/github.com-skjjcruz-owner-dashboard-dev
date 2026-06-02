@@ -28,34 +28,34 @@
 
         const DNA_TYPES = {
             NONE: { label: '— Not Set —', color: 'var(--silver)', desc: '', taxes: [] },
-            FLEECER: { label: 'The Fleecer', color: '#E74C3C', desc: 'High activity, always hunting asymmetric value. Sends lowball offers constantly. Sharp but impatient — will counter-offer if you decline.', strategy: 'Lead with clean surplus. They respect boldness, but the math still moves linearly.', taxes: ['Endowment -5%', 'Surplus hunter'] },
-            DOMINATOR: { label: 'The Dominator', color: '#E67E22', desc: 'High ego, requires visible surplus to pull the trigger. Motivated by status and bragging rights above all else.', strategy: 'Frame your offer as giving them the "better" side. Let them feel like they won.', taxes: ['Status Tax -18%', 'Endowment -14%', 'Loss Aversion -8%'] },
-            STALWART: { label: 'The Stalwart', color: '#5DADE2', desc: 'High stability, emotionally attached to their roster. Slow to move but reliable when they engage.', strategy: 'Lead with clear value. Never low-ball. Highlight how the trade improves both sides.', taxes: ['Endowment -10%', 'Loss Aversion -8%'] },
-            ACCEPTOR: { label: 'The Acceptor', color: '#2ECC71', desc: 'Low attachment, willing to sell current assets for future picks and young players. Rebuilding or just indifferent.', strategy: 'Offer future assets (picks, young upside). They discount current stars through the tax layer.', taxes: ['Rebuilding Discount +10%', 'Endowment -3%'] },
-            DESPERATE: { label: 'The Desperate', color: '#BB8FCE', desc: 'High urgency triggered by injuries, bye-weeks, or playoff push. Will overpay for an immediate starter.', strategy: 'Identify their empty slot or injury. Strike fast — desperation fades after their bye.', taxes: ['Panic Premium +14% to +26%', 'Endowment -8%'] },
+            FLEECER: { label: 'The Fleecer', color: 'var(--k-e74c3c, #e74c3c)', desc: 'High activity, always hunting asymmetric value. Sends lowball offers constantly. Sharp but impatient — will counter-offer if you decline.', strategy: 'Lead with clean surplus. They respect boldness, but the math still moves linearly.', taxes: ['Endowment -5%', 'Surplus hunter'] },
+            DOMINATOR: { label: 'The Dominator', color: 'var(--k-e67e22, #e67e22)', desc: 'High ego, requires visible surplus to pull the trigger. Motivated by status and bragging rights above all else.', strategy: 'Frame your offer as giving them the "better" side. Let them feel like they won.', taxes: ['Status Tax -18%', 'Endowment -14%', 'Loss Aversion -8%'] },
+            STALWART: { label: 'The Stalwart', color: 'var(--k-5dade2, #5dade2)', desc: 'High stability, emotionally attached to their roster. Slow to move but reliable when they engage.', strategy: 'Lead with clear value. Never low-ball. Highlight how the trade improves both sides.', taxes: ['Endowment -10%', 'Loss Aversion -8%'] },
+            ACCEPTOR: { label: 'The Acceptor', color: 'var(--k-2ecc71, #2ecc71)', desc: 'Low attachment, willing to sell current assets for future picks and young players. Rebuilding or just indifferent.', strategy: 'Offer future assets (picks, young upside). They discount current stars through the tax layer.', taxes: ['Rebuilding Discount +10%', 'Endowment -3%'] },
+            DESPERATE: { label: 'The Desperate', color: 'var(--k-bb8fce, #bb8fce)', desc: 'High urgency triggered by injuries, bye-weeks, or playoff push. Will overpay for an immediate starter.', strategy: 'Identify their empty slot or injury. Strike fast — desperation fades after their bye.', taxes: ['Panic Premium +14% to +26%', 'Endowment -8%'] },
         };
 
         const GRUDGE_TYPES = {
-            ACCEPTED_FAIR: { label:'Accepted — Fair Trade', impact:+5, color:'#2ECC71', icon:'OK', cat:'accepted', dnaSignal:{ STALWART:3 } },
-            ACCEPTED_WON:  { label:'Accepted — Fleeced Them', impact:-8, color:'#E67E22', icon:'UP', cat:'accepted', dnaSignal:{ FLEECER:3, DOMINATOR:1 } },
-            ACCEPTED_LOST: { label:'Accepted — Got Fleeced', impact:+10, color:'#BB8FCE', icon:'DN', cat:'accepted', dnaSignal:{ ACCEPTOR:3, DESPERATE:2 } },
-            REJECTED:      { label:'Rejected', impact:-15, color:'#E74C3C', icon:'X', cat:'rejected', dnaSignal:{ DOMINATOR:3, FLEECER:1 } },
-            COUNTER_FAIR:  { label:'Counter — Fair', impact:+3, color:'#5DADE2', icon:'<>', cat:'counter', dnaSignal:{ STALWART:2, FLEECER:1 } },
-            COUNTER_LOWBALL:{ label:'Counter — Lowball', impact:-10, color:'#E67E22', icon:'v', cat:'counter', dnaSignal:{ FLEECER:3, DOMINATOR:2 } },
+            ACCEPTED_FAIR: { label:'Accepted — Fair Trade', impact:+5, color:'var(--k-2ecc71, #2ecc71)', icon:'OK', cat:'accepted', dnaSignal:{ STALWART:3 } },
+            ACCEPTED_WON:  { label:'Accepted — Fleeced Them', impact:-8, color:'var(--k-e67e22, #e67e22)', icon:'UP', cat:'accepted', dnaSignal:{ FLEECER:3, DOMINATOR:1 } },
+            ACCEPTED_LOST: { label:'Accepted — Got Fleeced', impact:+10, color:'var(--k-bb8fce, #bb8fce)', icon:'DN', cat:'accepted', dnaSignal:{ ACCEPTOR:3, DESPERATE:2 } },
+            REJECTED:      { label:'Rejected', impact:-15, color:'var(--k-e74c3c, #e74c3c)', icon:'X', cat:'rejected', dnaSignal:{ DOMINATOR:3, FLEECER:1 } },
+            COUNTER_FAIR:  { label:'Counter — Fair', impact:+3, color:'var(--k-5dade2, #5dade2)', icon:'<>', cat:'counter', dnaSignal:{ STALWART:2, FLEECER:1 } },
+            COUNTER_LOWBALL:{ label:'Counter — Lowball', impact:-10, color:'var(--k-e67e22, #e67e22)', icon:'v', cat:'counter', dnaSignal:{ FLEECER:3, DOMINATOR:2 } },
         };
 
         const POSTURES = window.App?.TradeEngine?.POSTURES || {
-            DESPERATE: { key:'DESPERATE', label:'Desperate', color:'#BB8FCE', desc:'Panic-mode — will overpay for immediate help.' },
-            BUYER:     { key:'BUYER',     label:'Active Buyer', color:'#F0A500', desc:'Contender upgrading — open to deals.' },
-            NEUTRAL:   { key:'NEUTRAL',   label:'Neutral', color:'#95A5A6', desc:'No strong push. Fair offers only.' },
-            SELLER:    { key:'SELLER',    label:'Active Seller', color:'#5DADE2', desc:'Moving assets for futures.' },
-            LOCKED:    { key:'LOCKED',    label:'Locked In', color:'#7F8C8D', desc:'Satisfied roster, high attachment.' },
+            DESPERATE: { key:'DESPERATE', label:'Desperate', color:'var(--k-bb8fce, #bb8fce)', desc:'Panic-mode — will overpay for immediate help.' },
+            BUYER:     { key:'BUYER',     label:'Active Buyer', color:'var(--k-f0a500, #f0a500)', desc:'Contender upgrading — open to deals.' },
+            NEUTRAL:   { key:'NEUTRAL',   label:'Neutral', color:'var(--k-95a5a6, #95a5a6)', desc:'No strong push. Fair offers only.' },
+            SELLER:    { key:'SELLER',    label:'Active Seller', color:'var(--k-5dade2, #5dade2)', desc:'Moving assets for futures.' },
+            LOCKED:    { key:'LOCKED',    label:'Locked In', color:'var(--k-7f8c8d, #7f8c8d)', desc:'Satisfied roster, high attachment.' },
         };
 
         // ── Helper functions ──
         const normPos = window.App.normPos;
         function posColor(pos) {
-            const c = { QB:'#FF6B6B', RB:'#4ECDC4', WR:'#45B7D1', TE:'#F7DC6F', K:'#BB8FCE', DL:'#E67E22', LB:'#F0A500', DB:'#5DADE2' };
+            const c = { QB:'var(--k-ff6b6b, #ff6b6b)', RB:'var(--k-4ecdc4, #4ecdc4)', WR:'var(--k-45b7d1, #45b7d1)', TE:'var(--k-f7dc6f, #f7dc6f)', K:'var(--k-bb8fce, #bb8fce)', DL:'var(--k-e67e22, #e67e22)', LB:'var(--warn)', DB:'var(--info)' };
             return c[pos] || 'var(--silver)';
         }
         function avatarUrl(id) { return id ? `https://sleepercdn.com/avatars/thumbs/${id}` : null; }
@@ -106,20 +106,13 @@
 
         function calcNflStarterSet() {
             const scoring = currentLeague.scoring_settings;
-            const dhqScores = window.App?.LI?.playerScores || {};
             const byPos = {};
             for (const [id, p] of Object.entries(playersData)) {
                 const pos = normPos(p.position);
                 if (!pos || !(pos in NFL_STARTER_POOL)) continue;
                 if (!p.team) continue;
                 if (!byPos[pos]) byPos[pos] = [];
-                // Rank the startable pool by forward-looking DHQ dynasty value so
-                // rookies/breakouts aren't graded as zero on last season's box score.
-                // playerScores already carries the depth-chart role penalty (applied
-                // once at load in applyRolePenalties). Fall back to last-season points
-                // only when no DHQ value exists, so the pool is never empty.
-                const dhq = dhqScores[id];
-                const score = (dhq != null && dhq > 0) ? dhq : calcSeasonPts(id, scoring);
+                const score = calcSeasonPts(id, scoring);
                 if (score > 0) byPos[pos].push({ id, score });
             }
             const result = {};
@@ -301,14 +294,14 @@
 
             let tier, tierColor, tierBg;
             if (weeklyPts > 0) {
-                if (weeklyPts > WEEKLY_TARGET + 10) { tier='ELITE'; tierColor='#D4AF37'; tierBg='rgba(212,175,55,0.15)'; }
-                else if (weeklyPts >= WEEKLY_TARGET - 15) { tier='CONTENDER'; tierColor='#2ECC71'; tierBg='rgba(46,204,113,0.12)'; }
-                else if (weeklyPts >= WEEKLY_TARGET * 0.85) { tier='CROSSROADS'; tierColor='#F0A500'; tierBg='rgba(240,165,0,0.12)'; }
-                else { tier='REBUILDING'; tierColor='#E74C3C'; tierBg='rgba(231,76,60,0.12)'; }
+                if (weeklyPts > WEEKLY_TARGET + 10) { tier='ELITE'; tierColor='var(--gold)'; tierBg='var(--acc-fill3, rgba(212,175,55,0.15))'; }
+                else if (weeklyPts >= WEEKLY_TARGET - 15) { tier='CONTENDER'; tierColor='var(--good)'; tierBg='rgba(46,204,113,0.12)'; }
+                else if (weeklyPts >= WEEKLY_TARGET * 0.85) { tier='CROSSROADS'; tierColor='var(--warn)'; tierBg='rgba(240,165,0,0.12)'; }
+                else { tier='REBUILDING'; tierColor='var(--bad)'; tierBg='rgba(231,76,60,0.12)'; }
             } else {
-                if (coverageScore >= 36) { tier='CONTENDER'; tierColor='#2ECC71'; tierBg='rgba(46,204,113,0.12)'; }
-                else if (coverageScore >= 26) { tier='CROSSROADS'; tierColor='#F0A500'; tierBg='rgba(240,165,0,0.12)'; }
-                else { tier='REBUILDING'; tierColor='#E74C3C'; tierBg='rgba(231,76,60,0.12)'; }
+                if (coverageScore >= 36) { tier='CONTENDER'; tierColor='var(--good)'; tierBg='rgba(46,204,113,0.12)'; }
+                else if (coverageScore >= 26) { tier='CROSSROADS'; tierColor='var(--warn)'; tierBg='rgba(240,165,0,0.12)'; }
+                else { tier='REBUILDING'; tierColor='var(--bad)'; tierBg='rgba(231,76,60,0.12)'; }
             }
 
             let panic = 0;
@@ -681,9 +674,7 @@
         const nflStarterSet = useMemo(() => {
             if (!Object.keys(playersData).length || !Object.keys(statsData).length) return {};
             return calcNflStarterSet();
-            // timeRecomputeTs: recompute once DHQ playerScores load so the pool
-            // ranks by dynasty value rather than the season-points fallback.
-        }, [playersData, statsData, timeRecomputeTs]);
+        }, [playersData, statsData]);
 
         const tradedPicks = useMemo(() => window.S?.tradedPicks || [], [currentLeague]);
 
@@ -1111,8 +1102,8 @@
             const give = (givePlayers || []).reduce((s, p) => s + yearsFor(p), 0);
             const receive = (receivePlayers || []).reduce((s, p) => s + yearsFor(p), 0);
             const delta = receive - give;
-            if (delta >= 3) return { label: 'Extends window', color: '#2ECC71' };
-            if (delta <= -3) return { label: 'Shortens window', color: '#E74C3C' };
+            if (delta >= 3) return { label: 'Extends window', color: 'var(--good)' };
+            if (delta <= -3) return { label: 'Shortens window', color: 'var(--bad)' };
             return { label: 'Window neutral', color: 'var(--silver)' };
         }
 
@@ -1153,7 +1144,7 @@
             const baseLikelihood = calcAcceptanceLikelihood(give.total, receive.total, dnaKey, acceptanceTaxes, myAssessment, partner, { totalPieces: pieceCount });
             const gradeRaw = window.App?.TradeEngine?.fairnessGrade
                 ? window.App.TradeEngine.fairnessGrade(give.total, receive.total)
-                : { grade: receive.total >= give.total ? 'B+' : 'C', label: receive.total >= give.total ? 'Win' : 'Overpay', color: receive.total >= give.total ? '#2ECC71' : '#E74C3C' };
+                : { grade: receive.total >= give.total ? 'B+' : 'C', label: receive.total >= give.total ? 'Win' : 'Overpay', color: receive.total >= give.total ? 'var(--good)' : 'var(--bad)' };
             const userGain = receive.total - give.total;
             const behaviorProfile = ownerBehaviorByRosterId?.[String(partner.rosterId)] || null;
             const behaviorFit = behaviorProfile && typeof window.App?.Intelligence?.evaluateBehaviorTradeFit === 'function'
@@ -1533,9 +1524,9 @@
             const dnaKey = ownerDna[assessment.ownerId] || 'NONE';
             const dna = DNA_TYPES[dnaKey] || DNA_TYPES.NONE;
             const pct = Math.round((weeklyPts / WEEKLY_TARGET) * 100);
-            const scoreBarColor = healthScore >= 85 ? '#D4AF37' : healthScore >= 70 ? '#2ECC71' : healthScore >= 55 ? '#F0A500' : '#E74C3C';
+            const scoreBarColor = healthScore >= 85 ? 'var(--gold)' : healthScore >= 70 ? 'var(--good)' : healthScore >= 55 ? 'var(--warn)' : 'var(--bad)';
             const projClass = weeklyPts >= WEEKLY_TARGET ? 'proj-above' : weeklyPts >= WEEKLY_TARGET * 0.9 ? 'proj-close' : 'proj-below';
-            const projColor = weeklyPts >= WEEKLY_TARGET ? 'var(--win-green)' : weeklyPts >= WEEKLY_TARGET * 0.9 ? '#F0A500' : 'var(--loss-red)';
+            const projColor = weeklyPts >= WEEKLY_TARGET ? 'var(--win-green)' : weeklyPts >= WEEKLY_TARGET * 0.9 ? 'var(--warn)' : 'var(--loss-red)';
 
             return (
                 <div className={`tc-team-card${isMyTeam?' tc-my-team':''}`}>
@@ -1551,7 +1542,7 @@
                     </div>
                     <div className="tc-card-body">
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                            <span style={{ fontFamily:'JetBrains Mono, monospace', fontSize:'1.5rem', fontWeight:600, color:scoreBarColor, lineHeight:1 }}>{healthScore}</span>
+                            <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.5rem', fontWeight:600, color:scoreBarColor, lineHeight:1 }}>{healthScore}</span>
                             <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end' }}>
                                 <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.8 }}>{wins}-{losses}{ties>0?`-${ties}`:''}</span>
                                 <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65 }}>{pf > 0 ? `${pf.toFixed(0)} PF` : ''}</span>
@@ -1605,7 +1596,7 @@
                                             <div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.6 }}>{myAssessment.wins}-{myAssessment.losses}{myAssessment.ties>0?`-${myAssessment.ties}`:''} {myAssessment.pf > 0 ? `${myAssessment.pf.toFixed(0)} PF` : ''}</div>
                                         </div>
                                         <div style={{ textAlign:'center' }}>
-                                            {typeof MiniDonut !== 'undefined' ? React.createElement(MiniDonut, { value: myAssessment.healthScore, size: 56, label: 'HEALTH' }) : <div style={{ fontFamily:'JetBrains Mono, monospace', fontSize:'2.2rem', fontWeight:600, lineHeight:1, color: myAssessment.healthScore>=85?'#D4AF37':myAssessment.healthScore>=70?'#2ECC71':myAssessment.healthScore>=55?'#F0A500':'#E74C3C' }}>{myAssessment.healthScore}</div>}
+                                            {typeof MiniDonut !== 'undefined' ? React.createElement(MiniDonut, { value: myAssessment.healthScore, size: 56, label: 'HEALTH' }) : <div style={{ fontFamily:'var(--font-mono)', fontSize:'2.2rem', fontWeight:600, lineHeight:1, color: myAssessment.healthScore>=85?'var(--gold)':myAssessment.healthScore>=70?'var(--good)':myAssessment.healthScore>=55?'var(--warn)':'var(--bad)' }}>{myAssessment.healthScore}</div>}
                                         </div>
                                     </div>
                                     <div className="tc-pos-grid">
@@ -1646,12 +1637,12 @@
                             <div className="tc-team-detail-panel">
                                 <div style={{ gridColumn:'1/-1', display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.5rem' }}>
                                     <div style={{ fontWeight:700, fontSize:'0.9rem' }}>{detail.ownerName} <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.6, marginLeft:'0.5rem' }}>{detail.teamName}</span></div>
-                                    <button onClick={() => setSelectedAuditTeam(null)} style={{ background:'transparent', border:'1.5px solid var(--gold)', color:'var(--gold)', fontFamily: 'var(--font-body)', fontSize:'0.7rem', fontWeight:600, padding:'0.32rem 0.65rem', borderRadius:'4px', cursor:'pointer' }}>X Close</button>
+                                    <button onClick={() => setSelectedAuditTeam(null)} style={{ background:'transparent', border:'1.5px solid var(--gold)', color:'var(--gold)', fontFamily: 'var(--font-body)', fontSize:'0.7rem', fontWeight:600, padding:'0.32rem 0.65rem', borderRadius:'4px', cursor:'pointer', minHeight:'44px', minWidth:'44px', display:'flex', alignItems:'center', justifyContent:'center' }}>X Close</button>
                                 </div>
                                 <div>
                                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.5rem' }}>
                                         <div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.6 }}>{detail.wins}-{detail.losses} {detail.pf>0?`${detail.pf.toFixed(0)} PF`:''}</div>
-                                        <div style={{ fontFamily:'JetBrains Mono, monospace', fontSize:'1.8rem', fontWeight:600, lineHeight:1, color:detail.tierColor }}>{detail.healthScore}</div>
+                                        <div style={{ fontFamily:'var(--font-mono)', fontSize:'1.8rem', fontWeight:600, lineHeight:1, color:detail.tierColor }}>{detail.healthScore}</div>
                                     </div>
                                     <div className="tc-pos-grid">
                                         {Object.entries(detail.posAssessment).sort((a,b)=>(TC_POS_ORDER[a[0]]??9)-(TC_POS_ORDER[b[0]]??9)).map(([pos,data]) => <TcPosRow key={pos} pos={pos} assessment={data} />)}
@@ -1670,10 +1661,10 @@
                     {/* All Teams Grid */}
                     <div className="tc-section-hdr" style={{ marginBottom:'0.6rem' }}>ALL TEAMS</div>
                     <div style={{ display:'flex', gap:'1rem', fontSize:'0.74rem', marginBottom:'0.6rem', color:'var(--silver)', opacity:0.7, flexWrap:'wrap' }}>
-                        <span><span style={{ color:'#2ECC71' }}>●</span> Surplus</span>
+                        <span><span style={{ color:'var(--good)' }}>●</span> Surplus</span>
                         <span><span style={{ color:'var(--silver)' }}>○</span> OK</span>
-                        <span><span style={{ color:'#F39C12' }}>↑</span> Thin</span>
-                        <span><span style={{ color:'#E74C3C' }}>✗</span> Deficit</span>
+                        <span><span style={{ color:'var(--k-f39c12, #f39c12)' }}>↑</span> Thin</span>
+                        <span><span style={{ color:'var(--bad)' }}>✗</span> Deficit</span>
                     </div>
                     <div className="tc-filter-bar">
                         <span style={{ fontSize:'0.78rem', color:'var(--silver)', opacity:0.6 }}>SORT</span>
@@ -1717,8 +1708,8 @@
             return (
                 <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
                     {/* Left pane: PR-sorted owner list */}
-                    <div style={{ flex: '0 0 240px', minWidth: '200px', maxHeight: '78vh', overflowY: 'auto', background: 'var(--off-black)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '10px', padding: '6px' }}>
-                        <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.6, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '6px 8px' }}>Owners · sorted by power</div>
+                    <div style={{ flex: '0 0 240px', minWidth: '200px', maxHeight: '78vh', overflowY: 'auto', background: 'var(--off-black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '10px', padding: '6px' }}>
+                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '6px 8px' }}>Owners · sorted by power</div>
                         {sortedAssessments.map((a, idx) => {
                             const rid = a.rosterId;
                             const dnaKey = ownerDna[a.ownerId] || 'NONE';
@@ -1732,21 +1723,21 @@
                                 <div key={rid} onClick={() => setExpandedDnaOwner(rid)} style={{
                                     display: 'flex', alignItems: 'center', gap: '8px',
                                     padding: '7px 8px', borderRadius: '6px', cursor: 'pointer',
-                                    background: isSel ? 'rgba(212,175,55,0.12)' : 'transparent',
-                                    border: '1px solid ' + (isSel ? 'rgba(212,175,55,0.35)' : 'transparent'),
+                                    background: isSel ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent',
+                                    border: '1px solid ' + (isSel ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'transparent'),
                                     marginBottom: '2px', transition: 'background 0.15s'
                                 }}>
-                                    <span style={{ fontSize: '0.64rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', width: '18px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', opacity: 0.7 }}>{idx + 1}</span>
-                                    <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--charcoal)', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(212,175,55,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        {avatarSrc ? <img src={avatarSrc} alt={a.ownerName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display='none'} /> : <span style={{ fontSize: '0.68rem', color: 'var(--gold)', fontWeight: 700 }}>{a.ownerName.charAt(0).toUpperCase()}</span>}
+                                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', width: '18px', textAlign: 'center', fontFamily: 'var(--font-mono)', opacity: 0.7 }}>{idx + 1}</span>
+                                    <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--charcoal)', overflow: 'hidden', flexShrink: 0, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        {avatarSrc ? <img src={avatarSrc} alt={a.ownerName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display='none'} /> : <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700 }}>{a.ownerName.charAt(0).toUpperCase()}</span>}
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontSize: '0.78rem', fontWeight: isSel ? 700 : 500, color: isSel ? 'var(--gold)' : 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {a.ownerName}{isMe && <span style={{ fontSize: '0.58rem', color: 'var(--gold)', fontWeight: 700, marginLeft: '4px' }}>ME</span>}
+                                            {a.ownerName}{isMe && <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, marginLeft: '4px' }}>ME</span>}
                                         </div>
-                                        <div style={{ fontSize: '0.62rem', color: shownDna.color || 'var(--silver)', opacity: 0.85 }}>{shownDna.label || '—'}</div>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: shownDna.color || 'var(--silver)', opacity: 0.85 }}>{shownDna.label || '—'}</div>
                                     </div>
-                                    <span style={{ fontSize: '0.74rem', fontWeight: 700, color: a.tierColor, fontFamily: 'JetBrains Mono, monospace' }}>{a.healthScore}</span>
+                                    <span style={{ fontSize: '0.74rem', fontWeight: 700, color: a.tierColor, fontFamily: 'var(--font-mono)' }}>{a.healthScore}</span>
                                 </div>
                             );
                         })}
@@ -1760,18 +1751,18 @@
                             {React.createElement(function DnaGuideInline() {
                                 const [guideOpen, setGuideOpen] = React.useState(false);
                                 return React.createElement(React.Fragment, null,
-                                    React.createElement('button', { onClick:()=>setGuideOpen(!guideOpen), style:{fontSize:'0.7rem',color:'var(--gold)',background:'rgba(212,175,55,0.08)',border:'1px solid rgba(212,175,55,0.25)',borderRadius:'4px',padding:'2px 8px',cursor:'pointer',fontFamily: 'var(--font-body)',textTransform:'uppercase',letterSpacing:'0.05em',marginLeft:'6px'} }, guideOpen ? 'Hide DNA Guide' : 'Show DNA Guide'),
+                                    React.createElement('button', { onClick:()=>setGuideOpen(!guideOpen), style:{fontSize:'0.7rem',color:'var(--gold)',background:'var(--acc-fill2, rgba(212,175,55,0.08))',border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))',borderRadius:'4px',padding:'2px 8px',cursor:'pointer',fontFamily: 'var(--font-body)',textTransform:'uppercase',letterSpacing:'0.05em',marginLeft:'6px',minHeight:'44px',display:'inline-flex',alignItems:'center'} }, guideOpen ? 'Hide DNA Guide' : 'Show DNA Guide'),
                                     guideOpen ? React.createElement('div', { style:{marginTop:'8px', display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'8px'} },
                                         ...Object.entries(DNA_TYPES).filter(function(e){return e[0]!=='NONE'}).map(function(entry) {
                                             var key=entry[0], d=entry[1];
-                                            return React.createElement('div', { key:key, style:{background:d.color+'08',border:'1px solid '+d.color+'44',borderLeft:'3px solid '+d.color,borderRadius:'6px',padding:'8px 10px'} },
+                                            return React.createElement('div', { key:key, style:{background:wrAlpha(d.color, '08'),border:'1px solid '+wrAlpha(d.color, '44'),borderLeft:'3px solid '+d.color,borderRadius:'6px',padding:'8px 10px'} },
                                                 React.createElement('div', { style:{display:'flex', alignItems:'center', gap:'6px', marginBottom:'4px'} },
-                                                    React.createElement('span', { style:{fontFamily:'Rajdhani, sans-serif',fontSize:'0.9rem',color:d.color,fontWeight:700,letterSpacing:'0.03em'} }, d.label)
+                                                    React.createElement('span', { style:{fontFamily:'var(--font-title)',fontSize:'0.9rem',color:d.color,fontWeight:700,letterSpacing:'0.03em'} }, d.label)
                                                 ),
                                                 React.createElement('div', { style:{fontSize:'0.7rem',color:'var(--silver)',lineHeight:1.45,marginBottom:'4px'} }, d.desc),
-                                                d.strategy ? React.createElement('div', { style:{fontSize:'0.66rem',color:d.color,opacity:0.85,fontStyle:'italic',paddingTop:'4px',borderTop:'1px dashed '+d.color+'33',marginTop:'4px'} }, '→ ' + d.strategy) : null,
+                                                d.strategy ? React.createElement('div', { style:{fontSize:'var(--text-micro, 0.6875rem)',color:d.color,opacity:0.85,fontStyle:'italic',paddingTop:'4px',borderTop:'1px dashed '+wrAlpha(d.color, '33'),marginTop:'4px'} }, '→ ' + d.strategy) : null,
                                                 d.taxes && d.taxes.length ? React.createElement('div', { style:{display:'flex',flexWrap:'wrap',gap:'3px',marginTop:'5px'} },
-                                                    ...d.taxes.slice(0, 3).map(function(t,i){ return React.createElement('span', { key:i, style:{fontSize:'0.58rem',padding:'1px 4px',borderRadius:'3px',border:'1px solid '+d.color+'40',color:d.color,background:d.color+'08'} }, t); })
+                                                    ...d.taxes.slice(0, 3).map(function(t,i){ return React.createElement('span', { key:i, style:{fontSize:'var(--text-micro, 0.6875rem)',padding:'1px 4px',borderRadius:'3px',border:'1px solid '+wrAlpha(d.color, '40'),color:d.color,background:wrAlpha(d.color, '08')} }, t); })
                                                 ) : null
                                             );
                                         })
@@ -1875,7 +1866,7 @@
                 const mySide = trade.sides?.[rid] || trade.sides?.[String(rid)] || {};
                 const theirSide = otherRid != null ? (trade.sides?.[otherRid] || trade.sides?.[String(otherRid)] || {}) : {};
                 const net = (mySide.totalValue || 0) - (theirSide.totalValue || 0);
-                const color = tone === 'win' ? '#2ECC71' : '#E74C3C';
+                const color = tone === 'win' ? 'var(--good)' : 'var(--bad)';
                 return <div className="tc-owner-trade-spot">
                     <span>{label}</span>
                     <strong style={{ color }}>{net >= 0 ? '+' : ''}{Math.round(net).toLocaleString()}</strong>
@@ -1883,20 +1874,20 @@
                 </div>;
             };
             return (
-                <div style={{ background: 'var(--off-black)', border: '1px solid rgba(212,175,55,0.25)', borderRadius: '12px', padding: '18px 20px' }}>
+                <div style={{ background: 'var(--off-black)', border: 'var(--card-border)', borderRadius: 'var(--card-radius)', padding: '18px 20px' }}>
                     {/* Hero strip */}
-                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '14px', paddingBottom: '14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                        <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--charcoal)', overflow: 'hidden', flexShrink: 0, border: '2px solid rgba(212,175,55,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '14px', paddingBottom: '14px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                        <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--charcoal)', overflow: 'hidden', flexShrink: 0, border: '2px solid var(--acc-line2, rgba(212,175,55,0.35))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {avatarSrc ? <img src={avatarSrc} alt={a.ownerName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display='none'} /> : <span style={{ fontSize: '1.1rem', color: 'var(--gold)', fontWeight: 700 }}>{a.ownerName.charAt(0).toUpperCase()}</span>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.35rem', color: 'var(--white)', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.35rem', color: 'var(--white)', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 {a.ownerName}{isMyTeam && <span className="tc-my-team-badge">ME</span>}
                             </div>
                             <div style={{ fontSize: '0.8rem', color: 'var(--silver)', opacity: 0.75 }}>{a.teamName}</div>
                             <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
                                 <span className="tc-tier-badge" style={{ color: a.tierColor, borderColor: a.tierColor, background: a.tierBg }}>{a.tier}</span>
-                                <span className="tc-posture-badge" style={{ color: posture.color, borderColor: posture.color, background: posture.color + '18' }}>{posture.label}</span>
+                                <span className="tc-posture-badge" style={{ color: posture.color, borderColor: posture.color, background: wrAlpha(posture.color, '18') }}>{posture.label}</span>
                                 {tradeCount > 0 && <span style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.6 }}>{tradeCount} trades on file</span>}
                             </div>
                         </div>
@@ -1904,15 +1895,15 @@
                     </div>
 
                     {/* KPI row */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '14px' }}>
+                    <div className="tc-owner-kpi-grid">
                         {[
                             { label: 'RECORD', value: a.wins + '-' + a.losses + (a.ties > 0 ? '-' + a.ties : ''), color: 'var(--white)' },
                             { label: 'PANIC', value: a.panic + '/5', color: a.panic >= 3 ? 'var(--loss-red)' : 'var(--silver)' },
                             { label: 'WINDOW', value: a.window || '—', color: a.tierColor },
                             { label: 'PF', value: a.pf > 0 ? Math.round(a.pf) : '—', color: 'var(--silver)' },
-                        ].map((k, i) => <div key={i} style={{ padding: '8px', background: 'var(--black)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '6px', textAlign: 'center' }}>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.1rem', fontWeight: 700, color: k.color }}>{k.value}</div>
-                            <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{k.label}</div>
+                        ].map((k, i) => <div key={i} style={{ padding: '8px', background: 'var(--black)', border: '1px solid var(--ov-3, rgba(255,255,255,0.05))', borderRadius: '6px', textAlign: 'center' }}>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.1rem', fontWeight: 700, color: k.color }}>{k.value}</div>
+                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{k.label}</div>
                         </div>)}
                     </div>
 
@@ -1938,9 +1929,9 @@
                             {aiDna && <option value={aiDna.key}>AI: {DNA_TYPES[aiDna.key]?.label} (recommended)</option>}
                             {Object.entries(DNA_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                         </select>
-                        {isOverridden && <div style={{ fontSize: '0.68rem', color: '#F0A500', marginTop: '4px' }}>Overridden from AI suggestion</div>}
+                        {isOverridden && <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--warn)', marginTop: '4px' }}>Overridden from AI suggestion</div>}
                         {dnaKey && dnaKey !== 'NONE' && dna.desc && (
-                            <div style={{ marginTop: '8px', padding: '8px 10px', background: dna.color + '08', borderLeft: '3px solid ' + dna.color, borderRadius: '0 6px 6px 0' }}>
+                            <div style={{ marginTop: '8px', padding: '8px 10px', background: wrAlpha(dna.color, '08'), borderLeft: '3px solid ' + dna.color, borderRadius: '0 6px 6px 0' }}>
                                 <div style={{ fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.5 }}>{dna.desc}</div>
                                 {dna.strategy && <div style={{ marginTop: '4px', fontSize: '0.72rem', color: dna.color, opacity: 0.9, fontStyle: 'italic' }}>→ {dna.strategy}</div>}
                             </div>
@@ -1951,22 +1942,22 @@
                     {behaviorProfile && (
                         <div style={{ marginBottom: '14px', display: 'grid', gridTemplateColumns: 'minmax(0, 1.15fr) minmax(0, 0.85fr)', gap: '10px' }}>
                             <div style={{ border: '1px solid rgba(125,183,232,0.16)', borderRadius: '7px', background: 'rgba(125,183,232,0.04)', padding: '9px 10px' }}>
-                                <div style={{ fontSize: '0.66rem', color: '#7DB7E8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Observed Behavior</div>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-7db7e8, #7db7e8)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Observed Behavior</div>
                                 <div style={{ display: 'grid', gap: '5px' }}>
                                     {behaviorFacts.slice(0, 4).map(fact => (
                                         <div key={fact.code} style={{ fontSize: '0.72rem', color: 'var(--silver)', lineHeight: 1.35 }}>
-                                            <b style={{ color: '#D0E7FA', fontWeight: 800 }}>{fact.label}:</b> {fact.detail}
+                                            <b style={{ color: 'var(--k-d0e7fa, #d0e7fa)', fontWeight: 800 }}>{fact.label}:</b> {fact.detail}
                                         </div>
                                     ))}
                                     {!behaviorFacts.length && <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6 }}>No behavioral sample yet.</div>}
                                 </div>
                             </div>
-                            <div style={{ border: '1px solid rgba(212,175,55,0.16)', borderRadius: '7px', background: 'rgba(212,175,55,0.04)', padding: '9px 10px' }}>
-                                <div style={{ fontSize: '0.66rem', color: 'var(--gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Inference</div>
+                            <div style={{ border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))', borderRadius: '7px', background: 'var(--acc-fill1, rgba(212,175,55,0.04))', padding: '9px 10px' }}>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Inference</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '7px' }}>
                                     {behaviorTags.length
-                                        ? behaviorTags.slice(0, 5).map(tag => <span key={tag} style={{ fontSize: '0.62rem', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.22)', background: 'rgba(212,175,55,0.07)', borderRadius: '4px', padding: '2px 5px' }}>{tag.replace(/-/g, ' ')}</span>)
-                                        : <span style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.6 }}>Sample too thin</span>}
+                                        ? behaviorTags.slice(0, 5).map(tag => <span key={tag} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', background: 'var(--acc-fill1, rgba(212,175,55,0.07))', borderRadius: '4px', padding: '2px 5px' }}>{tag.replace(/-/g, ' ')}</span>)
+                                        : <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6 }}>Sample too thin</span>}
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.82, lineHeight: 1.42 }}>{behaviorProfile.strategy?.offerFrame}</div>
                             </div>
@@ -1977,9 +1968,9 @@
                     {draftDna && (
                         <div style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '6px', padding: '8px 10px', marginBottom: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-                                <span style={{ fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Draft DNA</span>
-                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#a5b4fc' }}>{draftDna.label}</span>
-                                <span style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.55, marginLeft: 'auto' }}>{draftDna.seasons} · {draftDna.picksAnalyzed} picks</span>
+                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Draft DNA</span>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--k-a5b4fc, #a5b4fc)' }}>{draftDna.label}</span>
+                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.55, marginLeft: 'auto' }}>{draftDna.seasons} · {draftDna.picksAnalyzed} picks</span>
                             </div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.75, fontStyle: 'italic' }}>{draftDna.tendency}</div>
                         </div>
@@ -2005,7 +1996,7 @@
                             </div>
                             <div className="tc-owner-pos-table">
                                 {posRows.map(row => {
-                                    const statusColor = { surplus:'var(--gold)', ok:'var(--win-green)', thin:'#F0A500', deficit:'#E74C3C' }[row.data.status] || 'var(--silver)';
+                                    const statusColor = { surplus:'var(--gold)', ok:'var(--win-green)', thin:'var(--warn)', deficit:'var(--bad)' }[row.data.status] || 'var(--silver)';
                                     return <div key={row.pos} className="tc-owner-pos-row">
                                         <div className="tc-owner-pos-main">
                                             <strong style={{ color: posColor(row.pos) }}>{row.pos}</strong>
@@ -2056,7 +2047,7 @@
                                     const won = myValue > theirValue * 1.15;
                                     const lost = theirValue > myValue * 1.15;
                                     const verdict = won ? 'Won' : lost ? 'Lost' : 'Fair';
-                                    const verdictCol = won ? '#2ECC71' : lost ? '#E74C3C' : 'var(--silver)';
+                                    const verdictCol = won ? 'var(--good)' : lost ? 'var(--bad)' : 'var(--silver)';
                                     return (
                                         <div key={ti} className="tc-owner-trade-row">
                                             <div>
@@ -2083,18 +2074,18 @@
                     {React.createElement(function DnaGuideInline() {
                         const [guideOpen, setGuideOpen] = React.useState(false);
                         return React.createElement('div', { style:{marginBottom:'0.75rem'} },
-                            React.createElement('button', { onClick:()=>setGuideOpen(!guideOpen), style:{fontSize:'0.76rem',color:'var(--gold)',background:'rgba(212,175,55,0.08)',border:'1px solid rgba(212,175,55,0.25)',borderRadius:'6px',padding:'0.4rem 0.8rem',cursor:'pointer',fontFamily: 'var(--font-body)',textTransform:'uppercase',letterSpacing:'0.04em'} }, guideOpen ? 'Hide DNA Guide' : 'Show DNA Guide'),
+                            React.createElement('button', { onClick:()=>setGuideOpen(!guideOpen), style:{fontSize:'0.76rem',color:'var(--gold)',background:'var(--acc-fill2, rgba(212,175,55,0.08))',border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))',borderRadius:'6px',padding:'0.4rem 0.8rem',cursor:'pointer',fontFamily: 'var(--font-body)',textTransform:'uppercase',letterSpacing:'0.04em'} }, guideOpen ? 'Hide DNA Guide' : 'Show DNA Guide'),
                             guideOpen ? React.createElement('div', { style:{marginTop:'0.5rem',display:'grid',gap:'0.5rem'} },
                                 ...Object.entries(DNA_TYPES).filter(function(e){return e[0]!=='NONE'}).map(function(entry) {
                                     var key=entry[0], d=entry[1];
-                                    return React.createElement('div', { key:key, style:{background:'rgba(255,255,255,0.02)',border:'1px solid '+d.color+'30',borderRadius:'8px',padding:'0.7rem 0.85rem'} },
+                                    return React.createElement('div', { key:key, style:{background:'var(--ov-1, rgba(255,255,255,0.02))',border:'1px solid '+wrAlpha(d.color, '30'),borderRadius:'8px',padding:'0.7rem 0.85rem'} },
                                         React.createElement('div', { style:{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.3rem'} },
-                                            React.createElement('span', { style:{fontFamily:'Rajdhani, sans-serif',fontSize:'0.95rem',color:d.color} }, d.label)
+                                            React.createElement('span', { style:{fontFamily:'var(--font-title)',fontSize:'0.95rem',color:d.color} }, d.label)
                                         ),
                                         React.createElement('div', { style:{fontSize:'0.76rem',color:'var(--silver)',lineHeight:1.5,marginBottom:'0.3rem'} }, d.desc),
                                         d.strategy ? React.createElement('div', { style:{fontSize:'0.74rem',color:d.color,opacity:0.9,fontStyle:'italic',marginBottom:'0.3rem'} }, 'Strategy: '+d.strategy) : null,
                                         d.taxes && d.taxes.length ? React.createElement('div', { style:{display:'flex',flexWrap:'wrap',gap:'0.25rem'} },
-                                            ...d.taxes.map(function(t,i){ return React.createElement('span', { key:i, style:{fontSize:'0.7rem',padding:'0.1rem 0.35rem',borderRadius:'3px',border:'1px solid '+d.color+'40',color:d.color,background:d.color+'10'} }, t); })
+                                            ...d.taxes.map(function(t,i){ return React.createElement('span', { key:i, style:{fontSize:'0.7rem',padding:'0.1rem 0.35rem',borderRadius:'3px',border:'1px solid '+wrAlpha(d.color, '40'),color:d.color,background:wrAlpha(d.color, '10')} }, t); })
                                         ) : null
                                     );
                                 })
@@ -2120,7 +2111,7 @@
                                 <div key={a.rosterId} className={`tc-dna-card${dnaKey&&dnaKey!=='NONE'?' tc-dna-set':''}`} onClick={() => setExpandedDnaOwner(isExpanded ? null : rid)} style={{ cursor:'pointer' }}>
                                     {/* ── COMPACT VIEW (always visible) ── */}
                                     <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                                        <div style={{ width:32, height:32, borderRadius:'50%', background:'var(--charcoal)', overflow:'hidden', flexShrink:0, border:'1.5px solid rgba(212,175,55,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                        <div style={{ width:32, height:32, borderRadius:'50%', background:'var(--charcoal)', overflow:'hidden', flexShrink:0, border:'1.5px solid var(--acc-line2, rgba(212,175,55,0.3))', display:'flex', alignItems:'center', justifyContent:'center' }}>
                                             {avatarSrc ? <img src={avatarSrc} alt={a.ownerName} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e => e.target.style.display='none'} /> : <span style={{ fontSize:'0.75rem', color:'var(--gold)', fontWeight:700 }}>{a.ownerName.charAt(0).toUpperCase()}</span>}
                                         </div>
                                         <div style={{ overflow:'hidden', flex:1 }}>
@@ -2136,12 +2127,12 @@
                                             <span style={{ color:a.tierColor, fontWeight:600 }}>{a.healthScore}</span>
                                             <span style={{ color:'var(--silver)', opacity:0.5 }}>{a.wins}-{a.losses}</span>
                                         </div>
-                                        <span style={{ fontSize:'0.65rem', color:'var(--silver)', opacity:0.4 }}>{isExpanded ? '▲' : '▼'}</span>
+                                        <span style={{ fontSize:'var(--text-micro, 0.6875rem)', color:'var(--silver)', opacity:0.4 }}>{isExpanded ? '▲' : '▼'}</span>
                                     </div>
 
                                     {/* ── EXPANDED VIEW (click to reveal) ── */}
                                     {isExpanded && (<>
-                                    <div style={{ marginTop:'8px', paddingTop:'8px', borderTop:'1px solid rgba(255,255,255,0.06)' }} onClick={e => e.stopPropagation()}>
+                                    <div style={{ marginTop:'8px', paddingTop:'8px', borderTop:'1px solid var(--ov-4, rgba(255,255,255,0.06))' }} onClick={e => e.stopPropagation()}>
                                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.2rem' }}>
                                             <span style={{ fontSize:'0.7rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase', letterSpacing:'0.06em' }}>Owner DNA</span>
                                             {(() => { const derived = deriveDNAFromHistory(a.ownerId, grudges); if (!derived) return null; const d = DNA_TYPES[derived]; return (<span style={{ fontSize:'0.78rem', fontWeight:700, padding:'0.1rem 0.35rem', borderRadius:3, border:`1px solid ${d?.color}55`, color:d?.color, background:`${d?.color}10` }}>AUTO: {d?.label}</span>); })()}
@@ -2162,7 +2153,7 @@
                                             {aiDna && <option value={aiDna.key}>AI: {DNA_TYPES[aiDna.key]?.label} (recommended)</option>}
                                             {Object.entries(DNA_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                                         </select>
-                                        {isOverridden && <span style={{ fontSize:'0.78rem', color:'#F0A500', marginLeft:'6px' }}>Overridden from AI suggestion</span>}
+                                        {isOverridden && <span style={{ fontSize:'0.78rem', color:'var(--warn)', marginLeft:'6px' }}>Overridden from AI suggestion</span>}
                                     </div>
                                     {dnaKey && dnaKey !== 'NONE' && dna.desc && (
                                         <div className="tc-dna-profile">
@@ -2170,7 +2161,7 @@
                                             <div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.85, lineHeight:1.45 }}>{dna.desc}</div>
                                             {dna.strategy && <div style={{ marginTop:'0.35rem', fontSize:'0.74rem', color:dna.color, opacity:0.9, fontStyle:'italic' }}>Strategy: {dna.strategy}</div>}
                                             <div style={{ display:'flex', flexWrap:'wrap', gap:'0.25rem', marginTop:'0.4rem' }}>
-                                                {dna.taxes?.map((t,i) => <span key={i} style={{ fontSize:'0.78rem', padding:'0.1rem 0.35rem', borderRadius:3, border:'1px solid rgba(212,175,55,0.3)', color:'#F0A500', background:'rgba(240,165,0,0.08)' }}>{t}</span>)}
+                                                {dna.taxes?.map((t,i) => <span key={i} style={{ fontSize:'0.78rem', padding:'0.1rem 0.35rem', borderRadius:3, border:'1px solid var(--acc-line2, rgba(212,175,55,0.3))', color:'var(--warn)', background:'rgba(240,165,0,0.08)' }}>{t}</span>)}
                                             </div>
                                         </div>
                                     )}
@@ -2178,24 +2169,24 @@
                                         <div style={{ background:'rgba(99,102,241,0.06)', border:'1px solid rgba(99,102,241,0.2)', borderRadius:'6px', padding:'0.4rem 0.6rem' }}>
                                             <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.2rem' }}>
                                                 <span style={{ fontSize:'0.78rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase' }}>Draft DNA</span>
-                                                <span style={{ fontSize:'0.76rem', fontWeight:700, color:'#a5b4fc' }}>{draftDna.label}</span>
+                                                <span style={{ fontSize:'0.76rem', fontWeight:700, color:'var(--k-a5b4fc, #a5b4fc)' }}>{draftDna.label}</span>
                                                 <span style={{ fontSize:'0.78rem', color:'var(--silver)', opacity:0.6, marginLeft:'auto' }}>{draftDna.seasons} {draftDna.picksAnalyzed} picks</span>
                                             </div>
                                             <div style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.655, fontStyle:'italic' }}>{draftDna.tendency}</div>
                                         </div>
                                     )}
                                     <div style={{ display:'flex', gap:'0.75rem', paddingTop:'0.25rem' }}>
-                                        <div style={{ textAlign:'center' }}><div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1rem', color:a.tierColor }}>{a.healthScore}</div><div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.65 }}>HEALTH</div></div>
-                                        <div style={{ textAlign:'center' }}><div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1rem', color:a.panic>=3?'var(--loss-red)':'var(--silver)' }}>{a.panic}/5</div><div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.65 }}>PANIC</div></div>
-                                        <div style={{ textAlign:'center' }}><div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1rem', color:'var(--silver)' }}>{a.wins}-{a.losses}</div><div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.65 }}>RECORD</div></div>
+                                        <div style={{ textAlign:'center' }}><div style={{ fontFamily:'var(--font-title)', fontSize:'1rem', color:a.tierColor }}>{a.healthScore}</div><div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.65 }}>HEALTH</div></div>
+                                        <div style={{ textAlign:'center' }}><div style={{ fontFamily:'var(--font-title)', fontSize:'1rem', color:a.panic>=3?'var(--loss-red)':'var(--silver)' }}>{a.panic}/5</div><div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.65 }}>PANIC</div></div>
+                                        <div style={{ textAlign:'center' }}><div style={{ fontFamily:'var(--font-title)', fontSize:'1rem', color:'var(--silver)' }}>{a.wins}-{a.losses}</div><div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.65 }}>RECORD</div></div>
                                     </div>
                                     {/* Phase 5: Roster Audit embedded inline — per-position surplus/deficit breakdown */}
                                     {a.posAssessment && Object.keys(a.posAssessment).length > 0 && (
-                                        <div style={{ marginTop:'10px', paddingTop:'10px', borderTop:'1px solid rgba(255,255,255,0.06)' }}>
+                                        <div style={{ marginTop:'10px', paddingTop:'10px', borderTop:'1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                                             <div style={{ fontSize:'0.7rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'6px', display:'flex', gap:'8px', alignItems:'baseline' }}>
                                                 <span>Roster Audit</span>
-                                                {a.strengths?.length > 0 && <span style={{ fontSize:'0.68rem', color:'#2ECC71', opacity:0.8 }}>surplus: {a.strengths.join(', ')}</span>}
-                                                {a.needs?.filter(n => n.urgency === 'deficit').length > 0 && <span style={{ fontSize:'0.68rem', color:'#E74C3C', opacity:0.8 }}>deficit: {a.needs.filter(n => n.urgency === 'deficit').map(n => n.pos).join(', ')}</span>}
+                                                {a.strengths?.length > 0 && <span style={{ fontSize:'var(--text-micro, 0.6875rem)', color:'var(--good)', opacity:0.8 }}>surplus: {a.strengths.join(', ')}</span>}
+                                                {a.needs?.filter(n => n.urgency === 'deficit').length > 0 && <span style={{ fontSize:'var(--text-micro, 0.6875rem)', color:'var(--bad)', opacity:0.8 }}>deficit: {a.needs.filter(n => n.urgency === 'deficit').map(n => n.pos).join(', ')}</span>}
                                             </div>
                                             <div className="tc-pos-grid">
                                                 {Object.entries(a.posAssessment).sort((pa, pb) => (TC_POS_ORDER[pa[0]] ?? 9) - (TC_POS_ORDER[pb[0]] ?? 9)).map(([pos, data]) => <TcPosRow key={pos} pos={pos} assessment={data} />)}
@@ -2210,12 +2201,12 @@
                                         if (!trades.length) return <div style={{ padding:'8px', fontSize:'0.7rem', color:'var(--silver)' }}>No trade history found</div>;
 
                                         return (
-                                            <div style={{ marginTop:'10px', paddingTop:'10px', borderTop:'1px solid rgba(255,255,255,0.06)' }} onClick={e => e.stopPropagation()}>
+                                            <div style={{ marginTop:'10px', paddingTop:'10px', borderTop:'1px solid var(--ov-4, rgba(255,255,255,0.06))' }} onClick={e => e.stopPropagation()}>
                                                 <div style={{ display:'flex', gap:'12px', marginBottom:'10px', flexWrap:'wrap', fontSize:'0.76rem' }}>
-                                                    <span style={{ color:'#2ECC71' }}>Won: {profile.tradesWon || 0}</span>
-                                                    <span style={{ color:'#E74C3C' }}>Lost: {profile.tradesLost || 0}</span>
+                                                    <span style={{ color:'var(--good)' }}>Won: {profile.tradesWon || 0}</span>
+                                                    <span style={{ color:'var(--bad)' }}>Lost: {profile.tradesLost || 0}</span>
                                                     <span style={{ color:'var(--silver)' }}>Fair: {profile.tradesFair || 0}</span>
-                                                    <span style={{ color: (profile.avgValueDiff || 0) >= 0 ? '#2ECC71' : '#E74C3C' }}>Avg: {(profile.avgValueDiff || 0) >= 0 ? '+' : ''}{Math.round(profile.avgValueDiff || 0)} DHQ</span>
+                                                    <span style={{ color: (profile.avgValueDiff || 0) >= 0 ? 'var(--good)' : 'var(--bad)' }}>Avg: {(profile.avgValueDiff || 0) >= 0 ? '+' : ''}{Math.round(profile.avgValueDiff || 0)} DHQ</span>
                                                 </div>
                                                 {trades.sort((ta, tb) => {
                                                     const aSeason = parseInt(ta.season) || 0;
@@ -2232,19 +2223,19 @@
                                                     const won = myValue > theirValue * 1.15;
                                                     const lost = theirValue > myValue * 1.15;
                                                     const verdict = won ? 'Won' : lost ? 'Lost' : 'Fair';
-                                                    const verdictCol = won ? '#2ECC71' : lost ? '#E74C3C' : 'var(--silver)';
+                                                    const verdictCol = won ? 'var(--k-2ecc71, #2ecc71)' : lost ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)';
 
                                                     return (
-                                                        <div key={ti} style={{ padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,0.04)', fontSize:'0.7rem' }}>
+                                                        <div key={ti} style={{ padding:'8px 0', borderBottom:'1px solid var(--ov-3, rgba(255,255,255,0.04))', fontSize:'0.7rem' }}>
                                                             <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'4px' }}>
                                                                 <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65 }}>{t.season} W{t.week}</span>
-                                                                <span style={{ fontSize:'0.7rem', fontWeight:700, color:verdictCol, padding:'1px 6px', borderRadius:'3px', background:verdictCol + '15' }}>{verdict}</span>
+                                                                <span style={{ fontSize:'0.7rem', fontWeight:700, color:verdictCol, padding:'1px 6px', borderRadius:'3px', background:wrAlpha(verdictCol, '15') }}>{verdict}</span>
                                                                 <span style={{ fontSize:'0.72rem', color:'var(--silver)' }}>vs {otherUser}</span>
                                                                 {t.fairness != null && <span style={{ fontSize:'0.7rem', color:'var(--silver)', opacity:0.6 }}>Fairness: {t.fairness}</span>}
                                                             </div>
                                                             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px' }}>
                                                                 <div>
-                                                                    <div style={{ fontSize:'0.7rem', color:'#2ECC71', marginBottom:'2px' }}>Received:</div>
+                                                                    <div style={{ fontSize:'0.7rem', color:'var(--good)', marginBottom:'2px' }}>Received:</div>
                                                                     {(mySide.players || []).map(pid => (
                                                                         <div key={pid} style={{ fontSize:'0.76rem', color:'var(--white)' }}>
                                                                             {playersData[pid]?.full_name || pid}
@@ -2258,7 +2249,7 @@
                                                                     ))}
                                                                 </div>
                                                                 <div>
-                                                                    <div style={{ fontSize:'0.7rem', color:'#E74C3C', marginBottom:'2px' }}>Sent:</div>
+                                                                    <div style={{ fontSize:'0.7rem', color:'var(--bad)', marginBottom:'2px' }}>Sent:</div>
                                                                     {(theirSide.players || []).map(pid => (
                                                                         <div key={pid} style={{ fontSize:'0.76rem', color:'var(--white)' }}>
                                                                             {playersData[pid]?.full_name || pid}
@@ -2273,8 +2264,8 @@
                                                                 </div>
                                                             </div>
                                                             <div style={{ display:'flex', gap:'12px', marginTop:'4px', fontSize:'0.72rem' }}>
-                                                                <span style={{ color:'#2ECC71' }}>Got: {myValue.toLocaleString()}</span>
-                                                                <span style={{ color:'#E74C3C' }}>Gave: {theirValue.toLocaleString()}</span>
+                                                                <span style={{ color:'var(--good)' }}>Got: {myValue.toLocaleString()}</span>
+                                                                <span style={{ color:'var(--bad)' }}>Gave: {theirValue.toLocaleString()}</span>
                                                                 <span style={{ color:verdictCol, fontWeight:700 }}>Net: {myValue >= theirValue ? '+' : ''}{(myValue - theirValue).toLocaleString()}</span>
                                                             </div>
                                                         </div>
@@ -2346,7 +2337,7 @@
                     const fitCap = compat >= 80 ? 99 : compat >= 65 ? 94 : compat >= 50 ? 88 : compat >= 35 ? 78 : 68;
                     const score = Math.round(clampNum(rawScore, 0, fitCap, 0));
                     const tag = score >= 85 ? 'Attack' : score >= 68 ? 'Prime' : score >= 48 ? 'Possible' : a.panic >= 3 ? 'Monitor' : 'Long shot';
-                    const tagColor = tag === 'Attack' || tag === 'Prime' ? '#2ECC71' : tag === 'Possible' ? '#F0A500' : tag === 'Monitor' ? '#BB8FCE' : 'var(--silver)';
+                    const tagColor = tag === 'Attack' || tag === 'Prime' ? 'var(--good)' : tag === 'Possible' ? 'var(--warn)' : tag === 'Monitor' ? 'var(--k-bb8fce, #bb8fce)' : 'var(--silver)';
                     const scoreReasons = [];
                     if (mutualNeedFit > 0) scoreReasons.push(`your surplus matches ${mutualNeedFit} need${mutualNeedFit === 1 ? '' : 's'}`);
                     if (compat >= 60) scoreReasons.push(`${compat}% roster fit`);
@@ -2480,7 +2471,7 @@
                     </div>
                     <p><b>You got</b> {summarizeTradeAssets(received)}</p>
                     <p><b>You sent</b> {summarizeTradeAssets(sent)}</p>
-                    <em style={{ color:net >= 0 ? '#2ECC71' : '#E74C3C' }}>{net >= 0 ? '+' : ''}{Math.round(net).toLocaleString()} DHQ</em>
+                    <em style={{ color:net >= 0 ? 'var(--good)' : 'var(--bad)' }}>{net >= 0 ? '+' : ''}{Math.round(net).toLocaleString()} DHQ</em>
                 </div>;
             }
 
@@ -2534,8 +2525,8 @@
             }
 
             function dealCard(deal, idx) {
-                const deltaColor = deal.userGain >= 0 ? '#2ECC71' : '#E74C3C';
-                const likelihoodColor2 = deal.likelihood >= actionFloor ? '#2ECC71' : deal.likelihood >= Math.max(55, actionFloor - 15) ? '#F0A500' : '#E74C3C';
+                const deltaColor = deal.userGain >= 0 ? 'var(--good)' : 'var(--bad)';
+                const likelihoodColor2 = deal.likelihood >= actionFloor ? 'var(--good)' : deal.likelihood >= Math.max(55, actionFloor - 15) ? 'var(--warn)' : 'var(--bad)';
                 const expanded = expandedDealId === deal.id;
                 const whyView = typeof window.App?.Intelligence?.buildWhyView === 'function'
                     ? window.App.Intelligence.buildWhyView(deal.intelligence, { title: 'Why this trade', limit: 4 })
@@ -2582,7 +2573,7 @@
                             </div>
                             <div className="tc-dhq-stat">
                                 <span>Lane</span>
-                                <strong style={{ color:deal.viability === 'Moonshot' ? '#E74C3C' : deal.viability === 'Negotiable' ? '#F0A500' : '#2ECC71' }}>{deal.viability || deal.windowImpact.label.replace(/^Window\s*/i, '')}</strong>
+                                <strong style={{ color:deal.viability === 'Moonshot' ? 'var(--bad)' : deal.viability === 'Negotiable' ? 'var(--warn)' : 'var(--good)' }}>{deal.viability || deal.windowImpact.label.replace(/^Window\s*/i, '')}</strong>
                             </div>
                             <div className="tc-dhq-stat">
                                 <span>Window</span>
@@ -2852,8 +2843,8 @@
                 })
                 : null;
             if (manualBehaviorFit) likelihood = Math.round(Math.max(5, Math.min(95, likelihood + (manualBehaviorFit.acceptanceDelta || 0))));
-            const likelihoodColor = likelihood >= 70 ? 'var(--win-green)' : likelihood >= 45 ? '#F0A500' : 'var(--loss-red)';
-            const verdictColor = userGain > fairMargin ? 'var(--win-green)' : userGain < -fairMargin ? '#E74C3C' : 'var(--gold)';
+            const likelihoodColor = likelihood >= 70 ? 'var(--win-green)' : likelihood >= 45 ? 'var(--warn)' : 'var(--loss-red)';
+            const verdictColor = userGain > fairMargin ? 'var(--win-green)' : userGain < -fairMargin ? 'var(--bad)' : 'var(--gold)';
             const verdictText = userGain > fairMargin ? 'YOU WIN' : userGain < -fairMargin ? 'YOU LOSE' : 'EVEN TRADE';
             const diffDisplay = userGain > 0 ? `+${absDiff.toLocaleString()}` : userGain < 0 ? `-${absDiff.toLocaleString()}` : '+/-0';
             const sentPositions = [...new Set(tradeIds.A.map(pid => normPos(playersData[pid]?.position)).filter(Boolean))];
@@ -2900,7 +2891,7 @@
 
                 return (
                     <div className={`tc-ta-side tc-side-${side.toLowerCase()}`}>
-                        <span style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'0.95rem', color, letterSpacing:'0.08em' }}>{label}</span>
+                        <span style={{ fontFamily:'var(--font-title)', fontSize:'0.95rem', color, letterSpacing:'0.08em' }}>{label}</span>
                         <select className="tc-ta-owner-select" value={tradeOwner[side] || ''} onChange={e => { setTradeOwner(prev => ({ ...prev, [side]: e.target.value || null })); setSearchText(prev => ({ ...prev, [side]: '' })); }}>
                             {ownerOptions.map(o => <option key={o.id||'none'} value={o.id||''}>{o.label}</option>)}
                         </select>
@@ -2971,7 +2962,7 @@
                                         ));
                                     })()}
                                     {ownerPicksList.length > 0 && (
-                                        <div style={{ marginTop:'0.5rem', borderTop:'1px solid rgba(212,175,55,0.2)', paddingTop:'0.4rem' }}>
+                                        <div style={{ marginTop:'0.5rem', borderTop:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', paddingTop:'0.4rem' }}>
                                             <div className="tc-ta-pos-group-hdr" style={{ color:'var(--gold)' }}>DRAFT PICKS</div>
                                             {ownerPicksList.map(({ year, round, fromRosterId }) => {
                                                 const pkId = makePickId(year, round, fromRosterId);
@@ -2996,11 +2987,11 @@
                         ) : <div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.6, textAlign:'center', padding:'0.5rem' }}>Select an owner above to view their roster</div>}
 
                         {/* FAAB */}
-                        <div style={{ borderTop:'1px solid rgba(255,255,255,0.06)', paddingTop:'0.4rem', marginTop:'0.2rem' }}>
+                        <div style={{ borderTop:'1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop:'0.4rem', marginTop:'0.2rem' }}>
                             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
                                 <span style={{ fontSize:'0.72rem', fontWeight:700, color:'var(--win-green)', letterSpacing:'0.05em' }}>FAAB $</span>
                                 <input type="number" min={0} value={faab || ''} onChange={e => setTradeFaab(prev => ({ ...prev, [side]: Math.max(0, Number(e.target.value)) }))} placeholder="0"
-                                    style={{ width:70, background:'rgba(0,0,0,0.3)', border:'1px solid rgba(46,204,113,0.35)', color:'var(--win-green)', padding:'0.2rem 0.4rem', borderRadius:4, fontSize:'0.75rem', fontWeight:700 }} />
+                                    style={{ width:70, background:'rgba(0,0,0,0.3)', border:'1px solid rgba(46,204,113,0.35)', color:'var(--win-green)', padding:'0.2rem 0.4rem', borderRadius:4, fontSize:'0.75rem', fontWeight:700, minHeight:'44px' }} />
                                 {faab > 0 && <button className="tc-ta-remove" onClick={() => setTradeFaab(prev => ({ ...prev, [side]: 0 }))}>X</button>}
                             </div>
                             {faab > 0 && <div style={{ fontSize:'0.7rem', color:'var(--silver)', opacity:0.6, marginTop:'0.2rem' }}>= {Math.round(faab * FAAB_RATE).toLocaleString()} dynasty pts</div>}
@@ -3043,17 +3034,17 @@
                     </div>
 
                     <div className="tc-ta-3col">
-                        {TradeSide({ side:'A', color:'#5DADE2', label:'SIDE A -- YOUR GIVE' })}
-                        {TradeSide({ side:'B', color:'#E74C3C', label:'SIDE B -- YOU RECEIVE' })}
+                        {TradeSide({ side:'A', color:'var(--k-5dade2, #5dade2)', label:'SIDE A -- YOUR GIVE' })}
+                        {TradeSide({ side:'B', color:'var(--k-e74c3c, #e74c3c)', label:'SIDE B -- YOU RECEIVE' })}
 
                         {/* League Scouting Panel */}
                         <div className="tc-scout-panel">
-                            <div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'0.92rem', color:'var(--gold)', letterSpacing:'0.1em', marginBottom:'0.2rem' }}>LEAGUE TEAMS</div>
+                            <div style={{ fontFamily:'var(--font-title)', fontSize:'0.92rem', color:'var(--gold)', letterSpacing:'0.1em', marginBottom:'0.2rem' }}>LEAGUE TEAMS</div>
                             <div style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.65, marginBottom:'0.3rem' }}>Click a team to set as Side B.</div>
                             {assessments.filter(a => a.rosterId !== myRosterId).sort((a,b) => b.healthScore - a.healthScore).map(a => {
                                 const isSelected = tradeOwner.B === a.ownerId;
                                 const compat = myAssessment ? calcComplementarity(myAssessment, a) : 0;
-                                const compatColor = compat >= 50 ? 'var(--win-green)' : compat >= 30 ? '#F0A500' : 'var(--silver)';
+                                const compatColor = compat >= 50 ? 'var(--win-green)' : compat >= 30 ? 'var(--warn)' : 'var(--silver)';
                                 const dnaKey2 = ownerDna[a.ownerId] || 'NONE';
                                 const dna2 = DNA_TYPES[dnaKey2];
                                 return (
@@ -3081,10 +3072,10 @@
                     {/* Verdict */}
                     {hasTrade && (
                         <div className="tc-ta-verdict tc-ta-sticky-summary" id="wr-export-trade">
-                            <div className="tc-section-hdr" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>TRADE ANALYSIS<button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-trade'), 'trade-analysis')} style={{ background:'none', border:'1px solid rgba(212,175,55,0.25)', borderRadius:'4px', padding:'2px 8px', color:'var(--gold)', fontSize:'0.68rem', cursor:'pointer', fontFamily: 'var(--font-body)' }}>Snapshot</button></div>
+                            <div className="tc-section-hdr" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>TRADE ANALYSIS<button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-trade'), 'trade-analysis')} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', padding:'2px 8px', color:'var(--gold)', fontSize:'var(--text-micro, 0.6875rem)', cursor:'pointer', fontFamily: 'var(--font-body)', minHeight:'44px', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>Snapshot</button></div>
                             <div style={{ display:'flex', alignItems:'baseline', gap:'0.6rem', flexWrap:'wrap' }}>
                                 <span className="tc-verdict-diff" style={{ color: verdictColor }}>{diffDisplay}</span>
-                                <span style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1.1rem', color: verdictColor }}>{verdictText}</span>
+                                <span style={{ fontFamily:'var(--font-title)', fontSize:'1.1rem', color: verdictColor }}>{verdictText}</span>
                                 <span style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.655 }}>(gave {totalA.toLocaleString()} / received {totalB.toLocaleString()})</span>
                             </div>
                             <div className="tc-ta-impact-grid">
@@ -3154,7 +3145,7 @@
                             <div>
                                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.3rem' }}>
                                     <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.7, textTransform:'uppercase', letterSpacing:'0.06em' }}>Likelihood of Acceptance {React.createElement(Tip, null, 'Estimated chance the other owner accepts. Starts at 50%, then applies value difference plus psychological modifiers from DNA, posture, needs, window, and history.')}</span>
-                                    <span style={{ fontFamily:'JetBrains Mono, monospace', fontSize:'1.4rem', fontWeight:600, color: likelihoodColor }}>{likelihood}%</span>
+                                    <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.4rem', fontWeight:600, color: likelihoodColor }}>{likelihood}%</span>
                                 </div>
                                 <div className="tc-likelihood-bar-wrap"><div className="tc-likelihood-bar-fill" style={{ width:`${likelihood}%`, background: likelihoodColor }} /></div>
                             </div>
@@ -3182,7 +3173,7 @@
                         const maxVal = Math.max(val1, val2, 1);
                         const pctDiff = Math.round(Math.abs(diff) / maxVal * 100);
                         const grade = pctDiff <= 2 ? 'A+' : pctDiff <= 5 ? 'A' : pctDiff <= 12 ? 'B+' : pctDiff <= 20 ? 'B' : pctDiff <= 30 ? 'C' : pctDiff <= 40 ? 'D' : 'F';
-                        const gradeCol = grade.startsWith('A') ? 'var(--win-green)' : grade.startsWith('B') ? '#F0A500' : 'var(--loss-red)';
+                        const gradeCol = grade.startsWith('A') ? 'var(--win-green)' : grade.startsWith('B') ? 'var(--warn)' : 'var(--loss-red)';
                         return { idx, trade, rids, sides: {[rid1]:s1,[rid2]:s2}, rid1, rid2, val1, val2, diff, grade, gradeCol, pctDiff };
                     });
                 }
@@ -3200,7 +3191,7 @@
                         <div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.655, lineHeight:1.5 }}>
                             Recent trades analyzed with DHQ values and fairness grades.
                         </div>
-                        <select value={inboxTeamFilter} onChange={e => setInboxTeamFilter(e.target.value)} style={{ padding:'4px 8px', fontSize:'0.74rem', fontFamily: 'var(--font-body)', background:'var(--charcoal)', border:'1px solid rgba(212,175,55,0.2)', borderRadius:'4px', color:'var(--silver)', cursor:'pointer' }}>
+                        <select value={inboxTeamFilter} onChange={e => setInboxTeamFilter(e.target.value)} style={{ padding:'4px 8px', fontSize:'0.74rem', fontFamily: 'var(--font-body)', background:'var(--charcoal)', border:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius:'4px', color:'var(--silver)', cursor:'pointer' }}>
                             <option value="all">All Teams</option>
                             {allRosters.map(r => <option key={r.roster_id} value={r.roster_id}>{ownerNameForRosterId(r.roster_id) || 'Team ' + r.roster_id}</option>)}
                         </select>
@@ -3211,11 +3202,11 @@
                                 <React.Fragment>
                                     <div className="ld"><span>.</span><span>.</span><span>.</span></div>
                                     <div style={{ marginTop:'8px' }}>Loading trade history from DHQ engine...</div>
-                                    <button onClick={() => { setTimeout(() => setTcTab('inbox'), 50); setTcTab('dna'); }} style={{ marginTop:'12px', padding:'6px 14px', background:'rgba(212,175,55,0.12)', color:'var(--gold)', border:'1px solid rgba(212,175,55,0.25)', borderRadius:'6px', fontFamily: 'var(--font-body)', fontSize:'0.78rem', cursor:'pointer' }}>Retry</button>
+                                    <button onClick={() => { setTimeout(() => setTcTab('inbox'), 50); setTcTab('dna'); }} style={{ marginTop:'12px', padding:'6px 14px', background:'var(--acc-fill2, rgba(212,175,55,0.12))', color:'var(--gold)', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'6px', fontFamily: 'var(--font-body)', fontSize:'0.78rem', cursor:'pointer' }}>Retry</button>
                                 </React.Fragment>
                             )}
                         </div>
-                    ) : <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'10px' }}>
+                    ) : <div className="tc-inbox-grid">
                     {filteredTrades.map(t => {
                         const name1 = ownerNameForRosterId(t.rid1) || 'Team ' + t.rid1;
                         const name2 = ownerNameForRosterId(t.rid2) || 'Team ' + t.rid2;
@@ -3224,28 +3215,28 @@
                         const winner = t.diff > t.val1 * 0.05 ? name1 : t.diff < -t.val2 * 0.05 ? name2 : null;
 
                         return (
-                            <div key={t.idx} style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(212,175,55,0.15)', borderRadius:'8px', padding:'10px' }}>
+                            <div key={t.idx} style={{ background:'var(--ov-1, rgba(255,255,255,0.02))', border:'1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius:'var(--card-radius)', padding:'10px' }}>
                                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px' }}>
                                     <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
-                                        <span title={'Grade measures trade fairness. A = balanced (\u22645% value diff). Variance = % difference between sides.'} style={{ fontFamily:'JetBrains Mono, monospace', fontSize:'1rem', fontWeight:600, color:t.gradeCol, cursor:'help' }}>{t.grade}</span>
-                                        <span style={{ fontSize:'0.68rem', color:'var(--silver)', opacity:0.65 }}>{t.pctDiff}%</span>
-                                        {winner && <span style={{ fontSize:'0.66rem', color:'var(--win-green)', fontWeight:700 }}>{winner}</span>}
+                                        <span title={'Grade measures trade fairness. A = balanced (\u22645% value diff). Variance = % difference between sides.'} style={{ fontFamily:'var(--font-mono)', fontSize:'1rem', fontWeight:600, color:t.gradeCol, cursor:'help' }}>{t.grade}</span>
+                                        <span style={{ fontSize:'var(--text-micro, 0.6875rem)', color:'var(--silver)', opacity:0.65 }}>{t.pctDiff}%</span>
+                                        {winner && <span style={{ fontSize:'var(--text-micro, 0.6875rem)', color:'var(--win-green)', fontWeight:700 }}>{winner}</span>}
                                     </div>
                                     <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
-                                        <span style={{ fontSize:'0.68rem', color:'var(--silver)', opacity:0.5 }}>
+                                        <span style={{ fontSize:'var(--text-micro, 0.6875rem)', color:'var(--silver)', opacity:0.5 }}>
                                             {t.trade.season ? 'S'+t.trade.season+(t.trade.week?' W'+t.trade.week:'') : ''}
                                         </span>
                                     </div>
                                 </div>
                                 <div style={{ display:'grid', gridTemplateColumns:'1fr auto 1fr', gap:'4px', alignItems:'start' }}>
                                     <div>
-                                        <div style={{ fontSize:'0.68rem', color:'var(--gold)', fontWeight:700, marginBottom:'2px' }}>{name1} ({t.val1.toLocaleString()})</div>
+                                        <div style={{ fontSize:'var(--text-micro, 0.6875rem)', color:'var(--gold)', fontWeight:700, marginBottom:'2px' }}>{name1} ({t.val1.toLocaleString()})</div>
                                         {(s1.players||[]).map(pid => <div key={pid} style={{ fontSize:'0.72rem', color:'var(--white)', lineHeight:1.4 }}>{pn(pid)}</div>)}
                                         {(s1.picks||[]).map((pk,i) => <div key={'p'+i} style={{ fontSize:'0.72rem', color:'var(--gold)' }}>{pk.season||pk.year} R{pk.round}</div>)}
                                     </div>
                                     <div style={{ fontSize:'0.82rem', color:'var(--gold)', alignSelf:'center', fontWeight:700 }}>&#8644;</div>
                                     <div>
-                                        <div style={{ fontSize:'0.68rem', color:'var(--gold)', fontWeight:700, marginBottom:'2px' }}>{name2} ({t.val2.toLocaleString()})</div>
+                                        <div style={{ fontSize:'var(--text-micro, 0.6875rem)', color:'var(--gold)', fontWeight:700, marginBottom:'2px' }}>{name2} ({t.val2.toLocaleString()})</div>
                                         {(s2.players||[]).map(pid => <div key={pid} style={{ fontSize:'0.72rem', color:'var(--white)', lineHeight:1.4 }}>{pn(pid)}</div>)}
                                         {(s2.picks||[]).map((pk,i) => <div key={'s2p'+i} style={{ fontSize:'0.72rem', color:'var(--gold)' }}>{pk.season||pk.year} R{pk.round}</div>)}
                                     </div>
@@ -3280,7 +3271,7 @@
                 const yourSurplus = myAssessment?.strengths?.filter(s => theirNeeds.some(n => n.pos === s)) || [];
                 const desperation = a.panic || 0;
                 const label = compat >= 50 ? 'TARGET' : compat >= 25 ? 'POSSIBLE' : desperation >= 3 ? 'DESPERATE' : 'LOW PROB';
-                const labelCol = label === 'TARGET' ? '#2ECC71' : label === 'POSSIBLE' ? '#F0A500' : label === 'DESPERATE' ? '#BB8FCE' : 'var(--silver)';
+                const labelCol = label === 'TARGET' ? 'var(--k-2ecc71, #2ecc71)' : label === 'POSSIBLE' ? 'var(--k-f0a500, #f0a500)' : label === 'DESPERATE' ? 'var(--k-bb8fce, #bb8fce)' : 'var(--silver)';
                 return { ...a, dk, dna, posture, compat, theirNeeds, yourSurplus, desperation, label, labelCol };
             }).sort((a, b) => b.compat - a.compat);
 
@@ -3294,17 +3285,17 @@
             const stratText = myNeeds.length ? 'Target teams needing ' + myStrengths.slice(0, 2).join('/') + '. Offer surplus depth for ' + myNeeds.map(n => n.pos).join('/') + ' upgrades.' : 'Your roster is balanced. Look for value asymmetry trades.';
 
             const renderTarget = (t, i, showCTA) => (
-                <div key={i} style={{ background: 'var(--black)', border: '2px solid rgba(212,175,55,0.2)', borderLeft: '4px solid ' + (t.dna.color || 'var(--gold)'), borderRadius: '10px', padding: '16px 20px', marginBottom: '10px' }}>
+                <div key={i} style={{ background: 'var(--black)', border: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', borderLeft: '4px solid ' + (t.dna.color || 'var(--gold)'), borderRadius: 'var(--card-radius)', padding: '16px 20px', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.2rem', color: 'var(--white)' }}>{t.ownerName}</span>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: t.labelCol, background: t.labelCol + '15', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>{t.label}</span>
-                        {t.dk !== 'NONE' && <span style={{ fontSize: '0.72rem', fontWeight: 700, color: t.dna.color, background: t.dna.color + '15', padding: '2px 8px', borderRadius: '4px' }}>{t.dna.label}</span>}
+                        <span style={{ fontFamily: 'var(--font-title)', fontSize: '1.2rem', color: 'var(--white)' }}>{t.ownerName}</span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: t.labelCol, background: wrAlpha(t.labelCol, '15'), padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>{t.label}</span>
+                        {t.dk !== 'NONE' && <span style={{ fontSize: '0.72rem', fontWeight: 700, color: t.dna.color, background: wrAlpha(t.dna.color, '15'), padding: '2px 8px', borderRadius: '4px' }}>{t.dna.label}</span>}
                         <span style={{ fontSize: '0.72rem', color: t.posture.color }}>{t.posture.label}</span>
-                        <span style={{ marginLeft: 'auto', fontFamily: 'Rajdhani, sans-serif', fontSize: '1.1rem', color: t.compat >= 50 ? '#2ECC71' : t.compat >= 30 ? '#F0A500' : 'var(--silver)' }}>{t.compat}%</span>
+                        <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-title)', fontSize: '1.1rem', color: t.compat >= 50 ? 'var(--good)' : t.compat >= 30 ? 'var(--warn)' : 'var(--silver)' }}>{t.compat}%</span>
                     </div>
                     <div style={{ fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.6, marginBottom: '8px' }}>
-                        Needs <strong style={{ color: '#E74C3C' }}>{t.theirNeeds.map(n => n.pos).join(', ') || 'unknown'}</strong>
-                        {t.yourSurplus.length > 0 && <span>. You have <strong style={{ color: '#2ECC71' }}>{t.yourSurplus.join(', ')}</strong> to offer</span>}
+                        Needs <strong style={{ color: 'var(--bad)' }}>{t.theirNeeds.map(n => n.pos).join(', ') || 'unknown'}</strong>
+                        {t.yourSurplus.length > 0 && <span>. You have <strong style={{ color: 'var(--good)' }}>{t.yourSurplus.join(', ')}</strong> to offer</span>}
                         . <em style={{ color: t.dna.color, opacity: 0.8 }}>{t.dna.strategy ? t.dna.strategy.split('.')[0] + '.' : ''}</em>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -3317,7 +3308,7 @@
             );
 
             return (
-                <div style={{ padding: '20px 24px', maxWidth: '1000px', margin: '0 auto' }} className="wr-fade-in">
+                <div style={{ padding: '20px var(--space-xl)', maxWidth: '1000px', margin: '0 auto' }} className="wr-fade-in">
                     <div className="wr-module-strip">
                         <div className="wr-module-context">
                             <span>Trade</span>
@@ -3327,26 +3318,26 @@
                     </div>
 
                     {/* Strategy summary */}
-                    <div style={{ background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.25)', borderRadius: '10px', padding: '14px 18px', marginBottom: '20px', fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.7 }}>
+                    <div style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '10px', padding: '14px 18px', marginBottom: '20px', fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.7 }}>
                         {stratText}
                     </div>
 
                     {/* Best trade partners */}
                     {topTargets.length > 0 && <div style={{ marginBottom: '20px' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.1rem', color: '#2ECC71', letterSpacing: '0.06em', marginBottom: '8px' }}>BEST TRADE PARTNERS</div>
+                        <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.1rem', color: 'var(--good)', letterSpacing: '0.06em', marginBottom: '8px' }}>BEST TRADE PARTNERS</div>
                         {topTargets.map((t, i) => renderTarget(t, i, true))}
                     </div>}
 
                     {/* Desperate teams */}
                     {desperate.length > 0 && <div style={{ marginBottom: '20px' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.1rem', color: '#BB8FCE', letterSpacing: '0.06em', marginBottom: '8px' }}>DESPERATE TEAMS (EXPLOIT)</div>
+                        <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.1rem', color: 'var(--k-bb8fce, #bb8fce)', letterSpacing: '0.06em', marginBottom: '8px' }}>DESPERATE TEAMS (EXPLOIT)</div>
                         {desperate.map((t, i) => renderTarget(t, 'desp-' + i, true))}
                     </div>}
 
                     {/* Avoid / low probability */}
                     {avoid.length > 0 && <div style={{ marginBottom: '20px' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.1rem', color: 'var(--silver)', letterSpacing: '0.06em', marginBottom: '8px', opacity: 0.6 }}>LOW PROBABILITY</div>
-                        {avoid.map((t, i) => <div key={'avoid-'+i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', marginBottom: '4px', opacity: 0.5 }}>
+                        <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.1rem', color: 'var(--silver)', letterSpacing: '0.06em', marginBottom: '8px', opacity: 0.6 }}>LOW PROBABILITY</div>
+                        {avoid.map((t, i) => <div key={'avoid-'+i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '6px', marginBottom: '4px', opacity: 0.5 }}>
                             <span style={{ fontSize: '0.82rem', color: 'var(--silver)' }}>{t.ownerName}</span>
                             <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>{t.compat}% fit {'\u00B7'} {t.dna.label}</span>
                             <span style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.4 }}>Low roster overlap</span>
@@ -3354,25 +3345,25 @@
                     </div>}
 
                     {/* Target map summary */}
-                    <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', marginBottom: '8px' }}>LEAGUE TARGET MAP</div>
+                    <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+                        <div style={{ fontFamily: 'var(--font-title)', fontSize: '1rem', color: 'var(--gold)', marginBottom: '8px' }}>LEAGUE TARGET MAP</div>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            {allTargets.map((t, i) => <span key={i} style={{ fontSize: '0.74rem', padding: '3px 10px', borderRadius: '4px', background: t.labelCol + '12', border: '1px solid ' + t.labelCol + '30', color: t.labelCol, fontWeight: 600 }}>{t.ownerName} {t.compat}%</span>)}
+                            {allTargets.map((t, i) => <span key={i} style={{ fontSize: '0.74rem', padding: '3px 10px', borderRadius: '4px', background: wrAlpha(t.labelCol, '12'), border: '1px solid ' + wrAlpha(t.labelCol, '30'), color: t.labelCol, fontWeight: 600 }}>{t.ownerName} {t.compat}%</span>)}
                         </div>
                     </div>
 
                     {/* Trade history insight */}
                     {(() => {
                         const tradeHist = window.App?.LI?.tradeHistory || [];
-                        if (!tradeHist.length) return <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px' }}>LEAGUE TRADE PATTERNS</div>
+                        if (!tradeHist.length) return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px' }}>LEAGUE TRADE PATTERNS</div>
                             <div style={{ fontSize: '0.82rem', color: 'var(--silver)', opacity: 0.4 }}>No trade history available yet. As trades occur, patterns will emerge here.</div>
                         </div>;
                         const activeCounts = {};
                         tradeHist.forEach(t => (t.roster_ids || []).forEach(rid => { activeCounts[rid] = (activeCounts[rid] || 0) + 1; }));
                         const mostActive = Object.entries(activeCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
-                        return <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', marginBottom: '6px' }}>WHAT WORKS IN THIS LEAGUE</div>
+                        return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1rem', color: 'var(--gold)', marginBottom: '6px' }}>WHAT WORKS IN THIS LEAGUE</div>
                             <div style={{ fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.6 }}>
                                 {tradeHist.length} trades completed. Most active: {mostActive.map(([rid, cnt]) => (ownerNameForRosterId(parseInt(rid)) || 'Team ' + rid) + ' (' + cnt + ')').join(', ')}.
                             </div>
@@ -3411,13 +3402,13 @@
                     </div>
                 </div>
                 {tradeContext && (
-                    <div className="trade-context-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.24)', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
+                    <div className="trade-context-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
                         <div style={{ minWidth: 0 }}>
-                            <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Trade Context</span>
-                            <strong style={{ display: 'block', color: 'var(--white)', fontSize: '0.9rem', fontFamily: 'Rajdhani, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Opened from transaction ticker</strong>
+                            <span style={{ display: 'block', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Trade Context</span>
+                            <strong style={{ display: 'block', color: 'var(--white)', fontSize: '0.9rem', fontFamily: 'var(--font-title)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Opened from transaction ticker</strong>
                             <em style={{ display: 'block', color: 'var(--silver)', fontSize: '0.74rem', fontStyle: 'normal' }}>{formatTradeContextSummary(tradeContext) || 'Use this deal as context while evaluating partner fit and packages.'}</em>
                         </div>
-                        <button type="button" onClick={clearTradeContext} style={{ background: 'transparent', border: '1px solid rgba(212,175,55,0.32)', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
+                        <button type="button" onClick={clearTradeContext} style={{ background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
                     </div>
                 )}
                 {_activeTcTab === 'dealhq' && (canAccess('trade-finder') ? renderDealHQ() : React.createElement(UpgradeGate, { feature:'trade-finder', title:'UNLOCK DEAL HQ', description:'Generate advisory trade packages with partner fit, owner psychology, pick capital, FAAB, and roster impact.', targetTier:'warroom' }))}
