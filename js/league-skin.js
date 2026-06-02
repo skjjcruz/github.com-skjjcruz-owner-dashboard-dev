@@ -19,51 +19,51 @@
     const IDP_SLOTS = new Set(['IDP', 'IDP_FLEX', 'DL', 'DE', 'DT', 'EDGE', 'LB', 'DB', 'CB', 'S', 'SS', 'FS']);
     const BENCH_SLOTS = new Set(['BN', 'BE', 'BENCH', 'IR', 'TAXI']);
     const PHASE_LABELS = {
-        pre_draft: { label: 'Pre-Draft', short: 'PRE', color: '#5DADE2' },
-        drafting: { label: 'Draft Live', short: 'LIVE', color: '#9B8AFB' },
-        in_season: { label: 'In Season', short: 'SEAS', color: '#2ECC71' },
-        offseason: { label: 'Offseason', short: 'OFF', color: '#F0A500' },
-        complete: { label: 'Complete', short: 'DONE', color: '#8D887E' },
-        unknown: { label: 'Phase Unknown', short: '?', color: '#C7CDD7' },
+        pre_draft: { label: 'Pre-Draft', short: 'PRE', color: 'var(--k-5dade2, #5dade2)' },
+        drafting: { label: 'Draft Live', short: 'LIVE', color: 'var(--k-9b8afb, #9b8afb)' },
+        in_season: { label: 'In Season', short: 'SEAS', color: 'var(--k-2ecc71, #2ecc71)' },
+        offseason: { label: 'Offseason', short: 'OFF', color: 'var(--k-f0a500, #f0a500)' },
+        complete: { label: 'Complete', short: 'DONE', color: 'var(--k-8d887e, #8d887e)' },
+        unknown: { label: 'Phase Unknown', short: '?', color: 'var(--k-c7cdd7, #c7cdd7)' },
     };
     const TYPE_META = {
-        redraft: { label: 'Redraft', short: 'RD', color: '#2ECC71', family: 'seasonal' },
-        keeper: { label: 'Keeper', short: 'KP', color: '#7C6BF8', family: 'hybrid' },
-        dynasty: { label: 'Dynasty', short: 'DY', color: '#D4AF37', family: 'long_term' },
-        best_ball: { label: 'Best Ball', short: 'BB', color: '#3498DB', family: 'seasonal' },
-        dfs: { label: 'DFS', short: 'DFS', color: '#3498DB', family: 'daily' },
-        unknown: { label: 'League Type Unknown', short: '?', color: '#C7CDD7', family: 'unknown' },
+        redraft: { label: 'Redraft', short: 'RD', color: 'var(--k-2ecc71, #2ecc71)', family: 'seasonal' },
+        keeper: { label: 'Keeper', short: 'KP', color: 'var(--k-7c6bf8, #7c6bf8)', family: 'hybrid' },
+        dynasty: { label: 'Dynasty', short: 'DY', color: 'var(--k-d4af37, #d4af37)', family: 'long_term' },
+        best_ball: { label: 'Best Ball', short: 'BB', color: 'var(--k-3498db, #3498db)', family: 'seasonal' },
+        dfs: { label: 'DFS', short: 'DFS', color: 'var(--k-3498db, #3498db)', family: 'daily' },
+        unknown: { label: 'League Type Unknown', short: '?', color: 'var(--k-c7cdd7, #c7cdd7)', family: 'unknown' },
     };
     const TYPE_THEMES = {
         redraft: {
             id: 'war-room-default',
             className: 'wr-league-skin-default',
-            accent: '#D4AF37',
-            surface: '#121217',
+            accent: 'var(--k-d4af37, #d4af37)',
+            surface: 'var(--k-121217, #121217)',
         },
         best_ball: {
             id: 'seasonal-blue',
             className: 'wr-league-skin-seasonal',
-            accent: '#3498DB',
-            surface: '#10243F',
+            accent: 'var(--k-3498db, #3498db)',
+            surface: 'var(--k-10243f, #10243f)',
         },
         dynasty: {
             id: 'dynasty-war-room',
             className: 'wr-league-skin-dynasty',
-            accent: '#D4AF37',
-            surface: '#121217',
+            accent: 'var(--k-d4af37, #d4af37)',
+            surface: 'var(--k-121217, #121217)',
         },
         keeper: {
             id: 'keeper-hybrid',
             className: 'wr-league-skin-keeper',
-            accent: '#7C6BF8',
-            surface: '#1C1830',
+            accent: 'var(--k-7c6bf8, #7c6bf8)',
+            surface: 'var(--k-1c1830, #1c1830)',
         },
         unknown: {
             id: 'war-room-default',
             className: 'wr-league-skin-default',
-            accent: '#D4AF37',
-            surface: '#121217',
+            accent: 'var(--k-d4af37, #d4af37)',
+            surface: 'var(--k-121217, #121217)',
         },
     };
 

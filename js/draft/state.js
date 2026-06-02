@@ -292,7 +292,17 @@
         const next = { ...initialLiveSyncState(), ...(current || {}), ...(patch || {}) };
         if (patch.error === null) next.error = null;
         if (patch.status === 'mirroring' || patch.status === 'waiting' || patch.status === 'complete') {
-            next.stale = false;
+            // Only clear stale when nothing is left unresolved. A healthy-looking
+            // status string must NOT paper over a real gap/conflict — otherwise the
+            // banner flips green while the mirror is still stuck behind a missing pick.
+            const hasUnresolved = !!(
+                (patch.missingPickNos && patch.missingPickNos.length) ||
+                (next.missingPickNos && next.missingPickNos.length) ||
+                (patch.conflictPickNos && patch.conflictPickNos.length) ||
+                (next.conflictPickNos && next.conflictPickNos.length) ||
+                patch.remoteBehind || next.remoteBehind
+            );
+            if (!hasUnresolved) next.stale = false;
         }
         return next;
     }
@@ -397,16 +407,45 @@
             .trim();
     }
 
+    // Nickname-tolerant rookie name match. Catches the initialism case where Sleeper
+    // carries a player under a short nickname (e.g. "KC Concepcion") while our prospect
+    // data uses the given name ("Kevin Concepcion") — same player, must not surface as
+    // two rows. Conservative: last names must match, and first names match only when
+    // equal, one prefixes the other (Will/William), or one is a <=2-char initialism
+    // sharing the first letter (KC/Kevin, TJ/Tyler). Distinct full first names (Kyle vs
+    // Kevin) never match.
+    function rookieNameMatch(aName, bName) {
+        const a = normProspectName(aName);
+        const b = normProspectName(bName);
+        if (!a || !b) return false;
+        if (a === b) return true;
+        const ap = a.split(' ');
+        const bp = b.split(' ');
+        if (ap.length < 2 || bp.length < 2) return false;
+        if (ap[ap.length - 1] !== bp[bp.length - 1]) return false;
+        const af = ap[0];
+        const bf = bp[0];
+        if (af === bf) return true;
+        if (af.startsWith(bf) || bf.startsWith(af)) return true;
+        if (af[0] === bf[0] && (af.length <= 2 || bf.length <= 2)) return true;
+        return false;
+    }
+
     function matchSleeperRookie(prospect, playersData) {
         const target = normProspectName(prospect?.name);
         if (!target) return null;
         const src = playersData || window.S?.players || {};
+        // Exact normalized name wins; remember the first nickname-compatible rookie as a
+        // fallback so e.g. Sleeper "KC Concepcion" links to prospect "Kevin Concepcion".
+        let alias = null;
         for (const [pid, player] of Object.entries(src)) {
             if (!player || player.years_exp !== 0) continue;
             const fullName = player.full_name || `${player.first_name || ''} ${player.last_name || ''}`.trim();
-            if (normProspectName(fullName) === target) return { pid, player };
+            const norm = normProspectName(fullName);
+            if (norm === target) return { pid, player };
+            if (!alias && rookieNameMatch(target, norm)) alias = { pid, player };
         }
-        return null;
+        return alias;
     }
 
     function firstPositiveNumber(values) {
@@ -1816,8 +1855,8 @@
                     relatedPickNo: action.event.relatedPickNo || null,
                     ts: action.event.ts || Date.now(),
                 };
-                // Cap stream at 50 most recent events
-                const newStream = [ev, ...state.alex.stream].slice(0, 50);
+                // Cap stream at 80 most recent events (richer Alex stream)
+                const newStream = [ev, ...state.alex.stream].slice(0, 80);
                 return {
                     ...state,
                     alex: { ...state.alex, stream: newStream },
@@ -2456,6 +2495,8 @@
         normalizePickRecord,
         buildPickedByIdx,
         leagueTotalsFromPicks,
+        buildTeamRecaps,
+        rosterName,
         buildDraftRecap,
         saveDraftRecap,
         saveDraftLearning,

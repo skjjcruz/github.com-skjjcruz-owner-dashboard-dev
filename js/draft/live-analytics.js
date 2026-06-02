@@ -16,9 +16,31 @@
     const { FONT_UI, FONT_DISPL, FONT_MONO, panelCard, dhqColor } = window.DraftCC.styles;
 
     const POS_COLORS = {
-        QB: '#FF6B6B', RB: '#4ECDC4', WR: '#45B7D1', TE: '#F7DC6F',
-        DL: '#E67E22', LB: '#F0A500', DB: '#5DADE2', K: '#BB8FCE',
+        QB: 'var(--k-ff6b6b, #ff6b6b)', RB: 'var(--k-4ecdc4, #4ecdc4)', WR: 'var(--k-45b7d1, #45b7d1)', TE: 'var(--k-f7dc6f, #f7dc6f)',
+        DL: 'var(--k-e67e22, #e67e22)', LB: 'var(--k-f0a500, #f0a500)', DB: 'var(--k-5dade2, #5dade2)', K: 'var(--k-bb8fce, #bb8fce)',
     };
+
+    // Pure run-detector: returns the most concentrated positional run inside the
+    // last `lookback` picks, or null if no position has >= `min` of them.
+    // Shape: { pos, count, window, picks } where picks are the run's pick records.
+    function detectRuns(picks, lookback = 6, min = 3) {
+        const window = (picks || []).slice(-lookback);
+        if (window.length < min) return null;
+        const byPos = {};
+        window.forEach(p => {
+            const pos = (p && (p.pos || p.player?.position) || '').toUpperCase();
+            if (!pos) return;
+            (byPos[pos] = byPos[pos] || []).push(p);
+        });
+        let best = null;
+        Object.keys(byPos).forEach(pos => {
+            const list = byPos[pos];
+            if (list.length >= min && (!best || list.length > best.count)) {
+                best = { pos, count: list.length, window: window.length, picks: list };
+            }
+        });
+        return best;
+    }
 
     function LiveAnalyticsPanel({ state }) {
         const posColors = window.App?.POS_COLORS || POS_COLORS;
@@ -158,8 +180,8 @@
                         left: '10px',
                         right: '10px',
                         padding: '8px 12px',
-                        background: 'linear-gradient(90deg, rgba(212,175,55,0.22), rgba(212,175,55,0.05))',
-                        border: '1px solid rgba(212,175,55,0.5)',
+                        background: 'linear-gradient(90deg, var(--acc-line1, rgba(212,175,55,0.22)), var(--acc-fill1, rgba(212,175,55,0.05)))',
+                        border: '1px solid var(--acc-line3, rgba(212,175,55,0.5))',
                         borderRadius: '6px',
                         zIndex: 5,
                         fontSize: '0.72rem',
@@ -180,10 +202,10 @@
                         Live Analytics
                     </div>
                     <span style={{
-                        fontSize: '0.5rem',
+                        fontSize: 'var(--text-micro, 0.6875rem)',
                         padding: '1px 5px',
                         background: 'rgba(46,204,113,0.12)',
-                        color: '#2ECC71',
+                        color: 'var(--k-2ecc71, #2ecc71)',
                         border: '1px solid rgba(46,204,113,0.3)',
                         borderRadius: '3px',
                         fontFamily: FONT_UI,
@@ -194,7 +216,7 @@
                 {/* Row 1: Health · Value Curve · Live Grade */}
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '80px 1fr 100px',
+                    gridTemplateColumns: 'minmax(0, 80px) minmax(0, 1fr) minmax(0, 100px)',
                     gap: '8px',
                     marginBottom: '8px',
                     flex: 1,
@@ -227,7 +249,7 @@
         const radius = (size - strokeWidth) / 2;
         const circumference = 2 * Math.PI * radius;
         const offset = circumference - (value / 100) * circumference;
-        const col = value >= 70 ? '#2ECC71' : value >= 40 ? '#F0A500' : '#E74C3C';
+        const col = value >= 70 ? 'var(--k-2ecc71, #2ecc71)' : value >= 40 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
 
         return (
             <div style={{
@@ -235,8 +257,8 @@
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.05)',
+                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
                 borderRadius: '5px',
                 padding: '4px',
                 position: 'relative',
@@ -247,7 +269,7 @@
                         cy={size / 2}
                         r={radius}
                         fill="none"
-                        stroke="rgba(255,255,255,0.06)"
+                        stroke="var(--ov-4, rgba(255,255,255,0.06))"
                         strokeWidth={strokeWidth}
                     />
                     <circle
@@ -274,7 +296,7 @@
                     <div style={{ fontSize: '1rem', fontWeight: 700, color: col, fontFamily: FONT_DISPL, lineHeight: 1 }}>
                         {value || '—'}
                     </div>
-                    <div style={{ fontSize: '0.42rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '1px' }}>
+                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '1px' }}>
                         HEALTH
                     </div>
                 </div>
@@ -283,8 +305,8 @@
                         position: 'absolute',
                         top: 2,
                         right: 2,
-                        fontSize: '0.5rem',
-                        color: '#2ECC71',
+                        fontSize: 'var(--text-micro, 0.6875rem)',
+                        color: 'var(--k-2ecc71, #2ecc71)',
                         fontWeight: 700,
                         fontFamily: FONT_MONO,
                     }}>+{delta}</div>
@@ -315,14 +337,14 @@
 
         return (
             <div style={{
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.05)',
+                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
                 borderRadius: '5px',
                 padding: '4px 6px',
                 display: 'flex',
                 flexDirection: 'column',
             }}>
-                <div style={{ fontSize: '0.48rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, marginBottom: '2px' }}>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, marginBottom: '2px' }}>
                     VALUE CURVE · Pick # vs DHQ
                 </div>
                 <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
@@ -330,7 +352,7 @@
                     <path
                         d={baselinePath}
                         fill="none"
-                        stroke="rgba(255,255,255,0.25)"
+                        stroke="var(--ov-7, rgba(255,255,255,0.25))"
                         strokeWidth={1}
                         strokeDasharray="2 2"
                     />
@@ -344,7 +366,7 @@
                         const hasConsensus = consensusAtX > 0;
                         const isSteal = hasConsensus && p.y > consensusAtX * 1.05;
                         const isReach = hasConsensus && p.y < consensusAtX * 0.85;
-                        const dotCol = isSteal ? '#2ECC71' : isReach ? '#E74C3C' : 'var(--gold)';
+                        const dotCol = isSteal ? 'var(--k-2ecc71, #2ecc71)' : isReach ? 'var(--k-e74c3c, #e74c3c)' : 'var(--gold)';
                         return (
                             <circle
                                 key={i}
@@ -360,10 +382,10 @@
                         );
                     })}
                 </svg>
-                <div style={{ fontSize: '0.44rem', color: 'var(--silver)', opacity: 0.4, display: 'flex', gap: '6px', marginTop: '1px' }}>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4, display: 'flex', gap: '6px', marginTop: '1px' }}>
                     <span>— baseline</span>
-                    <span style={{ color: '#2ECC71' }}>● steal</span>
-                    <span style={{ color: '#E74C3C' }}>● reach</span>
+                    <span style={{ color: 'var(--k-2ecc71, #2ecc71)' }}>● steal</span>
+                    <span style={{ color: 'var(--k-e74c3c, #e74c3c)' }}>● reach</span>
                 </div>
             </div>
         );
@@ -373,9 +395,9 @@
     function LiveGradeWidget({ grade }) {
         const col =
             grade.letter === '?' ? 'var(--silver)' :
-            grade.letter.startsWith('A') ? '#2ECC71' :
-            grade.letter.startsWith('B') ? '#D4AF37' :
-            grade.letter === 'C' ? '#F0A500' : '#E74C3C';
+            grade.letter.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' :
+            grade.letter.startsWith('B') ? 'var(--k-d4af37, #d4af37)' :
+            grade.letter === 'C' ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
 
         const [pulse, setPulse] = React.useState(false);
         const lastLetterRef = React.useRef(grade.letter);
@@ -390,8 +412,8 @@
 
         return (
             <div style={{
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.05)',
+                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
                 borderRadius: '5px',
                 padding: '6px 4px',
                 display: 'flex',
@@ -412,10 +434,10 @@
                 }}>
                     {grade.letter}
                 </div>
-                <div style={{ fontSize: '0.44rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>
                     LIVE GRADE
                 </div>
-                <div style={{ fontSize: '0.52rem', color: 'var(--silver)', opacity: 0.8, marginTop: '3px', fontFamily: FONT_MONO }}>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.8, marginTop: '3px', fontFamily: FONT_MONO }}>
                     {grade.totalDHQ >= 1000 ? (grade.totalDHQ / 1000).toFixed(1) + 'k' : grade.totalDHQ} DHQ
                 </div>
             </div>
@@ -433,12 +455,12 @@
 
         return (
             <div style={{
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.05)',
+                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
                 borderRadius: '5px',
                 padding: '5px 7px',
             }}>
-                <div style={{ fontSize: '0.48rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, marginBottom: '3px' }}>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, marginBottom: '3px' }}>
                     ROSTER FILL
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -450,7 +472,7 @@
                         return (
                             <div key={pos} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <span style={{
-                                    fontSize: '0.54rem',
+                                    fontSize: 'var(--text-micro, 0.6875rem)',
                                     fontWeight: 700,
                                     color: col,
                                     width: 28,
@@ -459,7 +481,7 @@
                                 <div style={{
                                     flex: 1,
                                     height: 6,
-                                    background: 'rgba(255,255,255,0.05)',
+                                    background: 'var(--ov-3, rgba(255,255,255,0.05))',
                                     borderRadius: 2,
                                     overflow: 'hidden',
                                     position: 'relative',
@@ -473,7 +495,7 @@
                                     }} />
                                 </div>
                                 <span style={{
-                                    fontSize: '0.54rem',
+                                    fontSize: 'var(--text-micro, 0.6875rem)',
                                     color: 'var(--silver)',
                                     opacity: 0.7,
                                     minWidth: 22,
@@ -494,16 +516,16 @@
         const hasRun = entries.some(([, ct]) => ct >= 3);
         return (
             <div style={{
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid ' + (hasRun ? 'rgba(231,76,60,0.35)' : 'rgba(255,255,255,0.05)'),
+                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                border: '1px solid ' + (hasRun ? 'rgba(231,76,60,0.35)' : 'var(--ov-3, rgba(255,255,255,0.05))'),
                 borderRadius: '5px',
                 padding: '5px 7px',
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
-                    <div style={{ fontSize: '0.48rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, flex: 1 }}>
+                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, flex: 1 }}>
                         POS RUN · last 8
                     </div>
-                    {hasRun && <span style={{ fontSize: '0.48rem', color: '#E74C3C', fontWeight: 700 }}>🔥</span>}
+                    {hasRun && <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-e74c3c, #e74c3c)', fontWeight: 700 }}>🔥</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     {entries.slice(0, 4).map(([pos, ct]) => {
@@ -511,11 +533,11 @@
                         const pct = (ct / 8) * 100;
                         return (
                             <div key={pos} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <span style={{ fontSize: '0.54rem', fontWeight: 700, color: col, width: 16 }}>{pos}</span>
+                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: col, width: 16 }}>{pos}</span>
                                 <div style={{
                                     flex: 1,
                                     height: 5,
-                                    background: 'rgba(255,255,255,0.05)',
+                                    background: 'var(--ov-3, rgba(255,255,255,0.05))',
                                     borderRadius: 2,
                                     overflow: 'hidden',
                                 }}>
@@ -526,12 +548,12 @@
                                         opacity: ct >= 3 ? 1 : 0.7,
                                     }} />
                                 </div>
-                                <span style={{ fontSize: '0.54rem', color: 'var(--silver)', fontFamily: FONT_MONO, minWidth: 10, textAlign: 'right' }}>{ct}</span>
+                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', fontFamily: FONT_MONO, minWidth: 10, textAlign: 'right' }}>{ct}</span>
                             </div>
                         );
                     })}
                     {entries.length === 0 && (
-                        <div style={{ fontSize: '0.52rem', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic', textAlign: 'center', padding: '6px 0' }}>
+                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic', textAlign: 'center', padding: '6px 0' }}>
                             No picks yet
                         </div>
                     )}
@@ -544,25 +566,25 @@
     function ReachStealTicker({ events }) {
         return (
             <div style={{
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.05)',
+                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
                 borderRadius: '5px',
                 padding: '5px 7px',
                 overflow: 'hidden',
             }}>
-                <div style={{ fontSize: '0.48rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, marginBottom: '3px' }}>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, marginBottom: '3px' }}>
                     REACH / STEAL TICKER
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     {events.slice(-4).reverse().map((e, i) => {
-                        const col = e.type === 'steal' ? '#2ECC71' : '#E74C3C';
+                        const col = e.type === 'steal' ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-e74c3c, #e74c3c)';
                         const sign = e.type === 'steal' ? '↓' : '↑';
                         return (
                             <div key={i} style={{
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '4px',
-                                fontSize: '0.52rem',
+                                fontSize: 'var(--text-micro, 0.6875rem)',
                                 fontFamily: FONT_UI,
                             }}>
                                 <span style={{ color: col, fontWeight: 700, width: 8 }}>{sign}</span>
@@ -580,7 +602,7 @@
                         );
                     })}
                     {events.length === 0 && (
-                        <div style={{ fontSize: '0.52rem', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic', textAlign: 'center', padding: '6px 0' }}>
+                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic', textAlign: 'center', padding: '6px 0' }}>
                             No reaches / steals
                         </div>
                     )}
@@ -592,8 +614,8 @@
     function Placeholder({ label, text }) {
         return (
             <div style={{
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.05)',
+                background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
                 borderRadius: '5px',
                 padding: '6px',
                 display: 'flex',
@@ -601,12 +623,14 @@
                 justifyContent: 'center',
                 alignItems: 'center',
             }}>
-                <div style={{ fontSize: '0.48rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-                <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic', marginTop: '3px' }}>{text}</div>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic', marginTop: '3px' }}>{text}</div>
             </div>
         );
     }
 
     window.DraftCC = window.DraftCC || {};
     window.DraftCC.LiveAnalyticsPanel = LiveAnalyticsPanel;
+    window.DraftCC.liveAnalytics = window.DraftCC.liveAnalytics || {};
+    window.DraftCC.liveAnalytics.detectRuns = detectRuns;
 })();

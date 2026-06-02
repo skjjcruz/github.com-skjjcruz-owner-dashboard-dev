@@ -44,7 +44,7 @@
     const DEFAULT_POSTURE = {
         key: 'NEUTRAL',
         label: 'Neutral',
-        color: '#95A5A6',
+        color: 'var(--k-95a5a6, #95a5a6)',
         desc: 'No strong push.',
     };
 
@@ -90,7 +90,7 @@
         return {
             key: postureObj.key || 'NEUTRAL',
             label: postureObj.label || 'Neutral',
-            color: postureObj.color || '#95A5A6',
+            color: postureObj.color || 'var(--k-95a5a6, #95a5a6)',
             desc: postureObj.desc || '',
         };
     }

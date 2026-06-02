@@ -202,10 +202,6 @@
             const upB = b.growth + (b.target ? 450 : 0) + (ageOf(b.player) && ageOf(b.player) <= 24 ? 200 : 0);
             return upB - upA;
         })[0] || recommended;
-        const avoid = rows.find(c => c.fade)
-            || rows.find(c => c.dhq > 0 && c.y5 > 0 && c.y5 < c.dhq * 0.65)
-            || null;
-
         const cards = [
             card('recommended', 'Recommended', recommended, 'Best blend of board value, roster fit, and five-year value.', 'gold', {
                 drivers: ['board_rank', recommended?.needBoost ? 'roster_need' : 'value', recommended?.target ? 'user_target' : 'projection'],
@@ -224,20 +220,13 @@
                 label: 'Trade Window',
                 tone: tradeWindow.likelihood >= tradeWindow.acceptanceLine ? 'green' : 'amber',
                 player: null,
-                detail: `${tradeWindow.teamName || 'Owner'} · ${tradeWindow.likelihood || 0}% vs ${tradeWindow.acceptanceLine || 70}% Buyer Line`,
+                detail: tradeWindow.likelihood >= tradeWindow.acceptanceLine
+                    ? `${tradeWindow.teamName || 'Owner'} · likely to deal (${tradeWindow.likelihood || 0}% to accept)`
+                    : `${tradeWindow.teamName || 'Owner'} · unlikely to deal (${tradeWindow.likelihood || 0}% to accept)`,
                 drivers: ['owner_trade_intel', 'board_tier', 'buyer_line'],
                 action: 'trade',
                 meta: { rosterId: tradeWindow.rosterId, tradeWindow },
             });
-        }
-
-        if (avoid) {
-            const reason = avoid.fade
-                ? 'User-board fade or do-not-draft flag is active.'
-                : 'Current value is materially ahead of five-year projection.';
-            cards.push(card('avoid', 'Avoid Warning', avoid, reason, 'red', {
-                drivers: [avoid.fade ? 'user_board' : 'projection_risk'],
-            }));
         }
 
         return cards.slice(0, 5);
@@ -305,9 +294,141 @@
         };
     }
 
+    // A forward-looking read for the Alex Live Read panel: who is likely still
+    // available at the user's next pick, plus an outlier worth trading up for.
+    function buildLiveReadout(state) {
+        const next = nextUserPick(state);
+        if (!next || !next.slot) return null;
+        const picksAway = num(next.picksAway, 0);
+        const rows = candidates(state, 60).filter(c => !c.fade);
+        if (!rows.length) return null;
+        const nm = c => c.player?.name || c.player?.full_name || c.player?.pid || 'Player';
+        const ps = c => posOf(c.player) || '';
+        const slot = next.slot;
+        const pickLabel = 'R' + (slot.round || '?') + '.' + String(slot.slot || 0).padStart(2, '0');
+        // Heuristic: the ~picksAway top-ranked players are likely gone before our turn.
+        const survivors = rows.filter(c => c.rank > picksAway + 1);
+        const gone = rows.filter(c => c.rank <= picksAway);
+        const pool = survivors.length ? survivors : rows;
+        const available = pool.slice(0, 3).map(c => ({ name: nm(c), pos: ps(c), dhq: c.dhq, tier: c.tier }));
+        // Outlier: a clearly-superior player projected gone before our pick — a
+        // tier or sizeable value jump over the best expected survivor.
+        let outlier = null;
+        if (picksAway > 0) {
+            const bestSurv = survivors[0] || null;
+            const topGone = gone.slice().sort((a, b) => b.dhq - a.dhq)[0] || null;
+            if (topGone) {
+                const tierJump = !!(topGone.tier && bestSurv?.tier && (bestSurv.tier - topGone.tier >= 2));
+                const valueJump = !bestSurv || topGone.dhq > bestSurv.dhq * 1.18;
+                if (tierJump || valueJump) {
+                    outlier = { name: nm(topGone), pos: ps(topGone), dhq: topGone.dhq, tier: topGone.tier };
+                }
+            }
+        }
+        return { pickLabel, picksAway, available, outlier };
+    }
+
+    // Lightweight, pure signals for the Alex live commentary stream. Returns a
+    // bundle the stream effect can dedupe + narrate without any model calls:
+    //   tierBreak  — a positional tier that just emptied to its last man (uses
+    //                the same tierAlert() cliff logic, surfaced per position).
+    //   valueCliff — the steepest DHQ drop-off among the top available players.
+    //   needTension— the user's top roster need vs. the board's best-player-available.
+    function liveStreamSignals(state) {
+        const rows = candidates(state, 48).filter(c => !c.fade);
+        const out = { tierBreak: null, valueCliff: null, needTension: null };
+        if (!rows.length) return out;
+        const nm = c => c.player?.name || c.player?.full_name || c.player?.pid || 'Player';
+        const ps = c => posOf(c.player) || '';
+
+        // ── Tier break: a position whose remaining top tier is down to its last
+        // player. Reuse tierAlert() over the position's own pocket so the wording
+        // and the <=1 cliff threshold stay consistent.
+        const byPos = {};
+        rows.forEach(c => {
+            const pos = ps(c);
+            if (!pos) return;
+            (byPos[pos] = byPos[pos] || []).push(c);
+        });
+        let tierBreak = null;
+        Object.keys(byPos).forEach(pos => {
+            const alert = tierAlert(byPos[pos]);
+            if (!alert) return;
+            const topTier = byPos[pos].find(c => c.tier);
+            const tier = topTier?.tier || null;
+            const lastMan = byPos[pos].filter(c => String(c.tier) === String(tier));
+            // Only the genuine cliffs (one or zero left in the pocket's top tier).
+            if (lastMan.length > 1) return;
+            const survivor = byPos[pos][lastMan.length] || null;
+            if (!tierBreak || (tier && (!tierBreak.tier || tier < tierBreak.tier))) {
+                tierBreak = {
+                    pos,
+                    tier,
+                    lastPlayer: lastMan[0] ? nm(lastMan[0]) : null,
+                    nextPlayer: survivor ? nm(survivor) : null,
+                    nextTier: survivor?.tier || null,
+                };
+            }
+        });
+        out.tierBreak = tierBreak;
+
+        // ── Value cliff: biggest DHQ drop-off between consecutive top-board
+        // players. Steep = the gap exceeds ~22% of the higher player's DHQ.
+        const top = rows.slice(0, 14);
+        let cliff = null;
+        for (let i = 0; i < top.length - 1; i++) {
+            const a = top[i], b = top[i + 1];
+            const dropAbs = num(a.dhq) - num(b.dhq);
+            const dropPct = a.dhq ? dropAbs / a.dhq : 0;
+            if (dropAbs <= 0) continue;
+            if (!cliff || dropPct > cliff.dropPct) {
+                cliff = {
+                    afterPlayer: nm(a),
+                    afterPos: ps(a),
+                    afterDhq: Math.round(num(a.dhq)),
+                    nextPlayer: nm(b),
+                    nextDhq: Math.round(num(b.dhq)),
+                    dropAbs: Math.round(dropAbs),
+                    dropPct,
+                    index: i,
+                };
+            }
+        }
+        // Only surface a steep, early cliff (top of the board, >= 22% gap).
+        if (cliff && cliff.dropPct >= 0.22 && cliff.index <= 6) out.valueCliff = cliff;
+
+        // ── Need vs. BPA: the user's most urgent need pocket vs. the absolute
+        // best player available. Tension when the BPA is off-need but the need
+        // is real and the on-need option is a clear step down.
+        const needs = userNeedMap(state);
+        const needPositions = Object.keys(needs).sort((a, b) => needs[b] - needs[a]);
+        const topNeed = needPositions[0];
+        if (topNeed) {
+            const bpa = rows[0];
+            const bpaPos = ps(bpa);
+            if (bpa && bpaPos && bpaPos !== topNeed) {
+                const onNeed = rows.find(c => ps(c) === topNeed);
+                const gap = onNeed ? num(bpa.dhq) - num(onNeed.dhq) : null;
+                out.needTension = {
+                    needPos: topNeed,
+                    bpaName: nm(bpa),
+                    bpaPos,
+                    onNeedName: onNeed ? nm(onNeed) : null,
+                    gap: gap == null ? null : Math.round(gap),
+                    urgent: needs[topNeed] >= 22,
+                };
+            }
+        }
+
+        return out;
+    }
+
     window.DraftCC = window.DraftCC || {};
     window.DraftCC.liveDecisionEngine = {
         buildDecisionDeck,
+        buildLiveReadout,
+        liveStreamSignals,
+        tierAlert,
         _private: {
             candidates,
             nextUserPick,

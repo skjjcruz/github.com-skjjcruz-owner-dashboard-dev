@@ -10,8 +10,52 @@
 // continues to set --gold/--silver CSS vars independently.
 //
 // Depends on: nothing (self-contained, runs first)
-// Exposes:    window.WrTheme
+// Exposes:    window.WrTheme, window.wrAlpha
 // ══════════════════════════════════════════════════════════════════
+
+// ── wrAlpha(color, 'HH') ───────────────────────────────────────────
+// Theme-safe replacement for the old `color + 'HH'` idiom (which built an
+// 8-digit hex and only worked while `color` was a raw hex). Resolves any
+// color form — hex OR var(--k-…, …) OR rgb()/named — to concrete rgb via a
+// memoized off-screen probe, then applies the 2-digit-hex alpha. In dark
+// mode the result is identical to the old concatenation; in light mode it
+// tracks the themed value. Defined first so it exists before any render.
+(function() {
+    'use strict';
+    const cache = new Map();
+    let probe = null;
+    function rootTheme() {
+        return (document.documentElement.getAttribute('data-wr-theme') || 'default');
+    }
+    function resolveRGB(color) {
+        if (!probe) {
+            probe = document.createElement('span');
+            probe.setAttribute('aria-hidden', 'true');
+            probe.style.cssText = 'position:absolute!important;left:-99999px;top:0;width:0;height:0;pointer-events:none;';
+            (document.body || document.documentElement).appendChild(probe);
+        }
+        probe.style.color = '';
+        probe.style.color = color;            // invalid values are ignored -> stays ''
+        return getComputedStyle(probe).color; // always an absolute rgb()/rgba()
+    }
+    window.wrAlpha = function(color, hh) {
+        if (color == null || color === '') return color;
+        const c = String(color);
+        const key = rootTheme() + '|' + c + '|' + hh;
+        const hit = cache.get(key);
+        if (hit !== undefined) return hit;
+        let out;
+        try {
+            const m = resolveRGB(c).match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+            const a = Math.round((parseInt(hh, 16) / 255) * 1000) / 1000;
+            out = m ? `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${a})` : c;
+        } catch (e) { out = c; }
+        cache.set(key, out);
+        return out;
+    };
+    // Repaint-safe: drop memo when the theme flips so colors re-resolve.
+    window.addEventListener('wr_theme_changed', () => cache.clear());
+})();
 
 (function() {
     'use strict';
@@ -136,6 +180,87 @@
         },
     };
 
+    // ══════════════════════════════════════════════════════════════
+    // Light-mode palette layer
+    //
+    // scripts/lightmode-codemod.cjs rewrote every hardcoded color literal
+    // across the module JS to `var(--key, <original>)`. The fallback is the
+    // exact original value, so DARK MODE renders byte-identical with no var
+    // definitions at all. Light mode only needs to override the vars below —
+    // one source of truth instead of per-component patching.
+    //
+    //   --k-RRGGBB   solid colors      (accents darkened for contrast on light)
+    //   --ov-1..9    white overlays    (flip to dark-on-light surface tints)
+    //   --acc-*      gold accent tints (themed line/fill on light)
+    //   --surf-solid dark panel fills  (flip to light card)
+    // ══════════════════════════════════════════════════════════════
+
+    // Per-hex light values. Dark surfaces -> light cards; light/near-white
+    // text -> dark text; saturated accents -> darkened to clear ~4.5:1 on the
+    // warm off-white page (#F6F4EF). Hand-tuned; covers every key the codemod
+    // emitted (anything missing falls back to its original via var() fallback).
+    const LIGHT_HEX = {
+        // dark surfaces -> light cards / recesses
+        '000000':'#1a1814','050505':'#f1eee6','0a0a0a':'#f1eee6','0a0a0c':'#f1eee6',
+        '0a0b0d':'#f1eee6','0d0b12':'#ffffff','0d0d0d':'#f1eee6','0d0d13':'#ffffff',
+        '0f0f14':'#ffffff','111111':'#ffffff','111117':'#ffffff','111318':'#ffffff',
+        '121217':'#ffffff','14121c':'#f3f0f8','14130f':'#f5f2e9','1a1a1a':'#ffffff',
+        '1c1830':'#efebf7','201d12':'#f4efe1','10243f':'#e8eef6',
+        // near-white / light text -> dark text
+        'ffffff':'#1a1814','f4f1e8':'#1a1814','f7e9b0':'#6e5410','d8d8de':'#3a352c',
+        'c7cdd7':'#3e4654','d0d0d0':'#44403a','c0c0c0':'#4a463e','a8acb8':'#4c5160',
+        'd0e7fa':'#15577f',
+        // mid greys -> slightly darker so they read on light
+        '808080':'#57534b','85929e':'#4e5660','8d887e':'#57524a','95a5a6':'#4f595a',
+        '7f8c8d':'#4c5658','6c7a7d':'#44504e','666666':'#4a4a4a',
+        // greens
+        '2ecc71':'#0e7a3a','27ae60':'#0c6e33','2e7d32':'#266b2a','1b5e20':'#1b5e20',
+        '34d399':'#0c7a48','81c784':'#2e7d32','8ad17a':'#3a8030',
+        // teals
+        '1abc9c':'#0c8276','00c8b4':'#047a6e','4ecdc4':'#0c857c','147d8a':'#147d8a',
+        '1a99aa':'#14707e',
+        // golds / ambers / yellows
+        'd4af37':'#8c6410','b8941e':'#6e4e0c','cd7f32':'#875322','f0a500':'#945600',
+        'f1c40f':'#84680a','f39c12':'#8a5600','f7dc6f':'#7a6000','fbbf24':'#8a6200',
+        '8b6914':'#8b6914','fb923c':'#b05312','e67e22':'#ae5414',
+        // blues
+        '3498db':'#15659e','5dade2':'#0e6398','45b7d1':'#0e7388','60a5fa':'#1e58be',
+        '7db7e8':'#15619c','3fa7d6':'#0e6890',
+        // reds / pinks
+        'e74c3c':'#be3a2c','c0392b':'#b23022','cc0000':'#b00020','ff6b6b':'#c63a30',
+        'f87171':'#c03a30','fca5a5':'#be5048','e86a5a':'#be4334','e91e63':'#c2185b',
+        'f472b6':'#b23280',
+        // purples
+        '7c6bf8':'#5538c0','9b8afb':'#6048c8','bb8fce':'#74448e','a5b4fc':'#4f5fc0',
+        'a78bfa':'#6244c8','a855f7':'#7a2ec0','c678dd':'#8636a4','9b59b6':'#743a8e',
+    };
+
+    // Overlay buckets: warm near-black on light, alpha tuned per elevation.
+    const LIGHT_OV = {
+        1:'rgba(20,16,8,0.035)', 2:'rgba(20,16,8,0.05)',  3:'rgba(20,16,8,0.06)',
+        4:'rgba(20,16,8,0.075)', 5:'rgba(20,16,8,0.09)',  6:'rgba(20,16,8,0.11)',
+        7:'rgba(20,16,8,0.2)',   8:'rgba(20,16,8,0.45)',  9:'rgba(20,16,8,0.62)',
+    };
+
+    // Gold accent buckets: darker gold so fills/borders show on white.
+    const LIGHT_ACC = {
+        fill1:'rgba(140,100,16,0.07)', fill2:'rgba(140,100,16,0.10)', fill3:'rgba(140,100,16,0.14)',
+        line1:'rgba(140,100,16,0.30)', line2:'rgba(140,100,16,0.42)', line3:'rgba(140,100,16,0.55)',
+        line4:'rgba(140,100,16,0.70)',
+    };
+
+    const LIGHT_SURF = { solid:'#ffffff', veil:'rgba(255,255,255,0.72)' };
+
+    // Build the `:root[data-wr-theme="light"]` palette declarations.
+    function buildLightPaletteCSS() {
+        const lines = [];
+        for (const k in LIGHT_HEX)  lines.push(`    --k-${k}: ${LIGHT_HEX[k]};`);
+        for (const k in LIGHT_OV)   lines.push(`    --ov-${k}: ${LIGHT_OV[k]};`);
+        for (const k in LIGHT_ACC)  lines.push(`    --acc-${k}: ${LIGHT_ACC[k]};`);
+        for (const k in LIGHT_SURF) lines.push(`    --surf-${k}: ${LIGHT_SURF[k]};`);
+        return `:root[data-wr-theme="light"] {\n${lines.join('\n')}\n}\n`;
+    }
+
     // ── Dynamic CSS injection ────────────────────────────────────
     function injectDynamicCSS(themeId) {
         let styleEl = document.getElementById(DYNAMIC_STYLE_ID);
@@ -204,54 +329,14 @@
     background: ${c.card} !important;
     border-color: ${c.border} !important;
 }
-
-/* Phase 10: Light-mode font cascade fix.
-   Many components use hardcoded hex backgrounds/colors inline that don't pick
-   up the theme's remapped CSS vars. Target the most common patterns via
-   attribute selectors so we swap them for theme-appropriate values without
-   touching each call site. */
-
-/* Dark-surface backgrounds → card white */
-[data-wr-theme="${themeId}"] [style*="background: #0a0b0d"],
-[data-wr-theme="${themeId}"] [style*="background:#0a0b0d"],
-[data-wr-theme="${themeId}"] [style*="background: #0A0A0A"],
-[data-wr-theme="${themeId}"] [style*="background:#0A0A0A"],
-[data-wr-theme="${themeId}"] [style*="background: #0a0a0a"],
-[data-wr-theme="${themeId}"] [style*="background:#0a0a0a"],
-[data-wr-theme="${themeId}"] [style*="background: #0D0D0D"],
-[data-wr-theme="${themeId}"] [style*="background: #0d0d0d"] {
-    background: ${c.card} !important;
-}
-
-/* Hardcoded near-white text → theme body text */
-[data-wr-theme="${themeId}"] [style*="color: #f0f0f3"],
-[data-wr-theme="${themeId}"] [style*="color:#f0f0f3"],
-[data-wr-theme="${themeId}"] [style*="color: #FFFFFF"],
-[data-wr-theme="${themeId}"] [style*="color:#FFFFFF"],
-[data-wr-theme="${themeId}"] [style*="color: white"],
-[data-wr-theme="${themeId}"] [style*="color:white"],
-[data-wr-theme="${themeId}"] [style*="color: #d7d7dc"],
-[data-wr-theme="${themeId}"] [style*="color:#d7d7dc"],
-[data-wr-theme="${themeId}"] [style*="color: #d8d8de"],
-[data-wr-theme="${themeId}"] [style*="color:#d8d8de"] {
-    color: ${c.text} !important;
-}
-
-/* Hardcoded silver/muted text → theme muted */
-[data-wr-theme="${themeId}"] [style*="color: #D0D0D0"],
-[data-wr-theme="${themeId}"] [style*="color:#D0D0D0"],
-[data-wr-theme="${themeId}"] [style*="color: #d0d0d0"],
-[data-wr-theme="${themeId}"] [style*="color:#d0d0d0"],
-[data-wr-theme="${themeId}"] [style*="color: #7d8291"],
-[data-wr-theme="${themeId}"] [style*="color:#7d8291"],
-[data-wr-theme="${themeId}"] [style*="color: rgba(255,255,255"],
-[data-wr-theme="${themeId}"] [style*="color:rgba(255,255,255"] {
-    color: ${c.textMuted} !important;
-}
 `;
         }
 
         if (themeId === 'light') {
+            // Palette vars (see buildLightPaletteCSS) drive nearly all inline
+            // colors. The class rules below remain as structural belt-and-
+            // suspenders for shell containers that have no inline color.
+            css += buildLightPaletteCSS();
             css += `
 [data-wr-theme="light"] .wr-content-frame,
 [data-wr-theme="light"] .wr-content-frame > div,
@@ -263,31 +348,6 @@
     color: ${c.text} !important;
 }
 
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(160deg, rgba(26,26,26"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(160deg,rgba(26,26,26"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(160deg, rgba(35,36,42"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(160deg,rgba(35,36,42"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg, rgba(35,36,42"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg,rgba(35,36,42"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg, rgba(22,22,29"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg,rgba(22,22,29"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg, rgba(18,18,24"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg,rgba(18,18,24"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(180deg, #201d12"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(90deg, #14130f"],
-[data-wr-theme="light"] .wr-content-frame [style*="linear-gradient(90deg, #201d12"],
-[data-wr-theme="light"] .wr-content-frame [style*="background: rgba(20,20,26"],
-[data-wr-theme="light"] .wr-content-frame [style*="background:rgba(20,20,26"],
-[data-wr-theme="light"] .wr-content-frame [style*="background: rgba(12,12,17"],
-[data-wr-theme="light"] .wr-content-frame [style*="background:rgba(12,12,17"],
-[data-wr-theme="light"] .wr-content-frame [style*="background: #111318"],
-[data-wr-theme="light"] .wr-content-frame [style*="background:#111318"],
-[data-wr-theme="light"] .wr-content-frame [style*="background: #121217"],
-[data-wr-theme="light"] .wr-content-frame [style*="background:#121217"],
-[data-wr-theme="light"] .wr-content-frame [style*="background: #16171d"],
-[data-wr-theme="light"] .wr-content-frame [style*="background:#16171d"],
-[data-wr-theme="light"] .wr-content-frame [style*="background: #1a1a1a"],
-[data-wr-theme="light"] .wr-content-frame [style*="background:#1a1a1a"],
 [data-wr-theme="light"] .tc-dhq-shell,
 [data-wr-theme="light"] .tc-dhq-shell [class*="tc-dhq-"],
 [data-wr-theme="light"] .tc-trade-root [class*="tc-card"],

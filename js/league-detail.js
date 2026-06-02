@@ -17,254 +17,6 @@
         return escapeHtml(str).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
     }
 
-    // Adjust LI.playerScores once after the DHQ engine loads, so every module
-    // that reads playerScores (grading, trade math, rankings) inherits it.
-    // Applies two in-repo corrections:
-    //   1. Depth-chart role penalty — discounts players buried behind starters
-    //      (Sleeper depth_chart_order; mostly offseason-null, so a no-op then).
-    //   2. Unrealized-upside damper — discounts QBs whose top-32 value rests on
-    //      pedigree/youth rather than actual NFL production (keyed on last
-    //      season's games + points, so it works year-round).
-    // Dev-only: render the QB diagnostic as an on-screen overlay (iPad has no
-    // console). Top 40 QBs by final DHQ; tap the × to dismiss. Temporary.
-    function renderQbDiagOverlay(rows) {
-        const existing = document.getElementById('qb-diag-overlay');
-        if (existing) existing.remove();
-        const top = rows.slice(0, 40);
-        const wrap = document.createElement('div');
-        wrap.id = 'qb-diag-overlay';
-        wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.94);overflow:auto;padding:16px;font-family:monospace;color:#eee;-webkit-overflow-scrolling:touch';
-        const rowsHtml = top.map(r =>
-            `<tr><td style="padding:3px 8px;color:#D4AF37">${r.rank}</td>`
-            + `<td style="padding:3px 8px;white-space:nowrap">${r.QB}</td>`
-            + `<td style="padding:3px 8px;text-align:center">${r.age}</td>`
-            + `<td style="padding:3px 8px;text-align:center">${r.gp}</td>`
-            + `<td style="padding:3px 8px;text-align:center">${r.ppg}</td>`
-            + `<td style="padding:3px 8px;text-align:center">${r.pts}</td>`
-            + `<td style="padding:3px 8px;text-align:center">${r.depth}</td>`
-            + `<td style="padding:3px 8px;text-align:right">${r.baseDHQ}</td>`
-            + `<td style="padding:3px 8px;text-align:center;color:${r.dampMult < 1 ? '#E74C3C' : '#2ECC71'}">${r.dampMult}</td>`
-            + `<td style="padding:3px 8px;text-align:right;font-weight:700">${r.finalDHQ}</td></tr>`
-        ).join('');
-        wrap.innerHTML =
-            `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">`
-            + `<strong style="color:#D4AF37;font-size:15px">QB DIAGNOSTIC — base vs damped</strong>`
-            + `<button id="qb-diag-close" style="background:#D4AF37;color:#000;border:none;border-radius:6px;padding:6px 14px;font-weight:700;font-size:14px">Close ×</button></div>`
-            + `<table style="border-collapse:collapse;font-size:12px;width:100%">`
-            + `<thead><tr style="color:#888;text-align:left">`
-            + `<th style="padding:3px 8px">#</th><th style="padding:3px 8px">QB</th><th style="padding:3px 8px">age</th>`
-            + `<th style="padding:3px 8px">gp</th><th style="padding:3px 8px">ppg</th><th style="padding:3px 8px">pts</th>`
-            + `<th style="padding:3px 8px">depth</th><th style="padding:3px 8px">base</th><th style="padding:3px 8px">damp</th>`
-            + `<th style="padding:3px 8px">final</th></tr></thead><tbody>${rowsHtml}</tbody></table>`
-            + `<div style="color:#888;font-size:11px;margin-top:10px">damp&lt;1 (red) = faded · gp/ppg/pts = last completed season · depth = Sleeper depth_chart_order (blank = unset)</div>`;
-        document.body.appendChild(wrap);
-        const closeBtn = document.getElementById('qb-diag-close');
-        if (closeBtn) closeBtn.onclick = () => wrap.remove();
-    }
-
-    // Idempotent: keeps an unpenalized backup and re-derives from it.
-    function applyRolePenalties() {
-        try {
-            const LI = window.App?.LI;
-            const players = window.App?._playersCache;
-            const PV = window.App?.PlayerValue;
-            const penalize = PV?.computeRolePenalty;
-            const damper = PV?.computeUpsideDamper;
-            const normPos = window.App?.normPos;
-            if (!LI?.playerScores || !players || typeof penalize !== 'function') return;
-            // Preserve the engine's raw scores so the time machine projects from
-            // clean base values and the penalty never compounds across reloads.
-            if (!LI._preRolePenaltyScores) LI._preRolePenaltyScores = { ...LI.playerScores };
-            const base = LI._preRolePenaltyScores;
-            const stats = window.S?.playerStats || {};
-            const adjusted = {};
-            let demoted = 0, damped = 0;
-            // Dev diagnostic: collect QB rows when ?qbdiag is in the URL.
-            const QB_DIAG = (() => { try { return new URLSearchParams(window.location.search).has('qbdiag'); } catch { return false; } })();
-            const qbRows = [];
-            for (const [pid, score] of Object.entries(base)) {
-                const p = players[pid];
-                const nPos = normPos ? normPos(p?.position) : p?.position;
-                const roleMult = penalize(nPos, p?.depth_chart_order);
-                if (roleMult < 1) demoted++;
-                let upsideMult = 1;
-                if (typeof damper === 'function') {
-                    const st = stats[pid];
-                    upsideMult = damper(nPos, st?.prevRawStats?.gp ?? st?.gp, st?.prevTotal);
-                    if (upsideMult < 1) damped++;
-                }
-                adjusted[pid] = Math.round(score * roleMult * upsideMult);
-                if (QB_DIAG && nPos === 'QB' && score > 0) {
-                    const st = stats[pid];
-                    const gp = st?.prevRawStats?.gp ?? st?.gp ?? 0;
-                    const pts = st?.prevTotal ?? 0;
-                    qbRows.push({
-                        QB: p?.full_name || pid,
-                        age: p?.age ?? '',
-                        gp,
-                        ppg: gp > 0 ? +(pts / gp).toFixed(1) : 0,
-                        pts,
-                        depth: p?.depth_chart_order ?? '',
-                        baseDHQ: Math.round(score),
-                        roleMult: +roleMult.toFixed(2),
-                        dampMult: +upsideMult.toFixed(2),
-                        finalDHQ: adjusted[pid],
-                    });
-                }
-            }
-            LI.playerScores = adjusted;
-            if (QB_DIAG) {
-                qbRows.sort((a, b) => b.finalDHQ - a.finalDHQ);
-                qbRows.forEach((r, i) => { r.rank = i + 1; });
-                console.log('%c[QB DIAG] base vs damped (sorted by final DHQ)', 'color:#D4AF37;font-weight:700');
-                console.table(qbRows.map(r => ({ rank: r.rank, QB: r.QB, age: r.age, gp: r.gp, ppg: r.ppg, pts: r.pts, depth: r.depth, baseDHQ: r.baseDHQ, dampMult: r.dampMult, finalDHQ: r.finalDHQ })));
-                try { renderQbDiagOverlay(qbRows); } catch (e) { console.warn('[QB DIAG] overlay failed:', e); }
-            }
-            if (typeof DEV_MODE !== 'undefined' && DEV_MODE) {
-                console.log('[War Room] playerScores adjusted — role penalty: ' + demoted + ', upside damper: ' + damped);
-            }
-        } catch (e) {
-            console.warn('[War Room] applyRolePenalties failed:', e);
-        }
-    }
-
-    // ── Starter-requirement correction over the upstream assessor ─────
-    // The shared assessTeamFromGlobal (loaded from the ReconAI CDN) computes
-    // per-position starter requirements with its own targets — including QB:3,
-    // which is unreachable in deeper leagues and makes nearly every team read
-    // "thin/exposed at QB". This repo's roster constants are the source of truth
-    // (QB:2, etc.), so we wrap the upstream function and recompute the affected
-    // fields from our MIN_STARTER_QUALITY before any page uses the result.
-    //
-    // This NEVER modifies the upstream code — it only post-processes the object
-    // the upstream function returns, at runtime, in the browser.
-    let _assessorWrapped = false;
-    let _dhqStarterSet = null; // cached league-wide DHQ-ranked starter set; reset on intel reload
-    // Build the league-wide "startable player" set, ranked by DHQ dynasty value:
-    // for each position, the top NFL_STARTER_POOL[pos] players by value are the
-    // legitimate NFL starters. This works year-round (DHQ values are always
-    // loaded), unlike Sleeper depth_chart_order which is mostly null in the
-    // offseason. Mirrors calcNflStarterSet() in trade-calc.js.
-    function buildDhqStarterSet() {
-        try {
-            const players = window.App?._playersCache || {};
-            const dhqScores = window.App?.LI?.playerScores || {};
-            const POOL = window.App?.PlayerValue?.NFL_STARTER_POOL;
-            const normPos = window.App?.normPos;
-            if (!POOL || !normPos || !Object.keys(players).length) return null;
-            const byPos = {};
-            for (const [id, p] of Object.entries(players)) {
-                const pos = normPos(p?.position);
-                if (!pos || !(pos in POOL) || !p?.team) continue;
-                const score = dhqScores[id];
-                if (!(score > 0)) continue; // no DHQ value → can't rank; skip
-                (byPos[pos] = byPos[pos] || []).push({ id, score });
-            }
-            const set = {};
-            for (const [pos, arr] of Object.entries(byPos)) {
-                arr.sort((a, b) => b.score - a.score);
-                set[pos] = new Set(arr.slice(0, POOL[pos]).map(x => x.id));
-            }
-            return set;
-        } catch (_) { return null; }
-    }
-    function installStarterReqCorrection() {
-        try {
-            if (_assessorWrapped) return;
-            const upstream = window.assessTeamFromGlobal;
-            if (typeof upstream !== 'function') return; // upstream not loaded yet
-            const MINQ = window.App?.PlayerValue?.MIN_STARTER_QUALITY;
-            const IDEAL = window.App?.PlayerValue?.IDEAL_ROSTER;
-            if (!MINQ) return;
-
-            function correct(result, rosterId) {
-                if (!result || !result.posAssessment) return result;
-                const pa = result.posAssessment;
-                // Count starter-quality players per position by DHQ value: a
-                // rostered player counts if he ranks among the league-wide top
-                // NFL_STARTER_POOL[pos] by dynasty value. This catches rookies and
-                // down-year starters that upstream's last-season-points count misses
-                // (e.g. mwitkowski's Stroud/Young/Daniels), and works in the
-                // offseason when depth charts aren't set.
-                const confirmedByPos = (() => {
-                    const out = {};
-                    try {
-                        const starterSet = _dhqStarterSet || (_dhqStarterSet = buildDhqStarterSet());
-                        if (!starterSet) return out;
-                        const roster = (window.S?.rosters || []).find(r => String(r.roster_id) === String(rosterId));
-                        const players = roster?.players || [];
-                        const cache = window.App?._playersCache || {};
-                        const normPos = window.App?.normPos;
-                        for (const pid of players) {
-                            const p = cache[pid];
-                            const np = p ? (normPos ? normPos(p.position) : p.position) : null;
-                            if (!np || !starterSet[np]) continue;
-                            if (starterSet[np].has(pid)) out[np] = (out[np] || 0) + 1;
-                        }
-                    } catch (_) { /* fall through to upstream counts */ }
-                    return out;
-                })();
-                for (const [pos, data] of Object.entries(pa)) {
-                    if (!data || MINQ[pos] == null) continue;
-                    const req = MINQ[pos];
-                    const ideal = (IDEAL && IDEAL[pos] != null) ? IDEAL[pos] : data.ideal;
-                    const actual = data.actual ?? 0;
-                    // Take the better of upstream's count and confirmed NFL starters,
-                    // capped at the number actually rostered. Only ever increases the
-                    // count, so this can fix undercounts but never invent starters.
-                    const upstreamStarters = data.nflStarters ?? 0;
-                    const confirmed = confirmedByPos[pos] || 0;
-                    const nflStarters = Math.min(actual, Math.max(upstreamStarters, confirmed));
-                    // Recompute status with our requirement (mirrors assessTeamLocal).
-                    let status;
-                    if (nflStarters === 0) status = 'deficit';
-                    else if (nflStarters < req) status = 'thin';
-                    else if (actual >= ideal) status = 'surplus';
-                    else status = 'ok';
-                    if ((status === 'ok' || status === 'surplus') && actual < ideal) status = 'thin';
-                    data.nflStarters = nflStarters;
-                    data.startingReq = req;
-                    data.minQuality = req;
-                    data.ideal = ideal;
-                    data.status = status;
-                }
-                // Rebuild needs/strengths from the corrected statuses so every
-                // consumer (market read, trade fit, chips) stays consistent.
-                result.needs = Object.entries(pa)
-                    .filter(([, v]) => v.status === 'deficit' || v.status === 'thin')
-                    .sort((a, b) => {
-                        const aGap = (a[1].nflStarters || 0) - (a[1].startingReq || 1);
-                        const bGap = (b[1].nflStarters || 0) - (b[1].startingReq || 1);
-                        return aGap !== bGap ? aGap - bGap : (a[1].diff || 0) - (b[1].diff || 0);
-                    })
-                    .map(([pos, v]) => ({ pos, urgency: v.status, gap: Math.max(0, (v.startingReq || 1) - (v.nflStarters || 0)), diff: v.diff }))
-                    .slice(0, 5);
-                result.strengths = Object.entries(pa).filter(([, v]) => v.status === 'surplus').map(([pos]) => pos);
-                return result;
-            }
-
-            const wrapped = function (rosterId) {
-                return correct(upstream.apply(this, arguments), rosterId);
-            };
-            // Proxy ._cache through to the real upstream function so existing
-            // cache-clear calls (window.assessTeamFromGlobal._cache = {}) keep
-            // working against the upstream cache instead of a stale copy.
-            Object.defineProperty(wrapped, '_cache', {
-                get() { return upstream._cache; },
-                set(v) { upstream._cache = v; },
-                configurable: true,
-            });
-            wrapped._wrappedUpstream = upstream;
-            window.assessTeamFromGlobal = wrapped;
-            _assessorWrapped = true;
-            if (typeof DEV_MODE !== 'undefined' && DEV_MODE) {
-                console.log('[War Room] Starter-requirement correction installed (QB:' + MINQ.QB + ')');
-            }
-        } catch (e) {
-            console.warn('[War Room] installStarterReqCorrection failed:', e);
-        }
-    }
-
     function wrCanPageScroll() {
         const doc = document.documentElement;
         const body = document.body;
@@ -320,13 +72,13 @@
     function leagueTypeHeaderMeta(profile) {
         const type = String(profile?.type || 'unknown').toLowerCase();
         const defs = {
-            redraft: { label: 'Redraft', short: 'RD', color: '#2ECC71', icon: 'reset' },
-            keeper: { label: 'Keeper', short: 'KP', color: '#7C6BF8', icon: 'bookmark' },
-            dynasty: { label: 'Dynasty', short: 'DY', color: '#D4AF37', icon: 'crown' },
-            best_ball: { label: 'Best Ball', short: 'BB', color: '#3498DB', icon: 'spark' },
-            dfs: { label: 'DFS', short: 'DFS', color: '#3498DB', icon: 'spark' },
+            redraft: { label: 'Redraft', short: 'RD', color: 'var(--k-2ecc71, #2ecc71)', icon: 'reset' },
+            keeper: { label: 'Keeper', short: 'KP', color: 'var(--k-7c6bf8, #7c6bf8)', icon: 'bookmark' },
+            dynasty: { label: 'Dynasty', short: 'DY', color: 'var(--k-d4af37, #d4af37)', icon: 'crown' },
+            best_ball: { label: 'Best Ball', short: 'BB', color: 'var(--k-3498db, #3498db)', icon: 'spark' },
+            dfs: { label: 'DFS', short: 'DFS', color: 'var(--k-3498db, #3498db)', icon: 'spark' },
         };
-        return defs[type] || { label: type && type !== 'unknown' ? type.replace(/_/g, ' ') : 'League Type Unknown', short: '?', color: '#C7CDD7', icon: 'circle' };
+        return defs[type] || { label: type && type !== 'unknown' ? type.replace(/_/g, ' ') : 'League Type Unknown', short: '?', color: 'var(--k-c7cdd7, #c7cdd7)', icon: 'circle' };
     }
 
     function LeagueTypeHeaderIcon({ meta }) {
@@ -582,7 +334,7 @@
         const isHistoricalYear = timeYear < currentSeason;
         const timeMode = isFutureYear ? 'future' : isHistoricalYear ? 'historical' : 'current';
         const timeModeLabel = isFutureYear ? 'Projection View' : isHistoricalYear ? 'Historical View' : 'Current Season';
-        const timeModeColor = isFutureYear ? '#3498DB' : isHistoricalYear ? '#F0A500' : '#2ECC71';
+        const timeModeColor = isFutureYear ? 'var(--k-3498db, #3498db)' : isHistoricalYear ? 'var(--k-f0a500, #f0a500)' : 'var(--k-2ecc71, #2ecc71)';
         const timeDelta = timeYear - currentSeason; // positive = future, negative = past
         // Build available years from the league's actual previous_league_id chain
         const [leagueStartYear, setLeagueStartYear] = useState(currentSeason);
@@ -723,17 +475,17 @@
 	                        )
 	                    ),
 	                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' } },
-	                        ...quickItems.map(item => React.createElement('div', { key: item.term, style: { padding: '12px 13px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.18)', borderRadius: '8px' } },
-	                            React.createElement('div', { style: { fontSize: '0.76rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', marginBottom: '4px' } }, item.term),
-	                            React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--silver)', lineHeight: 1.45 } }, item.def)
+	                        ...quickItems.map(item => React.createElement('div', { key: item.term, style: { padding: '12px 13px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: '8px' } },
+	                            React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', marginBottom: '4px' } }, item.term),
+	                            React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.45 } }, item.def)
 	                        ))
 	                    ),
 	                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' } },
-	                        ...fullItems.map(section => React.createElement('section', { key: section.cat, style: { padding: '13px 14px', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.18)', borderRadius: '8px' } },
-	                            React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', color: 'var(--gold)', letterSpacing: '0.08em', marginBottom: '10px', textTransform: 'uppercase' } }, section.cat),
+	                        ...fullItems.map(section => React.createElement('section', { key: section.cat, style: { padding: '13px 14px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: '8px' } },
+	                            React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', letterSpacing: '0.08em', marginBottom: '10px', textTransform: 'uppercase' } }, section.cat),
 	                            ...section.items.map(item => React.createElement('div', { key: item.term, style: { marginBottom: '10px' } },
-	                                React.createElement('div', { style: { fontSize: '0.8rem', fontWeight: 800, color: 'var(--white)', marginBottom: '2px' } }, item.term),
-	                                React.createElement('div', { style: { fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.42 } }, item.def)
+	                                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', fontWeight: 800, color: 'var(--white)', marginBottom: '2px' } }, item.term),
+	                                React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.42 } }, item.def)
 	                            ))
 	                        ))
 	                    )
@@ -742,18 +494,18 @@
 	            return React.createElement('div', { style: { marginBottom: '8px' } },
                 React.createElement('button', {
                     onClick: () => setOpen(!open),
-                    style: { width: '100%', padding: '10px 16px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--gold)', fontSize: '0.78rem', fontFamily: 'var(--font-body)', letterSpacing: '0.03em', textAlign: 'left' },
-                    onMouseEnter: e => { e.currentTarget.style.background = 'rgba(212,175,55,0.06)'; },
+                    style: { width: '100%', padding: '10px 16px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--gold)', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', letterSpacing: '0.03em', textAlign: 'left' },
+                    onMouseEnter: e => { e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'; },
                     onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; }
                 }, open ? '\u25BC' : '\u25B6', ' Legend'),
                 open && React.createElement('div', { style: { padding: '8px 12px', maxHeight: '300px', overflowY: 'auto' } },
                     React.createElement('button', {
                         onClick: () => setExpanded(true),
-                        style: { width: '100%', marginBottom: '10px', padding: '6px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer' }
+                        style: { width: '100%', marginBottom: '10px', padding: '6px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer' }
                     }, 'FULL GUIDE \u2192'),
                     ...quickItems.map(item => React.createElement('div', { key: item.term, style: { marginBottom: '8px' } },
-                        React.createElement('div', { style: { fontSize: '0.72rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)' } }, item.term),
-                        React.createElement('div', { style: { fontSize: '0.68rem', color: 'var(--silver)', lineHeight: 1.4, marginTop: '1px' } }, item.def)
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)' } }, item.term),
+                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.4, marginTop: '1px' } }, item.def)
                     ))
                 ),
                 // Expanded modal overlay — theme-aware so it remains readable in light mode
@@ -763,18 +515,18 @@
                 },
                     React.createElement('div', {
                         onClick: e => e.stopPropagation(),
-                        style: { background: 'var(--off-black)', border: '2px solid rgba(212,175,55,0.3)', borderRadius: '14px', width: '100%', maxWidth: '640px', maxHeight: '80vh', overflowY: 'auto', padding: '24px 28px' }
+                        style: { background: 'var(--off-black)', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '14px', width: '100%', maxWidth: '640px', maxHeight: '80vh', overflowY: 'auto', padding: '24px 28px' }
                     },
                         React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' } },
                             React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.4rem', color: 'var(--gold)', letterSpacing: '0.06em' } }, 'WAR ROOM GUIDE'),
                             React.createElement('button', { onClick: () => setExpanded(false), style: { background: 'none', border: 'none', color: 'var(--silver)', cursor: 'pointer', fontSize: '1.2rem' } }, '\u2715')
                         ),
-                        React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.4, marginBottom: '20px' } }, 'Dynasty HQ analyzes this league format to give you an edge in every decision - trades, drafts, waivers, and roster construction. Here\u2019s what every tool and metric means.'),
+                        React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.4, marginBottom: '20px' } }, 'Dynasty HQ analyzes this league format to give you an edge in every decision - trades, drafts, waivers, and roster construction. Here\u2019s what every tool and metric means.'),
                         ...fullItems.map(section => React.createElement('div', { key: section.cat, style: { marginBottom: '20px' } },
-                            React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', borderBottom: '1px solid rgba(212,175,55,0.2)', paddingBottom: '4px', marginBottom: '10px' } }, section.cat),
+                            React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', paddingBottom: '4px', marginBottom: '10px' } }, section.cat),
                             ...section.items.map(item => React.createElement('div', { key: item.term, style: { marginBottom: '12px' } },
-                                React.createElement('div', { style: { fontSize: '0.84rem', fontWeight: 700, color: 'var(--white)' } }, item.term),
-                                React.createElement('div', { style: { fontSize: '0.78rem', color: 'var(--silver)', lineHeight: 1.4, marginTop: '2px' } }, item.def)
+                                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: 'var(--white)' } }, item.term),
+                                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.4, marginTop: '2px' } }, item.def)
                             ))
                         ))
                     )
@@ -868,7 +620,6 @@
                     // Clear assessTeamFromGlobal cache so health scores recompute with fresh data.
                     if (window.assessTeamFromGlobal?._cache) window.assessTeamFromGlobal._cache = {};
                     if (window.assessAllTeamsFromGlobal?._cache) window.assessAllTeamsFromGlobal._cache = {};
-                    _dhqStarterSet = null; // rebuild DHQ starter set with refreshed values
                     if (window.S) {
                         window.S._timeContextTs = Date.now();
                     }
@@ -975,18 +726,21 @@
             'transaction-ticker': { label: 'Transaction Ticker', icon: '', category: 'League', sizes: ['md', 'lg'], tip: 'Recent league transactions: trades, waivers, and free agent moves' },
             'league-standings':   { label: 'League Standings',   icon: '', category: 'League', sizes: ['md', 'lg'], tip: 'Current league standings with W-L records and DHQ totals' },
         };
-        // Default 6-widget dashboard — module-based format. Intelligence brief
-        // sits at the top as a full-width xl widget so new users land on Alex.
-        // v2 default layout — Intel Brief anchors the board; Field Notes starts
-        // compact until real decision logs exist, so empty notes do not consume
-        // a full desktop column.
+        // Curiosity-first default dashboard (new leagues only — existing users keep
+        // their saved layout). One large "wow" anchor + two tension numbers + a
+        // visual + a live feed, spanning AI / roster / league / market so the board
+        // telegraphs the system's breadth and invites a click on first load:
+        //   1. Intel Brief (large)   — Alex's narrative + action CTAs
+        //   2. Health Score (small)  — a lone 0–100 that begs "why?"
+        //   3. Power Rankings (small)— "where do I stand?" competitive tension
+        //   4. Elite Players (medium)— your cornerstones (visual)
+        //   5. Market Radar (medium) — a moving feed of trade/waiver opportunities
         const DEFAULT_WIDGETS = [
-            { id: 'dw0', key: 'intel-brief',        size: 'tall' },
-            { id: 'dw1', key: 'field-notes',        size: 'slim' },
-            { id: 'dw2', key: 'roster-pulse',       size: 'sm', primaryMetric: 'health-score' },
-            { id: 'dw3', key: 'market-radar',       size: 'sm' },
-            { id: 'dw4', key: 'draft-capital',      size: 'sm' },
-            { id: 'dw5', key: 'league-landscape',   size: 'sm' },
+            { id: 'dw0', key: 'intel-brief',    size: 'tall' },
+            { id: 'dw1', key: 'roster-pulse',   size: 'sm', primaryMetric: 'health-score' },
+            { id: 'dw2', key: 'power-rankings', size: 'sm' },
+            { id: 'dw3', key: 'roster-pulse',   size: 'md', primaryMetric: 'elite-count' },
+            { id: 'dw4', key: 'market-radar',   size: 'md' },
         ];
         // Migrate legacy formats to current widget object format
         function migrateKpisToWidgets(stored) {
@@ -1082,7 +836,7 @@
                     const myPPG = ppgRanks.find(r => r.rid === myRoster?.roster_id)?.ppg || 0;
                     const cRank = ppgRanks.findIndex(r => r.rid === myRoster?.roster_id) + 1;
                     const allPPGs = ppgRanks.map(r => r.ppg).sort((a, b) => a - b);
-                    return { value: '#' + (cRank || '?') + '/' + standings.length, sub: myPPG > 0 ? 'Win-now rank by ' + myPPG.toFixed(1) + ' PPG' : 'Win-now rank by starter PPG', color: cRank <= 3 ? '#2ECC71' : cRank <= 6 ? 'var(--gold)' : '#E74C3C', sparkData: allPPGs };
+                    return { value: '#' + (cRank || '?') + '/' + standings.length, sub: myPPG > 0 ? 'Win-now rank by ' + myPPG.toFixed(1) + ' PPG' : 'Win-now rank by starter PPG', color: cRank <= 3 ? 'var(--k-2ecc71, #2ecc71)' : cRank <= 6 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)', sparkData: allPPGs };
                 }
                 case 'dynasty-rank': {
                     // Total DHQ rank — long-term dynasty strength (players + pick capital)
@@ -1109,7 +863,7 @@
                     const myDTotal = dVals.find(r => r.rid === myRoster?.roster_id)?.total || 0;
                     const dRank = dVals.findIndex(r => r.rid === myRoster?.roster_id) + 1;
                     const allDVals = dVals.map(r => r.total).sort((a, b) => a - b);
-                    return { value: '#' + (dRank || '?') + '/' + standings.length, sub: myDTotal > 0 ? Math.round(myDTotal / 1000) + 'K total assets' : 'Dynasty rank', color: dRank <= 3 ? '#2ECC71' : dRank <= 6 ? 'var(--gold)' : '#E74C3C', sparkData: allDVals };
+                    return { value: '#' + (dRank || '?') + '/' + standings.length, sub: myDTotal > 0 ? Math.round(myDTotal / 1000) + 'K total assets' : 'Dynasty rank', color: dRank <= 3 ? 'var(--k-2ecc71, #2ecc71)' : dRank <= 6 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)', sparkData: allDVals };
                 }
                 case 'portfolio': {
                     const total = myPlayers.reduce((s, pid) => s + (scores[pid] || 0), 0);
@@ -1121,7 +875,7 @@
                     const ranked = rankedTeams.find(t => t.userId === sleeperUserId);
                     const hs = ranked?.healthScore || 0;
                     const allHS = rankedTeams.map(t => t.healthScore || 0).sort((a,b) => a-b);
-                    return { value: hs || '\u2014', sub: 'Score', color: hs >= 90 ? '#D4AF37' : hs >= 80 ? '#2ECC71' : hs >= 70 ? 'var(--gold)' : '#E74C3C', sparkData: allHS };
+                    return { value: hs || '\u2014', sub: 'Score', color: hs >= 90 ? 'var(--k-d4af37, #d4af37)' : hs >= 80 ? 'var(--k-2ecc71, #2ecc71)' : hs >= 70 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)', sparkData: allHS };
                 }
                 case 'starter-gap': {
                     const analytics = analyticsData || (typeof runLeagueAnalytics === 'function' ? runLeagueAnalytics() : null);
@@ -1129,45 +883,45 @@
                     if (gap) {
                         const area = gap.area || 'Unknown';
                         const delta = typeof gap.delta === 'number' ? (gap.delta > 0 ? '+' : '') + gap.delta.toFixed(gap.delta < 1 ? 2 : 0) : gap.delta;
-                        return { value: delta, sub: area + ' (' + gap.severity + ')', color: gap.severity === 'high' ? '#E74C3C' : '#F0A500' };
+                        return { value: delta, sub: area + ' (' + gap.severity + ')', color: gap.severity === 'high' ? 'var(--k-e74c3c, #e74c3c)' : 'var(--k-f0a500, #f0a500)' };
                     }
-                    return { value: '\u2714', sub: 'No major gaps', color: '#2ECC71' };
+                    return { value: '\u2714', sub: 'No major gaps', color: 'var(--k-2ecc71, #2ecc71)' };
                 }
                 case 'avg-age': {
                     if (!myPlayers.length) return { value: '\u2014', sub: 'Avg age', color: 'var(--silver)' };
                     const totalDhq = myPlayers.reduce((s, pid) => s + (scores[pid] || 1), 0);
                     const weightedAge = myPlayers.reduce((s, pid) => s + ((playersData[pid]?.age || 26) * (scores[pid] || 1)), 0);
                     const avg = totalDhq > 0 ? weightedAge / totalDhq : 26;
-                    return { value: avg.toFixed(1), sub: 'Avg age', color: avg <= 25 ? '#2ECC71' : avg <= 27 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: avg.toFixed(1), sub: 'Avg age', color: avg <= 25 ? 'var(--k-2ecc71, #2ecc71)' : avg <= 27 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'top5-conc': {
                     const vals = myPlayers.map(pid => scores[pid] || 0).sort((a,b) => b - a);
                     const total = vals.reduce((s,v) => s + v, 0);
                     const top5 = vals.slice(0, 5).reduce((s,v) => s + v, 0);
                     const pct = total > 0 ? Math.round(top5 / total * 100) : 0;
-                    return { value: pct + '%', sub: 'In top 5 players', color: pct >= 65 ? '#E74C3C' : pct >= 50 ? 'var(--gold)' : '#2ECC71' };
+                    return { value: pct + '%', sub: 'In top 5 players', color: pct >= 65 ? 'var(--k-e74c3c, #e74c3c)' : pct >= 50 ? 'var(--gold)' : 'var(--k-2ecc71, #2ecc71)' };
                 }
                 case 'hit-rate': {
                     if (!profile || !profile.trades) return { value: '\u2014', sub: 'Trade win rate', color: 'var(--silver)' };
                     const total = (profile.tradesWon || 0) + (profile.tradesLost || 0) + (profile.tradesFair || 0);
                     const rate = total > 0 ? Math.round(((profile.tradesWon || 0) + (profile.tradesFair || 0)) / total * 100) : 0;
-                    return { value: rate + '%', sub: 'Win/fair rate', color: rate >= 60 ? '#2ECC71' : rate >= 40 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: rate + '%', sub: 'Win/fair rate', color: rate >= 60 ? 'var(--k-2ecc71, #2ecc71)' : rate >= 40 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'faab-efficiency': {
                     const budget = myRoster?.settings?.waiver_budget || 0;
                     const spent = myRoster?.settings?.waiver_budget_used || 0;
                     if (!budget) return { value: '\u2014', sub: 'No FAAB', color: 'var(--silver)' };
                     const remaining = budget - spent;
-                    return { value: '$' + remaining, sub: '$' + budget + ' budget', color: remaining > budget * 0.5 ? '#2ECC71' : remaining > budget * 0.25 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: '$' + remaining, sub: '$' + budget + ' budget', color: remaining > budget * 0.5 ? 'var(--k-2ecc71, #2ecc71)' : remaining > budget * 0.25 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'net-trade': {
                     if (!profile) return { value: '\u2014', sub: 'Net DHQ/trade', color: 'var(--silver)' };
                     const avg = profile.avgValueDiff || 0;
-                    return { value: (avg >= 0 ? '+' : '') + Math.round(avg), sub: 'Avg per trade', color: avg >= 100 ? '#2ECC71' : avg >= 0 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: (avg >= 0 ? '+' : '') + Math.round(avg), sub: 'Avg per trade', color: avg >= 100 ? 'var(--k-2ecc71, #2ecc71)' : avg >= 0 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'trade-velocity': {
                     if (!profile) return { value: '\u2014', sub: 'Trades', color: 'var(--silver)' };
-                    return { value: profile.trades || 0, sub: 'Total trades', color: (profile.trades || 0) >= 4 ? '#2ECC71' : (profile.trades || 0) >= 2 ? 'var(--gold)' : 'var(--silver)' };
+                    return { value: profile.trades || 0, sub: 'Total trades', color: (profile.trades || 0) >= 4 ? 'var(--k-2ecc71, #2ecc71)' : (profile.trades || 0) >= 2 ? 'var(--gold)' : 'var(--silver)' };
                 }
                 case 'window': {
                     if (!myPlayers.length) return { value: '\u2014', sub: 'Window', color: 'var(--silver)' };
@@ -1195,7 +949,7 @@
                         }
                     });
                     const windowYrs = minWindow === 99 ? 0 : Math.round(minWindow);
-                    return { value: windowYrs > 0 ? windowYrs + 'yr' : 'Closed', sub: 'Weakest position group', color: windowYrs >= 5 ? '#2ECC71' : windowYrs >= 2 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: windowYrs > 0 ? windowYrs + 'yr' : 'Closed', sub: 'Weakest position group', color: windowYrs >= 5 ? 'var(--k-2ecc71, #2ecc71)' : windowYrs >= 2 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'aging-cliff': {
                     const total = myPlayers.reduce((s, pid) => s + (scores[pid] || 0), 0);
@@ -1208,17 +962,17 @@
                         return age > valueEnd ? s + (scores[pid] || 0) : s;
                     }, 0);
                     const pct = total > 0 ? Math.round(pastPeak / total * 100) : 0;
-                    return { value: pct + '%', sub: 'Past value DHQ', color: pct <= 20 ? '#2ECC71' : pct <= 35 ? '#F0A500' : '#E74C3C' };
+                    return { value: pct + '%', sub: 'Past value DHQ', color: pct <= 20 ? 'var(--k-2ecc71, #2ecc71)' : pct <= 35 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'partner-wr': {
                     if (!profile || !profile.tradesWon) return { value: '\u2014', sub: 'Partner W/R', color: 'var(--silver)' };
                     const total = (profile.tradesWon || 0) + (profile.tradesLost || 0);
-                    return { value: (profile.tradesWon || 0) + '-' + (profile.tradesLost || 0), sub: 'Trade W-L', color: (profile.tradesWon || 0) > (profile.tradesLost || 0) ? '#2ECC71' : '#E74C3C' };
+                    return { value: (profile.tradesWon || 0) + '-' + (profile.tradesLost || 0), sub: 'Trade W-L', color: (profile.tradesWon || 0) > (profile.tradesLost || 0) ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'elite-count': {
                     if (typeof window.App?.countElitePlayers === 'function') {
                         const elites = window.App.countElitePlayers(myPlayers);
-                        return { value: elites + ' elite' + (elites !== 1 ? 's' : ''), sub: '7000+ or top 5 pos', color: elites >= 3 ? '#2ECC71' : elites >= 1 ? 'var(--gold)' : '#E74C3C' };
+                        return { value: elites + ' elite' + (elites !== 1 ? 's' : ''), sub: '7000+ or top 5 pos', color: elites >= 3 ? 'var(--k-2ecc71, #2ecc71)' : elites >= 1 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                     }
                     // Elite = 7000+ DHQ or top 5 at their position league-wide
                     const posRanks = {};
@@ -1240,92 +994,42 @@
                         if ((scores[pid] || scores[id] || 0) >= 7000) elitePidSet.add(id);
                     });
                     elites = elitePidSet.size;
-                    return { value: elites + ' elite' + (elites !== 1 ? 's' : ''), sub: '7000+ or top 5 pos', color: elites >= 3 ? '#2ECC71' : elites >= 1 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: elites + ' elite' + (elites !== 1 ? 's' : ''), sub: '7000+ or top 5 pos', color: elites >= 3 ? 'var(--k-2ecc71, #2ecc71)' : elites >= 1 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'bench-quality': {
                     const starters = new Set(myRoster?.starters || []);
                     const benchVals = myPlayers.filter(pid => !starters.has(pid)).map(pid => scores[pid] || 0);
                     const avg = benchVals.length ? Math.round(benchVals.reduce((s,v) => s + v, 0) / benchVals.length) : 0;
-                    return { value: avg.toLocaleString(), sub: 'Avg bench DHQ', color: avg >= 2500 ? '#2ECC71' : avg >= 1500 ? 'var(--gold)' : 'var(--silver)' };
+                    return { value: avg.toLocaleString(), sub: 'Avg bench DHQ', color: avg >= 2500 ? 'var(--k-2ecc71, #2ecc71)' : avg >= 1500 ? 'var(--gold)' : 'var(--silver)' };
                 }
                 case 'playoff-record': {
                     const brackets = window.App?.LI?.bracketData || {};
+                    const rec = window.WrHistory?.playoffRecord;
                     let pw = 0, pl = 0;
-                    const numPlayoffTeams = currentLeague?.settings?.playoff_teams || 6;
                     Object.values(brackets).forEach(({ winners }) => {
-                        if (!winners?.length) return;
-                        // Find true playoff matchups: exclude consolation games
-                        // In Sleeper brackets, first-round matchups have t1/t2 as seed numbers.
-                        // Only count matchups that feed into the championship (highest round).
-                        const maxRound = Math.max(...winners.map(m => m.r || 0));
-                        // Determine real playoff matchup IDs: start from championship and trace back
-                        const realMatchIds = new Set();
-                        // Championship game
-                        const champGame = winners.find(m => m.r === maxRound);
-                        if (champGame) {
-                            realMatchIds.add(champGame.m);
-                            // Trace feeder matchups backwards through rounds
-                            const queue = [champGame];
-                            while (queue.length) {
-                                const g = queue.shift();
-                                // t1_from and t2_from reference the matchup IDs that feed into this game
-                                // In Sleeper: t1_from.w means "winner of matchup t1_from", etc.
-                                const feeders = winners.filter(fm => {
-                                    // A matchup feeds this one if its winner/loser advances here
-                                    return fm.m === g.t1_from?.w || fm.m === g.t1_from?.l || fm.m === g.t2_from?.w || fm.m === g.t2_from?.l
-                                        || fm.m === g.t1 || fm.m === g.t2;
-                                });
-                                feeders.forEach(f => { if (!realMatchIds.has(f.m)) { realMatchIds.add(f.m); queue.push(f); } });
-                            }
-                        }
-                        // If tracing didn't work (simple bracket), fall back: only count top rounds
-                        // For N playoff teams, there are ceil(log2(N)) real rounds
-                        const realRounds = Math.ceil(Math.log2(numPlayoffTeams));
-                        const minPlayoffRound = maxRound - realRounds + 1;
-                        winners.forEach(m => {
-                            const isReal = realMatchIds.size > 1 ? realMatchIds.has(m.m) : (m.r >= minPlayoffRound);
-                            if (!isReal) return;
-                            if (m.w === myRoster?.roster_id) pw++;
-                            if (m.l === myRoster?.roster_id) pl++;
-                        });
+                        if (!winners?.length || !myRoster) return;
+                        const r = rec ? rec(winners, myRoster.roster_id) : { w: 0, l: 0 };
+                        pw += r.w; pl += r.l;
                     });
-                    return { value: pw + '-' + pl, sub: 'Playoff W-L', color: pw > pl ? '#2ECC71' : pw < pl ? '#E74C3C' : 'var(--silver)' };
+                    return { value: pw + '-' + pl, sub: 'Playoff W-L', color: pw > pl ? 'var(--k-2ecc71, #2ecc71)' : pw < pl ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)' };
                 }
                 case 'playoff-winpct': {
                     const brackets2 = window.App?.LI?.bracketData || {};
+                    const rec2 = window.WrHistory?.playoffRecord;
                     let pw2 = 0, pl2 = 0;
-                    const numPlayoffTeams2 = currentLeague?.settings?.playoff_teams || 6;
                     Object.values(brackets2).forEach(({ winners }) => {
-                        if (!winners?.length) return;
-                        const maxRound = Math.max(...winners.map(m => m.r || 0));
-                        const realRounds = Math.ceil(Math.log2(numPlayoffTeams2));
-                        const minPlayoffRound = maxRound - realRounds + 1;
-                        const realMatchIds = new Set();
-                        const champGame = winners.find(m => m.r === maxRound);
-                        if (champGame) {
-                            realMatchIds.add(champGame.m);
-                            const queue = [champGame];
-                            while (queue.length) {
-                                const g = queue.shift();
-                                const feeders = winners.filter(fm => fm.m === g.t1_from?.w || fm.m === g.t1_from?.l || fm.m === g.t2_from?.w || fm.m === g.t2_from?.l || fm.m === g.t1 || fm.m === g.t2);
-                                feeders.forEach(f => { if (!realMatchIds.has(f.m)) { realMatchIds.add(f.m); queue.push(f); } });
-                            }
-                        }
-                        winners.forEach(m => {
-                            const isReal = realMatchIds.size > 1 ? realMatchIds.has(m.m) : (m.r >= minPlayoffRound);
-                            if (!isReal) return;
-                            if (m.w === myRoster?.roster_id) pw2++;
-                            if (m.l === myRoster?.roster_id) pl2++;
-                        });
+                        if (!winners?.length || !myRoster) return;
+                        const r = rec2 ? rec2(winners, myRoster.roster_id) : { w: 0, l: 0 };
+                        pw2 += r.w; pl2 += r.l;
                     });
                     const total = pw2 + pl2;
                     const pct = total > 0 ? Math.round(pw2 / total * 100) : 0;
-                    return { value: pct + '%', sub: 'Win rate (' + total + ' games)', color: pct >= 60 ? '#2ECC71' : pct >= 40 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: pct + '%', sub: 'Win rate (' + total + ' games)', color: pct >= 60 ? 'var(--k-2ecc71, #2ecc71)' : pct >= 40 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'champ-appearances': {
                     const champs2 = window.App?.LI?.championships || {};
                     const apps = Object.values(champs2).filter(c => c.champion === myRoster?.roster_id || c.runnerUp === myRoster?.roster_id).length;
-                    return { value: apps, sub: 'Finals appearances', color: apps > 0 ? '#D4AF37' : 'var(--silver)' };
+                    return { value: apps, sub: 'Finals appearances', color: apps > 0 ? 'var(--k-d4af37, #d4af37)' : 'var(--silver)' };
                 }
                 case 'dynasty-score': {
                     const champs3 = window.App?.LI?.championships || {};
@@ -1337,7 +1041,7 @@
                         if (c.champion === myRoster?.roster_id || c.runnerUp === myRoster?.roster_id || (c.semiFinals||[]).includes(myRoster?.roster_id)) playoffApps++;
                     });
                     const score = titles * 3 + runners + playoffApps;
-                    return { value: score, sub: titles + ' titles, ' + runners + ' runner-ups', color: score >= 5 ? '#D4AF37' : score >= 2 ? '#2ECC71' : 'var(--silver)' };
+                    return { value: score, sub: titles + ' titles, ' + runners + ' runner-ups', color: score >= 5 ? 'var(--k-d4af37, #d4af37)' : score >= 2 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--silver)' };
                 }
                 case 'draft-roi': {
                     const profile3 = window.App?.LI?.ownerProfiles?.[myRoster?.roster_id];
@@ -1345,12 +1049,12 @@
                     const hits = draftPicks.filter(d => d.isStarter).length;
                     const total = draftPicks.length;
                     const rate = total > 0 ? Math.round(hits / total * 100) : 0;
-                    return { value: rate + '%', sub: hits + '/' + total + ' became starters', color: rate >= 50 ? '#2ECC71' : rate >= 30 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: rate + '%', sub: hits + '/' + total + ' became starters', color: rate >= 50 ? 'var(--k-2ecc71, #2ecc71)' : rate >= 30 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'roster-turnover': {
                     const profile4 = window.App?.LI?.ownerProfiles?.[myRoster?.roster_id];
                     const trades = profile4?.trades || 0;
-                    return { value: trades, sub: 'Trades this cycle', color: trades >= 5 ? '#2ECC71' : trades >= 2 ? 'var(--gold)' : 'var(--silver)' };
+                    return { value: trades, sub: 'Trades this cycle', color: trades >= 5 ? 'var(--k-2ecc71, #2ecc71)' : trades >= 2 ? 'var(--gold)' : 'var(--silver)' };
                 }
                 case 'pick-capital': {
                     let totalPickValue = 0;
@@ -1373,7 +1077,7 @@
                             });
                         }
                     }
-                    return { value: totalPickValue > 0 ? Math.round(totalPickValue / 1000) + 'K' : '\u2014', sub: pickCount + ' picks over 3 years', color: totalPickValue >= 20000 ? '#2ECC71' : totalPickValue >= 10000 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: totalPickValue > 0 ? Math.round(totalPickValue / 1000) + 'K' : '\u2014', sub: pickCount + ' picks over 3 years', color: totalPickValue >= 20000 ? 'var(--k-2ecc71, #2ecc71)' : totalPickValue >= 10000 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'trade-leverage': {
                     const assess = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
@@ -1385,7 +1089,7 @@
                         const theirNeeds = (theirAssess?.needs || []).map(n => n.pos);
                         if (myStrengths.some(s => theirNeeds.includes(s))) leverageCount++;
                     });
-                    return { value: leverageCount, sub: leverageCount + ' teams need your surplus', color: leverageCount >= 6 ? '#2ECC71' : leverageCount >= 3 ? 'var(--gold)' : '#E74C3C' };
+                    return { value: leverageCount, sub: leverageCount + ' teams need your surplus', color: leverageCount >= 6 ? 'var(--k-2ecc71, #2ecc71)' : leverageCount >= 3 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'sched-sos': {
                     const sosMod = window.App?.SOS;
@@ -1409,6 +1113,7 @@
             }
         }
         const [reconPanelOpen, setReconPanelOpen] = useState(false);
+        const [reconExpanded, setReconExpanded] = useState(false);
         const [showNotifications, setShowNotifications] = useState(false);
         // showAlerts removed — alerts now live on Brief tab
         const [briefDraftInfo, setBriefDraftInfo] = useState(null);
@@ -1660,7 +1365,7 @@
                     if (assessment) {
                         healthScore = assessment.healthScore || 0;
                         const tier = (assessment.tier || '').toUpperCase();
-                        tierColor = tier === 'ELITE' ? '#D4AF37' : tier === 'CONTENDER' ? '#2ECC71' : tier === 'CROSSROADS' ? '#F0A500' : tier === 'REBUILDING' ? '#E74C3C' : 'var(--silver)';
+                        tierColor = tier === 'ELITE' ? 'var(--k-d4af37, #d4af37)' : tier === 'CONTENDER' ? 'var(--k-2ecc71, #2ecc71)' : tier === 'CROSSROADS' ? 'var(--k-f0a500, #f0a500)' : tier === 'REBUILDING' ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)';
                     }
                     return { ...t, totalDHQ, healthScore, tierColor };
                 }).sort((a,b) => {
@@ -2055,9 +1760,6 @@
                     try {
                         await window.App.loadLeagueIntel();
                         console.log('[War Room] DHQ engine loaded:', Object.keys(window.App.LI?.playerScores || {}).length, 'players valued');
-                        applyRolePenalties(); // discount players buried on the depth chart
-                        _dhqStarterSet = null; // rebuild DHQ starter set with freshly-loaded values
-                        installStarterReqCorrection(); // correct upstream QB:3 → our MIN_STARTER_QUALITY
                         setDhqStatus({ loading: false, step: 'Complete!', progress: 100 });
                         setStatsData(prev => ({ ...prev })); // force re-render
                         setTimeRecomputeTs(Date.now()); // refresh KPIs and rankings
@@ -2066,11 +1768,6 @@
                         setDhqStatus({ loading: false, step: 'Error: ' + e.message, progress: 0 });
                     }
                 }
-
-                // Ensure the starter-requirement correction is installed even when
-                // intel was already loaded on a prior mount/league switch (the block
-                // above is skipped when LI_LOADED is already true). Idempotent.
-                installStarterReqCorrection();
 
                 // Load rookie prospect data from enrichment CSVs (fire-and-forget)
                 if (typeof window.loadRookieProspects === 'function') {
@@ -2253,7 +1950,7 @@
         }
 
         function getPositionColor(pos) {
-            const colors = { QB: '#FF6B6B', RB: '#4ECDC4', WR: '#45B7D1', TE: '#F7DC6F', K: '#BB8FCE', DEF: '#85929E' };
+            const colors = { QB: 'var(--k-ff6b6b, #ff6b6b)', RB: 'var(--k-4ecdc4, #4ecdc4)', WR: 'var(--k-45b7d1, #45b7d1)', TE: 'var(--k-f7dc6f, #f7dc6f)', K: 'var(--k-bb8fce, #bb8fce)', DEF: 'var(--k-85929e, #85929e)' };
             return colors[pos] || 'var(--silver)';
         }
 
@@ -2621,7 +2318,7 @@
         if (error) {
             return (
                 <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--white)', padding: '2rem', textAlign: 'center' }}>
-                    <div style={{ color: '#E74C3C', fontSize: '1.5rem', marginBottom: '1rem' }}>Error Loading League</div>
+                    <div style={{ color: 'var(--k-e74c3c, #e74c3c)', fontSize: '1.5rem', marginBottom: '1rem' }}>Error Loading League</div>
                     <div style={{ color: 'var(--silver)', marginBottom: '2rem' }}>{error}</div>
                     <button onClick={onBack} style={{ padding: '0.75rem 1.5rem', background: 'var(--gold)', border: 'none', borderRadius: '8px', color: 'var(--black)', fontFamily: 'var(--font-body)', fontSize: '1rem', fontWeight: '700', cursor: 'pointer' }}>← Back to Dashboard</button>
                 </div>
@@ -2632,10 +2329,10 @@
             return (
                 <div className="app-container" style={{ paddingBottom: '60px' }}>
                     {/* Skeleton left nav */}
-                    <div style={{ position:'fixed', left:0, top:0, bottom:0, width:'160px', background:'var(--black)', borderRight:'1px solid rgba(212,175,55,0.2)', padding:'16px 0', zIndex:100 }}>
+                    <div style={{ position:'fixed', left:0, top:0, bottom:0, width:'160px', background:'var(--black)', borderRight:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', padding:'16px 0', zIndex:100 }}>
                         <div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1.3rem', color:'var(--gold)', padding:'0 16px', marginBottom:'20px' }}>WAR ROOM</div>
                         {['Home','My Team','League','Analytics','Trades','Free Agency','Draft'].map((label,i) => (
-                            <div key={i} style={{ padding:'10px 16px', fontSize:'0.82rem', fontFamily: 'var(--font-body)', color: i===0?'var(--gold)':'rgba(255,255,255,0.3)', borderLeft: i===0?'3px solid var(--gold)':'3px solid transparent', background: i===0?'rgba(212,175,55,0.12)':'transparent' }}>{label}</div>
+                            <div key={i} style={{ padding:'10px 16px', fontSize:'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', color: i===0?'var(--gold)':'var(--ov-8, rgba(255,255,255,0.3))', borderLeft: i===0?'3px solid var(--gold)':'3px solid transparent', background: i===0?'var(--acc-fill2, rgba(212,175,55,0.12))':'transparent' }}>{label}</div>
                         ))}
                     </div>
                     {/* Skeleton main content */}
@@ -2667,7 +2364,7 @@
         const isViewingMyTeam = viewingOwnerId === sleeperUserId;
 
         // Stat column style shared by header and rows
-        const statColStyle = { width: '42px', textAlign: 'center', fontSize: '0.76rem', flexShrink: 0 };
+        const statColStyle = { width: '42px', textAlign: 'center', fontSize: 'var(--text-label, 0.75rem)', flexShrink: 0 };
 
         // Column header row for stat columns — merged into section labels
         const statLabels = ['DHQ', 'YRS', 'PTS', 'GP', 'AVG', 'PROJ'];
@@ -2683,7 +2380,7 @@
                     gap: '0.5rem'
                 }}>
                     <span style={{ width: '36px', flexShrink: 0 }}></span>
-                    <span style={{ flex: 1, color: color, fontSize: '0.85rem', fontWeight: '700', letterSpacing: '0.08em' }}>{label}</span>
+                    <span style={{ flex: 1, color: color, fontSize: 'var(--text-body, 1rem)', fontWeight: '700', letterSpacing: '0.08em' }}>{label}</span>
                     {statLabels.map(l => (
                         <span key={l} style={{ ...statColStyle, color: 'var(--gold)', fontWeight: '700', letterSpacing: '0.05em', opacity: 0.8 }}>{l}</span>
                     ))}
@@ -2696,8 +2393,8 @@
             const pos = getPlayerPosition(playerId);
             const stats = getPlayerStats(playerId);
             const team = getPlayerTeam(playerId);
-            const borderColor = section === 'starter' ? 'var(--gold)' : section === 'ir' ? '#E74C3C' : section === 'taxi' ? '#3498DB' : 'transparent';
-            const bgColor = section === 'starter' ? 'rgba(212, 175, 55, 0.05)' : section === 'ir' ? 'rgba(231, 76, 60, 0.05)' : section === 'taxi' ? 'rgba(52, 152, 219, 0.05)' : 'rgba(255, 255, 255, 0.02)';
+            const borderColor = section === 'starter' ? 'var(--gold)' : section === 'ir' ? 'var(--k-e74c3c, #e74c3c)' : section === 'taxi' ? 'var(--k-3498db, #3498db)' : 'transparent';
+            const bgColor = section === 'starter' ? 'var(--acc-fill1, rgba(212, 175, 55, 0.05))' : section === 'ir' ? 'rgba(231, 76, 60, 0.05)' : section === 'taxi' ? 'rgba(52, 152, 219, 0.05)' : 'var(--ov-1, rgba(255, 255, 255, 0.02))';
             return (
                 <div style={{
                     display: 'flex',
@@ -2716,13 +2413,13 @@
                         justifyContent: 'center',
                         width: '36px',
                         flexShrink: 0,
-                        fontSize: '0.76rem',
+                        fontSize: 'var(--text-label, 0.75rem)',
                         fontWeight: '700',
                         color: getPositionColor(pos),
                         border: '1.5px solid var(--gold)',
                         borderRadius: '3px',
                         padding: '2px 0',
-                        background: 'rgba(212, 175, 55, 0.08)',
+                        background: 'var(--acc-fill2, rgba(212, 175, 55, 0.08))',
                         letterSpacing: '0.02em'
                     }}>
                         {getPositionLabel(pos)}
@@ -2737,7 +2434,7 @@
                             alignItems: 'center',
                             gap: '6px',
                             color: 'var(--white)',
-                            fontSize: '0.92rem',
+                            fontSize: 'var(--text-body, 1rem)',
                             overflow: 'hidden',
                             textDecoration: 'none',
                             transition: 'color 0.2s',
@@ -2756,22 +2453,22 @@
                         />
                         </div>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {getPlayerName(playerId)} <span style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.65 }}>{team}</span>
+                            {getPlayerName(playerId)} <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.65 }}>{team}</span>
                         </span>
                     </a>
                     {/* DHQ dynasty value */}
                     {(() => {
                       const dhq = window.App?.LI?.playerScores?.[playerId] || 0;
-                      if (!dhq) return <span style={{ ...statColStyle, color: 'var(--silver)', opacity: 0.6, fontSize: '0.76rem' }}>—</span>;
-                      const col = dhq >= 7000 ? '#2ECC71' : dhq >= 4000 ? '#D4AF37' : dhq >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.4)';
-                      return <span style={{ ...statColStyle, color: col, fontWeight: '700', fontFamily: 'var(--font-body)', fontSize: '0.72rem', minWidth: '42px' }}>{dhq.toLocaleString()}</span>;
+                      if (!dhq) return <span style={{ ...statColStyle, color: 'var(--silver)', opacity: 0.6, fontSize: 'var(--text-body, 1rem)' }}>—</span>;
+                      const col = dhq >= 7000 ? 'var(--k-2ecc71, #2ecc71)' : dhq >= 4000 ? 'var(--k-d4af37, #d4af37)' : dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.4))';
+                      return <span style={{ ...statColStyle, color: col, fontWeight: '700', fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)', minWidth: '42px' }}>{dhq.toLocaleString()}</span>;
                     })()}
                     {/* Stat columns: YRS PTS GP AVG PROJ */}
                     <span style={{ ...statColStyle, color: 'var(--silver)', opacity: 0.7 }}>{stats.yrs}</span>
                     <span style={{ ...statColStyle, color: 'var(--gold)', fontWeight: '700' }}>{stats.pts}</span>
                     <span style={{ ...statColStyle, color: 'var(--silver)', opacity: 0.7 }}>{stats.gp}</span>
                     <span style={{ ...statColStyle, color: 'var(--silver)', opacity: 0.7 }}>{stats.avg}</span>
-                    <span style={{ ...statColStyle, color: '#4ECDC4', fontWeight: '600' }}>{stats.proj}</span>
+                    <span style={{ ...statColStyle, color: 'var(--k-4ecdc4, #4ecdc4)', fontWeight: '600' }}>{stats.proj}</span>
                 </div>
             );
         }
@@ -2794,19 +2491,19 @@
                     )}
                     {bench.length > 0 && (
                         <div style={{ marginBottom: '1.25rem' }}>
-                            <SectionLabel label="BENCH" color="var(--silver)" borderColor="rgba(255,255,255,0.15)" />
+                            <SectionLabel label="BENCH" color="var(--silver)" borderColor="var(--ov-6, rgba(255,255,255,0.15))" />
                             {bench.map((id, i) => <PlayerRow key={i} playerId={id} section="bench" />)}
                         </div>
                     )}
                     {reserve.length > 0 && (
                         <div style={{ marginBottom: '1.25rem' }}>
-                            <SectionLabel label="INJURED RESERVE" color="#E74C3C" borderColor="rgba(231,76,60,0.3)" />
+                            <SectionLabel label="INJURED RESERVE" color="var(--k-e74c3c, #e74c3c)" borderColor="rgba(231,76,60,0.3)" />
                             {reserve.map((id, i) => <PlayerRow key={i} playerId={id} section="ir" />)}
                         </div>
                     )}
                     {taxi.length > 0 && (
                         <div>
-                            <SectionLabel label="TAXI SQUAD" color="#3498DB" borderColor="rgba(52,152,219,0.3)" />
+                            <SectionLabel label="TAXI SQUAD" color="var(--k-3498db, #3498db)" borderColor="rgba(52,152,219,0.3)" />
                             {taxi.map((id, i) => <PlayerRow key={i} playerId={id} section="taxi" />)}
                         </div>
                     )}
@@ -2943,7 +2640,7 @@
                 {dhqStatus.loading && (
                     <div style={{
                         position: 'fixed', bottom: '24px', left: '80px', zIndex: 300,
-                        background: 'var(--black)', border: '2px solid rgba(212,175,55,0.4)',
+                        background: 'var(--black)', border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))',
                         borderRadius: '16px', padding: '16px 20px', minWidth: '280px',
                         boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
                         animation: 'fadeSlideUp 0.3s ease'
@@ -2951,23 +2648,23 @@
                         <style>{`@keyframes fadeSlideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}@keyframes dhqSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
                             <div style={{
-                                width: '20px', height: '20px', border: '2px solid rgba(212,175,55,0.3)',
+                                width: '20px', height: '20px', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))',
                                 borderTopColor: 'var(--gold)', borderRadius: '50%',
                                 animation: 'dhqSpin 0.8s linear infinite'
                             }}></div>
                             <div>
-                                <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 700, letterSpacing: '0.04em' }}>BUILDING LEAGUE INTELLIGENCE</div>
-                                <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginTop: '2px' }}>{dhqStatus.step}</div>
+                                <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', fontWeight: 700, letterSpacing: '0.04em' }}>BUILDING LEAGUE INTELLIGENCE</div>
+                                <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginTop: '2px' }}>{dhqStatus.step}</div>
                             </div>
                         </div>
-                        <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
+                        <div style={{ background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
                             <div style={{
                                 width: dhqStatus.progress + '%', height: '100%',
-                                background: 'linear-gradient(90deg, var(--gold), #F0A500)',
+                                background: 'linear-gradient(90deg, var(--gold), var(--k-f0a500, #f0a500))',
                                 borderRadius: '4px', transition: 'width 0.5s ease'
                             }}></div>
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginTop: '6px', opacity: 0.6 }}>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '6px', opacity: 0.6 }}>
                             {dhqStatus.progress < 50 ? 'Analyzing league history, stats, drafts, and transactions. First load takes ~15 seconds, then it\'s cached.' :
                              dhqStatus.progress < 80 ? 'Scoring every player in your league\'s scoring system...' :
                              'Almost done — blending market data and computing trade values.'}
@@ -2978,17 +2675,19 @@
                 {/* Mobile hamburger toggle */}
                 <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
                     display: 'none', position: 'fixed', top: 'calc(10px + var(--wr-dev-banner-height, 0px))', left: '10px', zIndex: 201,
-                    background: 'var(--black)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px',
+                    background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px',
                     padding: '6px 10px', cursor: 'pointer', color: 'var(--gold)', fontSize: '1.2rem', lineHeight: 1
                 }} className="wr-hamburger">{sidebarOpen ? '\u2715' : '\u2630'}</button>
-                <style>{`@media(max-width:767px){
+                <style>{`@media(max-width:1023px){
                     html,body,#root{max-width:100%;overflow-x:clip;overflow-y:visible}
                     .wr-hamburger{display:block !important}
                     .wr-sidebar{left:-220px !important;top:var(--wr-dev-banner-height,0px) !important;transform:none !important}
                     .wr-sidebar.open{left:0 !important}
                     .wr-main-content{margin-left:0 !important;width:100% !important;max-width:100vw;overflow-x:clip;overflow-y:visible;box-sizing:border-box;padding-top:var(--wr-dev-banner-height,0px)}
+                }
+                @media(max-width:767px){
                     .wr-league-header-row{display:grid !important;grid-template-columns:minmax(0,1fr) auto;align-items:start !important;gap:6px 8px !important;padding-left:42px}
-                    .wr-league-header-row .header-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.96rem !important;line-height:1.2}
+                    .wr-league-header-row .header-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-body, 1rem) !important;line-height:1.2}
                     .wr-league-switch{grid-column:2;grid-row:1}
                     .wr-gm-mode-badge{grid-column:1 / 3;justify-self:start;max-width:100%;min-width:0}
                     .wr-league-type-badge{grid-column:1 / 3;grid-row:3;justify-self:start;max-width:100%;min-width:0}
@@ -3005,15 +2704,28 @@
                     .wr-debug-strip{padding:4px 10px !important;overflow-x:auto;overflow-y:clip}
                     .wr-debug-strip>div{min-width:max-content}
                 }`}</style>
+                {/* iPad-portrait header collapse (768–1023): year pills → compact
+                    dropdown, and the league header + time bar become single
+                    scrollable lines so the header stops stacking into ~190px. */}
+                <style>{`@media(max-width:1023px){
+                    .wr-time-years{display:none !important}
+                    .wr-time-years-select{display:inline-block !important}
+                }
+                @media(min-width:768px) and (max-width:1023px){
+                    .wr-league-header-row{flex-wrap:nowrap !important;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+                    .wr-league-header-row::-webkit-scrollbar{display:none}
+                    .wr-time-bar{flex-wrap:nowrap !important;overflow-x:auto;scrollbar-width:none}
+                    .wr-time-bar::-webkit-scrollbar{display:none}
+                }`}</style>
 
                 {/* Mobile overlay */}
                 {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ display: 'none', position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 99 }} className="wr-sidebar-overlay" />}
-                <style>{`@media(max-width:767px){.wr-sidebar-overlay{display:block !important}}`}</style>
+                <style>{`@media(max-width:1023px){.wr-sidebar-overlay{display:block !important}}`}</style>
 
                 {/* Left Navigation */}
                 <div className={'wr-sidebar' + (sidebarOpen ? ' open' : '') + (sidebarCollapsed ? ' is-collapsed' : '')} style={{
                     position: 'fixed', left: 0, top: 0, bottom: 0, width: sidebarWidth + 'px',
-                    background: 'var(--black)', borderRight: '1px solid rgba(212,175,55,0.2)',
+                    background: 'var(--black)', borderRight: '1px solid var(--acc-line1, rgba(212,175,55,0.2))',
                     display: 'flex', flexDirection: 'column',
                     padding: '16px 0', zIndex: 100, transition: 'width 0.18s ease, transform 0.2s ease'
                 }}>
@@ -3022,12 +2734,12 @@
                       <img src={iconSrc} alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: '6px' }} onError={e => { e.target.style.display = 'none'; }} />
                       <div className="wr-sidebar-wordmark">
                         <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', lineHeight: 1.1 }}>DYNASTY HQ</div>
-                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.5, fontFamily: 'var(--font-body)', letterSpacing: '0.04em' }}>WAR ROOM</div>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5, fontFamily: 'var(--font-body)', letterSpacing: '0.04em' }}>WAR ROOM</div>
                       </div>
                       {(() => {
                         const champs = window.App?.LI?.championships || {};
                         const cnt = Object.values(champs).filter(c => c.champion === myRoster?.roster_id).length;
-                        if (cnt > 0) return <span style={{ fontSize: '0.7rem', color: 'var(--gold)' }} title={cnt + 'x Champion'}>{'\uD83C\uDFC6'}</span>;
+                        if (cnt > 0) return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)' }} title={cnt + 'x Champion'}>{'\uD83C\uDFC6'}</span>;
                         return null;
                       })()}
                     </div>
@@ -3042,7 +2754,7 @@
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             {sidebarCollapsed ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />}
                         </svg>
-                        {!sidebarCollapsed && <span style={{ marginLeft: '8px', fontSize: '0.66rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Hide Menu</span>}
+                        {!sidebarCollapsed && <span style={{ marginLeft: '8px', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Hide Menu</span>}
                     </button>
 
                     {/* Alerts removed — rolled into Brief */}
@@ -3073,13 +2785,13 @@
                                 ref: inputRef, type: 'text', placeholder: 'Search...', value: q,
                                 onChange: e => setQ(e.target.value),
                                 onKeyDown: e => { if (e.key === 'Escape') { setQ(''); setResults([]); } },
-                                style: { width: '100%', padding: '7px 10px 7px 28px', fontSize: '0.72rem', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '6px', color: 'var(--silver)', fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }
+                                style: { width: '100%', padding: '7px 10px 7px 28px', fontSize: 'var(--text-label, 0.75rem)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '6px', color: 'var(--silver)', fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }
                             }),
-                            React.createElement('svg', { viewBox: '0 0 24 24', width: 12, height: 12, fill: 'none', stroke: 'rgba(212,175,55,0.4)', strokeWidth: 2, style: { position: 'absolute', left: '20px', top: '11px', pointerEvents: 'none' } },
+                            React.createElement('svg', { viewBox: '0 0 24 24', width: 12, height: 12, fill: 'none', stroke: 'var(--acc-line3, rgba(212,175,55,0.4))', strokeWidth: 2, style: { position: 'absolute', left: '20px', top: '11px', pointerEvents: 'none' } },
                                 React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
                                 React.createElement('line', { x1: 21, y1: 21, x2: 16.65, y2: 16.65 })
                             ),
-                            results.length > 0 && React.createElement('div', { style: { position: 'absolute', left: '12px', right: '12px', top: '100%', background: '#0d0d0d', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '0 0 8px 8px', zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', maxHeight: '240px', overflowY: 'auto' } },
+                            results.length > 0 && React.createElement('div', { style: { position: 'absolute', left: '12px', right: '12px', top: '100%', background: 'var(--k-0d0d0d, #0d0d0d)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '0 0 8px 8px', zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', maxHeight: '240px', overflowY: 'auto' } },
                                 results.map((r, i) => React.createElement('div', {
                                     key: i,
                                     onClick: () => {
@@ -3087,14 +2799,14 @@
                                         else if (r.type === 'tab') { setSidebarOpen(false); setActiveTab(r.tab); }
                                         setQ(''); setResults([]);
                                     },
-                                    style: { padding: '6px 10px', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '6px', borderBottom: '1px solid rgba(255,255,255,0.04)' },
-                                    onMouseEnter: e => e.currentTarget.style.background = 'rgba(212,175,55,0.08)',
+                                    style: { padding: '6px 10px', cursor: 'pointer', fontSize: 'var(--text-label, 0.75rem)', display: 'flex', alignItems: 'center', gap: '6px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' },
+                                    onMouseEnter: e => e.currentTarget.style.background = 'var(--acc-fill2, rgba(212,175,55,0.08))',
                                     onMouseLeave: e => e.currentTarget.style.background = 'transparent',
                                 },
                                     r.type === 'player'
                                         ? [
                                             React.createElement('span', { key: 'n', style: { color: 'var(--white)', fontWeight: 500, flex: 1 } }, r.name),
-                                            React.createElement('span', { key: 'p', style: { fontSize: '0.6rem', color: window.App?.POS_COLORS?.[window.App.normPos(r.pos)] || 'var(--silver)', fontWeight: 700 } }, window.App.normPos(r.pos)),
+                                            React.createElement('span', { key: 'p', style: { fontSize: 'var(--text-label, 0.75rem)', color: window.App?.POS_COLORS?.[window.App.normPos(r.pos)] || 'var(--silver)', fontWeight: 700 } }, window.App.normPos(r.pos)),
                                         ]
                                         : React.createElement('span', { style: { color: 'var(--gold)', fontWeight: 600 } }, '\u2192 ' + r.label)
                                 ))
@@ -3128,7 +2840,7 @@
                             // top rule since there's nothing above it in the nav.
                             if (i === 0) return null;
                             return (
-                                <div key={i} className="wr-sidebar-divider" style={{ height: '1px', margin: '8px 16px', background: 'rgba(255,255,255,0.06)' }} aria-hidden="true" />
+                                <div key={i} className="wr-sidebar-divider" style={{ height: '1px', margin: '8px 16px', background: 'var(--ov-4, rgba(255,255,255,0.06))' }} aria-hidden="true" />
                             );
                         }
                         const isActive = item.tab && (activeTab === item.tab || (item.tab === 'alex' && activeTab === 'strategy'));
@@ -3136,26 +2848,26 @@
                         <button key={i} onClick={() => { setSidebarOpen(false); item.tab ? setActiveTab(item.tab) : item.action ? item.action() : window.location.href = item.url; }}
                             className="wr-sidebar-nav-btn"
                             style={{
-                                width: '100%', padding: sidebarCollapsed ? '10px 0' : '9px 16px 9px 20px', border: 'none',
-                                background: isActive ? 'rgba(212,175,55,0.12)' : 'transparent',
+                                width: '100%', minHeight: '44px', padding: sidebarCollapsed ? '10px 0' : '9px 16px 9px 20px', border: 'none',
+                                background: isActive ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent',
                                 borderLeft: isActive ? '3px solid var(--gold)' : '3px solid transparent',
                                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: '9px',
                                 transition: 'all 0.15s',
                                 color: isActive ? 'var(--gold)' : 'var(--silver)',
-                                fontSize: '0.78rem', fontFamily: 'var(--font-body)',
+                                fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
                                 fontWeight: isActive ? 700 : 400,
                                 letterSpacing: '0.03em', textAlign: 'left',
                                 position: 'relative',
                             }}
-                            onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(212,175,55,0.06)'; }}
+                            onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'; }}
                             onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                         >
                             {sidebarCollapsed && renderNavIcon(item.iconKey)}
                             {!sidebarCollapsed && <span className="wr-sidebar-label" style={{ flex: 1 }}>{item.label}</span>}
                             {item.isNew && <span className="wr-sidebar-new-badge" style={{
-                                fontSize: '0.48rem', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700,
+                                fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700,
                                 padding: '1px 5px', borderRadius: '3px',
-                                background: 'rgba(46,204,113,0.2)', color: '#2ECC71',
+                                background: 'rgba(46,204,113,0.2)', color: 'var(--k-2ecc71, #2ecc71)',
                                 letterSpacing: '0.08em',
                             }}>NEW</span>}
                         </button>
@@ -3166,17 +2878,15 @@
                     <div style={{ flex: 1 }}></div>
 
                     {/* Sync Status */}
-                    <div className="wr-sidebar-extra" style={{ fontSize: '0.76rem', color: window.App?.LI_LOADED ? '#2ECC71' : 'var(--silver)', textAlign: 'center', fontFamily: 'var(--font-body)', opacity: 0.7, marginBottom: '4px' }}>
-                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: window.App?.LI_LOADED ? '#2ECC71' : 'var(--silver)', margin: '0 auto 2px' }}></div>
+                    <div className="wr-sidebar-extra" style={{ fontSize: 'var(--text-body, 1rem)', color: window.App?.LI_LOADED ? 'var(--k-2ecc71, #2ecc71)' : 'var(--silver)', textAlign: 'center', fontFamily: 'var(--font-body)', opacity: 0.7, marginBottom: '4px' }}>
+                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: window.App?.LI_LOADED ? 'var(--k-2ecc71, #2ecc71)' : 'var(--silver)', margin: '0 auto 2px' }}></div>
                         {window.App?.LI_LOADED ? 'Synced' : 'Loading'}
                     </div>
 
                     {/* Refresh Button */}
                     <button onClick={async () => {
                         try {
-                            localStorage.removeItem('dhq_leagueintel_v9');
-                            localStorage.removeItem('dhq_leagueintel_v10');
-                            Object.keys(localStorage).filter(k => k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
+                            Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
                             try { sessionStorage.removeItem('fw_players_cache'); } catch(e) { window.wrLog('refresh.sessionClear', e); }
                             window._wrPlayersCache = null;
                             if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; window._liLoading = false; }
@@ -3186,10 +2896,10 @@
                         width: '100%', padding: '10px 16px', border: 'none',
                         background: 'transparent', cursor: 'pointer', display: 'flex',
                         alignItems: 'center', transition: 'all 0.15s', color: 'var(--gold)',
-                        fontSize: '0.78rem', fontFamily: 'var(--font-body)',
+                        fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
                         letterSpacing: '0.03em', textAlign: 'left', marginBottom: '8px'
                     }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.06)'}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     title="Reload DHQ values, league history, and AI data"
                     >
@@ -3213,7 +2923,7 @@
                 <header className="header" style={{ position: 'relative', marginBottom: '0', paddingTop: '0.6rem', paddingBottom: '0.6rem' }}>
                     <div className="wr-league-header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px 10px', flexWrap: 'wrap', minWidth: 0 }}>
                         <div className="header-title" style={{ fontSize: '1.05rem', minWidth: 0, maxWidth: 'min(460px, 100%)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentLeague.name}</div>
-                        <button className="wr-league-switch" onClick={onBack} style={{ padding: '4px 12px', fontSize: '0.66rem', fontFamily: 'var(--font-body)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'rgba(212,175,55,0.10)', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>SWITCH</button>
+                        <button className="wr-league-switch" onClick={onBack} style={{ padding: '4px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'var(--acc-fill2, rgba(212,175,55,0.10))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>SWITCH</button>
                         {(() => {
                             const gm = window.WR?.GmMode?.describe?.(gmStrategy?.mode || 'compete');
                             if (!gm) return null;
@@ -3224,10 +2934,10 @@
                                 className: 'wr-gm-mode-badge',
                                 style: {
                                     padding: '4px 10px 4px 8px', display: 'inline-flex', alignItems: 'center', gap: '6px',
-                                    fontSize: '0.66rem', fontFamily: 'var(--font-body)', fontWeight: 700,
+                                    fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', fontWeight: 700,
                                     textTransform: 'uppercase', letterSpacing: '0.06em',
-                                    background: gm.badgeColor + '22', color: gm.badgeColor,
-                                    border: '1px solid ' + gm.badgeColor + '66',
+                                    background: wrAlpha(gm.badgeColor, '22'), color: gm.badgeColor,
+                                    border: '1px solid ' + wrAlpha(gm.badgeColor, '66'),
                                     borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0
                                 }
                             },
@@ -3244,10 +2954,10 @@
                                 flex: '0 0 auto', minWidth: 'max-content',
                                 padding: '4px 8px',
                                 borderRadius: '6px',
-                                border: '1px solid ' + headerLeagueType.color + '66',
-                                background: headerLeagueType.color + '18',
+                                border: '1px solid ' + wrAlpha(headerLeagueType.color, '66'),
+                                background: wrAlpha(headerLeagueType.color, '18'),
                                 color: headerLeagueType.color,
-                                fontFamily: 'var(--font-body)', fontSize: '0.66rem',
+                                fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)',
                                 fontWeight: 800, textTransform: 'uppercase',
                                 letterSpacing: '0.06em', whiteSpace: 'nowrap',
                                 cursor: 'help'
@@ -3256,7 +2966,7 @@
                             React.createElement(LeagueTypeHeaderIcon, { meta: headerLeagueType }),
                             headerLeagueType.label === 'League Type Unknown' ? 'Type ?' : headerLeagueType.label
                         )}
-                        {leagueSkin?.phaseMeta && leagueSkin.phase !== 'unknown' && React.createElement('div', {
+                        {leagueSkin?.phaseMeta && leagueSkin.phase !== 'unknown' && leagueSkin.phase !== 'drafting' && React.createElement('div', {
                             className: 'wr-league-phase-badge',
                             title: 'League phase: ' + leagueSkin.phaseMeta.label,
                             'aria-label': 'League phase: ' + leagueSkin.phaseMeta.label,
@@ -3265,10 +2975,10 @@
                                 flex: '0 0 auto', minWidth: 'max-content',
                                 padding: '4px 8px',
                                 borderRadius: '6px',
-                                border: '1px solid ' + leagueSkin.phaseMeta.color + '55',
-                                background: leagueSkin.phaseMeta.color + '14',
+                                border: '1px solid ' + wrAlpha(leagueSkin.phaseMeta.color, '55'),
+                                background: wrAlpha(leagueSkin.phaseMeta.color, '14'),
                                 color: leagueSkin.phaseMeta.color,
-                                fontFamily: 'var(--font-body)', fontSize: '0.66rem',
+                                fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)',
                                 fontWeight: 800, textTransform: 'uppercase',
                                 letterSpacing: '0.06em', whiteSpace: 'nowrap',
                                 cursor: 'help'
@@ -3278,21 +2988,33 @@
                         )}
                         {headerDraftClock && React.createElement('div', {
                             className: 'wr-draft-header-clock',
-                            title: headerDraftInfo?.start_time ? new Date(headerDraftInfo.start_time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'League draft status',
+                            role: 'button',
+                            tabIndex: 0,
+                            title: headerDraftInfo?.status === 'drafting'
+                                ? 'Jump to Follow Live Draft'
+                                : (headerDraftInfo?.start_time ? 'Open the Draft module · ' + new Date(headerDraftInfo.start_time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Open the Draft module'),
+                            onClick: () => {
+                                const live = headerDraftInfo?.status === 'drafting';
+                                if (live) window._wrOpenLiveDraft = true;
+                                setActiveTab('draft');
+                                if (live) window.dispatchEvent(new CustomEvent('wr:open-live-draft'));
+                            },
+                            onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } },
                             style: {
                                 display: 'inline-flex', alignItems: 'center', gap: '7px',
                                 flex: '0 0 auto',
                                 padding: '4px 10px', borderRadius: '6px',
-                                border: '1px solid rgba(212,175,55,0.42)',
-                                background: 'rgba(212,175,55,0.12)',
+                                border: '1px solid var(--acc-line3, rgba(212,175,55,0.42))',
+                                background: 'var(--acc-fill2, rgba(212,175,55,0.12))',
                                 color: 'var(--gold)',
-                                fontFamily: 'var(--font-body)', fontSize: '0.66rem',
+                                fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)',
                                 fontWeight: 800, textTransform: 'uppercase',
-                                letterSpacing: '0.06em', whiteSpace: 'nowrap'
+                                letterSpacing: '0.06em', whiteSpace: 'nowrap',
+                                cursor: 'pointer'
                             }
                         },
                             React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.78 } }, headerDraftClock.label),
-                            React.createElement('strong', { style: { color: 'var(--white)', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.68rem' } }, headerDraftClock.clock)
+                            React.createElement('strong', { style: { color: 'var(--white)', fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-label, 0.75rem)' } }, headerDraftClock.clock)
                         )}
                     </div>
                 </header>
@@ -3300,12 +3022,12 @@
                 {/* Load stage progress indicator */}
                 {loadStage && (
                     <div style={{
-                        padding: '6px 16px', background: 'rgba(212,175,55,0.06)',
-                        borderBottom: '1px solid rgba(212,175,55,0.1)',
-                        fontSize: '0.78rem', color: 'var(--gold)', fontFamily: 'var(--font-body)',
+                        padding: '6px 16px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))',
+                        borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))',
+                        fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', fontFamily: 'var(--font-body)',
                         display: 'flex', alignItems: 'center', gap: '8px'
                     }}>
-                        <div style={{ width: '12px', height: '12px', border: '2px solid rgba(212,175,55,0.3)', borderTopColor: 'var(--gold)', borderRadius: '50%', animation: 'dhqSpin 0.8s linear infinite' }}></div>
+                        <div style={{ width: '12px', height: '12px', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))', borderTopColor: 'var(--gold)', borderRadius: '50%', animation: 'dhqSpin 0.8s linear infinite' }}></div>
                         {loadStage}
                     </div>
                 )}
@@ -3313,54 +3035,62 @@
                 {/* ── GLOBAL TIME CONTEXT BAR ── */}
                 <div className="wr-time-bar" style={{
                     display: 'flex', alignItems: 'center', gap: '8px', padding: '8px clamp(12px, 4vw, 24px)', flexWrap: 'wrap',
-                    background: 'rgba(0,0,0,0.4)', borderBottom: '1px solid rgba(212,175,55,0.12)',
+                    background: 'rgba(0,0,0,0.4)', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))',
                     position: 'sticky', top: 0, zIndex: 50
                 }}>
                     {/* Year pills */}
                     <div className="wr-time-years" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', minWidth: 0 }}>
                         {timeYears.map(yr =>
                             <button key={yr} onClick={() => handleTimeYearChange(yr)} style={{
-                                padding: '4px 10px', fontSize: '0.76rem', fontFamily: 'var(--font-body)',
+                                padding: '4px 10px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
                                 fontWeight: timeYear === yr ? 700 : 400,
-                                background: timeYear === yr ? 'var(--gold)' : 'rgba(255,255,255,0.03)',
+                                background: timeYear === yr ? 'var(--gold)' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                 color: timeYear === yr ? 'var(--black)' : 'var(--silver)',
-                                border: timeYear === yr ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.06)',
+                                border: timeYear === yr ? '1px solid var(--gold)' : '1px solid var(--ov-4, rgba(255,255,255,0.06))',
                                 borderRadius: '4px', cursor: 'pointer', transition: 'all 0.15s'
                             }}>{yr}</button>
                         )}
                     </div>
+                    {/* Compact year dropdown — replaces the pill strip at ≤1023px (CSS-toggled) */}
+                    <select className="wr-time-years-select" value={timeYear} onChange={e => handleTimeYearChange(Number(e.target.value))} aria-label="Season year" style={{
+                        display: 'none', padding: '5px 8px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                        fontWeight: 700, background: 'var(--gold)', color: 'var(--black)', border: '1px solid var(--gold)',
+                        borderRadius: '4px', cursor: 'pointer', minHeight: '32px'
+                    }}>
+                        {timeYears.map(yr => <option key={yr} value={yr} style={{ background: 'var(--black)', color: 'var(--white)' }}>{yr}{yr === currentSeason ? ' • current' : ''}</option>)}
+                    </select>
                     {/* League name/team-count moved to the main header to avoid duplication. */}
                     <div className="wr-time-spacer" style={{ marginLeft: 'auto' }}></div>
                     {/* Time mode badge */}
                     <span className="wr-time-mode" style={{
-                        fontSize: '0.72rem', fontWeight: 700, color: timeModeColor,
-                        background: timeModeColor + '15', border: '1px solid ' + timeModeColor + '30',
+                        fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: timeModeColor,
+                        background: wrAlpha(timeModeColor, '15'), border: '1px solid ' + wrAlpha(timeModeColor, '30'),
                         padding: '2px 10px', borderRadius: '12px',
                         fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em'
                     }}>{timeModeLabel}</span>
                     {/* Loading indicator */}
                     {timeLoading && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{ width: '10px', height: '10px', border: '2px solid rgba(212,175,55,0.3)', borderTopColor: 'var(--gold)', borderRadius: '50%', animation: 'dhqSpin 0.8s linear infinite' }} />
-                        <span style={{ fontSize: '0.72rem', color: 'var(--gold)' }}>Recomputing...</span>
+                        <div style={{ width: '10px', height: '10px', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))', borderTopColor: 'var(--gold)', borderRadius: '50%', animation: 'dhqSpin 0.8s linear infinite' }} />
+                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)' }}>Recomputing...</span>
                     </div>}
                 </div>
 
                 {/* Time mode banner — visible when not viewing current season */}
                 {!isCurrentYear && <div className="wr-time-banner" style={{
                     padding: '8px 24px', display: 'flex', alignItems: 'center', gap: '8px',
-                    background: timeModeColor + '10', borderBottom: '1px solid ' + timeModeColor + '30'
+                    background: wrAlpha(timeModeColor, '10'), borderBottom: '1px solid ' + wrAlpha(timeModeColor, '30')
                 }}>
-                    <span style={{ fontSize: '0.82rem', color: timeModeColor, fontWeight: 700, fontFamily: 'var(--font-body)' }}>
+                    <span style={{ fontSize: 'var(--text-body, 1rem)', color: timeModeColor, fontWeight: 700, fontFamily: 'var(--font-body)' }}>
                         {isFutureYear ? 'FUTURE PROJECTION' : 'HISTORICAL VIEW'}: {timeYear}
                     </span>
-                    <span style={{ fontSize: '0.76rem', color: 'var(--silver)', opacity: 0.6 }}>
+                    <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 }}>
                         {isFutureYear ? 'Player ages projected +' + timeDelta + 'yr. Values and stats are estimates.' : 'Showing ' + timeYear + ' season stats. Roster composition reflects current state.'}
                     </span>
-                    <button onClick={() => handleTimeYearChange(currentSeason)} style={{ marginLeft: 'auto', fontSize: '0.74rem', padding: '3px 10px', background: 'transparent', border: '1px solid ' + timeModeColor, color: timeModeColor, borderRadius: '4px', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Back to {currentSeason}</button>
+                    <button onClick={() => handleTimeYearChange(currentSeason)} style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', padding: '3px 10px', background: 'transparent', border: '1px solid ' + timeModeColor, color: timeModeColor, borderRadius: '4px', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Back to {currentSeason}</button>
                 </div>}
 
                 {/* Debug panel (dev only) */}
-                {DEV_DEBUG && <div className="wr-debug-strip" style={{ padding: '4px 24px', background: 'rgba(255,0,0,0.04)', borderBottom: '1px solid rgba(255,0,0,0.1)', fontSize: '0.7rem', fontFamily: 'monospace', color: '#F0A500' }}>
+                {DEV_DEBUG && <div className="wr-debug-strip" style={{ padding: '4px 24px', background: 'rgba(255,0,0,0.04)', borderBottom: '1px solid rgba(255,0,0,0.1)', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'monospace', color: 'var(--k-f0a500, #f0a500)' }}>
                     <div style={{ display: 'flex', gap: '16px', marginBottom: '2px' }}>
                         <span>year={timeYear}</span>
                         <span>mode={timeMode}</span>
@@ -3374,7 +3104,7 @@
                         const scores = window.App.LI.playerScores;
                         const backup = window.App.LI._baseScoresBackup || {};
                         const samples = Object.entries(scores).filter(([,v]) => v > 2000).sort((a,b) => b[1] - a[1]).slice(0, 4);
-                        return <div style={{ display: 'flex', gap: '12px', fontSize: '0.65rem', color: '#3498DB' }}>
+                        return <div style={{ display: 'flex', gap: '12px', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--k-3498db, #3498db)' }}>
                             {samples.map(([pid, projDhq]) => {
                                 const baseDhq = backup[pid] || projDhq;
                                 const p = playersData[pid];
@@ -3584,36 +3314,44 @@
             {reconPanelOpen && <div style={welcomeMode ? {
               position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
               width: '480px', maxHeight: '600px',
-              background: '#0a0b0d', border: '2px solid rgba(212,175,55,0.4)',
+              background: 'var(--k-0a0b0d, #0a0b0d)', border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))',
               borderRadius: '20px', zIndex: 300,
               display: 'flex', flexDirection: 'column',
-              boxShadow: '0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(212,175,55,0.15), 0 0 120px rgba(212,175,55,0.06)',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px var(--acc-fill3, rgba(212,175,55,0.15)), 0 0 120px var(--acc-fill1, rgba(212,175,55,0.06))',
               animation: 'wrFadeIn 0.3s ease'
+            } : reconExpanded ? {
+              position: 'fixed', bottom: '80px', right: '24px',
+              width: 'min(760px, calc(100vw - 48px))', height: 'calc(100vh - 120px)', maxHeight: 'calc(100vh - 120px)',
+              background: 'var(--k-0a0b0d, #0a0b0d)', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))',
+              borderRadius: '16px', zIndex: 200,
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.75), 0 0 0 1px var(--acc-fill2, rgba(212,175,55,0.1))',
+              animation: 'wrFadeIn 0.2s ease'
             } : {
               position: 'fixed', bottom: '80px', right: '24px',
               width: '380px', maxHeight: '520px',
-              background: '#0a0b0d', border: '2px solid rgba(212,175,55,0.3)',
+              background: 'var(--k-0a0b0d, #0a0b0d)', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))',
               borderRadius: '16px', zIndex: 200,
               display: 'flex', flexDirection: 'column',
-              boxShadow: '0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(212,175,55,0.1)',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px var(--acc-fill2, rgba(212,175,55,0.1))',
               animation: 'wrFadeIn 0.2s ease'
             }}>
             {/* Welcome backdrop */}
             {welcomeMode && <div onClick={() => { setWelcomeMode(false); setReconPanelOpen(false); setTimeout(() => { setShowCornerToast(true); setTimeout(() => setShowCornerToast(false), 4000); }, 300); }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: -1 }} />}
               {/* Header */}
               <div style={{
-                padding: '12px 16px', borderBottom: '1px solid rgba(212,175,55,0.2)',
+                padding: '12px 16px', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.2))',
                 display: 'flex', alignItems: 'center', gap: '8px',
-                background: 'rgba(212,175,55,0.06)', borderRadius: '14px 14px 0 0'
+                background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: '14px 14px 0 0'
               }}>
                 <div key={avatarKey} onClick={e => { e.stopPropagation(); setShowAvatarPicker(p => !p); }} style={{ cursor: 'pointer' }} title="Change Alex's avatar">
                   <AlexAvatar size={30} />
                 </div>
                 <div>
-                  <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.88rem', color: 'var(--gold)', letterSpacing: '0.04em', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>{(() => { const k = localStorage.getItem('wr_alex_avatar') || 'brain'; const m = { brain:'\u{1F9E0}', target:'\u{1F3AF}', chart:'\u{1F4CA}', football:'\u{1F3C8}', bolt:'\u26A1', fire:'\u{1F525}', medal:'\u{1F396}\uFE0F', trophy:'\u{1F3C6}' }; return m[k] || ''; })()}Alex Ingram</div>
-                  <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.5 }}>AI General Manager</div>
+                  <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--gold)', letterSpacing: '0.04em', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>{(() => { const k = localStorage.getItem('wr_alex_avatar') || 'brain'; const m = { brain:'\u{1F9E0}', target:'\u{1F3AF}', chart:'\u{1F4CA}', football:'\u{1F3C8}', bolt:'\u26A1', fire:'\u{1F525}', medal:'\u{1F396}\uFE0F', trophy:'\u{1F3C6}' }; return m[k] || ''; })()}Alex Ingram</div>
+                  <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5 }}>AI General Manager</div>
                 </div>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Cmd+K</span>
+                <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)' }}>Cmd+K</span>
                 <span style={{ flex: 1 }}></span>
                 {reconMessages.length > 1 && (
                   <button onClick={() => {
@@ -3622,10 +3360,14 @@
                     LeagueStorage.remove(LEAGUE_WR_KEYS.CHAT(currentLeague?.league_id));
                   }} title="Clear chat history" style={{
                     background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-                    fontSize: '0.62rem', padding: '2px 4px', fontFamily: 'var(--font-body)', letterSpacing: '0.04em'
+                    fontSize: 'var(--text-label, 0.75rem)', padding: '2px 4px', fontFamily: 'var(--font-body)', letterSpacing: '0.04em'
                   }}>CLEAR</button>
                 )}
-                <button onClick={() => setReconPanelOpen(false)} style={{
+                <button onClick={() => setReconExpanded(v => !v)} title={reconExpanded ? 'Collapse' : 'Expand'} aria-label={reconExpanded ? 'Collapse panel' : 'Expand panel'} style={{
+                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+                  fontSize: '1rem', padding: '2px', lineHeight: 1
+                }}>{reconExpanded ? '−' : '⛶'}</button>
+                <button onClick={() => { setReconPanelOpen(false); setReconExpanded(false); }} style={{
                   background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
                   fontSize: '1rem', padding: '2px'
                 }}>&#10005;</button>
@@ -3633,22 +3375,22 @@
 
               {/* Avatar picker (toggled) */}
               {showAvatarPicker && (
-                <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(212,175,55,0.04)' }}>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '6px', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose Alex's look</div>
+                <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'var(--acc-fill1, rgba(212,175,55,0.04))' }}>
+                  <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '6px', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose Alex's look</div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {ALEX_AVATARS.map(av => (
                       <button key={av.id} onClick={() => { setAlexAvatar(av.id); setShowAvatarPicker(false); setAvatarKey(k => k+1); }} style={{
                         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-                        padding: '6px', background: getAlexAvatar() === av.id ? 'rgba(212,175,55,0.15)' : 'rgba(255,255,255,0.03)',
-                        border: '1px solid ' + (getAlexAvatar() === av.id ? 'var(--gold)' : 'rgba(255,255,255,0.08)'),
+                        padding: '6px', background: getAlexAvatar() === av.id ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                        border: '1px solid ' + (getAlexAvatar() === av.id ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                         borderRadius: '8px', cursor: 'pointer', minWidth: '56px'
                       }}>
                         {av.src ? (
                           <img src={av.src} alt={av.label} style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'cover' }} />
                         ) : (
-                          <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: 'linear-gradient(135deg, #D4AF37, #B8941E)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800, color: '#0A0A0A', fontFamily: 'Rajdhani, sans-serif' }}>AI</div>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: 'linear-gradient(135deg, var(--k-d4af37, #d4af37), var(--k-b8941e, #b8941e))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 800, color: 'var(--k-0a0a0a, #0a0a0a)', fontFamily: 'Rajdhani, sans-serif' }}>AI</div>
                         )}
-                        <span style={{ fontSize: '0.58rem', color: 'var(--silver)', textAlign: 'center' }}>{av.label}</span>
+                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textAlign: 'center' }}>{av.label}</span>
                       </button>
                     ))}
                   </div>
@@ -3656,12 +3398,12 @@
               )}
 
               {/* Context chips */}
-              <div style={{ padding: '6px 12px', display: 'flex', gap: '4px', flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ padding: '6px 12px', display: 'flex', gap: '4px', flexWrap: 'wrap', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                 {getReconChips().map((chip, i) => (
                   <button key={i} onClick={() => sendReconMessage(chip.prompt)}
                     style={{
-                      padding: '3px 8px', fontSize: '0.72rem', borderRadius: '14px',
-                      border: '1px solid rgba(212,175,55,0.25)', background: 'rgba(212,175,55,0.06)',
+                      padding: '3px 8px', fontSize: 'var(--text-label, 0.75rem)', borderRadius: '14px',
+                      border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))',
                       color: 'var(--gold)', cursor: 'pointer', fontFamily: 'inherit'
                     }}>
                     {chip.label}
@@ -3673,25 +3415,25 @@
               <div style={{
                 flex: 1, overflow: 'auto', padding: '10px 12px',
                 display: 'flex', flexDirection: 'column', gap: '6px',
-                maxHeight: '320px'
+                maxHeight: reconExpanded ? 'none' : '320px'
               }}>
                 {reconMessages.map((msg, i) => (
                   msg.role === 'user' ? (
                     <div key={i} style={{
                       alignSelf: 'flex-end', maxWidth: '85%', padding: '8px 12px', borderRadius: '12px',
-                      fontSize: '0.78rem', lineHeight: 1.4,
+                      fontSize: 'var(--text-body, 1rem)', lineHeight: 1.4,
                       background: 'rgba(124,107,248,0.12)', border: '1px solid rgba(124,107,248,0.18)',
                       color: 'var(--text-primary)'
                     }} dangerouslySetInnerHTML={{ __html: markdownToHtml(msg.content) }} />
                   ) : (
                     <div key={i} style={{
                       alignSelf: 'flex-start', maxWidth: '90%', padding: '8px 10px',
-                      background: 'rgba(212,175,55,0.04)', borderLeft: '3px solid rgba(212,175,55,0.4)',
+                      background: 'var(--acc-fill1, rgba(212,175,55,0.04))', borderLeft: '3px solid var(--acc-line3, rgba(212,175,55,0.4))',
                       borderRadius: '0 10px 10px 0'
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                         <AlexAvatar size={20} />
-                        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.72rem', color: 'var(--gold)', letterSpacing: '0.03em' }}>Alex Ingram</span>
+                        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', letterSpacing: '0.03em' }}>Alex Ingram</span>
                       </div>
                       {(() => {
                         const tradeMatch = msg.content.match(/<!--\s*TRADE_CARD:([\s\S]*?)-->/);
@@ -3702,36 +3444,36 @@
                         }
                         return (
                           <React.Fragment>
-                            <div style={{ fontSize: '0.78rem', lineHeight: 1.4, color: 'var(--text-primary)' }}
+                            <div style={{ fontSize: 'var(--text-body, 1rem)', lineHeight: 1.4, color: 'var(--text-primary)' }}
                               dangerouslySetInnerHTML={{ __html: markdownToHtml(textContent) }} />
                             {tradeCard && (
-                              <div style={{ marginTop: '10px', background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', padding: '10px', fontSize: '0.76rem' }}>
-                                <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+                              <div style={{ marginTop: '10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', padding: '10px', fontSize: 'var(--text-body, 1rem)' }}>
+                                <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
                                   Proposed Trade{tradeCard.target ? ' → ' + tradeCard.target : ''}
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '8px', alignItems: 'start' }}>
                                   <div>
-                                    <div style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>You Give</div>
+                                    <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>You Give</div>
                                     {(tradeCard.yourSide || []).map((a, j) => (
-                                      <div key={j} style={{ padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                      <div key={j} style={{ padding: '3px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
                                         <span style={{ color: 'var(--text-primary)' }}>{a.name}</span>
-                                        <span style={{ color: 'var(--silver)', fontSize: '0.68rem', marginLeft: '4px' }}>{a.dhq?.toLocaleString()} DHQ</span>
+                                        <span style={{ color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', marginLeft: '4px' }}>{a.dhq?.toLocaleString()} DHQ</span>
                                       </div>
                                     ))}
-                                    <div style={{ marginTop: '4px', fontWeight: 700, color: 'var(--gold)', fontSize: '0.72rem' }}>
+                                    <div style={{ marginTop: '4px', fontWeight: 700, color: 'var(--gold)', fontSize: 'var(--text-label, 0.75rem)' }}>
                                       Total: {(tradeCard.yourSide || []).reduce((s, a) => s + (a.dhq || 0), 0).toLocaleString()}
                                     </div>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', fontSize: '1.2rem', color: 'var(--gold)', paddingTop: '16px' }}>{'\u21C4'}</div>
                                   <div>
-                                    <div style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>You Get</div>
+                                    <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>You Get</div>
                                     {(tradeCard.theirSide || []).map((a, j) => (
-                                      <div key={j} style={{ padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                      <div key={j} style={{ padding: '3px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
                                         <span style={{ color: 'var(--text-primary)' }}>{a.name}</span>
-                                        <span style={{ color: 'var(--silver)', fontSize: '0.68rem', marginLeft: '4px' }}>{a.dhq?.toLocaleString()} DHQ</span>
+                                        <span style={{ color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', marginLeft: '4px' }}>{a.dhq?.toLocaleString()} DHQ</span>
                                       </div>
                                     ))}
-                                    <div style={{ marginTop: '4px', fontWeight: 700, color: 'var(--gold)', fontSize: '0.72rem' }}>
+                                    <div style={{ marginTop: '4px', fontWeight: 700, color: 'var(--gold)', fontSize: 'var(--text-label, 0.75rem)' }}>
                                       Total: {(tradeCard.theirSide || []).reduce((s, a) => s + (a.dhq || 0), 0).toLocaleString()}
                                     </div>
                                   </div>
@@ -3742,14 +3484,14 @@
                                   const theirs = (tradeCard.theirSide || []).reduce((s, a) => s + (a.dhq || 0), 0);
                                   const diff = theirs - yours;
                                   const pct = yours > 0 ? Math.round((diff / yours) * 100) : 0;
-                                  const color = pct >= 5 ? '#2ECC71' : pct >= -5 ? 'var(--gold)' : '#E74C3C';
+                                  const color = pct >= 5 ? 'var(--k-2ecc71, #2ecc71)' : pct >= -5 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)';
                                   const label = pct >= 5 ? 'You win by ' + pct + '%' : pct >= -5 ? 'Fair trade' : 'You lose by ' + Math.abs(pct) + '%';
                                   return (
                                     <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                                      <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: 'var(--ov-5, rgba(255,255,255,0.08))', overflow: 'hidden' }}>
                                         <div style={{ width: Math.min(100, 50 + pct) + '%', height: '100%', background: color, borderRadius: '2px' }} />
                                       </div>
-                                      <span style={{ fontSize: '0.68rem', color, fontFamily: 'var(--font-body)' }}>{label}</span>
+                                      <span style={{ fontSize: 'var(--text-label, 0.75rem)', color, fontFamily: 'var(--font-body)' }}>{label}</span>
                                     </div>
                                   );
                                 })()}
@@ -3757,8 +3499,8 @@
                                 <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                                   {tradeCard.sleeperDM && (
                                     <button onClick={() => { navigator.clipboard.writeText(tradeCard.sleeperDM); }} style={{
-                                      padding: '5px 12px', fontSize: '0.7rem', fontFamily: 'var(--font-body)',
-                                      background: 'linear-gradient(135deg, #7c6bf8, #9b8afb)', color: '#fff',
+                                      padding: '5px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)',
+                                      background: 'linear-gradient(135deg, var(--k-7c6bf8, #7c6bf8), var(--k-9b8afb, #9b8afb))', color: 'var(--k-ffffff, #ffffff)',
                                       border: 'none', borderRadius: '14px', cursor: 'pointer'
                                     }}>Copy DM</button>
                                   )}
@@ -3767,9 +3509,9 @@
                                     saved.push({ ...tradeCard, savedAt: Date.now() });
                                     LeagueStorage.set(LEAGUE_WR_KEYS.SAVED_TRADES(currentLeague?.league_id), saved.slice(-20));
                                   }} style={{
-                                    padding: '5px 12px', fontSize: '0.7rem', fontFamily: 'var(--font-body)',
-                                    background: 'rgba(212,175,55,0.08)', color: 'var(--gold)',
-                                    border: '1px solid rgba(212,175,55,0.2)', borderRadius: '14px', cursor: 'pointer'
+                                    padding: '5px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)',
+                                    background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)',
+                                    border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '14px', cursor: 'pointer'
                                   }}>Save</button>
                                 </div>
                               </div>
@@ -3792,10 +3534,10 @@
                                   handleOnboardChoice(c.value);
                                 }
                               }} style={{
-                                padding: '6px 14px', fontSize: '0.76rem', fontFamily: 'var(--font-body)',
-                                background: isSelected ? 'var(--gold)' : 'rgba(212,175,55,0.08)',
+                                padding: '6px 14px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                                background: isSelected ? 'var(--gold)' : 'var(--acc-fill2, rgba(212,175,55,0.08))',
                                 color: isSelected ? 'var(--black)' : 'var(--gold)',
-                                border: '1px solid rgba(212,175,55,0.3)',
+                                border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
                                 borderRadius: '16px', cursor: 'pointer', transition: 'all 0.15s'
                               }}>{c.label}{isSelected ? ' \u2713' : ''}</button>
                             );
@@ -3804,16 +3546,16 @@
                             <React.Fragment>
                               {onboardSelections.length > 0 && (
                                 <button onClick={() => { handleOnboardChoice(onboardSelections); setOnboardSelections([]); }} style={{
-                                  padding: '6px 14px', fontSize: '0.76rem', fontFamily: 'var(--font-body)',
-                                  background: 'linear-gradient(135deg, #2ECC71, #27AE60)', color: '#fff',
+                                  padding: '6px 14px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                                  background: 'linear-gradient(135deg, var(--k-2ecc71, #2ecc71), var(--k-27ae60, #27ae60))', color: 'var(--k-ffffff, #ffffff)',
                                   border: 'none', borderRadius: '16px', cursor: 'pointer'
                                 }}>Confirm ({onboardSelections.length})</button>
                               )}
                               {msg.onboardSkip && (
                                 <button onClick={() => { handleOnboardChoice('skip'); setOnboardSelections([]); }} style={{
-                                  padding: '6px 14px', fontSize: '0.76rem', fontFamily: 'var(--font-body)',
-                                  background: 'rgba(255,255,255,0.04)', color: 'var(--silver)',
-                                  border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', cursor: 'pointer'
+                                  padding: '6px 14px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                                  background: 'var(--ov-3, rgba(255,255,255,0.04))', color: 'var(--silver)',
+                                  border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '16px', cursor: 'pointer'
                                 }}>Skip</button>
                               )}
                             </React.Fragment>
@@ -3827,8 +3569,8 @@
 
               {/* Input */}
               <div style={{
-                padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.07)',
-                display: 'flex', gap: '8px', background: '#111318', borderRadius: '0 0 14px 14px'
+                padding: '10px 12px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.07))',
+                display: 'flex', gap: '8px', background: 'var(--k-111318, #111318)', borderRadius: '0 0 14px 14px'
               }}>
                 <input
                   value={reconInput}
@@ -3837,11 +3579,11 @@
                   placeholder="Ask anything..."
                   style={{
                     flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                    color: 'var(--text-primary)', fontSize: '0.82rem', fontFamily: 'inherit'
+                    color: 'var(--text-primary)', fontSize: 'var(--text-body, 1rem)', fontFamily: 'inherit'
                   }}
                 />
                 <button onClick={() => sendReconMessage(reconInput)} style={{
-                  background: 'linear-gradient(135deg, #7c6bf8, #9b8afb)',
+                  background: 'linear-gradient(135deg, var(--k-7c6bf8, #7c6bf8), var(--k-9b8afb, #9b8afb))',
                   border: 'none', borderRadius: '8px', width: '32px', height: '32px',
                   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }}>
@@ -3856,14 +3598,14 @@
             {showCornerToast && (
               <div style={{
                 position: 'fixed', bottom: '82px', right: '24px',
-                background: '#0a0b0d', border: '1px solid rgba(212,175,55,0.3)',
+                background: 'var(--k-0a0b0d, #0a0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
                 borderRadius: '12px', padding: '10px 16px', zIndex: 202,
                 boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
                 animation: 'wrFadeIn 0.3s ease', maxWidth: '220px'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <AlexAvatar size={22} />
-                  <span style={{ fontSize: '0.78rem', color: 'var(--silver)', lineHeight: 1.4 }}>I'll be down here if you need me {'\uD83D\uDC47'}</span>
+                  <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.4 }}>I'll be down here if you need me {'\uD83D\uDC47'}</span>
                 </div>
               </div>
             )}
@@ -3872,11 +3614,11 @@
             <button onClick={() => { setReconPanelOpen(!reconPanelOpen); setWelcomeMode(false); }} style={{
               position: 'fixed', bottom: '24px', right: '24px',
               width: '52px', height: '52px', borderRadius: '14px',
-              background: reconPanelOpen ? 'rgba(212,175,55,0.15)' : 'transparent',
-              border: '2px solid rgba(212,175,55,0.4)',
+              background: reconPanelOpen ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
+              border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))',
               cursor: 'pointer', zIndex: 201,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 20px rgba(212,175,55,0.3)',
+              boxShadow: '0 4px 20px var(--acc-line2, rgba(212,175,55,0.3))',
               transition: 'all 0.2s', overflow: 'hidden', padding: 0
             }}>
               {reconPanelOpen

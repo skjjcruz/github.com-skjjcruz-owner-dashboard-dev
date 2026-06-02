@@ -14,10 +14,10 @@
 
     const TIER_ORDER = ['ELITE', 'CONTENDER', 'CROSSROADS', 'REBUILDING'];
     const TIER_COLORS = {
-        ELITE: '#D4AF37',
-        CONTENDER: '#2ECC71',
-        CROSSROADS: '#F0A500',
-        REBUILDING: '#E74C3C',
+        ELITE: 'var(--k-d4af37, #d4af37)',
+        CONTENDER: 'var(--k-2ecc71, #2ecc71)',
+        CROSSROADS: 'var(--k-f0a500, #f0a500)',
+        REBUILDING: 'var(--k-e74c3c, #e74c3c)',
     };
 
     function groupByTier(assessments) {
@@ -50,7 +50,7 @@
 
         const base = {
             background: 'var(--off-black)',
-            border: '1px solid rgba(212,175,55,0.12)',
+            border: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))',
             borderRadius: '10px', padding: 'var(--card-pad, 14px 16px)',
             display: 'flex', flexDirection: 'column', gap: '8px',
             height: '100%', minHeight: 0, overflow: 'hidden',
@@ -66,15 +66,19 @@
                 title: 'Open League Analytics',
                 style: {
                     padding: '3px 8px',
-                    background: 'rgba(212,175,55,0.08)',
+                    background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
                     color: 'var(--gold)',
-                    border: '1px solid rgba(212,175,55,0.22)',
+                    border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))',
                     borderRadius: '5px',
                     cursor: 'pointer',
-                    fontSize: '0.58rem',
+                    fontSize: 'var(--text-micro, 0.6875rem)',
                     fontFamily: 'var(--font-body)',
                     fontWeight: 700,
                     whiteSpace: 'nowrap',
+                    minHeight: '44px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                 }
             }, 'Analytics');
         }
@@ -89,9 +93,9 @@
         if (size === 'sm') {
             const col = mine ? TIER_COLORS[mine.tier] : 'var(--silver)';
             return React.createElement('div', { style: { ...base, cursor: 'pointer', textAlign: 'center', justifyContent: 'center' }, onClick: jumpToLeague },
-                React.createElement('div', { style: { fontSize: '0.62rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.65 } }, 'My Tier'),
+                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.65 } }, 'My Tier'),
                 React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 700, color: col } }, mine?.tier || '—'),
-                React.createElement('div', { style: { fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.55 } }, assessments.length + ' team' + (assessments.length === 1 ? '' : 's') + ' tracked')
+                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.55 } }, assessments.length + ' team' + (assessments.length === 1 ? '' : 's') + ' tracked')
             );
         }
 
@@ -116,7 +120,7 @@
                     React.createElement('span', { style: { fontSize: '0.9rem' } }, '🏆'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.88rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em' } }, 'Competitive Tiers'),
                     React.createElement('div', {
-                        style: { marginLeft: 'auto', fontSize: '0.62rem', color: myCol, fontWeight: 700, padding: '2px 6px', borderRadius: '3px', background: myCol + '22', border: '1px solid ' + myCol + '55' }
+                        style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: myCol, fontWeight: 700, padding: '2px 6px', borderRadius: '3px', background: wrAlpha(myCol, '22'), border: '1px solid ' + wrAlpha(myCol, '55') }
                     }, myTier ? 'YOU · ' + myTier : 'YOU · —'),
                 ),
                 // Tier bar with my position arrow
@@ -130,8 +134,8 @@
                                 background: TIER_COLORS[s.tier],
                                 opacity: s.tier === myTier ? 1 : 0.7,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '0.66rem', color: '#0A0A0A', fontWeight: 800,
-                                outline: s.tier === myTier ? '2px solid #fff' : 'none',
+                                fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-0a0a0a, #0a0a0a)', fontWeight: 800,
+                                outline: s.tier === myTier ? '2px solid var(--k-ffffff, #ffffff)' : 'none',
                                 outlineOffset: '-2px',
                             }
                         }, s.n))
@@ -144,10 +148,10 @@
                         }
                     },
                         React.createElement('div', { style: { width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '6px solid ' + myCol } }),
-                        React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: myCol, marginTop: '1px', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' } }, '★ YOU'),
+                        React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: myCol, marginTop: '1px', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' } }, '★ YOU'),
                     ),
                 ),
-                React.createElement('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '0.62rem', marginTop: '20px' } },
+                React.createElement('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: 'var(--text-micro, 0.6875rem)', marginTop: '20px' } },
                     ...TIER_ORDER.map(t => React.createElement('span', {
                         key: t,
                         style: { display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--silver)' }
@@ -170,19 +174,19 @@
                 key: t,
                 style: {
                     padding: '6px 10px', borderRadius: '6px',
-                    background: 'rgba(255,255,255,0.02)',
+                    background: 'var(--ov-1, rgba(255,255,255,0.02))',
                     borderLeft: '3px solid ' + col,
                 }
             },
                 React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' } },
                     React.createElement('span', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.78rem', fontWeight: 700, color: col, letterSpacing: '0.05em' } }, t),
-                    React.createElement('span', { style: { fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.55 } }, teams.length + ' team' + (teams.length === 1 ? '' : 's')),
-                    teams.length > 0 && React.createElement('span', { style: { marginLeft: 'auto', fontSize: '0.6rem', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace', opacity: 0.7 } },
+                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.55 } }, teams.length + ' team' + (teams.length === 1 ? '' : 's')),
+                    teams.length > 0 && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace', opacity: 0.7 } },
                         'avg ' + Math.round(teams.reduce((s, t) => s + (t.healthScore || 0), 0) / teams.length)
                     ),
                 ),
                 teams.length === 0
-                    ? React.createElement('div', { style: { fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.45, fontStyle: 'italic' } }, '—')
+                    ? React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.45, fontStyle: 'italic' } }, '—')
                     : React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } },
                         ...teams.slice(0, limit).map(team => {
                             const isMe = team.ownerId === sleeperUserId;
@@ -193,22 +197,22 @@
                                 style: {
                                     display: 'inline-flex', alignItems: 'center', gap: '4px',
                                     padding: '2px 6px 2px 2px', borderRadius: '12px',
-                                    fontSize: '0.62rem',
-                                    background: isMe ? col + '33' : 'rgba(255,255,255,0.04)',
+                                    fontSize: 'var(--text-micro, 0.6875rem)',
+                                    background: isMe ? wrAlpha(col, '33') : 'var(--ov-3, rgba(255,255,255,0.04))',
                                     color: isMe ? col : 'var(--white)',
                                     fontWeight: isMe ? 700 : 500,
-                                    border: isMe ? '1px solid ' + col + '88' : '1px solid transparent',
+                                    border: isMe ? '1px solid ' + wrAlpha(col, '88') : '1px solid transparent',
                                     fontFamily: 'var(--font-body)',
                                 }
                             },
                                 showLogos && av
                                     ? React.createElement('img', { src: av, style: { width: 14, height: 14, borderRadius: '50%' }, alt: '' })
-                                    : React.createElement('div', { style: { width: 14, height: 14, borderRadius: '50%', background: col + '33', flexShrink: 0 } }),
+                                    : React.createElement('div', { style: { width: 14, height: 14, borderRadius: '50%', background: wrAlpha(col, '33'), flexShrink: 0 } }),
                                 React.createElement('span', null, (team.ownerName || '').slice(0, 12) + (isMe ? ' ★' : '')),
-                                React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '0.56rem', color: isMe ? col : 'var(--silver)', opacity: 0.8 } }, team.healthScore || 0),
+                                React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro, 0.6875rem)', color: isMe ? col : 'var(--silver)', opacity: 0.8 } }, team.healthScore || 0),
                             );
                         }),
-                        teams.length > limit ? React.createElement('span', { style: { fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.5, padding: '2px 4px' } }, '+' + (teams.length - limit)) : null,
+                        teams.length > limit ? React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.5, padding: '2px 4px' } }, '+' + (teams.length - limit)) : null,
                     ),
             );
         }
@@ -219,7 +223,7 @@
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
                     React.createElement('span', { style: { fontSize: '0.95rem' } }, '🏆'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.88rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em' } }, 'Competitive Tiers'),
-                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: '0.62rem', fontWeight: 700, color: TIER_COLORS[myTier], padding: '2px 6px', borderRadius: '3px', background: TIER_COLORS[myTier] + '22' } }, '★ ' + myTier),
+                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '2px 6px', borderRadius: '3px', background: wrAlpha(TIER_COLORS[myTier], '22') } }, '★ ' + myTier),
                     analyticsButton(),
                 ),
                 React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, minHeight: 0, overflow: 'hidden' } },
@@ -243,19 +247,19 @@
         function renderCompetitorRow(team, i, opts = {}) {
             const myHealth = opts.myHealth || 0;
             const delta = (team.healthScore || 0) - myHealth;
-            const deltaCol = delta > 0 ? '#E74C3C' : delta < 0 ? '#2ECC71' : 'var(--silver)';
+            const deltaCol = delta > 0 ? 'var(--k-e74c3c, #e74c3c)' : delta < 0 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--silver)';
             const tierC = TIER_COLORS[team.tier] || 'var(--silver)';
             const user = findUser(team.rosterId, currentLeague);
             const av = avatarUrl(user?.avatar);
-            return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' } },
-                React.createElement('span', { style: { fontSize: '0.6rem', color: 'var(--silver)', fontWeight: 700, width: 18, textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' } }, '#' + team.rank),
+            return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))' } },
+                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', fontWeight: 700, width: 18, textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' } }, '#' + team.rank),
                 av
                     ? React.createElement('img', { src: av, style: { width: 16, height: 16, borderRadius: '50%' }, alt: '' })
-                    : React.createElement('div', { style: { width: 16, height: 16, borderRadius: '50%', background: tierC + '33' } }),
-                React.createElement('span', { style: { flex: 1, fontSize: '0.66rem', fontWeight: 600, color: 'var(--white)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, team.ownerName || ''),
-                React.createElement('span', { style: { fontSize: '0.54rem', padding: '1px 5px', borderRadius: 3, background: tierC + '22', color: tierC, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' } }, (team.tier || '—').slice(0, 4)),
-                React.createElement('span', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--white)', fontFamily: 'JetBrains Mono, monospace', minWidth: 22, textAlign: 'right' } }, team.healthScore || 0),
-                React.createElement('span', { style: { fontSize: '0.56rem', fontWeight: 700, color: deltaCol, fontFamily: 'JetBrains Mono, monospace', minWidth: 28, textAlign: 'right' } }, delta > 0 ? '+' + delta : delta),
+                    : React.createElement('div', { style: { width: 16, height: 16, borderRadius: '50%', background: wrAlpha(tierC, '33') } }),
+                React.createElement('span', { style: { flex: 1, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, color: 'var(--white)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, team.ownerName || ''),
+                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 5px', borderRadius: 3, background: wrAlpha(tierC, '22'), color: tierC, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' } }, (team.tier || '—').slice(0, 4)),
+                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--white)', fontFamily: 'JetBrains Mono, monospace', minWidth: 22, textAlign: 'right' } }, team.healthScore || 0),
+                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: deltaCol, fontFamily: 'JetBrains Mono, monospace', minWidth: 28, textAlign: 'right' } }, delta > 0 ? '+' + delta : delta),
             );
         }
 
@@ -280,7 +284,7 @@
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
                     React.createElement('span', { style: { fontSize: '1rem' } }, '🏆'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em' } }, 'Competitive Tiers'),
-                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: '0.62rem', fontWeight: 700, color: TIER_COLORS[myTier], padding: '2px 6px', borderRadius: '3px', background: TIER_COLORS[myTier] + '22' } }, '★ ' + myTier),
+                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '2px 6px', borderRadius: '3px', background: wrAlpha(TIER_COLORS[myTier], '22') } }, '★ ' + myTier),
                     analyticsButton(),
                 ),
                 // Tier rows
@@ -288,28 +292,28 @@
                     ...TIER_ORDER.map(t => renderTierRow(t, { limit: 6, showLogos: true })),
                 ),
                 // Health histogram
-                React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', flexShrink: 0 } },
-                    React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' } }, 'Health Distribution'),
+                React.createElement('div', { style: { padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '6px', flexShrink: 0 } },
+                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' } }, 'Health Distribution'),
                     React.createElement('div', { style: { display: 'flex', alignItems: 'flex-end', gap: '4px', height: 50 } },
                         ...hist.map((n, i) => {
                             const h = (n / maxBucket) * 40;
                             const col = i === 4 ? TIER_COLORS.ELITE : i === 3 ? TIER_COLORS.CONTENDER : i === 2 ? TIER_COLORS.CROSSROADS : TIER_COLORS.REBUILDING;
                             const isMine = i === myBucket;
                             return React.createElement('div', { key: i, style: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' } },
-                                React.createElement('div', { style: { fontSize: '0.54rem', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace' } }, n),
-                                React.createElement('div', { style: { width: '100%', height: h, background: col, opacity: isMine ? 1 : 0.5, borderRadius: '2px 2px 0 0', outline: isMine ? '1px solid #fff' : 'none' } }),
-                                React.createElement('div', { style: { fontSize: '0.5rem', color: isMine ? '#fff' : 'var(--silver)', opacity: isMine ? 1 : 0.6, fontWeight: isMine ? 700 : 400, fontFamily: 'JetBrains Mono, monospace' } }, histLabels[i]),
+                                React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace' } }, n),
+                                React.createElement('div', { style: { width: '100%', height: h, background: col, opacity: isMine ? 1 : 0.5, borderRadius: '2px 2px 0 0', outline: isMine ? '1px solid var(--k-ffffff, #ffffff)' : 'none' } }),
+                                React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: isMine ? 'var(--k-ffffff, #ffffff)' : 'var(--silver)', opacity: isMine ? 1 : 0.6, fontWeight: isMine ? 700 : 400, fontFamily: 'JetBrains Mono, monospace' } }, histLabels[i]),
                             );
                         }),
                     ),
                 ),
                 // Top dog spotlight
-                topTeam && React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' } },
+                topTeam && React.createElement('div', { style: { padding: '8px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' } },
                     topUser?.avatar
                         ? React.createElement('img', { src: avatarUrl(topUser.avatar), style: { width: 28, height: 28, borderRadius: '50%' }, alt: '' })
-                        : React.createElement('div', { style: { width: 28, height: 28, borderRadius: '50%', background: TIER_COLORS.ELITE + '44' } }),
+                        : React.createElement('div', { style: { width: 28, height: 28, borderRadius: '50%', background: wrAlpha(TIER_COLORS.ELITE, '44') } }),
                     React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-                        React.createElement('div', { style: { fontSize: '0.6rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 } }, 'Top of food chain'),
+                        React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 } }, 'Top of food chain'),
                         React.createElement('div', { style: { fontSize: '0.78rem', fontWeight: 700, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, topTeam.ownerName || 'Unknown'),
                     ),
                     React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', fontWeight: 700, color: TIER_COLORS.ELITE } }, topTeam.healthScore || 0),
@@ -318,17 +322,17 @@
                 (() => {
                     const c = getClosestCompetitors(3);
                     if (!c.above.length && !c.below.length) return null;
-                    return React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
-                        React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' } }, 'Closest Competitors · vs You'),
+                    return React.createElement('div', { style: { padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
+                        React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' } }, 'Closest Competitors · vs You'),
                         React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '1px', fontFamily: 'var(--font-body)', overflow: 'auto' } },
                             ...c.above.map((t, i) => renderCompetitorRow(t, 'a' + i, { myHealth: c.myHealth })),
                             // YOU row
-                            mine && React.createElement('div', { key: 'me', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: 'rgba(212,175,55,0.08)', borderRadius: '4px', border: '1px solid rgba(212,175,55,0.3)' } },
-                                React.createElement('span', { style: { fontSize: '0.6rem', color: 'var(--gold)', fontWeight: 700, width: 18, textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' } }, '#' + c.myRank),
-                                React.createElement('span', { style: { fontSize: '0.66rem', fontWeight: 700, color: 'var(--gold)', flex: 1, fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, '★ YOU · ' + (mine.ownerName || '')),
-                                React.createElement('span', { style: { fontSize: '0.54rem', padding: '1px 5px', borderRadius: 3, background: TIER_COLORS[mine.tier] + '22', color: TIER_COLORS[mine.tier], fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' } }, (mine.tier || '—').slice(0, 4)),
-                                React.createElement('span', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--white)', fontFamily: 'JetBrains Mono, monospace', minWidth: 22, textAlign: 'right' } }, c.myHealth),
-                                React.createElement('span', { style: { fontSize: '0.56rem', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace', minWidth: 28, textAlign: 'right' } }, '—'),
+                            mine && React.createElement('div', { key: 'me', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderRadius: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))' } },
+                                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, width: 18, textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' } }, '#' + c.myRank),
+                                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', flex: 1, fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, '★ YOU · ' + (mine.ownerName || '')),
+                                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 5px', borderRadius: 3, background: wrAlpha(TIER_COLORS[mine.tier], '22'), color: TIER_COLORS[mine.tier], fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' } }, (mine.tier || '—').slice(0, 4)),
+                                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--white)', fontFamily: 'JetBrains Mono, monospace', minWidth: 22, textAlign: 'right' } }, c.myHealth),
+                                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace', minWidth: 28, textAlign: 'right' } }, '—'),
                             ),
                             ...c.below.map((t, i) => renderCompetitorRow(t, 'b' + i, { myHealth: c.myHealth })),
                         ),
@@ -388,7 +392,7 @@
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
                     React.createElement('span', { style: { fontSize: '1.1rem' } }, '🏆'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em' } }, 'Competitive Tiers'),
-                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: '0.66rem', fontWeight: 700, color: TIER_COLORS[myTier], padding: '3px 8px', borderRadius: '4px', background: TIER_COLORS[myTier] + '22', border: '1px solid ' + TIER_COLORS[myTier] + '55' } }, '★ YOU · ' + myTier),
+                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '3px 8px', borderRadius: '4px', background: wrAlpha(TIER_COLORS[myTier], '22'), border: '1px solid ' + wrAlpha(TIER_COLORS[myTier], '55') } }, '★ YOU · ' + myTier),
                     analyticsButton(),
                 ),
                 // 2-col grid: tier rows (left) | matrix + summary + histogram (right)
@@ -399,16 +403,16 @@
                             ...TIER_ORDER.map(t => renderTierRow(t, { limit: 12, showLogos: true })),
                         ),
                         // Closest competitors panel
-                        closest.myRank && React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
-                            React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' } }, 'Closest Competitors · vs You'),
+                        closest.myRank && React.createElement('div', { style: { padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
+                            React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' } }, 'Closest Competitors · vs You'),
                             React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '1px', overflow: 'auto' } },
                                 ...closest.above.map((t, i) => renderCompetitorRow(t, 'a' + i, { myHealth: closest.myHealth })),
-                                mine && React.createElement('div', { key: 'me', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: 'rgba(212,175,55,0.08)', borderRadius: '4px', border: '1px solid rgba(212,175,55,0.3)' } },
-                                    React.createElement('span', { style: { fontSize: '0.6rem', color: 'var(--gold)', fontWeight: 700, width: 18, textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' } }, '#' + closest.myRank),
-                                    React.createElement('span', { style: { fontSize: '0.66rem', fontWeight: 700, color: 'var(--gold)', flex: 1, fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, '★ YOU · ' + (mine.ownerName || '')),
-                                    React.createElement('span', { style: { fontSize: '0.54rem', padding: '1px 5px', borderRadius: 3, background: TIER_COLORS[mine.tier] + '22', color: TIER_COLORS[mine.tier], fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' } }, (mine.tier || '—').slice(0, 4)),
-                                    React.createElement('span', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--white)', fontFamily: 'JetBrains Mono, monospace', minWidth: 22, textAlign: 'right' } }, closest.myHealth),
-                                    React.createElement('span', { style: { fontSize: '0.56rem', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace', minWidth: 28, textAlign: 'right' } }, '—'),
+                                mine && React.createElement('div', { key: 'me', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderRadius: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))' } },
+                                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, width: 18, textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' } }, '#' + closest.myRank),
+                                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', flex: 1, fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, '★ YOU · ' + (mine.ownerName || '')),
+                                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 5px', borderRadius: 3, background: wrAlpha(TIER_COLORS[mine.tier], '22'), color: TIER_COLORS[mine.tier], fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' } }, (mine.tier || '—').slice(0, 4)),
+                                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--white)', fontFamily: 'JetBrains Mono, monospace', minWidth: 22, textAlign: 'right' } }, closest.myHealth),
+                                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace', minWidth: 28, textAlign: 'right' } }, '—'),
                                 ),
                                 ...closest.below.map((t, i) => renderCompetitorRow(t, 'b' + i, { myHealth: closest.myHealth })),
                             ),
@@ -416,11 +420,11 @@
                     ),
                     // RIGHT col: matrix + total DHQ + health histogram
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0, overflow: 'hidden' } },
-                        React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', flexShrink: 0 } },
-                            React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' } }, 'Position Strength · by Tier'),
+                        React.createElement('div', { style: { padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', flexShrink: 0 } },
+                            React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' } }, 'Position Strength · by Tier'),
                             ...matrix.map((m, i) => {
                                 return React.createElement('div', { key: i, style: { marginBottom: '4px' } },
-                                    React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--white)', marginBottom: '2px', fontFamily: 'var(--font-body)' } }, posLabel(m.pos)),
+                                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--white)', marginBottom: '2px', fontFamily: 'var(--font-body)' } }, posLabel(m.pos)),
                                     React.createElement('div', { style: { display: 'flex', height: 8, borderRadius: 2, overflow: 'hidden' } },
                                         ...TIER_ORDER.map(t => {
                                             const v = m.totals[t];
@@ -432,17 +436,17 @@
                                 );
                             }),
                         ),
-                        React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', flexShrink: 0 } },
-                            React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' } }, 'Total DHQ · by Tier'),
+                        React.createElement('div', { style: { padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', flexShrink: 0 } },
+                            React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' } }, 'Total DHQ · by Tier'),
                             ...TIER_ORDER.map(t => {
                                 const v = tierTotalDHQ[t];
                                 const pct = (v / grandTotal) * 100;
                                 return React.createElement('div', { key: t, style: { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' } },
-                                    React.createElement('span', { style: { fontSize: '0.58rem', fontWeight: 700, color: TIER_COLORS[t], minWidth: 60, textTransform: 'uppercase', letterSpacing: '0.04em' } }, t),
-                                    React.createElement('div', { style: { flex: 1, height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' } },
+                                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[t], minWidth: 60, textTransform: 'uppercase', letterSpacing: '0.04em' } }, t),
+                                    React.createElement('div', { style: { flex: 1, height: 8, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 2, overflow: 'hidden' } },
                                         React.createElement('div', { style: { width: pct + '%', height: '100%', background: TIER_COLORS[t] } }),
                                     ),
-                                    React.createElement('span', { style: { fontSize: '0.56rem', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace', minWidth: 32, textAlign: 'right' } }, Math.round(v / 1000) + 'k'),
+                                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace', minWidth: 32, textAlign: 'right' } }, Math.round(v / 1000) + 'k'),
                                 );
                             }),
                         ),
@@ -452,10 +456,10 @@
                             const sortedHealth = [...assessments].map(a => a.healthScore || 0).sort((a, b) => a - b);
                             const median = sortedHealth[Math.floor(totalAssess / 2)] || 0;
                             const avg = Math.round(sortedHealth.reduce((s, v) => s + v, 0) / totalAssess);
-                            return React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '6px' } },
+                            return React.createElement('div', { style: { padding: '10px 12px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '6px' } },
                                 React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexShrink: 0 } },
-                                    React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', flex: 1 } }, 'Health Distribution'),
-                                    React.createElement('span', { style: { fontSize: '0.6rem', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace' } }, 'avg ' + avg + ' · median ' + median),
+                                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', flex: 1 } }, 'Health Distribution'),
+                                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace' } }, 'avg ' + avg + ' · median ' + median),
                                 ),
                                 // Bars with value-on-bar
                                 React.createElement('div', { style: { display: 'flex', alignItems: 'flex-end', gap: '8px', flex: 1, minHeight: 60 } },
@@ -469,24 +473,24 @@
                                             // Bar
                                             React.createElement('div', { style: {
                                                 width: '100%', height: h + '%',
-                                                background: n > 0 ? 'linear-gradient(180deg, ' + col + ' 0%, ' + col + 'aa 100%)' : 'rgba(255,255,255,0.04)',
+                                                background: n > 0 ? 'linear-gradient(180deg, ' + col + ' 0%, ' + col + 'aa 100%)' : 'var(--ov-3, rgba(255,255,255,0.04))',
                                                 opacity: !n ? 0.3 : isMine ? 1 : 0.65,
                                                 borderRadius: '3px 3px 0 0',
-                                                border: isMine ? '2px solid #fff' : 'none',
+                                                border: isMine ? '2px solid var(--k-ffffff, #ffffff)' : 'none',
                                                 minHeight: n > 0 ? 8 : 4,
-                                                boxShadow: isMine ? '0 0 12px ' + col + '88' : 'none',
+                                                boxShadow: isMine ? '0 0 12px ' + wrAlpha(col, '88') : 'none',
                                                 transition: '0.3s',
                                             } }),
                                             // Label + you marker
-                                            React.createElement('div', { style: { fontSize: '0.6rem', fontWeight: isMine ? 700 : 500, color: isMine ? col : 'var(--silver)', opacity: isMine ? 1 : 0.7, fontFamily: 'JetBrains Mono, monospace', textAlign: 'center', lineHeight: 1.2 } },
+                                            React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: isMine ? 700 : 500, color: isMine ? col : 'var(--silver)', opacity: isMine ? 1 : 0.7, fontFamily: 'JetBrains Mono, monospace', textAlign: 'center', lineHeight: 1.2 } },
                                                 xxlHistLabels[i],
-                                                isMine && React.createElement('div', { style: { fontSize: '0.54rem', color: col, fontWeight: 700, marginTop: '1px' } }, '★ YOU'),
+                                                isMine && React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: col, fontWeight: 700, marginTop: '1px' } }, '★ YOU'),
                                             ),
                                         );
                                     }),
                                 ),
                                 // Tier color legend strip
-                                React.createElement('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '0.54rem', color: 'var(--silver)', opacity: 0.7, paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.04)', flexShrink: 0 } },
+                                React.createElement('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.7, paddingTop: '4px', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.04))', flexShrink: 0 } },
                                     React.createElement('span', null, React.createElement('span', { style: { color: TIER_COLORS.REBUILDING } }, '■ '), 'Rebuilding'),
                                     React.createElement('span', null, React.createElement('span', { style: { color: TIER_COLORS.CROSSROADS } }, '■ '), 'Crossroads'),
                                     React.createElement('span', null, React.createElement('span', { style: { color: TIER_COLORS.CONTENDER } }, '■ '), 'Contender'),

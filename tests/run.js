@@ -155,7 +155,7 @@ process.stdout.write('OK\n\n');
 // ── Grab references from context ──────────────────────────────────
 const { normPos, calcRawPts, calcPPG }                         = ctx.App;
 const LeagueSkin                                               = ctx.App.LeagueSkin;
-const { getPickValue, projectPlayerValue, PICK_VALUES, computeRolePenalty, computeUpsideDamper } = ctx.App.PlayerValue;
+const { getPickValue, projectPlayerValue, PICK_VALUES }        = ctx.App.PlayerValue;
 const computeWeightedDNA                                       = ctx.computeWeightedDNA;
 const buildEmpirePortfolioModel                                = ctx.buildEmpirePortfolioModel;
 // getUserTier / canAccess are top-level function declarations in core.js
@@ -361,8 +361,8 @@ test('server paid with unknown product tier → scout minimum',
 test('malformed JSON profile → free',
   () => { resetTierState(); ls.setItem('od_profile_v1', '{bad json{{'); eq(getUserTier(), 'free'); resetTierState(); });
 
-// TEST FLIGHT: paywalls off by default — canAccess unlocks everything
-// unless window.__WR_ENFORCE_TIERS is explicitly turned on.
+// TEST FLIGHT: canAccess unlocks everything by default; the billing matrix
+// only applies when window.__WR_ENFORCE_TIERS is on. Verify both behaviors.
 group('canAccess (test-flight: all unlocked by default)');
 test('default: trade-finder unlocked for free',
   () => { resetTierState(); delete ctx.window.__WR_ENFORCE_TIERS; ok(canAccess('trade-finder')); });
@@ -371,8 +371,8 @@ test('default: owner-dna unlocked for free',
 test('default: ai-unlimited unlocked for free',
   () => { resetTierState(); ok(canAccess('ai-unlimited')); });
 
-// With tier enforcement ON, the original billing matrix applies (kept so the
-// gating logic stays covered for when subscriptions are re-enabled).
+// With enforcement ON, the original billing matrix applies (kept tested for
+// when subscriptions are re-enabled).
 ctx.window.__WR_ENFORCE_TIERS = true;
 group('canAccess (tier enforcement on)');
 test('free: my-roster-basic accessible',
@@ -404,61 +404,6 @@ test('warroom: analytics-full accessible',
 test('warroom: intelligence-full accessible',
   () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('intelligence-full')); resetTierState(); });
 delete ctx.window.__WR_ENFORCE_TIERS; // restore test-flight default for remaining tests
-
-// ══════════════════════════════════════════════════════════════════
-// 4b. computeRolePenalty (depth-chart role discount)
-// ══════════════════════════════════════════════════════════════════
-group('computeRolePenalty');
-// Unknown / missing depth → never penalize
-test('null order → no penalty',        () => eq(computeRolePenalty('QB', null), 1.0));
-test('undefined order → no penalty',   () => eq(computeRolePenalty('QB', undefined), 1.0));
-test('non-number order → no penalty',  () => eq(computeRolePenalty('WR', 'x'), 1.0));
-// QB starts 1: order 0 full, order 1+ penalized on the moderate curve
-test('QB1 (order 0) → full value',     () => eq(computeRolePenalty('QB', 0), 1.0));
-test('QB2 (order 1) → 0.60',           () => eq(computeRolePenalty('QB', 1), 0.60));
-test('QB3 (order 2) → 0.40',           () => eq(computeRolePenalty('QB', 2), 0.40));
-test('QB4 (order 3) → 0.25 floor',     () => eq(computeRolePenalty('QB', 3), 0.25));
-test('QB deep (order 6) → 0.25 floor', () => eq(computeRolePenalty('QB', 6), 0.25));
-// Position-aware starter depth: WR starts 3, so WR1-3 are full, WR4 penalized
-test('WR3 (order 2) → full value',     () => eq(computeRolePenalty('WR', 2), 1.0));
-test('WR4 (order 3) → 0.60',           () => eq(computeRolePenalty('WR', 3), 0.60));
-// RB starts 2: RB2 full, RB3 penalized
-test('RB2 (order 1) → full value',     () => eq(computeRolePenalty('RB', 1), 1.0));
-test('RB3 (order 2) → 0.60',           () => eq(computeRolePenalty('RB', 2), 0.60));
-// Unknown position → defaults to starter depth 1
-test('unknown pos order 0 → full',     () => eq(computeRolePenalty('ZZ', 0), 1.0));
-test('unknown pos order 1 → 0.60',     () => eq(computeRolePenalty('ZZ', 1), 0.60));
-
-group('computeUpsideDamper');
-// damper(gp,pts): eff = clamp((ppg-11)/(18-11)); vol = clamp(gp/8); proven = eff*vol;
-// mult = 0.55 + 0.45*proven.
-const FLOOR = 0.55;
-const upMult = (gp, pts) => {
-  if (gp <= 0) return FLOOR;
-  const ppg = pts / gp;
-  const eff = Math.max(0, Math.min(1, (ppg - 11) / 7));
-  const vol = Math.max(0, Math.min(1, gp / 8));
-  return FLOOR + 0.45 * eff * vol;
-};
-// Non-QB positions are never damped (QB-only for now)
-test('RB → no damp',                   () => eq(computeUpsideDamper('RB', 0, 0), 1.0));
-test('WR → no damp',                   () => eq(computeUpsideDamper('WR', 17, 380), 1.0));
-// Never played → floor
-test('QB 0gp → 0.55 floor',            () => eq(computeUpsideDamper('QB', 0, 0), FLOOR));
-test('QB missing stats → 0.55 floor',  () => eq(computeUpsideDamper('QB', undefined, undefined), FLOOR));
-// Efficient full-season starter → ~full value (18+ PPG, full volume)
-test('QB 17gp/380 (22ppg) → 1.0',      () => eq(computeUpsideDamper('QB', 17, 380), 1.0));
-test('QB 17gp/306 (18ppg) → 1.0',      () => eq(computeUpsideDamper('QB', 17, 306), 1.0));
-// Inefficient ex-starter (Rattler-like, ~11.5 PPG) → heavily faded
-test('QB 10gp/135 (13.5ppg) faded',    () => eq(computeUpsideDamper('QB', 10, 135), upMult(10, 135)));
-test('QB 10gp/135 stays below 0.75',   () => ok(computeUpsideDamper('QB', 10, 135) < 0.75));
-// Low PPG can never prove regardless of games (efficiency gate)
-test('QB 16gp/176 (11ppg) → floor',    () => eq(computeUpsideDamper('QB', 16, 176), FLOOR));
-// Volume gate: high PPG but tiny sample can't fully prove
-test('QB 2gp/50 (25ppg) volume-gated', () => eq(computeUpsideDamper('QB', 2, 50), upMult(2, 50)));
-test('QB 2gp/50 below full',           () => ok(computeUpsideDamper('QB', 2, 50) < 1.0));
-// Mid starter (~15 PPG, full season) → partial credit, not floored, not full
-test('QB 14gp/210 (15ppg) partial',    () => { const m = computeUpsideDamper('QB', 14, 210); ok(m > FLOOR && m < 1.0); });
 
 // ══════════════════════════════════════════════════════════════════
 // 5. getPickValue

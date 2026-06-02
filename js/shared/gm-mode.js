@@ -27,7 +27,7 @@
         rebuild: {
             id: 'rebuild',
             label: 'Rebuild',
-            badgeColor: '#3498DB',
+            badgeColor: 'var(--k-3498db, #3498db)',
             tagline: 'Youth, picks, and patience. Tear it down to build the next dynasty.',
             config: {
                 aggression: 'conservative',
@@ -45,7 +45,7 @@
         compete: {
             id: 'compete',
             label: 'Compete',
-            badgeColor: '#D4AF37',
+            badgeColor: 'var(--k-d4af37, #d4af37)',
             tagline: 'Build for long-term success while staying competitive.',
             config: {
                 aggression: 'medium',
@@ -63,7 +63,7 @@
         win_now: {
             id: 'win_now',
             label: 'Win Now',
-            badgeColor: '#E74C3C',
+            badgeColor: 'var(--k-e74c3c, #e74c3c)',
             tagline: 'Championship window is open. Spend everything to win this year.',
             config: {
                 aggression: 'aggressive',
@@ -81,7 +81,7 @@
         custom: {
             id: 'custom',
             label: 'Custom',
-            badgeColor: '#7C6BF8',
+            badgeColor: 'var(--k-7c6bf8, #7c6bf8)',
             tagline: 'Hand-tuned — every variable set manually.',
             config: null, // caller keeps existing settings
             prompt: 'You are running a CUSTOM strategy — follow the user-defined aggression, draft style, market posture, and timeline as configured.',

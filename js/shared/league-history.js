@@ -103,6 +103,52 @@
         return out;
     }
 
+    // championshipPathMatchIds — the set of winners-bracket matchup numbers (m) on the
+    // path to the title game (p===1), found by walking t#_from.w pointers backwards from it.
+    // This is the only correct way to separate REAL playoff games from consolation /
+    // placement (3rd/5th/7th) games: those descend from LOSER pointers and never feed the
+    // final, so they're excluded — and it's robust to byes and two-week championship rounds.
+    // NB: t1_from/t2_from.w are MATCHUP NUMBERS (m); t1/t2/w/l are ROSTER IDS. Never mix them
+    // (the old per-tab tracing compared m to t1/t2 — different ID spaces — and broke).
+    function championshipPathMatchIds(winners) {
+        const ids = new Set();
+        if (!Array.isArray(winners) || !winners.length) return ids;
+        const byId = new Map(winners.map(m => [m.m, m]));
+        let start = winners.find(m => m.p === 1);
+        if (!start) {
+            // No placement field: fall back to a lone highest-round game (a simple final).
+            const maxR = Math.max(...winners.map(m => m.r || 0));
+            const finals = winners.filter(m => (m.r || 0) === maxR);
+            if (finals.length === 1) start = finals[0];
+        }
+        if (!start) return ids;
+        const queue = [start];
+        while (queue.length) {
+            const g = queue.shift();
+            if (!g || ids.has(g.m)) continue;
+            ids.add(g.m);
+            [g.t1_from, g.t2_from].forEach(fr => {
+                if (fr && fr.w != null && byId.has(fr.w)) queue.push(byId.get(fr.w));
+            });
+        }
+        return ids;
+    }
+
+    // playoffRecord — a roster's W-L across REAL playoff (championship-path) games only.
+    // The single source of truth for playoff records across every tab/engine.
+    function playoffRecord(winners, rosterId) {
+        if (rosterId == null) return { w: 0, l: 0 };
+        const ids = championshipPathMatchIds(winners);
+        const rid = String(rosterId);
+        let w = 0, l = 0;
+        (winners || []).forEach(m => {
+            if (!ids.has(m.m)) return;
+            if (m.w != null && String(m.w) === rid) w++;
+            else if (m.l != null && String(m.l) === rid) l++;
+        });
+        return { w, l };
+    }
+
     function rosterFinish(place, w, l, t) {
         if (place === 1) return 'Champion';
         if (place === 2) return 'Runner-Up';
@@ -409,6 +455,8 @@
         load: build,
         loadIfMissing,
         getCached,
+        playoffRecord,
+        championshipPathMatchIds,
         getOwnerHistory: function (leagueId) {
             return ownerHistoryByRoster(readCache(leagueId));
         },

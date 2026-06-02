@@ -79,12 +79,12 @@ function AnalyticsPanel({
     const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, rosters: _SS.rosters, currentLeague }) || { isUsable: true };
 
     // Token-driven card style so padding/radius/border track index.html's spacing scale.
-    const aCardStyle = { background: 'var(--black)', border: 'var(--card-border, 1px solid rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius, 10px)', padding: 'var(--card-pad, 14px 16px)', marginBottom: 'var(--card-gap, 12px)' };
-    const aHeaderStyle = { fontFamily: 'Rajdhani, sans-serif', color: 'var(--gold)', fontSize: '1.125rem', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '12px', borderBottom: '1px solid rgba(212,175,55,0.2)', paddingBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
-    const aValStyle = { fontFamily: 'JetBrains Mono, monospace', fontSize: '0.95rem', fontWeight: 500 };
-    const goodColor = '#2ECC71';
-    const warnColor = '#F0A500';
-    const badColor = '#E74C3C';
+    const aCardStyle = { background: 'var(--black)', border: 'var(--card-border, 1px solid var(--acc-line1, rgba(212,175,55,0.2)))', borderRadius: 'var(--card-radius, 10px)', padding: 'var(--card-pad, 16px 18px)', marginBottom: 'var(--card-gap, 14px)' };
+    const aHeaderStyle = { fontFamily: 'Rajdhani, sans-serif', color: 'var(--gold)', fontSize: '1.125rem', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '12px', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', paddingBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
+    const aValStyle = { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-body, 1rem)', fontWeight: 500 };
+    const goodColor = 'var(--good)';
+    const warnColor = 'var(--warn)';
+    const badColor = 'var(--bad)';
     const sevIcon = (sev) => sev === 'high' || sev === 'critical' ? '\uD83D\uDD34' : sev === 'medium' ? '\u26A0\uFE0F' : '\u2705';
     const sevColor = (sev) => sev === 'high' || sev === 'critical' ? badColor : sev === 'medium' ? warnColor : goodColor;
     const pctFmt = (v) => Math.round((v || 0) * 100) + '%';
@@ -113,7 +113,7 @@ function AnalyticsPanel({
         picks: 'Pick capital, ownership status, and traded/acquired paths.',
         reports: 'Custom report templates, saved views, and live preview.'
     };
-    const tableRowStyle = (i) => ({ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', ...(i === 0 ? { fontWeight: 700, color: 'var(--gold)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' } : { color: 'var(--silver)' }) });
+    const tableRowStyle = (i) => ({ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', ...(i === 0 ? { fontWeight: 700, color: 'var(--gold)', fontSize: 'var(--text-body, 1rem)', textTransform: 'uppercase', letterSpacing: '0.05em' } : { color: 'var(--silver)' }) });
     const d = analyticsData;
     const sameId = (a, b) => a != null && b != null && String(a) === String(b);
     const historyLeagueId = currentLeague?.id || currentLeague?.league_id || '';
@@ -225,7 +225,7 @@ function AnalyticsPanel({
                         <div key={i} className="analytics-delta-row">
                             <strong>{r.label}</strong>
                             <div className="analytics-delta-track">
-                                <div className="analytics-delta-fill" style={{ width: yPct + '%', background: r.color || '#4ECDC4' }} />
+                                <div className="analytics-delta-fill" style={{ width: yPct + '%', background: r.color || 'var(--k-4ecdc4, #4ecdc4)' }} />
                                 <div className="analytics-delta-benchmark" style={{ left: bPct + '%' }} />
                             </div>
                             <b>{r.format ? r.format(yours) : yours.toFixed(0)}</b>
@@ -264,7 +264,7 @@ function AnalyticsPanel({
     );
 
     return (
-    <div className="analytics-shell" style={{ padding: '10px 16px 16px' }}>
+    <div className="analytics-shell" style={{ padding: 'var(--space-md) var(--space-lg) var(--space-lg)' }}>
         <div className="wr-module-strip">
             <div className="wr-module-context">
                 <span>Analytics</span>
@@ -356,8 +356,8 @@ function AnalyticsPanel({
 
             // ── KPI Card style ──
             const kpiCardStyle = {
-                background: 'linear-gradient(135deg, rgba(26,26,26,0.95), rgba(10,10,10,0.98))',
-                border: '1px solid rgba(212,175,55,0.25)',
+                background: 'linear-gradient(135deg, var(--surf-solid, rgba(26,26,26,0.95)), var(--surf-solid, rgba(10,10,10,0.98)))',
+                border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
                 borderRadius: '10px',
                 padding: '10px 12px 8px',
                 flex: '1 1 0',
@@ -374,7 +374,7 @@ function AnalyticsPanel({
             };
             const kpiLabelStyle = {
                 fontFamily: 'var(--font-body)',
-                fontSize: '0.68rem',
+                fontSize: 'var(--text-label, 0.75rem)',
                 color: 'var(--silver)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.08em',
@@ -382,7 +382,7 @@ function AnalyticsPanel({
             };
             const kpiDeltaStyle = (positive) => ({
                 fontFamily: 'var(--font-body)',
-                fontSize: '0.75rem',
+                fontSize: 'var(--text-body, 1rem)',
                 fontWeight: 600,
                 color: positive ? goodColor : badColor,
                 marginTop: '4px',
@@ -394,12 +394,12 @@ function AnalyticsPanel({
             const posBarItems = allPos.map(pos => ({
                 label: window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos),
                 value: Math.round((m.posInvestment[pos] || 0) * 100),
-                color: '#4ECDC4',
+                color: 'var(--k-4ecdc4, #4ecdc4)',
             }));
             const posBarWinnerItems = allPos.map(pos => ({
                 label: window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos),
                 value: Math.round((w.posInvestment[pos] || 0) * 100),
-                color: CHART_COLORS?.gold || '#D4AF37',
+                color: CHART_COLORS?.gold || 'var(--k-d4af37, #d4af37)',
             }));
 
             // ── Radar data ──
@@ -499,7 +499,7 @@ function AnalyticsPanel({
                 benchmark: Math.round((w.posInvestment[pos] || 0) * 100),
                 suffix: ' pts',
                 format: v => Math.round(v) + '%',
-                color: needsSet.has(pos) ? badColor : '#4ECDC4',
+                color: needsSet.has(pos) ? badColor : 'var(--k-4ecdc4, #4ecdc4)',
             }));
             // ── Roster command summary ──
             const projMyAge = m.avgAge + (timeDelta || 0);
@@ -595,14 +595,14 @@ function AnalyticsPanel({
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
                     {insights.map((ins, i) => (
                         <div key={i} style={{
-                            background: 'rgba(26,26,26,0.8)', borderRadius: '10px', padding: '14px 16px',
+                            background: 'var(--surf-solid, rgba(26,26,26,0.8))', borderRadius: 'var(--card-radius)', padding: '14px 16px',
                             borderLeft: '4px solid ' + ins.color,
-                            border: '1px solid rgba(255,255,255,0.06)',
+                            border: '1px solid var(--ov-4, rgba(255,255,255,0.06))',
                         }}>
-                            <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: 700, color: ins.color, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: ins.color, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                 {ins.title}
                             </div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--silver)', lineHeight: 1.5 }}>{ins.text}</div>
+                            <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.5 }}>{ins.text}</div>
                         </div>
                     ))}
                 </div>
@@ -620,14 +620,14 @@ function AnalyticsPanel({
                             <div style={aHeaderStyle}><span>YOUR 5-YEAR OUTLOOK</span></div>
                             {proj.map((p, i) => (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                                    <span style={{ color: 'var(--silver)', fontFamily: 'var(--font-body)', minWidth: '40px', fontSize: '0.9rem' }}>{p.year}</span>
-                                    <div style={{ flex: 1, position: 'relative', height: '24px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', overflow: 'hidden' }}>
+                                    <span style={{ color: 'var(--silver)', fontFamily: 'var(--font-body)', minWidth: '40px', fontSize: 'var(--text-body, 1rem)' }}>{p.year}</span>
+                                    <div style={{ flex: 1, position: 'relative', height: '24px', background: 'var(--ov-3, rgba(255,255,255,0.05))', borderRadius: '6px', overflow: 'hidden' }}>
                                         <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: (p.projectedDHQ / maxDHQ * 100) + '%', background: tierColor(p.tier), borderRadius: '6px', opacity: 0.6, transition: 'width 0.5s ease' }} />
-                                        <div style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', fontFamily: 'var(--font-body)', color: 'var(--white)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                        <div style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', color: 'var(--white)', fontWeight: 700, whiteSpace: 'nowrap' }}>
                                             {p.projectedDHQ.toLocaleString()} DHQ
                                         </div>
                                     </div>
-                                    <span style={{ color: tierColor(p.tier), fontFamily: 'var(--font-body)', fontSize: '0.8rem', minWidth: '90px', textAlign: 'right' }}>
+                                    <span style={{ color: tierColor(p.tier), fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', minWidth: '90px', textAlign: 'right' }}>
                                         {p.tier} {p.tier === 'Rebuilding' || p.tier === 'Deep Rebuild' ? '\uD83D\uDD34' : p.tier === 'Playoff Team' ? '\u26A0\uFE0F' : ''}
                                     </span>
                                 </div>
@@ -667,11 +667,11 @@ function AnalyticsPanel({
                     return (
                         <div style={{ ...aCardStyle, marginTop: '12px' }}>
                             <div style={aHeaderStyle}><span>AGING CLIFF ALERT</span></div>
-	                            <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '10px', lineHeight: 1.5 }}>Players within 2 years of their position's value-window end with 2000+ DHQ value. These are your highest-risk assets for dynasty value decline.</div>
+	                            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '10px', lineHeight: 1.5 }}>Players within 2 years of their position's value-window end with 2000+ DHQ value. These are your highest-risk assets for dynasty value decline.</div>
                             <div style={{ display: 'flex', gap: '24px', marginBottom: '12px' }}>
                                 <div style={{ textAlign: 'center' }}>
                                     <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.6rem', color: arPct2 > 30 ? badColor : arPct2 > 15 ? warnColor : goodColor }}>{arPct2}%</div>
-	                                    <div style={{ fontSize: '0.75rem', color: 'var(--silver)' }}>Your DHQ near value cliff by {(parseInt(S2?.season) || 2026) + 2}</div>
+	                                    <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)' }}>Your DHQ near value cliff by {(parseInt(S2?.season) || 2026) + 2}</div>
                                 </div>
                                 <div style={{ textAlign: 'center' }}>
                                     {(() => {
@@ -690,20 +690,20 @@ function AnalyticsPanel({
                                         const lgP = lgT > 0 ? Math.round(lgA / lgT * 100) : 0;
                                         return <>
                                             <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.6rem', color: 'var(--gold)' }}>{lgP}%</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--silver)' }}>League avg</div>
+                                            <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)' }}>League avg</div>
                                         </>;
                                     })()}
                                 </div>
                             </div>
                             {arPlayers2.length > 0 && (
                                 <div>
-                                    <div style={{ color: 'var(--silver)', fontSize: '0.8rem', marginBottom: '6px', fontWeight: 700 }}>Players at risk:</div>
+                                    <div style={{ color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)', marginBottom: '6px', fontWeight: 700 }}>Players at risk:</div>
                                     {arPlayers2.slice(0, 5).map((p, i) => (
-                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.85rem', fontFamily: 'var(--font-body)' }}>
+                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)' }}>
                                             <span style={{ color: 'var(--silver)' }}>{p.name} ({p.age})</span>
                                             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <span style={{ color: badColor }}>{p.dhq.toLocaleString()} DHQ</span>
-                                                <span style={{ padding: '2px 8px', background: 'rgba(231,76,60,0.15)', color: badColor, borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em' }}>TRADE NOW</span>
+                                                <span style={{ padding: '2px 8px', background: 'rgba(231,76,60,0.15)', color: badColor, borderRadius: '4px', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, letterSpacing: '0.05em' }}>TRADE NOW</span>
                                             </span>
                                         </div>
                                     ))}
@@ -762,15 +762,15 @@ function AnalyticsPanel({
 
             // KPI card style
             const dKpiCardStyle = {
-                background: 'linear-gradient(135deg, rgba(26,26,26,0.95), rgba(10,10,10,0.98))',
-                border: '1px solid rgba(212,175,55,0.25)',
+                background: 'linear-gradient(135deg, var(--surf-solid, rgba(26,26,26,0.95)), var(--surf-solid, rgba(10,10,10,0.98)))',
+                border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
                 borderRadius: '14px',
                 padding: '20px 18px 14px',
                 flex: '1 1 0',
                 minWidth: '140px',
             };
             const dKpiNum = { fontFamily: 'Rajdhani, sans-serif', fontSize: '2.2rem', lineHeight: 1, color: 'var(--white)', marginBottom: '2px' };
-            const dKpiLabel = { fontFamily: 'var(--font-body)', fontSize: '0.7rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7 };
+            const dKpiLabel = { fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7 };
 
             // Build bar chart items for hit rate by round
             const hitRateBarItems = rounds.filter(rd => dr.winnerHitRate[rd]).map(rd => ({
@@ -944,17 +944,17 @@ function AnalyticsPanel({
                 label: p.label,
                 detail: p.own ? 'Original pick path' : 'From ' + (p.from || 'another roster'),
                 value: (p.value || 0).toLocaleString(),
-                color: p.round <= 2 ? 'var(--gold)' : '#9b8afb',
+                color: p.round <= 2 ? 'var(--gold)' : 'var(--k-9b8afb, #9b8afb)',
             })) : [{ kicker: 'Pick Path', label: 'No current picks loaded', detail: 'Draft pick source did not return current inventory.', value: '\u2014' }];
             const historicalRows = [
                 { kicker: 'Champion Threshold', label: championRecordText, detail: championRows.length ? 'Average title-team regular-season record in this league.' : 'Waiting for champion season rows.', value: avgChampionPF != null ? Math.round(avgChampionPF).toLocaleString() + ' PF' : '\u2014', color: goodColor },
                 { kicker: 'League Parity', label: uniqueChampionOwners ? uniqueChampionOwners + ' title teams' : 'No title map', detail: championRows.length ? uniqueChampionOwners + ' unique champions across ' + championRows.length + ' title seasons.' : 'History has not identified champions yet.', value: championRows.length || '\u2014', color: 'var(--gold)' },
                 { kicker: 'Draft Behavior', label: movedPickCount ? 'Pick trades exist' : 'Fixed-slot league', detail: movedPickCount ? 'Use ledger movement when modeling offers.' : 'No historical pick trades found, so mock offers should weight to zero.', value: movedPickCount.toLocaleString(), color: movedPickCount ? warnColor : goodColor },
-                { kicker: 'Roster Rule Cue', label: redraftBuildCue, detail: rosterSlots.includes('K') || rosterSlots.includes('DEF') || rosterSlots.includes('DST') ? 'Kicker and D/ST should be timing decisions, not early capital.' : 'No K/DST drag detected in roster slots.', value: draftRounds + ' rounds', color: '#4ECDC4' },
+                { kicker: 'Roster Rule Cue', label: redraftBuildCue, detail: rosterSlots.includes('K') || rosterSlots.includes('DEF') || rosterSlots.includes('DST') ? 'Kicker and D/ST should be timing decisions, not early capital.' : 'No K/DST drag detected in roster slots.', value: draftRounds + ' rounds', color: 'var(--k-4ecdc4, #4ecdc4)' },
             ];
             const buildRows = [
                 { kicker: 'Current Inventory', label: currentPicks.length + ' owned picks', detail: skinFeatures.showFuturePicks === false ? 'Current-season redraft board only.' : 'Includes visible future-pick years.', value: currentPickValue.toLocaleString(), color: 'var(--gold)' },
-                { kicker: 'Round Shape', label: draftRounds + ' rounds x ' + totalTeams + ' teams', detail: 'Resolved from roster-slot skin rules, not raw Sleeper draft_rounds.', value: (totalTeams * draftRounds).toLocaleString() + ' picks', color: '#9b8afb' },
+                { kicker: 'Round Shape', label: draftRounds + ' rounds x ' + totalTeams + ' teams', detail: 'Resolved from roster-slot skin rules, not raw Sleeper draft_rounds.', value: (totalTeams * draftRounds).toLocaleString() + ' picks', color: 'var(--k-9b8afb, #9b8afb)' },
                 { kicker: 'Early Capital', label: earlyPicks + ' picks in R1-R2', detail: 'Used for anchor-player and tier-break decisions.', value: topCurrentPicks[0]?.label || '\u2014', color: warnColor },
                 { kicker: 'AI Trade Weight', label: movedPickCount ? 'Historical rate' : '0% offer bias', detail: 'Mock draft trade behavior follows this league ledger.', value: movedPickCount ? movedPickCount + ' moved' : 'No trades', color: movedPickCount ? warnColor : goodColor },
             ];
@@ -1022,9 +1022,9 @@ function AnalyticsPanel({
                                         <div style={{ flex: 1, display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                             {sorted.map(([pos, pct]) => (
                                                 <span key={pos} style={{
-                                                    fontSize: '0.72rem', fontFamily: 'var(--font-body)', padding: '2px 8px',
-                                                    borderRadius: '10px', background: 'rgba(212,175,55,0.12)', color: 'var(--gold)',
-                                                    border: '1px solid rgba(212,175,55,0.25)',
+                                                    fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', padding: '2px 8px',
+                                                    borderRadius: 'var(--card-radius-sm)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)',
+                                                    border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
                                                 }}>{posLabel(pos)} {pctFmt(pct)}</span>
                                             ))}
                                         </div>
@@ -1033,8 +1033,8 @@ function AnalyticsPanel({
                                         <div style={{ marginLeft: '65px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                             {Object.entries(myProf).sort((a, b) => b[1] - a[1]).map(([pos, pct]) => (
                                                 <span key={pos} style={{
-                                                    fontSize: '0.68rem', fontFamily: 'var(--font-body)', padding: '1px 6px',
-                                                    borderRadius: '8px', background: 'rgba(78,205,196,0.1)', color: '#4ECDC4',
+                                                    fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', padding: '1px 6px',
+                                                    borderRadius: 'var(--card-radius-sm)', background: 'rgba(78,205,196,0.1)', color: 'var(--k-4ecdc4, #4ecdc4)',
                                                     border: '1px solid rgba(78,205,196,0.2)',
                                                 }}>{posLabel(pos)} {pctFmt(pct)}</span>
                                             ))}
@@ -1043,9 +1043,9 @@ function AnalyticsPanel({
                                 </div>
                                 );
                             })}
-                            <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '0.7rem' }}>
+                            <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: 'var(--text-label, 0.75rem)' }}>
                                 <span style={{ color: 'var(--gold)' }}>{'\u25A0'} Elite Tier</span>
-                                <span style={{ color: '#4ECDC4' }}>{'\u25A0'} You</span>
+                                <span style={{ color: 'var(--k-4ecdc4, #4ecdc4)' }}>{'\u25A0'} You</span>
                             </div>
                         </div>
                     </div>
@@ -1098,20 +1098,20 @@ function AnalyticsPanel({
 
             // Build position bought bar chart items
             const allBoughtPos = [...new Set([...Object.keys(wp.positionsBought || {}), ...Object.keys(mp.positionsBought || {})])].filter(p => p !== 'UNK').sort();
-            const boughtBarWinner = allBoughtPos.map(pos => ({ label: posLabel(pos), value: (wp.positionsBought || {})[pos] || 0, color: CHART_COLORS?.gold || '#D4AF37' }));
-            const boughtBarYou = allBoughtPos.map(pos => ({ label: posLabel(pos), value: (mp.positionsBought || {})[pos] || 0, color: '#4ECDC4' }));
+            const boughtBarWinner = allBoughtPos.map(pos => ({ label: posLabel(pos), value: (wp.positionsBought || {})[pos] || 0, color: CHART_COLORS?.gold || 'var(--k-d4af37, #d4af37)' }));
+            const boughtBarYou = allBoughtPos.map(pos => ({ label: posLabel(pos), value: (mp.positionsBought || {})[pos] || 0, color: 'var(--k-4ecdc4, #4ecdc4)' }));
 
             // KPI card style
             const tKpiCardStyle = {
-                background: 'linear-gradient(135deg, rgba(26,26,26,0.95), rgba(10,10,10,0.98))',
-                border: '1px solid rgba(212,175,55,0.25)',
+                background: 'linear-gradient(135deg, var(--surf-solid, rgba(26,26,26,0.95)), var(--surf-solid, rgba(10,10,10,0.98)))',
+                border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
                 borderRadius: '14px',
                 padding: '20px 18px 14px',
                 flex: '1 1 0',
                 minWidth: '140px',
             };
             const tKpiNum = { fontFamily: 'Rajdhani, sans-serif', fontSize: '2.2rem', lineHeight: 1, color: 'var(--white)', marginBottom: '2px' };
-            const tKpiLabel = { fontFamily: 'var(--font-body)', fontSize: '0.7rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7 };
+            const tKpiLabel = { fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7 };
 
             const valueDeltaColor = mp.avgValueGained >= 0 ? goodColor : badColor;
             const marketProofItems = [
@@ -1126,11 +1126,11 @@ function AnalyticsPanel({
                 benchmark: (wp.positionsBought || {})[pos] || 0,
                 suffix: '',
                 format: v => Math.round(v),
-                color: '#7C6BF8',
+                color: 'var(--k-7c6bf8, #7c6bf8)',
             }));
             const marketRows = [
                 { kicker: 'Partner Archetype', label: 'Elite teams trade with', detail: 'Preferred counterparty posture among title teams.', value: cleanPreference(wp.partnerPreference), color: 'var(--gold)' },
-                { kicker: 'Your Pattern', label: 'You trade with', detail: 'Your observed partner preference.', value: cleanPreference(mp.partnerPreference), color: '#4ECDC4' },
+                { kicker: 'Your Pattern', label: 'You trade with', detail: 'Your observed partner preference.', value: cleanPreference(mp.partnerPreference), color: 'var(--k-4ecdc4, #4ecdc4)' },
                 { kicker: 'Top Price Position', label: topFaabPos ? posLabel(topFaabPos[0]) : 'No FAAB history', detail: topFaabPos ? 'Average winning bid across waiver history.' : 'Transactions have not produced a market map yet.', value: topFaabPos ? '$' + Math.round(topFaabPos[1].avg || 0) : '\u2014', color: warnColor },
                 { kicker: 'Winner Timing', label: 'Market entry point', detail: 'When title teams usually create transaction value.', value: (wa.winnerTiming?.early || 0) >= 0.5 ? 'Early' : (wa.winnerTiming?.mid || 0) >= (wa.winnerTiming?.late || 0) ? 'Mid' : 'Late', color: goodColor },
             ];
@@ -1215,15 +1215,15 @@ function AnalyticsPanel({
                             const result = netDhq > 200 ? 'Won' : netDhq < -200 ? 'Lost' : 'Fair';
                             const resultColor = result === 'Won' ? goodColor : result === 'Lost' ? badColor : warnColor;
                             return (
-                                <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: '0.75rem', color: 'var(--gold)', fontFamily: 'var(--font-body)' }}>S{trade.season || '?'} W{trade.week || '?'}</span>
-                                        <span style={{ fontSize: '0.68rem', fontFamily: 'var(--font-body)', padding: '2px 8px', borderRadius: '10px', background: resultColor + '22', color: resultColor, border: '1px solid ' + resultColor + '44', fontWeight: 700 }}>{result}</span>
+                                        <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', fontFamily: 'var(--font-body)' }}>S{trade.season || '?'} W{trade.week || '?'}</span>
+                                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', padding: '2px 8px', borderRadius: '10px', background: wrAlpha(resultColor, '22'), color: resultColor, border: '1px solid ' + wrAlpha(resultColor, '44'), fontWeight: 700 }}>{result}</span>
                                     </div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>
+                                    <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>
                                         {assetListText(trade.gave)} <span style={{ color: 'var(--gold)', margin: '0 4px' }}>{'\u2192'}</span> {assetListText(trade.got)}
                                     </div>
-                                    <div style={{ fontSize: '0.75rem', fontFamily: 'var(--font-body)', color: netDhq >= 0 ? goodColor : badColor, fontWeight: 700 }}>
+                                    <div style={{ fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', color: netDhq >= 0 ? goodColor : badColor, fontWeight: 700 }}>
                                         {netDhq >= 0 ? '+' : ''}{netDhq.toLocaleString()} DHQ
                                     </div>
                                 </div>
@@ -1237,14 +1237,14 @@ function AnalyticsPanel({
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
                     {alerts.map((a, i) => (
                         <div key={i} style={{
-                            background: 'rgba(26,26,26,0.8)', borderRadius: '10px', padding: '14px 16px',
+                            background: 'var(--surf-solid, rgba(26,26,26,0.8))', borderRadius: 'var(--card-radius)', padding: '14px 16px',
                             borderLeft: '4px solid ' + sevColor(a.sev),
-                            border: '1px solid rgba(255,255,255,0.06)',
+                            border: '1px solid var(--ov-4, rgba(255,255,255,0.06))',
                         }}>
-                            <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: 700, color: sevColor(a.sev), marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: sevColor(a.sev), marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                 {a.title}
                             </div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--silver)', lineHeight: 1.5 }}>{a.msg}</div>
+                            <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.5 }}>{a.msg}</div>
                         </div>
                     ))}
                 </div>

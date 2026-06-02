@@ -440,35 +440,36 @@ function CompareTab({
         else if (typeof window._wrSelectPlayer === 'function') window._wrSelectPlayer(pid);
     };
 
-    const pageStyle = { padding: '22px 26px 60px', maxWidth: '1540px', margin: '0 auto' };
-    const panelStyle = { background: 'var(--black)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px' };
-    const labelStyle = { fontSize: '0.62rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.66 };
+    const pageStyle = { padding: 'var(--space-xl) var(--space-xl) 60px', maxWidth: '1540px', margin: '0 auto' };
+    const panelStyle = { background: 'var(--black)', border: 'var(--card-border)', borderRadius: 'var(--card-radius)' };
+    const labelStyle = { fontSize: 'var(--text-micro)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.66 };
     const mono = { fontFamily: 'JetBrains Mono, monospace' };
     const muted = { color: 'var(--silver)', opacity: 0.72 };
     const selectStyle = {
         padding: '9px 14px',
         fontSize: '0.82rem',
         fontFamily: 'var(--font-body)',
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(212,175,55,0.32)',
+        background: 'var(--ov-3, rgba(255,255,255,0.04))',
+        border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))',
         borderRadius: '6px',
         color: 'var(--white)',
-        minWidth: '280px',
+        minHeight: '44px',
     };
     const quickButtonStyle = (active) => ({
         padding: '8px 10px',
-        background: active ? 'rgba(212,175,55,0.16)' : 'rgba(255,255,255,0.035)',
-        border: '1px solid ' + (active ? 'rgba(212,175,55,0.46)' : 'rgba(255,255,255,0.08)'),
+        background: active ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-3, rgba(255,255,255,0.035))',
+        border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.46))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
         borderRadius: '6px',
         color: active ? 'var(--gold)' : 'var(--silver)',
         textAlign: 'left',
         cursor: 'pointer',
         minWidth: '142px',
+        minHeight: '44px',
     });
 
     const renderLanding = () => (
         <div style={{ ...panelStyle, padding: '28px', color: 'var(--silver)' }}>
-            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.2rem', color: 'var(--white)', fontWeight: 700, marginBottom: '6px' }}>
+            <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', color: 'var(--white)', fontWeight: 700, marginBottom: '6px' }}>
                 Choose a matchup lens
             </div>
             <div style={{ fontSize: '0.86rem', lineHeight: 1.5, maxWidth: '620px' }}>
@@ -480,23 +481,25 @@ function CompareTab({
     const scopeButtonStyle = (active) => ({
         padding: '8px 12px',
         borderRadius: '6px',
-        border: '1px solid ' + (active ? 'rgba(212,175,55,0.55)' : 'rgba(255,255,255,0.09)'),
-        background: active ? 'rgba(212,175,55,0.16)' : 'rgba(255,255,255,0.035)',
+        border: '1px solid ' + (active ? 'var(--acc-line4, rgba(212,175,55,0.55))' : 'var(--ov-5, rgba(255,255,255,0.09))'),
+        background: active ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-3, rgba(255,255,255,0.035))',
         color: active ? 'var(--gold)' : 'var(--silver)',
-        fontFamily: 'Rajdhani, sans-serif',
+        fontFamily: 'var(--font-title)',
         fontWeight: 800,
         fontSize: '0.92rem',
         cursor: 'pointer',
+        minHeight: '44px',
     });
     const smallButtonStyle = (active) => ({
         padding: '6px 9px',
         borderRadius: '6px',
-        border: '1px solid ' + (active ? 'rgba(212,175,55,0.48)' : 'rgba(255,255,255,0.08)'),
-        background: active ? 'rgba(212,175,55,0.14)' : 'rgba(255,255,255,0.03)',
+        border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.48))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+        background: active ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'var(--ov-2, rgba(255,255,255,0.03))',
         color: active ? 'var(--gold)' : 'var(--silver)',
         fontSize: '0.72rem',
         fontWeight: 800,
         cursor: 'pointer',
+        minHeight: '44px',
     });
     const renderScopeControls = () => (
         <div className="wr-module-nav">
@@ -536,14 +539,14 @@ function CompareTab({
                                 <button key={t.rosterId} onClick={() => toggleManualTeam(t.rosterId)} style={{
                                     padding: '8px 9px',
                                     borderRadius: '6px',
-                                    border: '1px solid ' + (manualActive ? 'rgba(212,175,55,0.46)' : 'rgba(255,255,255,0.07)'),
-                                    background: manualActive ? 'rgba(212,175,55,0.12)' : active ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.025)',
+                                    border: '1px solid ' + (manualActive ? 'var(--acc-line3, rgba(212,175,55,0.46))' : 'var(--ov-4, rgba(255,255,255,0.07))'),
+                                    background: manualActive ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : active ? 'var(--ov-4, rgba(255,255,255,0.055))' : 'var(--ov-2, rgba(255,255,255,0.025))',
                                     color: manualActive ? 'var(--gold)' : 'var(--silver)',
                                     cursor: 'pointer',
                                     textAlign: 'left',
                                 }}>
                                     <div style={{ fontWeight: 850, color: manualActive ? 'var(--gold)' : 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
-                                    <div style={{ ...mono, fontSize: '0.66rem', opacity: 0.66, marginTop: '2px' }}>{t.dhq.toLocaleString()} {valueShortLabel}{sameId(t.rosterId, myRoster.roster_id) ? ' · You' : ''}</div>
+                                    <div style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', opacity: 0.66, marginTop: '2px' }}>{t.dhq.toLocaleString()} {valueShortLabel}{sameId(t.rosterId, myRoster.roster_id) ? ' · You' : ''}</div>
                                 </button>
                             );
                         })}
@@ -556,8 +559,8 @@ function CompareTab({
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
                     {divisionKeys.map(key => (
                         <button key={key} onClick={() => setSelectedDivision(key)} style={quickButtonStyle(key === activeDivision)}>
-                            <div style={{ fontSize: '0.58rem', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.72 }}>{getDivisionName(key)}</div>
-                            <div style={{ ...mono, fontSize: '0.68rem', marginTop: '2px' }}>{(divisions[key] || []).length} teams</div>
+                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.72 }}>{getDivisionName(key)}</div>
+                            <div style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', marginTop: '2px' }}>{(divisions[key] || []).length} teams</div>
                         </button>
                     ))}
                 </div>
@@ -623,13 +626,13 @@ function CompareTab({
             return { pos, columns, maxLen, leaderId: leader?.profile?.rosterId };
         }).filter(summary => summary.maxLen > 0) : [];
         const fieldCards = [
-            { label: 'Asset Rank', value: '#' + focusRank + ' of ' + profiles.length, sub: percentile + 'th percentile incl. picks', color: focusRank <= Math.ceil(profiles.length / 3) ? '#2ECC71' : focusRank <= Math.ceil(profiles.length * 0.66) ? 'var(--gold)' : '#E74C3C' },
-            { label: 'Roster vs Field', value: (focusProfile.total - fieldAvg > 0 ? '+' : '') + (focusProfile.total - fieldAvg).toLocaleString(), sub: focusProfile.total.toLocaleString() + ' vs ' + fieldAvg.toLocaleString() + ' avg', color: focusProfile.total >= fieldAvg ? '#2ECC71' : '#E74C3C' },
-            { label: 'Starter vs Field', value: (focusProfile.starterTotal - starterAvg > 0 ? '+' : '') + (focusProfile.starterTotal - starterAvg).toLocaleString(), sub: focusProfile.starterTotal.toLocaleString() + ' vs ' + starterAvg.toLocaleString() + ' avg', color: focusProfile.starterTotal >= starterAvg ? '#2ECC71' : '#E74C3C' },
-            { label: 'Picks vs Field', value: ((focusProfile.pickCapital.totalValue - pickAvg) > 0 ? '+' : '') + (focusProfile.pickCapital.totalValue - pickAvg).toLocaleString(), sub: focusProfile.pickCapital.count + ' picks vs ' + Math.round(comparisonProfiles.reduce((s, p) => s + (p.pickCapital?.count || 0), 0) / Math.max(comparisonProfiles.length, 1)) + ' avg', color: focusProfile.pickCapital.totalValue >= pickAvg ? '#2ECC71' : '#E74C3C' },
-            { label: 'FAAB vs Field', value: focusProfile.faab.isFaab ? ((focusProfile.faab.remaining - faabAvg) > 0 ? '+$' : '-$') + Math.abs(focusProfile.faab.remaining - faabAvg).toLocaleString() : '—', sub: focusProfile.faab.label, color: !focusProfile.faab.isFaab ? 'var(--silver)' : focusProfile.faab.remaining >= faabAvg ? '#2ECC71' : '#E74C3C' },
-            { label: 'Best Room', value: strongest ? posLabel(strongest.pos) : '-', sub: strongest ? ((strongest.diff > 0 ? '+' : '') + strongest.diff.toLocaleString() + ' vs avg') : '-', color: '#2ECC71' },
-            { label: 'Danger Room', value: weakest ? posLabel(weakest.pos) : '-', sub: weakest ? ((weakest.diff > 0 ? '+' : '') + weakest.diff.toLocaleString() + ' vs avg') : '-', color: weakest?.diff < 0 ? '#E74C3C' : 'var(--gold)' },
+            { label: 'Asset Rank', value: '#' + focusRank + ' of ' + profiles.length, sub: percentile + 'th percentile incl. picks', color: focusRank <= Math.ceil(profiles.length / 3) ? 'var(--good)' : focusRank <= Math.ceil(profiles.length * 0.66) ? 'var(--gold)' : 'var(--bad)' },
+            { label: 'Roster vs Field', value: (focusProfile.total - fieldAvg > 0 ? '+' : '') + (focusProfile.total - fieldAvg).toLocaleString(), sub: focusProfile.total.toLocaleString() + ' vs ' + fieldAvg.toLocaleString() + ' avg', color: focusProfile.total >= fieldAvg ? 'var(--good)' : 'var(--bad)' },
+            { label: 'Starter vs Field', value: (focusProfile.starterTotal - starterAvg > 0 ? '+' : '') + (focusProfile.starterTotal - starterAvg).toLocaleString(), sub: focusProfile.starterTotal.toLocaleString() + ' vs ' + starterAvg.toLocaleString() + ' avg', color: focusProfile.starterTotal >= starterAvg ? 'var(--good)' : 'var(--bad)' },
+            { label: 'Picks vs Field', value: ((focusProfile.pickCapital.totalValue - pickAvg) > 0 ? '+' : '') + (focusProfile.pickCapital.totalValue - pickAvg).toLocaleString(), sub: focusProfile.pickCapital.count + ' picks vs ' + Math.round(comparisonProfiles.reduce((s, p) => s + (p.pickCapital?.count || 0), 0) / Math.max(comparisonProfiles.length, 1)) + ' avg', color: focusProfile.pickCapital.totalValue >= pickAvg ? 'var(--good)' : 'var(--bad)' },
+            { label: 'FAAB vs Field', value: focusProfile.faab.isFaab ? ((focusProfile.faab.remaining - faabAvg) > 0 ? '+$' : '-$') + Math.abs(focusProfile.faab.remaining - faabAvg).toLocaleString() : '—', sub: focusProfile.faab.label, color: !focusProfile.faab.isFaab ? 'var(--silver)' : focusProfile.faab.remaining >= faabAvg ? 'var(--good)' : 'var(--bad)' },
+            { label: 'Best Room', value: strongest ? posLabel(strongest.pos) : '-', sub: strongest ? ((strongest.diff > 0 ? '+' : '') + strongest.diff.toLocaleString() + ' vs avg') : '-', color: 'var(--good)' },
+            { label: 'Danger Room', value: weakest ? posLabel(weakest.pos) : '-', sub: weakest ? ((weakest.diff > 0 ? '+' : '') + weakest.diff.toLocaleString() + ' vs avg') : '-', color: weakest?.diff < 0 ? 'var(--bad)' : 'var(--gold)' },
         ];
         const fieldLead = focusProfile.isMine ? 'You' : focusProfile.name;
         const fieldRead = focusProfile.total >= fieldAvg
@@ -637,17 +640,17 @@ function CompareTab({
             : (focusProfile.isMine ? 'This field is above you' : 'Focus is below field avg');
 
         const renderTeamChip = (profile) => (
-            <div key={profile.rosterId} style={{ padding: '9px 10px', background: profile.isMine ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)', border: '1px solid ' + (profile.isMine ? 'rgba(212,175,55,0.35)' : 'rgba(255,255,255,0.07)'), borderRadius: '7px' }}>
+            <div key={profile.rosterId} style={{ padding: '9px 10px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-4, rgba(255,255,255,0.07))'), borderRadius: '7px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline' }}>
                     <div style={{ minWidth: 0 }}>
                         <div style={{ color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
-                        <div style={{ fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.66, marginTop: '2px' }}>{profile.record} - {getDivisionName(profile.division)}</div>
-                        <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.52, marginTop: '2px' }}>{profile.pickCapital.count} picks · {profile.faab.isFaab ? '$' + profile.faab.remaining + ' FAAB' : 'No FAAB'}</div>
+                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, marginTop: '2px' }}>{profile.record} - {getDivisionName(profile.division)}</div>
+                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.52, marginTop: '2px' }}>{profile.pickCapital.count} picks · {profile.faab.isFaab ? '$' + profile.faab.remaining + ' FAAB' : 'No FAAB'}</div>
                     </div>
                     <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>{profile.totalAssets.toLocaleString()}</div>
                 </div>
-                <div style={{ height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden', marginTop: '8px' }}>
-                    <div style={{ width: (profile.totalAssets / maxTotal * 100) + '%', height: '100%', background: profile.isMine ? 'var(--gold)' : '#7C6BF8' }}></div>
+                <div style={{ height: '4px', background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '3px', overflow: 'hidden', marginTop: '8px' }}>
+                    <div style={{ width: (profile.totalAssets / maxTotal * 100) + '%', height: '100%', background: profile.isMine ? 'var(--gold)' : 'var(--k-7c6bf8, #7c6bf8)' }}></div>
                 </div>
             </div>
         );
@@ -658,9 +661,9 @@ function CompareTab({
                         minHeight: '46px',
                         padding: '8px',
                         borderRadius: '6px',
-                        border: '1px solid rgba(255,255,255,0.04)',
-                        background: 'rgba(255,255,255,0.018)',
-                        color: 'rgba(255,255,255,0.28)',
+                        border: '1px solid var(--ov-3, rgba(255,255,255,0.04))',
+                        background: 'var(--ov-1, rgba(255,255,255,0.018))',
+                        color: 'var(--ov-8, rgba(255,255,255,0.28))',
                         fontSize: '0.72rem',
                         display: 'flex',
                         alignItems: 'center',
@@ -669,7 +672,7 @@ function CompareTab({
             }
             const isRowBest = player.dhq > 0 && player.dhq === rowBestDhq;
             const isMine = column.profile.isMine;
-            const dhqCol = player.dhq >= 7000 ? '#2ECC71' : player.dhq >= 4000 ? '#3498DB' : player.dhq >= 1000 ? 'var(--silver)' : 'rgba(255,255,255,0.5)';
+            const dhqCol = player.dhq >= 7000 ? 'var(--good)' : player.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : player.dhq >= 1000 ? 'var(--silver)' : 'var(--ov-9, rgba(255,255,255,0.5))';
             return (
                 <div
                     role="button"
@@ -681,8 +684,8 @@ function CompareTab({
                     minHeight: '46px',
                     padding: '8px',
                     borderRadius: '6px',
-                    border: '1px solid ' + (isRowBest ? 'rgba(46,204,113,0.28)' : isMine ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.055)'),
-                    background: isRowBest ? 'rgba(46,204,113,0.07)' : isMine ? 'rgba(212,175,55,0.045)' : 'rgba(255,255,255,0.024)',
+                    border: '1px solid ' + (isRowBest ? 'rgba(46,204,113,0.28)' : isMine ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-4, rgba(255,255,255,0.055))'),
+                    background: isRowBest ? 'rgba(46,204,113,0.07)' : isMine ? 'var(--acc-fill1, rgba(212,175,55,0.045))' : 'var(--ov-1, rgba(255,255,255,0.024))',
                     cursor: 'pointer',
                     minWidth: 0,
                 }}>
@@ -690,7 +693,7 @@ function CompareTab({
                         <img src={'https://sleepercdn.com/content/nfl/players/thumb/'+player.pid+'.jpg'} onError={e=>e.target.style.display='none'} style={{ width:'24px',height:'24px',borderRadius:'50%',objectFit:'cover', flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ color: 'var(--white)', fontSize: '0.76rem', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{player.p?.full_name || '?'}</div>
-                            <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.66, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.66, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {player.team} {player.age != null ? '· ' + player.age + 'yo' : ''}{player.ppg > 0 ? ' · ' + player.ppg + ' PPG' : ''} · {player.peakYrs > 0 ? player.peakYrs + 'yr peak' : player.valueYrs + 'yr value'}
                             </div>
                         </div>
@@ -704,7 +707,7 @@ function CompareTab({
                 return (
                     <div style={{ ...panelStyle, padding: '14px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 850, color: 'var(--white)', letterSpacing: 0 }}>Full Breakdown</div>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', fontWeight: 850, color: 'var(--white)', letterSpacing: 0 }}>Full Breakdown</div>
                             <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.66, marginTop: '2px' }}>Available for up to 4 total teams so the player-level columns stay readable.</div>
                         </div>
                         <div style={{ ...mono, color: 'var(--gold)', fontSize: '0.76rem', fontWeight: 850 }}>{profiles.length} teams selected</div>
@@ -723,7 +726,7 @@ function CompareTab({
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                         {profiles.map(profile => (
-                            <div key={'capital-' + profile.rosterId} style={{ padding: '10px', borderRadius: '7px', background: profile.isMine ? 'rgba(212,175,55,0.08)' : 'rgba(255,255,255,0.025)', border: '1px solid ' + (profile.isMine ? 'rgba(212,175,55,0.26)' : 'rgba(255,255,255,0.06)') }}>
+                            <div key={'capital-' + profile.rosterId} style={{ padding: '10px', borderRadius: '7px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line1, rgba(212,175,55,0.26))' : 'var(--ov-4, rgba(255,255,255,0.06))') }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline', marginBottom: '7px' }}>
                                     <div style={{ color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
                                     <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--silver)', fontSize: '0.72rem', fontWeight: 850 }}>{profile.totalAssets.toLocaleString()}</div>
@@ -735,16 +738,16 @@ function CompareTab({
                                     </div>
                                     <div>
                                         <div style={labelStyle}>Picks</div>
-                                        <div style={{ ...mono, color: profile.pickCapital.totalValue >= focusProfile.pickCapital.totalValue ? '#2ECC71' : 'var(--silver)', fontSize: '0.72rem', fontWeight: 850 }}>{Math.round(profile.pickCapital.totalValue / 1000)}k</div>
-                                        <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.56 }}>{profile.pickCapital.count} picks</div>
+                                        <div style={{ ...mono, color: profile.pickCapital.totalValue >= focusProfile.pickCapital.totalValue ? 'var(--good)' : 'var(--silver)', fontSize: '0.72rem', fontWeight: 850 }}>{Math.round(profile.pickCapital.totalValue / 1000)}k</div>
+                                        <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.56 }}>{profile.pickCapital.count} picks</div>
                                     </div>
                                     <div>
                                         <div style={labelStyle}>FAAB</div>
-                                        <div style={{ ...mono, color: profile.faab.isFaab ? (profile.faab.remaining >= focusProfile.faab.remaining ? '#2ECC71' : 'var(--silver)') : 'rgba(255,255,255,0.32)', fontSize: '0.72rem', fontWeight: 850 }}>{profile.faab.isFaab ? '$' + profile.faab.remaining : '—'}</div>
-                                        <div style={{ fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.56 }}>{profile.faab.isFaab ? profile.faab.pct + '%' : 'No FAAB'}</div>
+                                        <div style={{ ...mono, color: profile.faab.isFaab ? (profile.faab.remaining >= focusProfile.faab.remaining ? 'var(--good)' : 'var(--silver)') : 'var(--ov-8, rgba(255,255,255,0.32))', fontSize: '0.72rem', fontWeight: 850 }}>{profile.faab.isFaab ? '$' + profile.faab.remaining : '—'}</div>
+                                        <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.56 }}>{profile.faab.isFaab ? profile.faab.pct + '%' : 'No FAAB'}</div>
                                     </div>
                                 </div>
-                                <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.58, marginTop: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58, marginTop: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     Best picks: {profile.pickCapital.topPicks.length ? profile.pickCapital.topPicks.slice(0, 2).map(p => p.label).join(' · ') : 'None'}
                                 </div>
                             </div>
@@ -754,7 +757,7 @@ function CompareTab({
                         const maxTotalAtPos = Math.max(1, ...summary.columns.map(col => col.total));
                         return (
                             <div key={'field-breakdown-' + summary.pos} style={{ ...panelStyle, overflow: 'hidden', marginBottom: '12px' }}>
-                                <div style={{ padding: '10px', background: (posColors[summary.pos] || '#666') + '14', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                <div style={{ padding: '10px', background: (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))' }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: '72px repeat(' + summary.columns.length + ', minmax(0, 1fr))', gap: '8px', alignItems: 'end' }}>
                                         <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</div>
                                         {summary.columns.map(column => {
@@ -763,10 +766,10 @@ function CompareTab({
                                                 <div key={summary.pos + '-head-' + column.profile.rosterId} style={{ minWidth: 0 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', alignItems: 'baseline' }}>
                                                         <span style={{ color: column.profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{column.profile.name}</span>
-                                                        <span style={{ ...mono, color: isLeader ? '#2ECC71' : 'var(--silver)', fontSize: '0.68rem', fontWeight: 850 }}>{column.total.toLocaleString()}</span>
+                                                        <span style={{ ...mono, color: isLeader ? 'var(--good)' : 'var(--silver)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850 }}>{column.total.toLocaleString()}</span>
                                                     </div>
-                                                    <div style={{ height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden', marginTop: '5px' }}>
-                                                        <div style={{ width: (column.total / maxTotalAtPos * 100) + '%', height: '100%', background: isLeader ? '#2ECC71' : column.profile.isMine ? 'var(--gold)' : '#7C6BF8' }}></div>
+                                                    <div style={{ height: '4px', background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '3px', overflow: 'hidden', marginTop: '5px' }}>
+                                                        <div style={{ width: (column.total / maxTotalAtPos * 100) + '%', height: '100%', background: isLeader ? 'var(--good)' : column.profile.isMine ? 'var(--gold)' : 'var(--k-7c6bf8, #7c6bf8)' }}></div>
                                                     </div>
                                                 </div>
                                             );
@@ -776,8 +779,8 @@ function CompareTab({
                                 {Array.from({ length: summary.maxLen }).map((_, rowIdx) => {
                                     const rowBestDhq = Math.max(0, ...summary.columns.map(column => column.players[rowIdx]?.dhq || 0));
                                     return (
-                                        <div key={summary.pos + '-row-' + rowIdx} style={{ display: 'grid', gridTemplateColumns: '72px repeat(' + summary.columns.length + ', minmax(0, 1fr))', gap: '8px', padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.035)', alignItems: 'stretch' }}>
-                                            <div style={{ ...mono, color: 'var(--silver)', opacity: 0.56, fontSize: '0.68rem', alignSelf: 'center' }}>#{rowIdx + 1}</div>
+                                        <div key={summary.pos + '-row-' + rowIdx} style={{ display: 'grid', gridTemplateColumns: '72px repeat(' + summary.columns.length + ', minmax(0, 1fr))', gap: '8px', padding: '7px 10px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))', alignItems: 'stretch' }}>
+                                            <div style={{ ...mono, color: 'var(--silver)', opacity: 0.56, fontSize: 'var(--text-micro, 0.6875rem)', alignSelf: 'center' }}>#{rowIdx + 1}</div>
                                             {summary.columns.map(column => (
                                                 <div key={summary.pos + '-' + rowIdx + '-' + column.profile.rosterId} style={{ minWidth: 0 }}>
                                                     {renderFieldPlayerCell(column.players[rowIdx], column, rowBestDhq)}
@@ -795,16 +798,16 @@ function CompareTab({
 
         return (
             <div>
-                <div style={{ ...panelStyle, padding: '18px 20px', marginBottom: '14px', background: 'linear-gradient(135deg, rgba(212,175,55,0.055), rgba(52,152,219,0.045))' }}>
+                <div style={{ ...panelStyle, padding: '18px 20px', marginBottom: '14px', background: 'linear-gradient(135deg, var(--acc-fill1, rgba(212,175,55,0.055)), rgba(52,152,219,0.045))' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '14px' }}>
                         <div>
                             <div style={labelStyle}>{fieldLabel}</div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.35rem', color: 'var(--white)', fontWeight: 850, letterSpacing: 0 }}>{fieldLead} vs {comparisonProfiles.length} team field</div>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.35rem', color: 'var(--white)', fontWeight: 850, letterSpacing: 0 }}>{fieldLead} vs {comparisonProfiles.length} team field</div>
                             <div style={{ fontSize: '0.76rem', color: 'var(--silver)', opacity: 0.72 }}>{fieldSub}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <div style={labelStyle}>Field Read</div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.15rem', fontWeight: 850, color: focusProfile.total >= fieldAvg ? '#2ECC71' : '#E74C3C', letterSpacing: 0 }}>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', fontWeight: 850, color: focusProfile.total >= fieldAvg ? 'var(--good)' : 'var(--bad)', letterSpacing: 0 }}>
                                 {fieldRead}
                             </div>
                             <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.7 }}>
@@ -814,10 +817,10 @@ function CompareTab({
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '9px' }}>
                         {fieldCards.map(card => (
-                            <div key={card.label} style={{ padding: '10px', background: 'rgba(0,0,0,0.24)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '7px' }}>
+                            <div key={card.label} style={{ padding: '10px', background: 'rgba(0,0,0,0.24)', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '7px' }}>
                                 <div style={labelStyle}>{card.label}</div>
                                 <div style={{ ...mono, fontSize: '1rem', color: card.color, fontWeight: 850, marginTop: '5px' }}>{card.value}</div>
-                                <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.66, marginTop: '2px' }}>{card.sub}</div>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, marginTop: '2px' }}>{card.sub}</div>
                             </div>
                         ))}
                     </div>
@@ -827,13 +830,13 @@ function CompareTab({
                     <div style={{ ...panelStyle, padding: '14px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline', marginBottom: '12px' }}>
                             <div>
-                                <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 850, color: 'var(--white)', letterSpacing: 0 }}>Field Ranking</div>
+                                <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', fontWeight: 850, color: 'var(--white)', letterSpacing: 0 }}>Field Ranking</div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.66 }}>Roster value, starter value, draft capital, FAAB, and best player.</div>
                             </div>
                             <div style={{ ...mono, color: 'var(--gold)', fontWeight: 850 }}>{profiles.length} teams</div>
                         </div>
                         <div style={{ display: 'grid', gap: '7px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '34px minmax(140px,1.15fr) minmax(74px,.58fr) minmax(74px,.58fr) minmax(74px,.58fr) minmax(58px,.46fr) minmax(54px,.4fr) minmax(52px,.4fr) minmax(86px,.62fr)', gap: '8px', padding: '0 9px 2px', fontSize: '0.58rem', color: 'var(--silver)', opacity: 0.54, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1.15fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.46fr) minmax(0,.4fr) minmax(0,.4fr) minmax(0,.62fr)', gap: '8px', padding: '0 9px 2px', fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.54, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                 <span>#</span><span>Team</span><span>Assets</span><span>Roster</span><span>Start</span><span>Picks</span><span>FAAB</span><span>Rooms</span><span>Edge</span>
                             </div>
                             {sortedProfiles.map((profile, idx) => {
@@ -842,24 +845,24 @@ function CompareTab({
                                 const roomsLost = allPositions.filter(pos => (profile.posTotals[pos] || 0) < (focusProfile.posTotals[pos] || 0)).length;
                                 const diff = profile.totalAssets - focusProfile.totalAssets;
                                 return (
-                                    <div key={profile.rosterId} style={{ display: 'grid', gridTemplateColumns: '34px minmax(140px,1.15fr) minmax(74px,.58fr) minmax(74px,.58fr) minmax(74px,.58fr) minmax(58px,.46fr) minmax(54px,.4fr) minmax(52px,.4fr) minmax(86px,.62fr)', gap: '8px', alignItems: 'center', padding: '8px 9px', borderRadius: '7px', background: profile.isMine ? 'rgba(212,175,55,0.11)' : 'rgba(255,255,255,0.025)', border: '1px solid ' + (profile.isMine ? 'rgba(212,175,55,0.35)' : 'rgba(255,255,255,0.055)'), fontSize: '0.72rem' }}>
+                                    <div key={profile.rosterId} style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1.15fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.46fr) minmax(0,.4fr) minmax(0,.4fr) minmax(0,.62fr)', gap: '8px', alignItems: 'center', padding: '8px 9px', borderRadius: '7px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-4, rgba(255,255,255,0.055))'), fontSize: '0.72rem' }}>
                                         <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--silver)', fontWeight: 850 }}>#{idx + 1}</div>
                                         <div style={{ minWidth: 0 }}>
                                             <div style={{ color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
-                                            <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.62 }}>{getDivisionName(profile.division)} - {profile.record}</div>
+                                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62 }}>{getDivisionName(profile.division)} - {profile.record}</div>
                                         </div>
                                         <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800 }}>{profile.totalAssets.toLocaleString()}</div>
                                         <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800 }}>{profile.total.toLocaleString()}</div>
                                         <div>
                                             <div style={{ ...mono, color: 'var(--silver)', fontWeight: 800 }}>{profile.starterTotal.toLocaleString()}</div>
-                                            <div style={{ height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', marginTop: '4px', overflow: 'hidden' }}><div style={{ width: (profile.starterTotal / maxStarter * 100) + '%', height: '100%', background: profile.isMine ? 'var(--gold)' : '#7C6BF8' }}></div></div>
+                                            <div style={{ height: '3px', background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '2px', marginTop: '4px', overflow: 'hidden' }}><div style={{ width: (profile.starterTotal / maxStarter * 100) + '%', height: '100%', background: profile.isMine ? 'var(--gold)' : 'var(--k-7c6bf8, #7c6bf8)' }}></div></div>
                                         </div>
-                                        <div style={{ ...mono, color: profile.pickCapital.totalValue >= focusProfile.pickCapital.totalValue ? '#2ECC71' : 'var(--silver)', fontWeight: 800 }}>{Math.round(profile.pickCapital.totalValue / 1000)}k</div>
-                                        <div style={{ ...mono, color: profile.faab.isFaab ? (profile.faab.remaining >= focusProfile.faab.remaining ? '#2ECC71' : 'var(--silver)') : 'rgba(255,255,255,0.32)', fontWeight: 800 }}>{profile.faab.isFaab ? '$' + profile.faab.remaining : '—'}</div>
-                                        <div style={{ color: isFocus ? 'var(--silver)' : roomsWon > roomsLost ? '#E74C3C' : roomsWon < roomsLost ? '#2ECC71' : 'var(--silver)' }}>
+                                        <div style={{ ...mono, color: profile.pickCapital.totalValue >= focusProfile.pickCapital.totalValue ? 'var(--good)' : 'var(--silver)', fontWeight: 800 }}>{Math.round(profile.pickCapital.totalValue / 1000)}k</div>
+                                        <div style={{ ...mono, color: profile.faab.isFaab ? (profile.faab.remaining >= focusProfile.faab.remaining ? 'var(--good)' : 'var(--silver)') : 'var(--ov-8, rgba(255,255,255,0.32))', fontWeight: 800 }}>{profile.faab.isFaab ? '$' + profile.faab.remaining : '—'}</div>
+                                        <div style={{ color: isFocus ? 'var(--silver)' : roomsWon > roomsLost ? 'var(--bad)' : roomsWon < roomsLost ? 'var(--good)' : 'var(--silver)' }}>
                                             {isFocus ? (profile.isMine ? 'You' : 'Focus') : roomsWon + '-' + roomsLost}
                                         </div>
-                                        <div style={{ minWidth: 0, color: isFocus ? (profile.isMine ? 'var(--gold)' : 'var(--silver)') : diff > 0 ? '#E74C3C' : '#2ECC71', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        <div style={{ minWidth: 0, color: isFocus ? (profile.isMine ? 'var(--gold)' : 'var(--silver)') : diff > 0 ? 'var(--bad)' : 'var(--good)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {isFocus ? (profile.topPlayer?.p?.full_name || 'Top player') : (diff > 0 ? '+' : '') + diff.toLocaleString()}
                                         </div>
                                     </div>
@@ -869,21 +872,21 @@ function CompareTab({
                     </div>
 
                     <div style={{ ...panelStyle, padding: '14px' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 850, color: 'var(--white)', letterSpacing: 0, marginBottom: '12px' }}>Position Heatmap</div>
+                        <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', fontWeight: 850, color: 'var(--white)', letterSpacing: 0, marginBottom: '12px' }}>Position Heatmap</div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(112px,1.2fr) repeat(8,minmax(38px,1fr))', gap: '5px', alignItems: 'stretch' }}>
                             <div style={{ ...labelStyle }}>Team</div>
                             {allPositions.map(pos => <div key={pos} style={{ ...labelStyle, textAlign: 'center', color: posColors[pos] || 'var(--silver)' }}>{posLabel(pos)}</div>)}
                             {sortedProfiles.map(profile => (
                                 <React.Fragment key={'hm-' + profile.rosterId}>
-                                    <div style={{ padding: '7px 6px', borderRadius: '5px', background: profile.isMine ? 'rgba(212,175,55,0.11)' : 'rgba(255,255,255,0.025)', color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
+                                    <div style={{ padding: '7px 6px', borderRadius: '5px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))', color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
                                     {allPositions.map(pos => {
                                         const val = profile.posTotals[pos] || 0;
                                         const isBest = bestByPos[pos] === profile.rosterId;
                                         const isMine = profile.isMine;
                                         return (
-                                            <div key={profile.rosterId + '-' + pos} title={profile.name + ' ' + pos + ': ' + val.toLocaleString()} style={{ padding: '6px 5px', borderRadius: '5px', background: isBest ? 'rgba(46,204,113,0.14)' : isMine ? 'rgba(212,175,55,0.09)' : 'rgba(255,255,255,0.025)', border: '1px solid ' + (isBest ? 'rgba(46,204,113,0.22)' : 'rgba(255,255,255,0.04)'), textAlign: 'center' }}>
-                                                <div style={{ ...mono, fontSize: '0.66rem', color: isBest ? '#2ECC71' : isMine ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>{Math.round(val / 1000)}k</div>
-                                                <div style={{ height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', marginTop: '4px', overflow: 'hidden' }}><div style={{ width: (val / maxByPos[pos] * 100) + '%', height: '100%', background: isBest ? '#2ECC71' : isMine ? 'var(--gold)' : '#7C6BF8' }}></div></div>
+                                            <div key={profile.rosterId + '-' + pos} title={profile.name + ' ' + pos + ': ' + val.toLocaleString()} style={{ padding: '6px 5px', borderRadius: '5px', background: isBest ? 'rgba(46,204,113,0.14)' : isMine ? 'var(--acc-fill2, rgba(212,175,55,0.09))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (isBest ? 'rgba(46,204,113,0.22)' : 'var(--ov-3, rgba(255,255,255,0.04))'), textAlign: 'center' }}>
+                                                <div style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', color: isBest ? 'var(--good)' : isMine ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>{Math.round(val / 1000)}k</div>
+                                                <div style={{ height: '3px', background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '2px', marginTop: '4px', overflow: 'hidden' }}><div style={{ width: (val / maxByPos[pos] * 100) + '%', height: '100%', background: isBest ? 'var(--good)' : isMine ? 'var(--gold)' : 'var(--k-7c6bf8, #7c6bf8)' }}></div></div>
                                             </div>
                                         );
                                     })}
@@ -897,16 +900,16 @@ function CompareTab({
 
                 {divisionKeys.length > 1 && (compareScope === 'division' || compareScope === 'league') ? (
                     <div style={{ ...panelStyle, padding: '14px', marginBottom: '14px' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 850, color: 'var(--white)', letterSpacing: 0, marginBottom: '10px' }}>Division Boards</div>
+                        <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', fontWeight: 850, color: 'var(--white)', letterSpacing: 0, marginBottom: '10px' }}>Division Boards</div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                             {Object.entries(divisionProfiles).sort(([a], [b]) => Number(a) - Number(b)).map(([key, list]) => (
-                                <div key={key} style={{ padding: '10px', borderRadius: '7px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                <div key={key} style={{ padding: '10px', borderRadius: '7px', background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                                     <div style={{ color: 'var(--gold)', fontWeight: 850, marginBottom: '8px' }}>{getDivisionName(key)}</div>
                                     {[...list].sort((a, b) => b.total - a.total).map((p, idx) => (
-                                        <div key={p.rosterId} style={{ display: 'grid', gridTemplateColumns: '24px 1fr auto', gap: '7px', alignItems: 'center', padding: '5px 0', borderTop: idx ? '1px solid rgba(255,255,255,0.045)' : 'none' }}>
+                                        <div key={p.rosterId} style={{ display: 'grid', gridTemplateColumns: '24px 1fr auto', gap: '7px', alignItems: 'center', padding: '5px 0', borderTop: idx ? '1px solid var(--ov-3, rgba(255,255,255,0.045))' : 'none' }}>
                                             <div style={{ ...mono, color: p.isMine ? 'var(--gold)' : 'var(--silver)' }}>#{idx + 1}</div>
                                             <div style={{ color: p.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                                            <div style={{ ...mono, color: 'var(--silver)', fontSize: '0.68rem' }}>{p.total.toLocaleString()}</div>
+                                            <div style={{ ...mono, color: 'var(--silver)', fontSize: 'var(--text-micro, 0.6875rem)' }}>{p.total.toLocaleString()}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -970,7 +973,7 @@ function CompareTab({
             const myWinPct = (myWins + myLosses) > 0 ? myWins / (myWins + myLosses) : 0;
             const theirWinPct = (theirWins + theirLosses) > 0 ? theirWins / (theirWins + theirLosses) : 0;
             const myColor = 'var(--gold)';
-            const theirColor = '#7C6BF8';
+            const theirColor = 'var(--k-7c6bf8, #7c6bf8)';
             const statsRef = statsData || {};
             const stats2025Ref = stats2025Data || {};
             const derivedStatsRef = window.S?.playerStats || {};
@@ -1058,20 +1061,21 @@ function CompareTab({
                     : youLead > theyLead
                         ? 'You win more rooms, they win bigger'
                         : 'Opponent has the roster edge';
-            const verdictColor = myTotal >= theirTotal ? '#2ECC71' : '#E74C3C';
+            const verdictColor = myTotal >= theirTotal ? 'var(--good)' : 'var(--bad)';
 
             const champs = window.App?.LI?.championships || {};
             const myChamps = Object.values(champs).filter(c => sameId(c.champion, myRoster.roster_id)).length;
             const theirChamps = Object.values(champs).filter(c => sameId(c.champion, compareTeamId)).length;
             const brackets = window.App?.LI?.bracketData || {};
+            const rec = window.WrHistory?.playoffRecord;
             let myPW = 0, myPL = 0, theirPW = 0, theirPL = 0;
             Object.values(brackets).forEach(({ winners }) => {
-                (winners || []).forEach(m => {
-                    if (sameId(m.w, myRoster.roster_id)) myPW++;
-                    if (sameId(m.l, myRoster.roster_id)) myPL++;
-                    if (sameId(m.w, compareTeamId)) theirPW++;
-                    if (sameId(m.l, compareTeamId)) theirPL++;
-                });
+                if (!winners?.length || !rec) return;
+                // Championship-path games only (exclude consolation/placement), via the
+                // single source of truth in league-history.js — not every bracket game.
+                const mine = rec(winners, myRoster.roster_id);
+                const theirs = rec(winners, compareTeamId);
+                myPW += mine.w; myPL += mine.l; theirPW += theirs.w; theirPL += theirs.l;
             });
 
             const meetings = h2hState.loadedFor && sameId(h2hState.loadedFor, compareTeamId) ? h2hState.meetings : [];
@@ -1093,16 +1097,16 @@ function CompareTab({
             }
 
             const statCards = [
-                { label: valueLabel, value: (myAssetTotal - theirAssetTotal > 0 ? '+' : '') + (myAssetTotal - theirAssetTotal).toLocaleString(), sub: myAssetTotal.toLocaleString() + ' vs ' + theirAssetTotal.toLocaleString() + ' incl. picks', color: myAssetTotal >= theirAssetTotal ? '#2ECC71' : '#E74C3C' },
-                { label: 'Roster ' + valueShortLabel, value: (myTotal - theirTotal > 0 ? '+' : '') + (myTotal - theirTotal).toLocaleString(), sub: myTotal.toLocaleString() + ' vs ' + theirTotal.toLocaleString(), color: myTotal >= theirTotal ? '#2ECC71' : '#E74C3C' },
-                { label: 'Starter ' + valueShortLabel, value: (myStarterDhq - theirStarterDhq > 0 ? '+' : '') + (myStarterDhq - theirStarterDhq).toLocaleString(), sub: myStarterDhq.toLocaleString() + ' vs ' + theirStarterDhq.toLocaleString(), color: myStarterDhq >= theirStarterDhq ? '#2ECC71' : '#E74C3C' },
-                { label: 'Pick Value', value: (pickValueDiff > 0 ? '+' : '') + pickValueDiff.toLocaleString(), sub: Math.round(myPickCapital.totalValue / 1000) + 'k vs ' + Math.round(theirPickCapital.totalValue / 1000) + 'k pick ' + valueShortLabel, color: pickValueDiff >= 0 ? '#2ECC71' : '#E74C3C' },
-                { label: 'Pick Count', value: (pickCountDiff > 0 ? '+' : '') + pickCountDiff, sub: myPickCapital.count + ' picks vs ' + theirPickCapital.count + ' picks', color: pickCountDiff >= 0 ? '#2ECC71' : '#E74C3C' },
-                { label: 'FAAB', value: myFaab.isFaab ? ((myFaab.remaining - theirFaab.remaining > 0 ? '+$' : '-$') + Math.abs(myFaab.remaining - theirFaab.remaining).toLocaleString()) : '—', sub: myFaab.isFaab ? '$' + myFaab.remaining + ' vs $' + theirFaab.remaining + ' left' : 'No FAAB budget', color: !myFaab.isFaab ? 'var(--silver)' : myFaab.remaining >= theirFaab.remaining ? '#2ECC71' : '#E74C3C' },
-                { label: 'Position Edges', value: youLead + '-' + theyLead, sub: 'rooms won', color: youLead >= theyLead ? '#2ECC71' : '#E74C3C' },
-                { label: 'All-Time H2H', value: h2hState.loading ? 'Loading' : h2hWins + '-' + h2hLosses + (h2hTies ? '-' + h2hTies : ''), sub: meetings.length ? avgFor.toFixed(1) + '-' + avgAgainst.toFixed(1) + ' avg' : (h2hState.error || 'no meetings found'), color: h2hWins >= h2hLosses ? '#2ECC71' : '#E74C3C' },
-                { label: 'Titles', value: myChamps + '-' + theirChamps, sub: 'championships', color: myChamps >= theirChamps ? '#2ECC71' : '#E74C3C' },
-                { label: 'Playoffs', value: myPW + '-' + myPL + ' / ' + theirPW + '-' + theirPL, sub: 'you / them', color: myPW >= theirPW ? '#2ECC71' : '#E74C3C' },
+                { label: valueLabel, value: (myAssetTotal - theirAssetTotal > 0 ? '+' : '') + (myAssetTotal - theirAssetTotal).toLocaleString(), sub: myAssetTotal.toLocaleString() + ' vs ' + theirAssetTotal.toLocaleString() + ' incl. picks', color: myAssetTotal >= theirAssetTotal ? 'var(--good)' : 'var(--bad)' },
+                { label: 'Roster ' + valueShortLabel, value: (myTotal - theirTotal > 0 ? '+' : '') + (myTotal - theirTotal).toLocaleString(), sub: myTotal.toLocaleString() + ' vs ' + theirTotal.toLocaleString(), color: myTotal >= theirTotal ? 'var(--good)' : 'var(--bad)' },
+                { label: 'Starter ' + valueShortLabel, value: (myStarterDhq - theirStarterDhq > 0 ? '+' : '') + (myStarterDhq - theirStarterDhq).toLocaleString(), sub: myStarterDhq.toLocaleString() + ' vs ' + theirStarterDhq.toLocaleString(), color: myStarterDhq >= theirStarterDhq ? 'var(--good)' : 'var(--bad)' },
+                { label: 'Pick Value', value: (pickValueDiff > 0 ? '+' : '') + pickValueDiff.toLocaleString(), sub: Math.round(myPickCapital.totalValue / 1000) + 'k vs ' + Math.round(theirPickCapital.totalValue / 1000) + 'k pick ' + valueShortLabel, color: pickValueDiff >= 0 ? 'var(--good)' : 'var(--bad)' },
+                { label: 'Pick Count', value: (pickCountDiff > 0 ? '+' : '') + pickCountDiff, sub: myPickCapital.count + ' picks vs ' + theirPickCapital.count + ' picks', color: pickCountDiff >= 0 ? 'var(--good)' : 'var(--bad)' },
+                { label: 'FAAB', value: myFaab.isFaab ? ((myFaab.remaining - theirFaab.remaining > 0 ? '+$' : '-$') + Math.abs(myFaab.remaining - theirFaab.remaining).toLocaleString()) : '—', sub: myFaab.isFaab ? '$' + myFaab.remaining + ' vs $' + theirFaab.remaining + ' left' : 'No FAAB budget', color: !myFaab.isFaab ? 'var(--silver)' : myFaab.remaining >= theirFaab.remaining ? 'var(--good)' : 'var(--bad)' },
+                { label: 'Position Edges', value: youLead + '-' + theyLead, sub: 'rooms won', color: youLead >= theyLead ? 'var(--good)' : 'var(--bad)' },
+                { label: 'All-Time H2H', value: h2hState.loading ? 'Loading' : h2hWins + '-' + h2hLosses + (h2hTies ? '-' + h2hTies : ''), sub: meetings.length ? avgFor.toFixed(1) + '-' + avgAgainst.toFixed(1) + ' avg' : (h2hState.error || 'no meetings found'), color: h2hWins >= h2hLosses ? 'var(--good)' : 'var(--bad)' },
+                { label: 'Titles', value: myChamps + '-' + theirChamps, sub: 'championships', color: myChamps >= theirChamps ? 'var(--good)' : 'var(--bad)' },
+                { label: 'Playoffs', value: myPW + '-' + myPL + ' / ' + theirPW + '-' + theirPL, sub: 'you / them', color: myPW >= theirPW ? 'var(--good)' : 'var(--bad)' },
             ];
 
             const renderMiniPlayer = (r) => r
@@ -1117,7 +1121,7 @@ function CompareTab({
 
             const renderRosterCell = (r, opponent, rival) => {
                 if (!r) return <span style={{ color: 'var(--silver)', opacity: 0.32, fontSize: '0.72rem', padding: '7px 10px', display: 'inline-block' }}>-</span>;
-                const dhqCol = r.dhq >= 7000 ? '#2ECC71' : r.dhq >= 4000 ? '#3498DB' : r.dhq >= 1000 ? 'var(--silver)' : 'rgba(255,255,255,0.5)';
+                const dhqCol = r.dhq >= 7000 ? 'var(--good)' : r.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : r.dhq >= 1000 ? 'var(--silver)' : 'var(--ov-9, rgba(255,255,255,0.5))';
                 const winsDhq = rival && r.dhq > rival.dhq;
                 return (
                     <div
@@ -1128,18 +1132,19 @@ function CompareTab({
                         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(r.pid); } }}
                         style={{
                         padding: '7px 10px',
+                        minHeight: '44px',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
                         fontSize: '0.78rem',
                         background: winsDhq ? 'rgba(46,204,113,0.045)' : 'transparent',
                         cursor: 'pointer',
-                        borderRight: opponent ? 'none' : '1px solid rgba(255,255,255,0.04)',
+                        borderRight: opponent ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.04))',
                     }}>
                         <img src={'https://sleepercdn.com/content/nfl/players/thumb/'+r.pid+'.jpg'} onError={e=>e.target.style.display='none'} style={{ width:'22px',height:'22px',borderRadius:'50%',objectFit:'cover', flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ color: 'var(--white)', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.p?.full_name || '?'}</div>
-                            <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.68, marginTop: '1px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.68, marginTop: '1px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                 <span>{r.team}</span>
                                 {r.age != null ? <span>{r.age}yo</span> : null}
                                 {r.ppg > 0 ? <span>{r.ppg} PPG</span> : null}
@@ -1154,38 +1159,38 @@ function CompareTab({
 
             return (
               <div>
-                <div style={{ ...panelStyle, padding: '18px 20px', marginBottom: '16px', background: 'linear-gradient(135deg, rgba(212,175,55,0.065), rgba(124,107,248,0.055))' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) minmax(220px, 0.9fr) minmax(180px, 1fr)', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ ...panelStyle, padding: '18px 20px', marginBottom: '16px', background: 'linear-gradient(135deg, var(--acc-fill1, rgba(212,175,55,0.065)), rgba(124,107,248,0.055))' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                         <div>
                             <div style={labelStyle}>You</div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.35rem', color: myColor, fontWeight: 800, letterSpacing: 0 }}>{myName}</div>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.35rem', color: myColor, fontWeight: 800, letterSpacing: 0 }}>{myName}</div>
                             <div style={{ ...mono, fontSize: '0.82rem', color: 'var(--silver)' }}>{myWins}-{myLosses} current record</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ ...labelStyle, marginBottom: '4px' }}>Matchup Read</div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 800, color: verdictColor, letterSpacing: 0 }}>{verdict}</div>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.25rem', fontWeight: 800, color: verdictColor, letterSpacing: 0 }}>{verdict}</div>
                             <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.72, marginTop: '3px' }}>
                                 {biggestEdges[0] ? posLabel(biggestEdges[0].pos) : 'Roster'} is the biggest swing: {(biggestEdges[0]?.diff || 0) > 0 ? '+' : ''}{(biggestEdges[0]?.diff || 0).toLocaleString()} {valueShortLabel}.
                             </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <div style={labelStyle}>Opponent</div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.35rem', color: theirColor, fontWeight: 800, letterSpacing: 0 }}>{theirName}</div>
+                            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.35rem', color: theirColor, fontWeight: 800, letterSpacing: 0 }}>{theirName}</div>
                             <div style={{ ...mono, fontSize: '0.82rem', color: 'var(--silver)' }}>{theirWins}-{theirLosses} current record</div>
                         </div>
                     </div>
 
                     <div style={{ marginBottom: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '6px' }}>
-                            <span style={{ ...mono, color: myColor, fontWeight: 800 }}>{myTotal.toLocaleString()} <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6 }}>{valueShortLabel}</span></span>
+                            <span style={{ ...mono, color: myColor, fontWeight: 800 }}>{myTotal.toLocaleString()} <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6 }}>{valueShortLabel}</span></span>
                             <span style={{ ...labelStyle, alignSelf: 'center' }}>Roster Share</span>
-                            <span style={{ ...mono, color: theirColor, fontWeight: 800 }}>{theirTotal.toLocaleString()} <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6 }}>{valueShortLabel}</span></span>
+                            <span style={{ ...mono, color: theirColor, fontWeight: 800 }}>{theirTotal.toLocaleString()} <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6 }}>{valueShortLabel}</span></span>
                         </div>
-                        <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', background: 'rgba(255,255,255,0.055)' }}>
-                            <div style={{ width: myDhqPct + '%', background: 'linear-gradient(90deg, var(--gold), rgba(212,175,55,0.78))', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '6px', fontSize: '0.58rem', color: '#0A0A0A', fontWeight: 800 }}>
+                        <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', background: 'var(--ov-4, rgba(255,255,255,0.055))' }}>
+                            <div style={{ width: myDhqPct + '%', background: 'linear-gradient(90deg, var(--gold), var(--acc-line4, rgba(212,175,55,0.78)))', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '6px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-0a0a0a, #0a0a0a)', fontWeight: 800 }}>
                                 {myDhqPct >= 12 ? Math.round(myDhqPct) + '%' : ''}
                             </div>
-                            <div style={{ width: (100 - myDhqPct) + '%', background: 'linear-gradient(90deg, rgba(124,107,248,0.78), #7C6BF8)', display: 'flex', alignItems: 'center', paddingLeft: '6px', fontSize: '0.58rem', color: '#0A0A0A', fontWeight: 800 }}>
+                            <div style={{ width: (100 - myDhqPct) + '%', background: 'linear-gradient(90deg, rgba(124,107,248,0.78), var(--k-7c6bf8, #7c6bf8))', display: 'flex', alignItems: 'center', paddingLeft: '6px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-0a0a0a, #0a0a0a)', fontWeight: 800 }}>
                                 {(100 - myDhqPct) >= 12 ? Math.round(100 - myDhqPct) + '%' : ''}
                             </div>
                         </div>
@@ -1193,40 +1198,40 @@ function CompareTab({
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '9px' }}>
                         {statCards.map(card => (
-                            <div key={card.label} style={{ padding: '10px', background: 'rgba(0,0,0,0.28)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '7px' }}>
+                            <div key={card.label} style={{ padding: '10px', background: 'rgba(0,0,0,0.28)', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '7px' }}>
                                 <div style={labelStyle}>{card.label}</div>
                                 <div style={{ ...mono, fontSize: '1rem', fontWeight: 800, color: card.color, marginTop: '5px' }}>{card.value}</div>
-                                <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.64, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.sub}</div>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.64, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.sub}</div>
                             </div>
                         ))}
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(340px, 0.75fr)', gap: '14px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: '14px', marginBottom: '16px' }}>
                     <div style={{ ...panelStyle, padding: '14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                             <div>
-                                <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontWeight: 800, fontSize: '1.05rem', letterSpacing: 0 }}>Position Edge Matrix</div>
+                                <div style={{ fontFamily: 'var(--font-title)', color: 'var(--white)', fontWeight: 800, fontSize: 'var(--text-title)', letterSpacing: 0 }}>Position Edge Matrix</div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.66 }}>Total roster value by room, sorted by positional importance.</div>
                             </div>
-                            <div style={{ ...mono, fontSize: '0.82rem', color: youLead >= theyLead ? '#2ECC71' : '#E74C3C', fontWeight: 800 }}>{youLead}-{theyLead}</div>
+                            <div style={{ ...mono, fontSize: '0.82rem', color: youLead >= theyLead ? 'var(--good)' : 'var(--bad)', fontWeight: 800 }}>{youLead}-{theyLead}</div>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '9px' }}>
                             {positionSummaries.map(summary => {
                                 const total = Math.max(1, summary.myPosDHQ + summary.theirPosDHQ);
                                 const minePct = summary.myPosDHQ / total * 100;
-                                const edgeColor = summary.diff > 0 ? '#2ECC71' : summary.diff < 0 ? '#E74C3C' : 'var(--silver)';
+                                const edgeColor = summary.diff > 0 ? 'var(--good)' : summary.diff < 0 ? 'var(--bad)' : 'var(--silver)';
                                 return (
-                                    <div key={summary.pos} style={{ padding: '10px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '7px' }}>
+                                    <div key={summary.pos} style={{ padding: '10px', background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '7px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '7px' }}>
                                             <span style={{ fontWeight: 900, color: posColors[summary.pos] || 'var(--gold)' }}>{posLabel(summary.pos)}</span>
                                             <span style={{ ...mono, color: edgeColor, fontWeight: 800, fontSize: '0.78rem' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
                                         </div>
-                                        <div style={{ display: 'flex', height: '5px', borderRadius: '3px', overflow: 'hidden', background: 'rgba(255,255,255,0.06)', marginBottom: '8px' }}>
+                                        <div style={{ display: 'flex', height: '5px', borderRadius: '3px', overflow: 'hidden', background: 'var(--ov-4, rgba(255,255,255,0.06))', marginBottom: '8px' }}>
                                             <div style={{ width: minePct + '%', background: 'var(--gold)' }}></div>
                                             <div style={{ width: (100 - minePct) + '%', background: theirColor }}></div>
                                         </div>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.68rem' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: 'var(--text-micro, 0.6875rem)' }}>
                                             <div style={{ minWidth: 0 }}>
                                                 <div style={{ color: myColor, fontWeight: 800, marginBottom: '2px' }}>{summary.myPosDHQ.toLocaleString()}</div>
                                                 <div style={muted}>{renderMiniPlayer(summary.topMine)}</div>
@@ -1243,7 +1248,7 @@ function CompareTab({
                     </div>
 
                     <div style={{ ...panelStyle, padding: '14px' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontWeight: 800, fontSize: '1.05rem', letterSpacing: 0, marginBottom: '10px' }}>H2H History</div>
+                        <div style={{ fontFamily: 'var(--font-title)', color: 'var(--white)', fontWeight: 800, fontSize: 'var(--text-title)', letterSpacing: 0, marginBottom: '10px' }}>H2H History</div>
                         {h2hState.loading ? (
                             <div style={{ color: 'var(--silver)', fontSize: '0.82rem', padding: '10px 0' }}>Loading owner-vs-owner history...</div>
                         ) : meetings.length ? (
@@ -1254,7 +1259,7 @@ function CompareTab({
                                         ['Last', lastMeeting ? lastMeeting.season + ' W' + lastMeeting.week : '-'],
                                         ['Streak', streak],
                                     ].map(([label, value]) => (
-                                        <div key={label} style={{ padding: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
+                                        <div key={label} style={{ padding: '8px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '6px' }}>
                                             <div style={labelStyle}>{label}</div>
                                             <div style={{ ...mono, fontWeight: 800, color: 'var(--white)', fontSize: '0.82rem', marginTop: '4px' }}>{value}</div>
                                         </div>
@@ -1262,10 +1267,10 @@ function CompareTab({
                                 </div>
                                 <div style={{ display: 'grid', gap: '6px' }}>
                                     {meetings.slice(0, 6).map(m => (
-                                        <div key={m.season + '-' + m.week + '-' + m.matchupId} style={{ display: 'grid', gridTemplateColumns: '60px 1fr auto', alignItems: 'center', gap: '8px', padding: '7px 8px', background: 'rgba(255,255,255,0.025)', borderRadius: '6px', fontSize: '0.74rem' }}>
+                                        <div key={m.season + '-' + m.week + '-' + m.matchupId} style={{ display: 'grid', gridTemplateColumns: '60px 1fr auto', alignItems: 'center', gap: '8px', padding: '7px 8px', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: '6px', fontSize: '0.74rem' }}>
                                             <div style={{ ...mono, color: 'var(--silver)', opacity: 0.72 }}>{m.season} W{m.week}</div>
-                                            <div style={{ color: m.result === 'W' ? '#2ECC71' : m.result === 'L' ? '#E74C3C' : 'var(--silver)', fontWeight: 800 }}>{m.result} {m.myPoints.toFixed(2)}-{m.theirPoints.toFixed(2)}</div>
-                                            <div style={{ ...mono, color: m.margin >= 0 ? '#2ECC71' : '#E74C3C' }}>{m.margin > 0 ? '+' : ''}{m.margin.toFixed(2)}</div>
+                                            <div style={{ color: m.result === 'W' ? 'var(--good)' : m.result === 'L' ? 'var(--bad)' : 'var(--silver)', fontWeight: 800 }}>{m.result} {m.myPoints.toFixed(2)}-{m.theirPoints.toFixed(2)}</div>
+                                            <div style={{ ...mono, color: m.margin >= 0 ? 'var(--good)' : 'var(--bad)' }}>{m.margin > 0 ? '+' : ''}{m.margin.toFixed(2)}</div>
                                         </div>
                                     ))}
                                     {meetings.length > 6 ? <div style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.58, textAlign: 'center', paddingTop: '4px' }}>+{meetings.length - 6} older meetings cached</div> : null}
@@ -1279,24 +1284,24 @@ function CompareTab({
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', marginBottom: '16px' }}>
                     <div style={{ ...panelStyle, padding: '14px' }}>
                         <div style={{ ...labelStyle, color: 'var(--gold)', opacity: 1, marginBottom: '8px' }}>Where you can press</div>
                         {leverage.length ? leverage.map(item => (
-                            <div key={item.pos} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '7px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div key={item.pos} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '7px 0', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.05))' }}>
                                 <span style={{ color: posColors[item.pos] || 'var(--white)', fontWeight: 800 }}>{posLabel(item.pos)}</span>
                                 <span style={{ color: 'var(--silver)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{renderMiniPlayer(item.topMine)} over {renderMiniPlayer(item.topTheirs)}</span>
-                                <span style={{ ...mono, color: '#2ECC71', fontWeight: 800 }}>+{item.diff.toLocaleString()}</span>
+                                <span style={{ ...mono, color: 'var(--good)', fontWeight: 800 }}>+{item.diff.toLocaleString()}</span>
                             </div>
                         )) : <div style={{ color: 'var(--silver)', opacity: 0.68, fontSize: '0.8rem' }}>No clear surplus edge. This matchup is more about player-level choices.</div>}
                     </div>
                     <div style={{ ...panelStyle, padding: '14px' }}>
-                        <div style={{ ...labelStyle, color: '#E74C3C', opacity: 1, marginBottom: '8px' }}>Where they can hurt you</div>
+                        <div style={{ ...labelStyle, color: 'var(--bad)', opacity: 1, marginBottom: '8px' }}>Where they can hurt you</div>
                         {exposures.length ? exposures.map(item => (
-                            <div key={item.pos} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '7px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div key={item.pos} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '7px 0', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.05))' }}>
                                 <span style={{ color: posColors[item.pos] || 'var(--white)', fontWeight: 800 }}>{posLabel(item.pos)}</span>
                                 <span style={{ color: 'var(--silver)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{renderMiniPlayer(item.topTheirs)} over {renderMiniPlayer(item.topMine)}</span>
-                                <span style={{ ...mono, color: '#E74C3C', fontWeight: 800 }}>{item.diff.toLocaleString()}</span>
+                                <span style={{ ...mono, color: 'var(--bad)', fontWeight: 800 }}>{item.diff.toLocaleString()}</span>
                             </div>
                         )) : <div style={{ color: 'var(--silver)', opacity: 0.68, fontSize: '0.8rem' }}>No obvious room where this opponent has a strong value edge.</div>}
                     </div>
@@ -1305,17 +1310,17 @@ function CompareTab({
                 <div style={{ ...panelStyle, padding: '14px', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline', marginBottom: '10px' }}>
                         <div>
-                            <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontWeight: 800, fontSize: '1.05rem', letterSpacing: 0 }}>Draft Picks & FAAB</div>
+                            <div style={{ fontFamily: 'var(--font-title)', color: 'var(--white)', fontWeight: 800, fontSize: 'var(--text-title)', letterSpacing: 0 }}>Draft Picks & FAAB</div>
                             <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.66 }}>{skinFeatures.showFuturePicks === false ? 'Draft capital' : 'Future capital'} is included in {valueLabel}; FAAB stays separate as waiver leverage.</div>
                         </div>
-                        <div style={{ ...mono, color: myAssetTotal >= theirAssetTotal ? '#2ECC71' : '#E74C3C', fontWeight: 850 }}>{myAssetTotal >= theirAssetTotal ? '+' : ''}{(myAssetTotal - theirAssetTotal).toLocaleString()} assets</div>
+                        <div style={{ ...mono, color: myAssetTotal >= theirAssetTotal ? 'var(--good)' : 'var(--bad)', fontWeight: 850 }}>{myAssetTotal >= theirAssetTotal ? '+' : ''}{(myAssetTotal - theirAssetTotal).toLocaleString()} assets</div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '10px' }}>
                         {[
                             { name: myName, pickCapital: myPickCapital, faab: myFaab, assetTotal: myAssetTotal, mine: true },
                             { name: theirName, pickCapital: theirPickCapital, faab: theirFaab, assetTotal: theirAssetTotal, mine: false },
                         ].map(side => (
-                            <div key={side.name} style={{ padding: '10px', borderRadius: '7px', background: side.mine ? 'rgba(212,175,55,0.08)' : 'rgba(124,107,248,0.055)', border: '1px solid ' + (side.mine ? 'rgba(212,175,55,0.24)' : 'rgba(124,107,248,0.18)') }}>
+                            <div key={side.name} style={{ padding: '10px', borderRadius: '7px', background: side.mine ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'rgba(124,107,248,0.055)', border: '1px solid ' + (side.mine ? 'var(--acc-line1, rgba(212,175,55,0.24))' : 'rgba(124,107,248,0.18)') }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline', marginBottom: '8px' }}>
                                     <div style={{ color: side.mine ? myColor : theirColor, fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{side.name}</div>
                                     <div style={{ ...mono, color: 'var(--white)', fontSize: '0.76rem', fontWeight: 850 }}>{side.assetTotal.toLocaleString()}</div>
@@ -1323,22 +1328,22 @@ function CompareTab({
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
                                     <div>
                                         <div style={labelStyle}>Pick Value</div>
-                                        <div style={{ ...mono, color: side.pickCapital.totalValue >= myPickCapital.totalValue ? '#2ECC71' : 'var(--silver)', fontWeight: 850 }}>{Math.round(side.pickCapital.totalValue / 1000)}k</div>
-                                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.58 }}>draft {valueShortLabel}</div>
+                                        <div style={{ ...mono, color: side.pickCapital.totalValue >= myPickCapital.totalValue ? 'var(--good)' : 'var(--silver)', fontWeight: 850 }}>{Math.round(side.pickCapital.totalValue / 1000)}k</div>
+                                        <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.58 }}>draft {valueShortLabel}</div>
                                     </div>
                                     <div>
                                         <div style={labelStyle}>Pick Count</div>
-                                        <div style={{ ...mono, color: side.pickCapital.count >= myPickCapital.count ? '#2ECC71' : 'var(--silver)', fontWeight: 850 }}>{side.pickCapital.count}</div>
-                                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.58 }}>{Object.entries(side.pickCapital.byRound || {}).slice(0, 3).map(([rd, ct]) => 'R' + rd + ':' + ct).join('  ') || 'No picks'}</div>
+                                        <div style={{ ...mono, color: side.pickCapital.count >= myPickCapital.count ? 'var(--good)' : 'var(--silver)', fontWeight: 850 }}>{side.pickCapital.count}</div>
+                                        <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.58 }}>{Object.entries(side.pickCapital.byRound || {}).slice(0, 3).map(([rd, ct]) => 'R' + rd + ':' + ct).join('  ') || 'No picks'}</div>
                                     </div>
                                     <div>
                                         <div style={labelStyle}>Best Picks</div>
-                                        <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.76, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{side.pickCapital.topPicks.length ? side.pickCapital.topPicks.slice(0, 2).map(p => p.label).join(' · ') : 'None'}</div>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.76, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{side.pickCapital.topPicks.length ? side.pickCapital.topPicks.slice(0, 2).map(p => p.label).join(' · ') : 'None'}</div>
                                     </div>
                                     <div>
                                         <div style={labelStyle}>FAAB</div>
-                                        <div style={{ ...mono, color: side.faab.isFaab ? (side.faab.remaining >= myFaab.remaining ? '#2ECC71' : 'var(--silver)') : 'rgba(255,255,255,0.32)', fontWeight: 850 }}>{side.faab.isFaab ? '$' + side.faab.remaining : '—'}</div>
-                                        <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.58 }}>{side.faab.isFaab ? side.faab.pct + '% left' : 'No FAAB'}</div>
+                                        <div style={{ ...mono, color: side.faab.isFaab ? (side.faab.remaining >= myFaab.remaining ? 'var(--good)' : 'var(--silver)') : 'var(--ov-8, rgba(255,255,255,0.32))', fontWeight: 850 }}>{side.faab.isFaab ? '$' + side.faab.remaining : '—'}</div>
+                                        <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.58 }}>{side.faab.isFaab ? side.faab.pct + '% left' : 'No FAAB'}</div>
                                     </div>
                                 </div>
                             </div>
@@ -1357,20 +1362,20 @@ function CompareTab({
                         const myPosPct = summary.myPosDHQ / total * 100;
                         return (
                             <div key={summary.pos} style={{ marginBottom: '12px', ...panelStyle, overflow: 'hidden' }}>
-                                <div style={{ padding: '9px 10px 10px', background: (posColors[summary.pos] || '#666') + '14', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                <div style={{ padding: '9px 10px 10px', background: (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '10px' }}>
                                         <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
                                         <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                            <span style={{ color: summary.myPosDHQ >= summary.theirPosDHQ ? '#2ECC71' : 'var(--silver)' }}>You: {summary.myPosDHQ.toLocaleString()}</span>
-                                            <span style={{ color: summary.theirPosDHQ >= summary.myPosDHQ ? '#2ECC71' : 'var(--silver)' }}>Them: {summary.theirPosDHQ.toLocaleString()}</span>
-                                            <span style={{ fontWeight: 800, color: summary.diff > 0 ? '#2ECC71' : summary.diff < 0 ? '#E74C3C' : 'var(--silver)' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
+                                            <span style={{ color: summary.myPosDHQ >= summary.theirPosDHQ ? 'var(--good)' : 'var(--silver)' }}>You: {summary.myPosDHQ.toLocaleString()}</span>
+                                            <span style={{ color: summary.theirPosDHQ >= summary.myPosDHQ ? 'var(--good)' : 'var(--silver)' }}>Them: {summary.theirPosDHQ.toLocaleString()}</span>
+                                            <span style={{ fontWeight: 800, color: summary.diff > 0 ? 'var(--good)' : summary.diff < 0 ? 'var(--bad)' : 'var(--silver)' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', height: '6px', borderRadius: '3px', overflow: 'hidden', background: 'rgba(255,255,255,0.04)' }}>
-                                        <div title={'You: ' + Math.round(myPosPct) + '%'} style={{ width: myPosPct + '%', background: 'linear-gradient(90deg, var(--gold), rgba(212,175,55,0.78))', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '4px', fontSize: '0.5rem', color: '#0A0A0A', fontWeight: 800 }}>
+                                    <div style={{ display: 'flex', height: '6px', borderRadius: '3px', overflow: 'hidden', background: 'var(--ov-3, rgba(255,255,255,0.04))' }}>
+                                        <div title={'You: ' + Math.round(myPosPct) + '%'} style={{ width: myPosPct + '%', background: 'linear-gradient(90deg, var(--gold), var(--acc-line4, rgba(212,175,55,0.78)))', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '4px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-0a0a0a, #0a0a0a)', fontWeight: 800 }}>
                                             {myPosPct >= 18 ? Math.round(myPosPct) + '%' : ''}
                                         </div>
-                                        <div title={'Them: ' + Math.round(100 - myPosPct) + '%'} style={{ width: (100 - myPosPct) + '%', background: 'linear-gradient(90deg, rgba(124,107,248,0.76), #7C6BF8)', display: 'flex', alignItems: 'center', paddingLeft: '4px', fontSize: '0.5rem', color: '#0A0A0A', fontWeight: 800 }}>
+                                        <div title={'Them: ' + Math.round(100 - myPosPct) + '%'} style={{ width: (100 - myPosPct) + '%', background: 'linear-gradient(90deg, rgba(124,107,248,0.76), var(--k-7c6bf8, #7c6bf8))', display: 'flex', alignItems: 'center', paddingLeft: '4px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-0a0a0a, #0a0a0a)', fontWeight: 800 }}>
                                             {(100 - myPosPct) >= 18 ? Math.round(100 - myPosPct) + '%' : ''}
                                         </div>
                                     </div>
@@ -1379,7 +1384,7 @@ function CompareTab({
                                     const mine = summary.myAtPos[i];
                                     const theirs = summary.theirAtPos[i];
                                     return (
-                                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))' }}>
                                             {renderRosterCell(mine, false, theirs)}
                                             {renderRosterCell(theirs, true, mine)}
                                         </div>

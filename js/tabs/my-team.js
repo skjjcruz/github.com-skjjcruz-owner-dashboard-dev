@@ -257,8 +257,8 @@ function MyTeamTab({
   });
 
   // Cell background helpers (FM-style colored cells)
-  const dhqBg = v => v >= 7000 ? 'rgba(46,204,113,0.15)' : v >= 4000 ? 'rgba(52,152,219,0.12)' : v >= 2000 ? 'rgba(255,255,255,0.04)' : 'transparent';
-  const dhqCol = v => v >= 7000 ? '#2ECC71' : v >= 4000 ? '#3498DB' : v >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.25)';
+  const dhqBg = v => v >= 7000 ? 'rgba(46,204,113,0.15)' : v >= 4000 ? 'rgba(52,152,219,0.12)' : v >= 2000 ? 'var(--ov-3, rgba(255,255,255,0.04))' : 'transparent';
+  const dhqCol = v => v >= 7000 ? 'var(--good)' : v >= 4000 ? 'var(--k-3498db, #3498db)' : v >= 2000 ? 'var(--silver)' : 'var(--ov-7, rgba(255,255,255,0.25))';
   const agePhase = (a, pos) => {
     if (!a) return 'unknown';
     const curve = typeof window.App?.getAgeCurve === 'function'
@@ -267,10 +267,10 @@ function MyTeamTab({
     return a < curve.peak[0] ? 'young' : a <= curve.peak[1] ? 'prime' : a <= curve.decline[1] ? 'veteran' : 'post';
   };
   const ageBg = (a, pos) => ({ young: 'rgba(46,204,113,0.07)', prime: 'transparent', veteran: 'rgba(240,165,0,0.055)', post: 'rgba(231,76,60,0.06)' }[agePhase(a, pos)] || 'transparent');
-  const ageCol = (a, pos) => ({ young: '#2ECC71', prime: 'var(--white)', veteran: '#F0A500', post: '#E74C3C' }[agePhase(a, pos)] || 'var(--silver)');
+  const ageCol = (a, pos) => ({ young: 'var(--good)', prime: 'var(--white)', veteran: 'var(--warn)', post: 'var(--bad)' }[agePhase(a, pos)] || 'var(--silver)');
   const ppgBg = (v, pos) => v >= (posP75[pos]||10) ? 'rgba(46,204,113,0.055)' : v <= (posP25[pos]||3) ? 'rgba(231,76,60,0.04)' : 'transparent';
   const trendBg = t => t >= 15 ? 'rgba(46,204,113,0.05)' : t <= -15 ? 'rgba(231,76,60,0.045)' : 'transparent';
-  const statusCol = s => s === 'starter' ? 'var(--gold)' : s === 'ir' ? '#E74C3C' : s === 'taxi' ? '#3498DB' : 'transparent';
+  const statusCol = s => s === 'starter' ? 'var(--gold)' : s === 'ir' ? 'var(--bad)' : s === 'taxi' ? 'var(--k-3498db, #3498db)' : 'transparent';
   const posColors = window.App.POS_COLORS;
 
   // Drop candidate PIDs: non-starters with lowest DHQ (bottom 3 bench players)
@@ -375,10 +375,10 @@ function MyTeamTab({
     return posRank[r.pos] ?? 99;
   };
   const getRowGroupColor = (r) => {
-    if (rosterGroupMode === 'slot') return statusCol(r.section) === 'transparent' ? 'rgba(255,255,255,0.5)' : statusCol(r.section);
-    if (rosterGroupMode === 'action') return /sell/i.test(r.rec || '') ? '#E74C3C' : /buy|build|core/i.test(r.rec || '') ? '#2ECC71' : /stash/i.test(r.rec || '') ? '#3498DB' : 'var(--gold)';
-    if (rosterGroupMode === 'age') return getAgeBand(r) === 'Youth' ? '#2ECC71' : getAgeBand(r) === 'Prime' ? 'var(--gold)' : getAgeBand(r) === 'Veteran' ? '#F0A500' : '#E74C3C';
-    if (rosterGroupMode === 'peak') return r.peakPhase === 'PRIME' ? '#2ECC71' : r.peakPhase === 'PRE' ? '#3498DB' : r.peakPhase === 'VET' ? '#F0A500' : '#E74C3C';
+    if (rosterGroupMode === 'slot') return statusCol(r.section) === 'transparent' ? 'var(--ov-9, rgba(255,255,255,0.5))' : statusCol(r.section);
+    if (rosterGroupMode === 'action') return /sell/i.test(r.rec || '') ? 'var(--bad)' : /buy|build|core/i.test(r.rec || '') ? 'var(--good)' : /stash/i.test(r.rec || '') ? 'var(--k-3498db, #3498db)' : 'var(--gold)';
+    if (rosterGroupMode === 'age') return getAgeBand(r) === 'Youth' ? 'var(--good)' : getAgeBand(r) === 'Prime' ? 'var(--gold)' : getAgeBand(r) === 'Veteran' ? 'var(--warn)' : 'var(--bad)';
+    if (rosterGroupMode === 'peak') return r.peakPhase === 'PRIME' ? 'var(--good)' : r.peakPhase === 'PRE' ? 'var(--k-3498db, #3498db)' : r.peakPhase === 'VET' ? 'var(--warn)' : 'var(--bad)';
     return posColors[r.pos] || 'var(--gold)';
   };
 
@@ -408,10 +408,10 @@ function MyTeamTab({
   const bestPosition = posMix.slice().sort((a, b) => b.count - a.count)[0];
   const oldestStarter = starterRows.filter(r => r.age).sort((a, b) => (b.age || 0) - (a.age || 0))[0];
   const boardInsightChips = [
-    sellCount > 0 ? { label: sellCount + ' sell flags', color: '#E74C3C' } : null,
-    stashCount > 0 ? { label: stashCount + ' build ' + String(assetLabel || 'asset').toLowerCase() + (stashCount === 1 ? '' : 's'), color: '#2ECC71' } : null,
+    sellCount > 0 ? { label: sellCount + ' sell flags', color: 'var(--bad)' } : null,
+    stashCount > 0 ? { label: stashCount + ' build ' + String(assetLabel || 'asset').toLowerCase() + (stashCount === 1 ? '' : 's'), color: 'var(--good)' } : null,
     needs[0] ? { label: needs.slice(0, 2).map(n => n.pos).join('/') + ' needs', color: 'var(--gold)' } : null,
-    oldestStarter ? { label: 'Oldest starter ' + oldestStarter.pos + ' ' + oldestStarter.age, color: '#F0A500' } : null,
+    oldestStarter ? { label: 'Oldest starter ' + oldestStarter.pos + ' ' + oldestStarter.age, color: 'var(--warn)' } : null,
     bestPosition ? { label: bestPosition.pos + ' depth ' + bestPosition.count, color: bestPosition.color } : null,
   ].filter(Boolean);
   const rosterSummaryParts = [
@@ -422,26 +422,26 @@ function MyTeamTab({
     sectionCounts.ir + ' IR',
   ];
   const rosterTagMeta = {
-    trade: { bg: 'rgba(240,165,0,0.13)', col: '#F0A500', lbl: 'Trade' },
-    cut: { bg: 'rgba(231,76,60,0.13)', col: '#E74C3C', lbl: 'Cut' },
-    untouchable: { bg: 'rgba(46,204,113,0.13)', col: '#2ECC71', lbl: 'Core' },
-    watch: { bg: 'rgba(52,152,219,0.13)', col: '#3498DB', lbl: 'Watch' },
+    trade: { bg: 'rgba(240,165,0,0.13)', col: 'var(--warn)', lbl: 'Trade' },
+    cut: { bg: 'rgba(231,76,60,0.13)', col: 'var(--bad)', lbl: 'Cut' },
+    untouchable: { bg: 'rgba(46,204,113,0.13)', col: 'var(--good)', lbl: 'Core' },
+    watch: { bg: 'rgba(52,152,219,0.13)', col: 'var(--k-3498db, #3498db)', lbl: 'Watch' },
   };
   const slotTagMeta = {
-    starter: { bg: 'rgba(212,175,55,0.12)', col: 'var(--gold)', lbl: 'STR' },
-    bench: { bg: 'rgba(255,255,255,0.055)', col: 'var(--silver)', lbl: 'BN' },
-    taxi: { bg: 'rgba(52,152,219,0.12)', col: '#3498DB', lbl: 'TAX' },
-    ir: { bg: 'rgba(231,76,60,0.12)', col: '#E74C3C', lbl: 'IR' },
+    starter: { bg: 'var(--acc-fill2, rgba(212,175,55,0.12))', col: 'var(--gold)', lbl: 'STR' },
+    bench: { bg: 'var(--ov-4, rgba(255,255,255,0.055))', col: 'var(--silver)', lbl: 'BN' },
+    taxi: { bg: 'rgba(52,152,219,0.12)', col: 'var(--k-3498db, #3498db)', lbl: 'TAX' },
+    ir: { bg: 'rgba(231,76,60,0.12)', col: 'var(--bad)', lbl: 'IR' },
   };
   const inlineTag = (cfg, key) => cfg ? (
     <span key={key} style={{
-      fontSize: '0.58rem',
+      fontSize: 'var(--text-micro, 0.6875rem)',
       padding: '2px 5px',
       borderRadius: '4px',
       fontWeight: 800,
       background: cfg.bg,
       color: cfg.col,
-      border: '1px solid ' + cfg.col + '33',
+      border: '1px solid ' + wrAlpha(cfg.col, '33'),
       flexShrink: 0,
       lineHeight: 1,
       letterSpacing: '0.035em',
@@ -456,14 +456,14 @@ function MyTeamTab({
     fontFamily: 'var(--font-body)',
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
-    background: active ? 'var(--gold)' : 'rgba(255,255,255,0.045)',
+    background: active ? 'var(--gold)' : 'var(--ov-3, rgba(255,255,255,0.045))',
     color: active ? 'var(--black)' : 'var(--silver)',
-    border: '1px solid ' + (active ? 'var(--gold)' : 'rgba(255,255,255,0.09)'),
+    border: '1px solid ' + (active ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.09))'),
     borderRadius: '6px',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   });
-  const groupLabelStyle = { fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, whiteSpace: 'nowrap' };
+  const groupLabelStyle = { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, whiteSpace: 'nowrap' };
   const sameColumnSet = (a, b) => a.length === b.length && a.every((key, idx) => key === b[idx]);
   const activePresetKey = Object.entries(COLUMN_PRESETS).find(([, cols]) => sameColumnSet(cols, visibleCols))?.[0] || 'custom';
   const activePresetMeta = COLUMN_PRESET_META[activePresetKey] || { label: 'Custom', tone: visibleCols.length + ' fields' };
@@ -476,6 +476,11 @@ function MyTeamTab({
     return () => window.removeEventListener('resize', onResize);
   }, []);
   const isNarrowRoster = rosterViewportWidth <= 560;
+  const isTabletRoster = rosterViewportWidth > 560 && rosterViewportWidth <= 1023;
+  // iPad/phone: collapse the Scope/View/PPG/Rows/Group control stack behind a
+  // single "Filters" bar so it stops eating ~400px above the roster table.
+  const isCompactRoster = rosterViewportWidth <= 1023;
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
   const rosterTableCols = isNarrowRoster
     ? ['pos', 'dhq', 'action'].filter(key => ROSTER_COLUMNS[key])
     : visibleCols;
@@ -492,7 +497,7 @@ function MyTeamTab({
     group,
     columns: Object.entries(ROSTER_COLUMNS).filter(([, col]) => col.group === group),
   })).filter(g => g.columns.length > 0);
-  const playerColWidth = isNarrowRoster ? 156 : 292;
+  const playerColWidth = isNarrowRoster ? 156 : isTabletRoster ? 220 : 292;
   const visibleDataWidth = rosterTableCols.reduce((sum, key) => sum + parseInt(ROSTER_COLUMNS[key]?.width || '0', 10), 0);
   const tableMinWidth = playerColWidth + visibleDataWidth;
   const setCustomColumns = (updater) => {
@@ -542,10 +547,10 @@ function MyTeamTab({
   function renderCell(colKey, r) {
     const col = ROSTER_COLUMNS[colKey];
     const isGroupStart = visibleColGroupStarts.has(colKey);
-    const base = { width: col.width, minWidth: col.width, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isCompactRows ? '0.73rem' : '0.78rem', padding: '0 5px', borderLeft: isGroupStart ? '1px solid rgba(212,175,55,0.12)' : '1px solid rgba(255,255,255,0.024)', color: 'rgba(235,235,240,0.78)', lineHeight: 1.1 };
+    const base = { width: col.width, minWidth: col.width, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isCompactRows ? '0.73rem' : '0.78rem', padding: '0 5px', borderLeft: isGroupStart ? '1px solid var(--acc-fill2, rgba(212,175,55,0.12))' : '1px solid var(--ov-1, rgba(255,255,255,0.024))', color: 'rgba(235,235,240,0.78)', lineHeight: 1.1 };
 
     switch(colKey) {
-      case 'pos': return <div key={colKey} style={{...base}}><span style={{ fontSize: '0.68rem', fontWeight: 650, color: posColors[r.pos]||'var(--silver)' }}>{window.App?.posLabel?.(r.pos) || (r.pos === 'DEF' ? 'D/ST' : r.pos)}</span></div>;
+      case 'pos': return <div key={colKey} style={{...base}}><span style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 650, color: posColors[r.pos]||'var(--silver)' }}>{window.App?.posLabel?.(r.pos) || (r.pos === 'DEF' ? 'D/ST' : r.pos)}</span></div>;
       case 'age': return <div key={colKey} style={{...base, background: ageBg(r.age, r.pos)}}><span style={{ color: ageCol(r.age, r.pos), fontWeight: 550 }}>{r.age||'\u2014'}</span></div>;
       case 'dhq': return <div key={colKey} style={{...base, background: dhqBg(r.dhq)}}><span style={{ color: dhqCol(r.dhq), fontWeight: 650, fontFamily: 'var(--font-body)', fontSize: '0.78rem' }}>{r.dhq > 0 ? r.dhq.toLocaleString() : '\u2014'}</span></div>;
       case 'ppg': {
@@ -562,25 +567,25 @@ function MyTeamTab({
           if (rolling > 0) { shown = rolling; marker = ' · L' + n; }
           else { marker = ' · Szn'; }
         }
-        return <div key={colKey} style={{...base, background: ppgBg(shown, r.pos)}}><span style={{ color: shown >= (posP75[r.pos]||10) ? '#2ECC71' : 'var(--silver)', fontWeight: shown >= (posP75[r.pos]||10) ? 650 : 500 }}>{shown > 0 ? shown : '\u2014'}{marker}</span></div>;
+        return <div key={colKey} style={{...base, background: ppgBg(shown, r.pos)}}><span style={{ color: shown >= (posP75[r.pos]||10) ? 'var(--good)' : 'var(--silver)', fontWeight: shown >= (posP75[r.pos]||10) ? 650 : 500 }}>{shown > 0 ? shown : '\u2014'}{marker}</span></div>;
       }
       case 'prev': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', opacity: 0.6 }}>{r.prevPPG > 0 ? r.prevPPG : '\u2014'}</span></div>;
       case 'trend': {
         const trendBars = (() => {
           const t = r.trend || 0;
           const up = t > 0;
-          const color = t >= 15 ? '#2ECC71' : t <= -15 ? '#E74C3C' : 'var(--silver)';
+          const color = t >= 15 ? 'var(--good)' : t <= -15 ? 'var(--bad)' : 'var(--silver)';
           const heights = up ? [4, 6, 8, 11, 14] : t < 0 ? [14, 11, 8, 6, 4] : [8, 9, 10, 9, 8];
           return React.createElement('div', { className: 'wr-spark' }, ...heights.map((h, i) => React.createElement('div', { key: i, className: 'wr-spark-bar', style: { height: h + 'px', background: color } })));
         })();
         return <div key={colKey} style={{...base, background: trendBg(r.trend), flexDirection: 'column', gap: '1px'}}>
-          <span style={{ color: r.trend>=15?'#2ECC71':r.trend<=-15?'#E74C3C':'var(--silver)', fontWeight: 550, fontSize: '0.7rem' }}>{r.trend>0?'+'+r.trend+'%':r.trend<0?r.trend+'%':'\u2014'}</span>
+          <span style={{ color: r.trend>=15?'var(--good)':r.trend<=-15?'var(--bad)':'var(--silver)', fontWeight: 550, fontSize: '0.7rem' }}>{r.trend>0?'+'+r.trend+'%':r.trend<0?r.trend+'%':'\u2014'}</span>
           {trendBars}
         </div>;
       }
 		      case 'peak': return <div key={colKey} style={{...base, flexDirection: 'column', gap: '1px'}}>
-		        <span style={{ fontSize: '0.7rem', fontWeight: 650, color: r.peakPhase==='PRIME'?'#2ECC71':r.peakPhase==='PRE'?'#3498DB':r.peakPhase==='VET'?'#F0A500':'#E74C3C' }}>{r.peakPhase}</span>
-        <div style={{ width: '30px', height: '3px', borderRadius: '1px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden', position: 'relative' }}>
+		        <span style={{ fontSize: '0.7rem', fontWeight: 650, color: r.peakPhase==='PRIME'?'var(--good)':r.peakPhase==='PRE'?'var(--k-3498db, #3498db)':r.peakPhase==='VET'?'var(--warn)':'var(--bad)' }}>{r.peakPhase}</span>
+        <div style={{ width: '30px', height: '3px', borderRadius: '1px', background: 'var(--ov-4, rgba(255,255,255,0.06))', overflow: 'hidden', position: 'relative' }}>
           <div style={{ position:'absolute',left:0,top:0,height:'100%',width:'30%',background:'rgba(52,152,219,0.4)' }}></div>
           <div style={{ position:'absolute',left:'30%',top:0,height:'100%',width:'40%',background:'rgba(46,204,113,0.4)' }}></div>
           <div style={{ position:'absolute',left:'70%',top:0,height:'100%',width:'30%',background:'rgba(231,76,60,0.3)' }}></div>
@@ -590,37 +595,37 @@ function MyTeamTab({
       case 'action': {
         const ann = getPlayerAnnotation(r.pid);
         return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={ann?.text || ''}>
-          <span style={{ fontSize:'0.68rem',fontWeight:650,padding:'2px 6px',borderRadius:'4px',background:/sell/i.test(r.rec)?'rgba(231,76,60,0.12)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.12)':'rgba(212,175,55,0.1)',color:/sell/i.test(r.rec)?'#E74C3C':/buy|build|core/i.test(r.rec)?'#2ECC71':'var(--gold)',border:'1px solid '+(/sell/i.test(r.rec)?'rgba(231,76,60,0.22)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.22)':'rgba(212,175,55,0.22)') }}>{r.rec}</span>
+          <span style={{ fontSize:'var(--text-micro, 0.6875rem)',fontWeight:650,padding:'2px 6px',borderRadius:'4px',background:/sell/i.test(r.rec)?'rgba(231,76,60,0.12)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.12)':'var(--acc-fill2, rgba(212,175,55,0.1))',color:/sell/i.test(r.rec)?'var(--bad)':/buy|build|core/i.test(r.rec)?'var(--good)':'var(--gold)',border:'1px solid '+(/sell/i.test(r.rec)?'rgba(231,76,60,0.22)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.22)':'var(--acc-line1, rgba(212,175,55,0.22))') }}>{r.rec}</span>
         </div>;
       }
       case 'gp': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.74rem' }}>{r.effectiveGP > 0 ? r.effectiveGP : '\u2014'}{r.curGP === 0 && r.prevGP > 0 ? '*' : ''}</span></div>;
-      case 'durability': { const gpForDur = r.durabilityGP || 0; return <div key={colKey} style={{...base}} title={'Avg GP: ' + gpForDur + '/17'}><div style={{ width:'24px',height:'4px',borderRadius:'2px',background:'rgba(255,255,255,0.06)',overflow:'hidden' }}><div style={{ width:Math.min(100,(gpForDur/17)*100)+'%',height:'100%',background:gpForDur>=15?'#2ECC71':gpForDur>=10?'#F0A500':'#E74C3C',borderRadius:'2px' }}></div></div></div>; }
+      case 'durability': { const gpForDur = r.durabilityGP || 0; return <div key={colKey} style={{...base}} title={'Avg GP: ' + gpForDur + '/17'}><div style={{ width:'24px',height:'4px',borderRadius:'2px',background:'var(--ov-4, rgba(255,255,255,0.06))',overflow:'hidden' }}><div style={{ width:Math.min(100,(gpForDur/17)*100)+'%',height:'100%',background:gpForDur>=15?'var(--good)':gpForDur>=10?'var(--warn)':'var(--bad)',borderRadius:'2px' }}></div></div></div>; }
       case 'yrsExp': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)' }}>{r.p.years_exp ?? '\u2014'}</span></div>;
       case 'college': return <div key={colKey} style={{...base, justifyContent: 'flex-start'}}><span style={{ color: 'var(--silver)', fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.p.college || '\u2014'}</span></div>;
-      case 'nflDraft': { const dr = r.p.draft_round; const dp = r.p.draft_pick; const dy = r.p.draft_year; const dRound = dr || (dp ? Math.ceil(dp / 32) : null); const draftLabel = dRound ? (dy ? "'" + String(dy).slice(2) + ' ' : '') + 'Rd ' + dRound + (dp ? '.' + ((dp - 1) % 32 + 1) : '') : (r.p.undrafted === true || (r.p.years_exp > 0 && !dp && !dr) ? 'UDFA' : '\u2014'); return <div key={colKey} style={{...base}}><span style={{ color: dRound ? 'var(--silver)' : 'rgba(255,255,255,0.3)', fontSize: '0.74rem' }}>{draftLabel}</span></div>; }
+      case 'nflDraft': { const dr = r.p.draft_round; const dp = r.p.draft_pick; const dy = r.p.draft_year; const dRound = dr || (dp ? Math.ceil(dp / 32) : null); const draftLabel = dRound ? (dy ? "'" + String(dy).slice(2) + ' ' : '') + 'Rd ' + dRound + (dp ? '.' + ((dp - 1) % 32 + 1) : '') : (r.p.undrafted === true || (r.p.years_exp > 0 && !dp && !dr) ? 'UDFA' : '\u2014'); return <div key={colKey} style={{...base}}><span style={{ color: dRound ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: '0.74rem' }}>{draftLabel}</span></div>; }
       case 'posRankLg': {
         const rank = getLeaguePositionRank(r);
-        return <div key={colKey} style={{...base}}><span style={{ color: rank && rank<=3?'#2ECC71':rank && rank<=8?'var(--gold)':'var(--silver)', fontWeight: rank && rank<=3?650:450 }}>{rank ? '#'+rank : '\u2014'}</span></div>;
+        return <div key={colKey} style={{...base}}><span style={{ color: rank && rank<=3?'var(--good)':rank && rank<=8?'var(--gold)':'var(--silver)', fontWeight: rank && rank<=3?650:450 }}>{rank ? '#'+rank : '\u2014'}</span></div>;
       }
       case 'posRankNfl': {
         const meta = r.meta;
         return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)' }}>{meta?.fcRank ? '#'+meta.fcRank : '\u2014'}</span></div>;
       }
-      case 'starterSzn': return <div key={colKey} style={{...base}}><span style={{ color: (r.meta?.starterSeasons||0)>=3?'#2ECC71':(r.meta?.starterSeasons||0)>=1?'var(--gold)':'var(--silver)', fontWeight: 600 }}>{r.meta?.starterSeasons ?? '\u2014'}</span></div>;
+      case 'starterSzn': return <div key={colKey} style={{...base}}><span style={{ color: (r.meta?.starterSeasons||0)>=3?'var(--good)':(r.meta?.starterSeasons||0)>=1?'var(--gold)':'var(--silver)', fontWeight: 600 }}>{r.meta?.starterSeasons ?? '\u2014'}</span></div>;
       case 'height': {
         const h = r.p.height;
         return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.72rem' }}>{h ? Math.floor(h/12)+"'"+h%12+'"' : '\u2014'}</span></div>;
       }
       case 'weight': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.72rem' }}>{r.p.weight || '\u2014'}</span></div>;
-      case 'depthChart': return <div key={colKey} style={{...base}}><span style={{ color: r.p.depth_chart_order != null ? 'var(--silver)' : 'rgba(255,255,255,0.3)', fontSize: '0.72rem' }}>{r.p.depth_chart_order != null ? r.pos + (r.p.depth_chart_order + 1) : (r.section === 'ir' ? 'IR' : (!r.p.team || r.p.team === 'FA') ? 'FA' : 'N/A')}</span></div>;
+      case 'depthChart': return <div key={colKey} style={{...base}}><span style={{ color: r.p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: '0.72rem' }}>{r.p.depth_chart_order != null ? r.pos + (r.p.depth_chart_order + 1) : (r.section === 'ir' ? 'IR' : (!r.p.team || r.p.team === 'FA') ? 'FA' : 'N/A')}</span></div>;
       case 'slot': return <div key={colKey} style={{...base}}><span style={{ fontSize:'0.76rem',color:'var(--silver)',opacity:0.65,textTransform:'uppercase' }}>{r.section==='starter'?'STR':r.section==='ir'?'IR':r.section==='taxi'?'TAX':'BN'}</span></div>;
       case 'acquired': {
         const acq = getAcquisitionInfo(r.pid, myRoster?.roster_id);
-        const methodColors = { Drafted: '#3498DB', Traded: '#9B59B6', Waiver: 'var(--gold)', FA: '#2ECC71', Original: 'var(--silver)' };
+        const methodColors = { Drafted: 'var(--k-3498db, #3498db)', Traded: 'var(--k-9b59b6, #9b59b6)', Waiver: 'var(--gold)', FA: 'var(--good)', Original: 'var(--silver)' };
         const col = methodColors[acq.method] || 'var(--silver)';
         const methods = ['Drafted', 'Traded', 'Waiver', 'FA', 'Original'];
         return <div key={colKey} style={{...base}}><span
-          style={{ fontSize: '0.65rem', fontWeight: 600, color: col, padding: '1px 5px', borderRadius: '3px', border: `1px solid ${col}40`, background: `${col}10`, cursor: 'pointer' }}
+          style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, color: col, padding: '1px 5px', borderRadius: '3px', border: `1px solid ${col}40`, background: `${col}10`, cursor: 'pointer' }}
           title="Click to change acquisition method"
           onClick={e => {
             e.stopPropagation();
@@ -642,15 +647,15 @@ function MyTeamTab({
       }
       case 'sos': {
         const sosMod = window.App?.SOS;
-        if (!sosMod?.ready) return <div key={colKey} style={{...base}}><span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.72rem' }}>{'\u2014'}</span></div>;
+        if (!sosMod?.ready) return <div key={colKey} style={{...base}}><span style={{ color: 'var(--ov-7, rgba(255,255,255,0.2))', fontSize: '0.72rem' }}>{'\u2014'}</span></div>;
         const team = r.p?.team;
-        if (!team || team === 'FA') return <div key={colKey} style={{...base}}><span style={{ color: 'rgba(255,255,255,0.2)' }}>{'\u2014'}</span></div>;
+        if (!team || team === 'FA') return <div key={colKey} style={{...base}}><span style={{ color: 'var(--ov-7, rgba(255,255,255,0.2))' }}>{'\u2014'}</span></div>;
         const sos = sosMod.getPlayerSOS(r.pid, r.pos, team);
-        if (!sos) return <div key={colKey} style={{...base}}><span style={{ color: 'rgba(255,255,255,0.2)' }}>{'\u2014'}</span></div>;
+        if (!sos) return <div key={colKey} style={{...base}}><span style={{ color: 'var(--ov-7, rgba(255,255,255,0.2))' }}>{'\u2014'}</span></div>;
         const sosBg = sos.avgRank >= 25 ? 'rgba(46,204,113,0.12)' : sos.avgRank <= 8 ? 'rgba(231,76,60,0.1)' : 'transparent';
         return <div key={colKey} style={{...base, background: sosBg, flexDirection: 'column', gap: '1px'}} title={sos.label + ' schedule (' + sos.avgRank + '/32)'}>
           <span style={{ color: sos.color, fontWeight: 700, fontSize: '0.82rem', fontFamily: 'var(--font-body)' }}>{sos.avgRank}</span>
-          <span style={{ color: sos.color, fontSize: '0.58rem', opacity: 0.8 }}>{sos.label.toUpperCase()}</span>
+          <span style={{ color: sos.color, fontSize: 'var(--text-micro, 0.6875rem)', opacity: 0.8 }}>{sos.label.toUpperCase()}</span>
         </div>;
       }
       default: return <div key={colKey} style={{...base}}>{'\u2014'}</div>;
@@ -658,10 +663,10 @@ function MyTeamTab({
   }
 
   return (
-    <div style={{ padding: 'var(--card-pad, 10px 14px)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <section style={{ background: 'rgba(20,20,26,0.72)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '0.6rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 800 }}>My Roster</span>
-        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.12rem', lineHeight: 1, color: 'var(--white)', fontWeight: 700 }}>{tierLabel}</span>
+    <div style={{ padding: 'var(--card-pad, 16px 18px)', display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+      <section style={{ background: 'var(--surf-solid, rgba(20,20,26,0.72))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius)', padding: 'var(--card-pad-sm)', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 800 }}>My Roster</span>
+        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', lineHeight: 1, color: 'var(--white)', fontWeight: 700 }}>{tierLabel}</span>
         <span style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.76 }}>
           {rosterSummaryParts.join(' · ')}
         </span>
@@ -669,16 +674,33 @@ function MyTeamTab({
           const champs = window.App?.LI?.championships || {};
           const myChampCount = Object.values(champs).filter(c => c.champion === myRoster?.roster_id).length;
           if (myChampCount <= 0) return null;
-          return <span style={{ fontSize: '0.63rem', color: 'var(--gold)', fontWeight: 800, border: '1px solid rgba(212,175,55,0.22)', borderRadius: '999px', padding: '1px 7px', background: 'rgba(212,175,55,0.07)' }}>{myChampCount > 1 ? myChampCount + 'x ' : ''}Champion</span>;
+          return <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 800, border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '999px', padding: '1px 7px', background: 'var(--acc-fill1, rgba(212,175,55,0.07))' }}>{myChampCount > 1 ? myChampCount + 'x ' : ''}Champion</span>;
         })()}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '5px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {boardInsightChips.filter(chip => !/needs/i.test(chip.label)).slice(0, 3).map(chip => (
-            <span key={chip.label} style={{ fontSize: '0.62rem', color: chip.color, border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.028)', borderRadius: '999px', padding: '1px 7px', fontWeight: 700 }}>{chip.label}</span>
+            <span key={chip.label} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: chip.color, border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', background: 'var(--ov-2, rgba(255,255,255,0.028))', borderRadius: '999px', padding: '1px 7px', fontWeight: 700 }}>{chip.label}</span>
           ))}
         </div>
       </section>
 
-      <section style={{ background: 'rgba(20,20,26,0.72)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', padding: '8px 10px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px 12px', alignItems: 'center' }}>
+      {isCompactRoster && (() => {
+        const ppgLabelMap = { season: 'Season', l5: 'L5', l3: 'L3' };
+        const rowLabelMap = { comfortable: 'Comfort', compact: 'Compact' };
+        const groupLabel = (GROUP_MODES.find(g => g.key === rosterGroupMode) || {}).label || 'None';
+        const viewLabel = (COLUMN_PRESET_META[activePresetKey] || {}).label || activePresetKey;
+        const summary = [rosterFilter, viewLabel, ppgLabelMap[ppgWindow] || ppgWindow, rowLabelMap[rowDensity] || rowDensity, groupLabel].join(' · ');
+        return (
+          <button onClick={() => setFiltersOpen(o => !o)} aria-expanded={filtersOpen} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--surf-solid, rgba(20,20,26,0.72))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius)', padding: '10px 12px', minHeight: '44px', cursor: 'pointer', textAlign: 'left' }}>
+            <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em', flexShrink: 0 }}>Filters</span>
+            {!filtersOpen && <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{summary}</span>}
+            <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, whiteSpace: 'nowrap', flexShrink: 0 }}>{filtered.length}/{allPlayers.length}</span>
+            <span style={{ color: 'var(--gold)', fontSize: 'var(--text-body, 1rem)', flexShrink: 0, transition: 'transform 0.15s', transform: filtersOpen ? 'rotate(180deg)' : 'none' }}>{'▾'}</span>
+          </button>
+        );
+      })()}
+
+      {(!isCompactRoster || filtersOpen) && (
+      <section style={{ background: 'var(--surf-solid, rgba(20,20,26,0.72))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius)', padding: 'var(--card-pad-sm)', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px 12px', alignItems: 'center' }}>
         <div className="wr-module-toolbar" style={{ marginBottom: 0, gap: '6px 8px', minWidth: 0 }}>
           <span className="wr-module-toolbar-label">Scope</span>
           <div className="wr-module-nav" style={{ padding: '2px', gap: '2px' }}>
@@ -687,7 +709,7 @@ function MyTeamTab({
             ))}
           </div>
         </div>
-        <span style={{ justifySelf: 'end', fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.62, whiteSpace: 'nowrap' }}>{filtered.length} / {allPlayers.length} shown</span>
+        <span style={{ justifySelf: 'end', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, whiteSpace: 'nowrap' }}>{filtered.length} / {allPlayers.length} shown</span>
 
         <div className="wr-module-toolbar" style={{ marginBottom: 0, gap: '6px 8px', minWidth: 0 }}>
           <span className="wr-module-toolbar-label">View</span>
@@ -734,46 +756,47 @@ function MyTeamTab({
           </div>
         )}
       </section>
+      )}
 
       <div>
 
       {/* Column picker dropdown */}
       {showColPicker && (
-        <div style={{ background: 'linear-gradient(180deg, rgba(22,22,29,0.98), rgba(10,10,14,0.98))', border: '1px solid rgba(212,175,55,0.22)', borderRadius: '10px', padding: '12px', marginBottom: '10px', boxShadow: '0 10px 28px rgba(0,0,0,0.24)' }}>
+        <div style={{ background: 'linear-gradient(180deg, var(--surf-solid, rgba(22,22,29,0.98)), var(--surf-solid, rgba(10,10,14,0.98)))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '10px', padding: '12px', marginBottom: '10px', boxShadow: '0 10px 28px rgba(0,0,0,0.24)' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
-            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--white)', fontWeight: 700, letterSpacing: '0.04em' }}>Customize Columns</div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.58 }}>{visibleCols.length} of {Object.keys(ROSTER_COLUMNS).length} active</div>
+            <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--white)', fontWeight: 700, letterSpacing: '0.04em' }}>Customize Columns</div>
+            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58 }}>{visibleCols.length} of {Object.keys(ROSTER_COLUMNS).length} active</div>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
               <button onClick={() => setCustomColumns(Object.keys(ROSTER_COLUMNS))} style={controlBtn(inactiveColumnCount === 0)}>All Fields</button>
               <button onClick={() => setCustomColumns(COLUMN_PRESETS.default)} style={controlBtn(activePresetKey === 'default')}>Reset Default</button>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 0.9fr) minmax(360px, 1.4fr)', gap: '12px', alignItems: 'start' }}>
-            <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', padding: '10px', minWidth: 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: rosterViewportWidth <= 820 ? '1fr' : 'minmax(280px, 0.9fr) minmax(360px, 1.4fr)', gap: '12px', alignItems: 'start' }}>
+            <div style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '8px', padding: '10px', minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '0.62rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>Active Order</div>
-                <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.54 }}>{activeColumnOrder.length} visible</div>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>Active Order</div>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.54 }}>{activeColumnOrder.length} visible</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingRight: '2px' }}>
                 {activeColumnOrder.length === 0 ? (
-                  <div style={{ padding: '12px', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.12)', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
+                  <div style={{ padding: '12px', borderRadius: '8px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
                 ) : activeColumnOrder.map((key, idx) => {
                   const col = ROSTER_COLUMNS[key];
                   return (
-                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) 26px 26px 26px', gap: '5px', alignItems: 'center', padding: '5px 6px', borderRadius: '7px', background: 'rgba(212,175,55,0.075)', border: '1px solid rgba(212,175,55,0.14)' }}>
-                      <span style={{ color: 'var(--silver)', opacity: 0.55, fontSize: '0.68rem', textAlign: 'right' }}>{idx + 1}</span>
+                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) 26px 26px 26px', gap: '5px', alignItems: 'center', padding: '5px 6px', borderRadius: '7px', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
+                      <span style={{ color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>{idx + 1}</span>
                       <span title={col.label} style={{ color: 'var(--white)', fontSize: '0.74rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.shortLabel || col.label}</span>
-                      <button disabled={idx === 0} onClick={() => moveVisibleColumn(key, -1)} title="Move left" style={{ height: '24px', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.09)', background: idx === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.06)', color: idx === 0 ? 'rgba(255,255,255,0.24)' : 'var(--silver)', cursor: idx === 0 ? 'default' : 'pointer' }}>{'\u2039'}</button>
-                      <button disabled={idx === activeColumnOrder.length - 1} onClick={() => moveVisibleColumn(key, 1)} title="Move right" style={{ height: '24px', borderRadius: '5px', border: '1px solid rgba(255,255,255,0.09)', background: idx === activeColumnOrder.length - 1 ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.06)', color: idx === activeColumnOrder.length - 1 ? 'rgba(255,255,255,0.24)' : 'var(--silver)', cursor: idx === activeColumnOrder.length - 1 ? 'default' : 'pointer' }}>{'\u203A'}</button>
-                      <button onClick={() => removeVisibleColumn(key)} title="Hide column" style={{ height: '24px', borderRadius: '5px', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: '#E74C3C', cursor: 'pointer' }}>{'\u00D7'}</button>
+                      <button disabled={idx === 0} onClick={() => moveVisibleColumn(key, -1)} title="Move left" style={{ height: '24px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === 0 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === 0 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === 0 ? 'default' : 'pointer' }}>{'\u2039'}</button>
+                      <button disabled={idx === activeColumnOrder.length - 1} onClick={() => moveVisibleColumn(key, 1)} title="Move right" style={{ height: '24px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === activeColumnOrder.length - 1 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === activeColumnOrder.length - 1 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === activeColumnOrder.length - 1 ? 'default' : 'pointer' }}>{'\u203A'}</button>
+                      <button onClick={() => removeVisibleColumn(key)} title="Hide column" style={{ height: '24px', borderRadius: '5px', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'\u00D7'}</button>
                     </div>
                   );
                 })}
               </div>
 
-              <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-                <div style={{ fontSize: '0.62rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '7px' }}>Group Rows By</div>
+              <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.07))' }}>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '7px' }}>Group Rows By</div>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {GROUP_MODES.map(opt => (
                     <button key={opt.key} onClick={() => setRosterGroupMode(opt.key)} style={controlBtn(rosterGroupMode === opt.key)}>{opt.label}</button>
@@ -784,13 +807,13 @@ function MyTeamTab({
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
               {columnGroups.map(({ group, columns }) => (
-                <div key={group} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', padding: '8px' }}>
-                  <div style={{ marginBottom: '6px', fontSize: '0.62rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>{group}</div>
+                <div key={group} style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '8px', padding: '8px' }}>
+                  <div style={{ marginBottom: '6px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>{group}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {columns.map(([key, col]) => {
                       const active = visibleCols.includes(key);
                       return (
-                        <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '5px 7px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.74rem', background: active ? 'rgba(212,175,55,0.1)' : 'rgba(255,255,255,0.018)', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'rgba(212,175,55,0.18)' : 'rgba(255,255,255,0.04)') }}>
+                        <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '5px 7px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.74rem', background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-1, rgba(255,255,255,0.018))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-fill3, rgba(212,175,55,0.18))' : 'var(--ov-3, rgba(255,255,255,0.04))') }}>
                           <input type="checkbox" checked={active} onChange={() => {
                             if (active) removeVisibleColumn(key);
                             else addVisibleColumn(key);
@@ -808,22 +831,22 @@ function MyTeamTab({
       )}
 
       {/* Roster table with inline expand cards */}
-      <div style={{ border: '1px solid rgba(255,255,255,0.075)', borderRadius: '8px', overflow: 'hidden', background: 'rgba(12,12,17,0.98)', boxShadow: '0 10px 24px rgba(0,0,0,0.2)' }}>
-        <div style={{ padding: '7px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.018)' }}>
+      <div style={{ border: '1px solid var(--ov-5, rgba(255,255,255,0.075))', borderRadius: 'var(--card-radius)', overflow: 'hidden', background: 'var(--surf-solid, rgba(12,12,17,0.98))', boxShadow: '0 10px 24px rgba(0,0,0,0.2)' }}>
+        <div style={{ padding: '7px 10px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'var(--ov-1, rgba(255,255,255,0.018))' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontSize: '0.96rem', fontWeight: 700 }}>Roster Board</div>
-            <div style={{ fontSize: '0.66rem', color: isDeepData ? 'var(--gold)' : 'var(--silver)', opacity: isDeepData ? 0.86 : 0.58 }}>{activePresetMeta.label} · {visibleCols.length} fields</div>
-            <div style={{ fontSize: '0.66rem', color: rosterGroupMode === 'none' ? 'var(--silver)' : 'var(--gold)', opacity: 0.62 }}>Grouped by {activeGroupModeLabel}</div>
-            <div style={{ marginLeft: 'auto', fontSize: '0.66rem', color: 'var(--silver)', opacity: 0.52, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700 }}>Roster Board</div>
+            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: isDeepData ? 'var(--gold)' : 'var(--silver)', opacity: isDeepData ? 0.86 : 0.58 }}>{activePresetMeta.label} · {visibleCols.length} fields</div>
+            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rosterGroupMode === 'none' ? 'var(--silver)' : 'var(--gold)', opacity: 0.62 }}>Grouped by {activeGroupModeLabel}</div>
+            <div style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.52, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               Sort: {ROSTER_COLUMNS[rosterSort.key]?.shortLabel || (rosterSort.key === 'name' ? 'Player' : rosterSort.key)}
             </div>
           </div>
         </div>
-        <div style={{ overflowX: 'auto', overflowY: 'clip', background: 'linear-gradient(90deg, rgba(255,255,255,0.02), transparent 12%, transparent 88%, rgba(255,255,255,0.018))' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'clip', background: 'linear-gradient(90deg, var(--ov-1, rgba(255,255,255,0.02)), transparent 12%, transparent 88%, var(--ov-1, rgba(255,255,255,0.018)))' }}>
           <div style={{ minWidth: tableMinWidth + 'px' }}>
             {/* Header row */}
-            <div style={{ display: 'flex', height: '32px', background: 'rgba(212,175,55,0.075)', borderBottom: '1px solid rgba(212,175,55,0.2)', position: 'sticky', top: 0, zIndex: 5 }}>
-              <div title="Player" style={{ width: playerColWidth + 'px', flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: '0.72rem', fontWeight: 750, color: rosterSort.key === 'name' ? 'var(--white)' : 'var(--gold)', fontFamily: 'var(--font-body)', letterSpacing: '0.035em', cursor: 'pointer', userSelect: 'none', borderRight: '1px solid rgba(212,175,55,0.15)', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 7, background: 'linear-gradient(180deg, #201d12, #14130f)', boxShadow: '8px 0 14px rgba(0,0,0,0.2)' }}
+            <div style={{ display: 'flex', height: '32px', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', position: 'sticky', top: 0, zIndex: 5 }}>
+              <div title="Player" style={{ width: playerColWidth + 'px', flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: '0.72rem', fontWeight: 750, color: rosterSort.key === 'name' ? 'var(--white)' : 'var(--gold)', fontFamily: 'var(--font-body)', letterSpacing: '0.035em', cursor: 'pointer', userSelect: 'none', borderRight: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', textTransform: 'uppercase', position: 'sticky', left: 0, zIndex: 7, background: 'linear-gradient(180deg, var(--k-201d12, #201d12), var(--k-14130f, #14130f))', boxShadow: '8px 0 14px rgba(0,0,0,0.2)' }}
                 onClick={() => setRosterSort(prev => prev.key === 'name' ? {...prev, dir: prev.dir*-1} : {key: 'name', dir: 1})}>
                 Player{rosterSort.key === 'name' ? (rosterSort.dir === -1 ? ' v' : ' ^') : ''}
               </div>
@@ -835,7 +858,7 @@ function MyTeamTab({
                   const isGroupStart = visibleColGroupStarts.has(colKey);
                   return (
                     <div key={colKey} title={col.label} onClick={() => setRosterSort(prev => prev.key === colKey ? {...prev, dir: prev.dir*-1} : {key: colKey, dir: 1})}
-                      style={{ width: col.width, minWidth: col.width, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.67rem', fontWeight: isSorted ? 800 : 700, color: isSorted ? 'var(--white)' : 'rgba(212,175,55,0.86)', fontFamily: 'var(--font-body)', letterSpacing: '0.025em', cursor: 'pointer', userSelect: 'none', textTransform: 'uppercase', borderLeft: isGroupStart ? '1px solid rgba(212,175,55,0.16)' : '1px solid rgba(255,255,255,0.035)', padding: '0 3px', textAlign: 'center', lineHeight: 1.05, background: isSorted ? 'rgba(212,175,55,0.12)' : 'transparent' }}>
+                      style={{ width: col.width, minWidth: col.width, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: isSorted ? 800 : 700, color: isSorted ? 'var(--white)' : 'var(--acc-line4, rgba(212,175,55,0.86))', fontFamily: 'var(--font-body)', letterSpacing: '0.025em', cursor: 'pointer', userSelect: 'none', textTransform: 'uppercase', borderLeft: isGroupStart ? '1px solid var(--acc-fill3, rgba(212,175,55,0.16))' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', padding: '0 3px', textAlign: 'center', lineHeight: 1.05, background: isSorted ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent' }}>
                       <span>{col.shortLabel || col.label}{rosterSort.key === colKey ? (rosterSort.dir === -1 ? ' v' : ' ^') : ''}</span>
                     </div>
                   );
@@ -848,7 +871,7 @@ function MyTeamTab({
               const isExpanded = expandedPid === r.pid;
               const rowGroupKey = getRowGroupKey(r);
               const startsPositionGroup = rosterGroupMode !== 'none' && (idx === 0 || getRowGroupKey(filtered[idx - 1]) !== rowGroupKey);
-              const rowBg = isExpanded ? 'rgba(212,175,55,0.058)' : idx % 2 === 1 ? 'rgba(255,255,255,0.018)' : 'rgba(255,255,255,0.006)';
+              const rowBg = isExpanded ? 'var(--acc-fill1, rgba(212,175,55,0.058))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.018))' : 'var(--ov-1, rgba(255,255,255,0.006))';
 
               const _recLower = (r.rec || '').toLowerCase();
           const actionClass = _recLower === 'sell now' || _recLower === 'sell' ? 'wr-row-sell' :
@@ -860,33 +883,33 @@ function MyTeamTab({
           return (
             <React.Fragment key={r.pid}>
               {startsPositionGroup && (
-	                <div style={{ display: 'flex', height: isCompactRows ? '20px' : '22px', borderTop: idx === 0 ? 'none' : '1px solid rgba(212,175,55,0.1)', borderBottom: '1px solid rgba(255,255,255,0.032)', background: 'linear-gradient(90deg, rgba(212,175,55,0.05), rgba(255,255,255,0.01))' }}>
-	                  <div style={{ width: playerColWidth + 'px', flexShrink: 0, position: 'sticky', left: 0, zIndex: 4, display: 'flex', alignItems: 'center', gap: '7px', padding: '0 10px', background: 'linear-gradient(90deg, #14130f, #111117)', borderRight: '1px solid rgba(212,175,55,0.12)', boxShadow: '8px 0 14px rgba(0,0,0,0.16)' }}>
+	                <div style={{ display: 'flex', height: isCompactRows ? '20px' : '22px', borderTop: idx === 0 ? 'none' : '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.032))', background: 'linear-gradient(90deg, var(--acc-fill1, rgba(212,175,55,0.05)), var(--ov-1, rgba(255,255,255,0.01)))' }}>
+	                  <div style={{ width: playerColWidth + 'px', flexShrink: 0, position: 'sticky', left: 0, zIndex: 4, display: 'flex', alignItems: 'center', gap: '7px', padding: '0 10px', background: 'linear-gradient(90deg, var(--k-14130f, #14130f), var(--k-111117, #111117))', borderRight: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', boxShadow: '8px 0 14px rgba(0,0,0,0.16)' }}>
 	                    <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.76rem', color: getRowGroupColor(r), fontWeight: 750, letterSpacing: '0.06em' }}>{getRowGroupLabel(r)}</span>
-	                    <span style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{filteredPosCounts[rowGroupKey]} players</span>
+	                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{filteredPosCounts[rowGroupKey]} players</span>
                   </div>
-                  <div style={{ flex: 1, borderLeft: '1px solid rgba(255,255,255,0.025)' }} />
+                  <div style={{ flex: 1, borderLeft: '1px solid var(--ov-2, rgba(255,255,255,0.025))' }} />
                 </div>
               )}
               {/* Normal row */}
-              <div className={[actionClass, isUntouchable ? 'wr-untouchable' : ''].filter(Boolean).join(' ')} role="button" tabIndex={0} title="Open roster player detail" style={{ display: 'flex', overflow: 'visible', borderTop: 'none', borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.035)', cursor: 'pointer', background: rowBg, transition: 'background 0.1s' }}
+              <div className={[actionClass, isUntouchable ? 'wr-untouchable' : ''].filter(Boolean).join(' ')} role="button" tabIndex={0} title="Open roster player detail" style={{ display: 'flex', overflow: 'visible', borderTop: 'none', borderBottom: isExpanded ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: 'pointer', background: rowBg, transition: 'background 0.1s' }}
                 onClick={() => setExpandedPid(prev => prev === r.pid ? null : r.pid)}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedPid(prev => prev === r.pid ? null : r.pid); } }}
-                onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = 'rgba(212,175,55,0.06)'; }}
+                onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'; }}
                 onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = rowBg; }}>
                 {/* Frozen player info */}
-	                <div style={{ width: playerColWidth + 'px', flexShrink: 0, height: rowHeight + 'px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 10px', borderRight: '1px solid rgba(212,175,55,0.1)', position: 'sticky', left: 0, zIndex: 3, background: 'inherit', boxShadow: '8px 0 14px rgba(0,0,0,0.16)' }}>
-                  <div style={{ width: avatarSize + 'px', height: avatarSize + 'px', flexShrink: 0 }}><img src={'https://sleepercdn.com/content/nfl/players/thumb/'+r.pid+'.jpg'} alt="" onError={e=>e.target.style.display='none'} style={{ width: avatarSize + 'px', height: avatarSize + 'px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.08)' }} /></div>
+	                <div style={{ width: playerColWidth + 'px', flexShrink: 0, height: rowHeight + 'px', display: 'flex', alignItems: 'center', gap: '8px', padding: '0 10px', borderRight: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', position: 'sticky', left: 0, zIndex: 3, background: 'inherit', boxShadow: '8px 0 14px rgba(0,0,0,0.16)' }}>
+                  <div style={{ width: avatarSize + 'px', height: avatarSize + 'px', flexShrink: 0 }}><img src={'https://sleepercdn.com/content/nfl/players/thumb/'+r.pid+'.jpg'} alt="" onError={e=>e.target.style.display='none'} style={{ width: avatarSize + 'px', height: avatarSize + 'px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))' }} /></div>
                   <div style={{ overflow: 'hidden', flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
 	                      <span style={{ fontWeight: 650, color: 'var(--white)', fontSize: playerNameSize, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getPlayerName(r.pid)}</span>
                       {inlineTag(slotTagMeta[r.section], 'slot-' + r.pid)}
                       {inlineTag(rosterTagMeta[window._playerTags?.[r.pid]], 'tag-' + r.pid)}
-                      {dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title="Drop candidate (click to dismiss)" style={{ fontSize: '0.56rem', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: '#E74C3C', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
+                      {dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title="Drop candidate (click to dismiss)" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
                     </div>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.62, marginTop: '1px' }}>{r.p.team || 'FA'}{r.injury ? ' \u00B7 '+r.injury : ''}</div>
+                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, marginTop: '1px' }}>{r.p.team || 'FA'}{r.injury ? ' \u00B7 '+r.injury : ''}</div>
                   </div>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--gold)', opacity: 0.42 }}>{isExpanded ? '\u25B2' : '\u25BC'}</span>
+                  <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', opacity: 0.42 }}>{isExpanded ? '\u25B2' : '\u25BC'}</span>
                 </div>
                 {/* Data columns */}
                 <div style={{ flex: 1, display: 'flex', height: rowHeight + 'px', overflow: 'hidden' }}>
@@ -896,14 +919,14 @@ function MyTeamTab({
 
               {/* Inline expand card — Madden/FM style */}
               {isExpanded && (
-                <div style={{ borderBottom: '2px solid rgba(212,175,55,0.2)', background: 'linear-gradient(180deg, rgba(18,18,24,0.99), rgba(6,6,10,0.99))', padding: '12px 14px', animation: 'wrFadeIn 0.2s ease' }}>
+                <div style={{ borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', background: 'linear-gradient(180deg, var(--surf-solid, rgba(18,18,24,0.99)), var(--surf-solid, rgba(6,6,10,0.99)))', padding: '12px 14px', animation: 'wrFadeIn 0.2s ease' }}>
                   {/* Player dossier */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 0.82fr) minmax(420px, 1.45fr) minmax(220px, 0.72fr)', gap: '10px', marginBottom: '10px', alignItems: 'stretch' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: '10px', alignItems: 'center', background: 'rgba(255,255,255,0.022)', border: '1px solid rgba(255,255,255,0.065)', borderRadius: '8px', padding: '9px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: rosterViewportWidth <= 560 ? '1fr' : rosterViewportWidth <= 834 ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(260px, 0.82fr) minmax(420px, 1.45fr) minmax(220px, 0.72fr)', gap: '10px', marginBottom: '10px', alignItems: 'stretch' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: '10px', alignItems: 'center', background: 'var(--ov-1, rgba(255,255,255,0.022))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px' }}>
                       <div style={{ flexShrink: 0, position: 'relative' }}>
-                        <img src={'https://sleepercdn.com/content/nfl/players/'+r.pid+'.jpg'} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} style={{ width: '72px', height: '72px', borderRadius: '8px', objectFit: 'cover', objectPosition: 'top', border: '1px solid rgba(212,175,55,0.24)' }} />
-                        <div style={{ display: 'none', width: '72px', height: '72px', borderRadius: '8px', background: 'var(--charcoal)', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', fontWeight: 700, color: 'var(--silver)', border: '1px solid rgba(212,175,55,0.2)' }}>{(r.p.first_name||'?')[0]}{(r.p.last_name||'?')[0]}</div>
-                        <div style={{ position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)', fontSize: '0.66rem', fontWeight: 700, padding: '1px 7px', borderRadius: '7px', background: (posColors[r.pos]||'#666')+'22', color: posColors[r.pos]||'var(--silver)', whiteSpace: 'nowrap' }}>{window.App?.posLabel?.(r.pos) || (r.pos === 'DEF' ? 'D/ST' : r.pos)}</div>
+                        <img src={'https://sleepercdn.com/content/nfl/players/'+r.pid+'.jpg'} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} style={{ width: '72px', height: '72px', borderRadius: '8px', objectFit: 'cover', objectPosition: 'top', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))' }} />
+                        <div style={{ display: 'none', width: '72px', height: '72px', borderRadius: '8px', background: 'var(--charcoal)', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', fontWeight: 700, color: 'var(--silver)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))' }}>{(r.p.first_name||'?')[0]}{(r.p.last_name||'?')[0]}</div>
+                        <div style={{ position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '1px 7px', borderRadius: '7px', background: (posColors[r.pos]||'var(--k-666666, #666666)')+'22', color: posColors[r.pos]||'var(--silver)', whiteSpace: 'nowrap' }}>{window.App?.posLabel?.(r.pos) || (r.pos === 'DEF' ? 'D/ST' : r.pos)}</div>
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.18rem', color: 'var(--white)', letterSpacing: '0.01em', lineHeight: 1.08, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -915,29 +938,29 @@ function MyTeamTab({
                           {r.p.weight ? ' \u00B7 ' + r.p.weight + 'lbs' : ''}
                           {r.p.college ? ' \u00B7 '+r.p.college : ''}
                         </div>
-                        {r.injury && <div style={{ fontSize: '0.72rem', color: '#E74C3C', fontWeight: 700, marginTop: '5px' }}>{r.injury}</div>}
+                        {r.injury && <div style={{ fontSize: '0.72rem', color: 'var(--bad)', fontWeight: 700, marginTop: '5px' }}>{r.injury}</div>}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.065)', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
-                      <div style={{ fontSize: '0.6rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
-                      <div style={{ fontSize: '0.8rem', color: '#d8d8de', lineHeight: 1.42 }}>
+                    <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
+                      <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.42 }}>
                         {buildDynastyRead(r)}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.065)', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
-                      <div style={{ fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '7px' }}>Decision Stack</div>
+                    <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
+                      <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '7px' }}>Decision Stack</div>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 800, fontFamily: 'var(--font-body)', padding: '3px 10px', borderRadius: '999px', background: /sell/i.test(r.rec) ? 'rgba(231,76,60,0.15)' : /buy|build|core/i.test(r.rec) ? 'rgba(46,204,113,0.15)' : 'rgba(212,175,55,0.12)', color: /sell/i.test(r.rec) ? '#E74C3C' : /buy|build|core/i.test(r.rec) ? '#2ECC71' : 'var(--gold)', letterSpacing: '0.03em' }}>{r.rec}</span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, fontFamily: 'var(--font-body)', padding: '3px 10px', borderRadius: '999px', background: /sell/i.test(r.rec) ? 'rgba(231,76,60,0.15)' : /buy|build|core/i.test(r.rec) ? 'rgba(46,204,113,0.15)' : 'var(--acc-fill2, rgba(212,175,55,0.12))', color: /sell/i.test(r.rec) ? 'var(--bad)' : /buy|build|core/i.test(r.rec) ? 'var(--good)' : 'var(--gold)', letterSpacing: '0.03em' }}>{r.rec}</span>
                         <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px', background: dhqBg(r.dhq), color: dhqCol(r.dhq) }}>
                           {(typeof window.App?.isElitePlayer === 'function' ? window.App.isElitePlayer(r.pid) : r.dhq >= 7000) ? 'Elite' : r.dhq >= 4000 ? 'Starter' : r.dhq >= 2000 ? 'Depth' : 'Stash'} {'\u00B7'} {r.dhq.toLocaleString()} DHQ
                         </span>
-                        <span style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: '999px', background: r.peakPhase === 'PRE' ? 'rgba(46,204,113,0.1)' : r.peakPhase === 'POST' ? 'rgba(231,76,60,0.1)' : 'rgba(212,175,55,0.08)', color: r.peakPhase === 'PRE' ? '#2ECC71' : r.peakPhase === 'POST' ? '#E74C3C' : 'var(--gold)', fontWeight: 700 }}>{r.peakPhase}</span>
+                        <span style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: '999px', background: r.peakPhase === 'PRE' ? 'rgba(46,204,113,0.1)' : r.peakPhase === 'POST' ? 'rgba(231,76,60,0.1)' : 'var(--acc-fill2, rgba(212,175,55,0.08))', color: r.peakPhase === 'PRE' ? 'var(--good)' : r.peakPhase === 'POST' ? 'var(--bad)' : 'var(--gold)', fontWeight: 700 }}>{r.peakPhase}</span>
                       </div>
                       <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '0.72rem', color: 'var(--silver)' }}>
 	                        <div><span style={{ opacity: 0.55 }}>Slot </span><strong style={{ color: 'var(--white)' }}>{slotLabel(r)}</strong></div>
                         <div><span style={{ opacity: 0.55 }}>Depth </span><strong style={{ color: 'var(--white)' }}>{r.p.depth_chart_order != null ? r.pos + (r.p.depth_chart_order + 1) : '\u2014'}</strong></div>
                         <div><span style={{ opacity: 0.55 }}>Peak </span><strong style={{ color: 'var(--white)' }}>{r.peakYrsLeft > 0 ? r.peakYrsLeft + ' yrs' : '\u2014'}</strong></div>
-                        <div><span style={{ opacity: 0.55 }}>Trend </span><strong style={{ color: r.trend >= 15 ? '#2ECC71' : r.trend <= -15 ? '#E74C3C' : 'var(--white)' }}>{r.trend ? (r.trend > 0 ? '+' : '') + r.trend + '%' : '\u2014'}</strong></div>
+                        <div><span style={{ opacity: 0.55 }}>Trend </span><strong style={{ color: r.trend >= 15 ? 'var(--good)' : r.trend <= -15 ? 'var(--bad)' : 'var(--white)' }}>{r.trend ? (r.trend > 0 ? '+' : '') + r.trend + '%' : '\u2014'}</strong></div>
                       </div>
                     </div>
                   </div>
@@ -955,14 +978,14 @@ function MyTeamTab({
                           const rank = allAtPos.findIndex(x=>x.pid===r.pid)+1;
                           return rank > 0 ? r.pos + rank : '\u2014';
                         })(), col: 'var(--gold)' },
-                        { label: 'PPG', val: r.effectivePPG || '\u2014', col: r.effectivePPG >= (posP75[r.pos]||10) ? '#2ECC71' : 'var(--text-primary)' },
-	                        { label: 'GP', val: r.effectiveGP || '\u2014', col: r.effectiveGP >= 14 ? '#2ECC71' : r.effectiveGP >= 10 ? 'var(--silver)' : '#E74C3C' },
-	                        { label: 'TREND', val: r.trend ? (r.trend > 0 ? '+' : '') + r.trend + '%' : '\u2014', col: r.trend >= 15 ? '#2ECC71' : r.trend <= -15 ? '#E74C3C' : 'var(--silver)' },
+                        { label: 'PPG', val: r.effectivePPG || '\u2014', col: r.effectivePPG >= (posP75[r.pos]||10) ? 'var(--good)' : 'var(--text-primary)' },
+	                        { label: 'GP', val: r.effectiveGP || '\u2014', col: r.effectiveGP >= 14 ? 'var(--good)' : r.effectiveGP >= 10 ? 'var(--silver)' : 'var(--bad)' },
+	                        { label: 'TREND', val: r.trend ? (r.trend > 0 ? '+' : '') + r.trend + '%' : '\u2014', col: r.trend >= 15 ? 'var(--good)' : r.trend <= -15 ? 'var(--bad)' : 'var(--silver)' },
 	                      ].map((s, i) => (
-	                        <div key={i} style={{ background: 'rgba(255,255,255,0.026)', border: '1px solid rgba(255,255,255,0.055)', borderRadius: '7px', padding: '7px 6px', textAlign: 'center' }}>
+	                        <div key={i} style={{ background: 'var(--ov-2, rgba(255,255,255,0.026))', border: '1px solid var(--ov-4, rgba(255,255,255,0.055))', borderRadius: '7px', padding: '7px 6px', textAlign: 'center' }}>
 	                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1rem', fontWeight: 550, color: s.col, letterSpacing: 0 }}>{s.val}</div>
                           {s.gauge && <div className="wr-gauge" style={{ marginTop: '3px' }}>{Array.from({length: 10}, (_, gi) => <div key={gi} className={'wr-gauge-seg' + (gi < dhqFilled ? ' ' + dhqColor : '')}></div>)}</div>}
-                          <div style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{s.label}</div>
+                          <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{s.label}</div>
                         </div>
                       ));
                     })()}
@@ -977,19 +1000,19 @@ function MyTeamTab({
 	                    const [pLo, pHi] = curve.peak;
 	                    const declineHi = curve.decline[1];
 	                    const ages = Array.from({length: 17}, (_, i) => i + 20);
-                    return <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
+                    return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                         <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Age Curve</div>
 	                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>{'Currently age ' + (r.age || '?') + ' \u00B7 ' + r.peakPhase + ' \u00B7 ' + (r.peakYrsLeft > 0 ? '~' + r.peakYrsLeft + ' peak yr left' : r.valueYrsLeft > 0 ? '~' + r.valueYrsLeft + ' value yr left' : 'Past value window')}</div>
                       </div>
                       <div style={{ display: 'flex', height: '22px', borderRadius: '5px', overflow: 'hidden', gap: '1px' }}>
                         {ages.map(a => {
-	                          const col = a < pLo - 3 ? 'rgba(96,165,250,0.3)' : a < pLo ? 'rgba(46,204,113,0.45)' : (a >= pLo && a <= pHi) ? 'rgba(46,204,113,0.75)' : a <= declineHi ? 'rgba(212,175,55,0.45)' : 'rgba(231,76,60,0.35)';
+	                          const col = a < pLo - 3 ? 'rgba(96,165,250,0.3)' : a < pLo ? 'rgba(46,204,113,0.45)' : (a >= pLo && a <= pHi) ? 'rgba(46,204,113,0.75)' : a <= declineHi ? 'var(--acc-line3, rgba(212,175,55,0.45))' : 'rgba(231,76,60,0.35)';
                           const isMe = a === (r.age || 0);
-                          return <div key={a} style={{ flex: 1, background: col, opacity: isMe ? 1 : 0.55, outline: isMe ? '2px solid #D4AF37' : 'none', outlineOffset: '-1px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 700, color: isMe ? 'var(--text-primary)' : 'transparent' }}>{isMe ? a : ''}</div>;
+                          return <div key={a} style={{ flex: 1, background: col, opacity: isMe ? 1 : 0.55, outline: isMe ? '2px solid var(--gold)' : 'none', outlineOffset: '-1px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: isMe ? 'var(--text-primary)' : 'transparent' }}>{isMe ? a : ''}</div>;
                         })}
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.64rem', color: 'var(--silver)', marginTop: '3px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', marginTop: '3px' }}>
 	                        <span>20</span><span>{'Peak ' + pLo + '\u2013' + pHi + ' / Value thru ' + declineHi}</span><span>36</span>
                       </div>
                     </div>;
@@ -1000,13 +1023,13 @@ function MyTeamTab({
 
                   {/* Action buttons */}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button onClick={e => { e.stopPropagation(); const playerName = r.p.full_name || getPlayerName(r.pid); setReconPanelOpen(true); sendReconMessage("I'd like help with " + playerName + ". Here are my options:\n1. Who are the best trade partners for " + playerName + "?\n2. What's the long-term projection for " + playerName + "?\n3. Should I hold or sell " + playerName + " right now?"); }} style={{ padding: '7px 16px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: '#9b8afb', border: '1px solid rgba(124,107,248,0.3)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>ASK ALEX</button>
+                    <button onClick={e => { e.stopPropagation(); const playerName = r.p.full_name || getPlayerName(r.pid); setReconPanelOpen(true); sendReconMessage("I'd like help with " + playerName + ". Here are my options:\n1. Who are the best trade partners for " + playerName + "?\n2. What's the long-term projection for " + playerName + "?\n3. Should I hold or sell " + playerName + " right now?"); }} style={{ padding: '7px 16px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: 'var(--purple)', border: '1px solid rgba(124,107,248,0.3)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>ASK ALEX</button>
                     {/* Phase 2: News button removed per user feedback (2026-04-18) */}
-                    {[{tag:'trade',label:'TRADE BLOCK',bg:'rgba(240,165,0,0.15)',col:'#F0A500',border:'rgba(240,165,0,0.3)'},{tag:'cut',label:'CUT',bg:'rgba(231,76,60,0.15)',col:'#E74C3C',border:'rgba(231,76,60,0.3)'},{tag:'untouchable',label:'UNTOUCHABLE',bg:'rgba(46,204,113,0.15)',col:'#2ECC71',border:'rgba(46,204,113,0.3)'},{tag:'watch',label:'WATCH',bg:'rgba(52,152,219,0.15)',col:'#3498DB',border:'rgba(52,152,219,0.3)'}].map(t => {
+                    {[{tag:'trade',label:'TRADE BLOCK',bg:'rgba(240,165,0,0.15)',col:'var(--warn)',border:'rgba(240,165,0,0.3)'},{tag:'cut',label:'CUT',bg:'rgba(231,76,60,0.15)',col:'var(--bad)',border:'rgba(231,76,60,0.3)'},{tag:'untouchable',label:'UNTOUCHABLE',bg:'rgba(46,204,113,0.15)',col:'var(--good)',border:'rgba(46,204,113,0.3)'},{tag:'watch',label:'WATCH',bg:'rgba(52,152,219,0.15)',col:'var(--k-3498db, #3498db)',border:'rgba(52,152,219,0.3)'}].map(t => {
                       const isActive = window._playerTags?.[r.pid] === t.tag;
-                      return <button key={t.tag} onClick={e => { e.stopPropagation(); const leagueId = currentLeague.id || currentLeague.league_id || ''; const tags = window._playerTags || {}; const wasActive = tags[r.pid] === t.tag; if (wasActive) delete tags[r.pid]; else tags[r.pid] = t.tag; window._playerTags = { ...tags }; if (window.OD?.savePlayerTags) window.OD.savePlayerTags(leagueId, tags); if (!wasActive) { const playerName = r.p.full_name || getPlayerName(r.pid); window.wrLogAction?.('\uD83C\uDFF7\uFE0F', 'Tagged ' + playerName + ' as ' + t.label, 'roster', { players: [{ name: playerName, pid: r.pid }], actionType: 'tag' }); } setTimeRecomputeTs(Date.now()); }} style={{ padding: '7px 12px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', background: isActive ? t.bg : 'transparent', color: isActive ? t.col : 'var(--silver)', border: '1px solid ' + (isActive ? t.border : 'rgba(255,255,255,0.1)'), borderRadius: '6px', cursor: 'pointer', fontWeight: isActive ? 700 : 400, letterSpacing: '0.03em' }}>{t.label}</button>;
+                      return <button key={t.tag} onClick={e => { e.stopPropagation(); const leagueId = currentLeague.id || currentLeague.league_id || ''; const tags = window._playerTags || {}; const wasActive = tags[r.pid] === t.tag; if (wasActive) delete tags[r.pid]; else tags[r.pid] = t.tag; window._playerTags = { ...tags }; if (window.OD?.savePlayerTags) window.OD.savePlayerTags(leagueId, tags); if (!wasActive) { const playerName = r.p.full_name || getPlayerName(r.pid); window.wrLogAction?.('\uD83C\uDFF7\uFE0F', 'Tagged ' + playerName + ' as ' + t.label, 'roster', { players: [{ name: playerName, pid: r.pid }], actionType: 'tag' }); } setTimeRecomputeTs(Date.now()); }} style={{ padding: '7px 12px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', background: isActive ? t.bg : 'transparent', color: isActive ? t.col : 'var(--silver)', border: '1px solid ' + (isActive ? t.border : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', fontWeight: isActive ? 700 : 400, letterSpacing: '0.03em' }}>{t.label}</button>;
                     })}
-                    <button onClick={e => { e.stopPropagation(); setExpandedPid(null); }} style={{ padding: '7px 16px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', cursor: 'pointer' }}>COLLAPSE</button>
+                    <button onClick={e => { e.stopPropagation(); setExpandedPid(null); }} style={{ padding: '7px 16px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '6px', cursor: 'pointer' }}>COLLAPSE</button>
                   </div>
                 </div>
               )}
@@ -1014,8 +1037,8 @@ function MyTeamTab({
           );
             })}
             {filtered.length === 0 && (
-              <div style={{ display: 'flex', minHeight: '76px', borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.012)' }}>
-                <div style={{ width: playerColWidth + 'px', flexShrink: 0, position: 'sticky', left: 0, zIndex: 3, background: '#0d0d13', borderRight: '1px solid rgba(212,175,55,0.12)', display: 'flex', alignItems: 'center', padding: '0 12px', color: 'var(--silver)', fontWeight: 700 }}>No players</div>
+              <div style={{ display: 'flex', minHeight: '76px', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.04))', background: 'var(--ov-1, rgba(255,255,255,0.012))' }}>
+                <div style={{ width: playerColWidth + 'px', flexShrink: 0, position: 'sticky', left: 0, zIndex: 3, background: 'var(--k-0d0d13, #0d0d13)', borderRight: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', display: 'flex', alignItems: 'center', padding: '0 12px', color: 'var(--silver)', fontWeight: 700 }}>No players</div>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '0 14px', color: 'var(--silver)', opacity: 0.58, fontSize: '0.78rem' }}>No roster rows match this view.</div>
               </div>
             )}

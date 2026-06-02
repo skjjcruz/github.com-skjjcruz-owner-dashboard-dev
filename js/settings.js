@@ -11,30 +11,30 @@
         return (<>
         <div style={sectionStyle}>
             <div style={sectionTitle}>COMMUNICATION STYLE</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.75rem' }}>Choose how Alex communicates. This affects all AI responses — briefings, chat, trade analysis, draft scouting.</div>
+            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem' }}>Choose how Alex communicates. This affects all AI responses — briefings, chat, trade analysis, draft scouting.</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {Object.entries(styles).map(([key, style]) => (
                     <button key={key} onClick={() => { localStorage.setItem('wr_alex_style', key); setCurrentStyleLocal(key); }}
                         style={{
                             padding: '12px 14px', textAlign: 'left',
-                            background: currentStyle === key ? 'rgba(212,175,55,0.08)' : 'rgba(255,255,255,0.02)',
-                            border: currentStyle === key ? '2px solid var(--gold)' : '1px solid rgba(255,255,255,0.08)',
+                            background: currentStyle === key ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-1, rgba(255,255,255,0.02))',
+                            border: currentStyle === key ? '2px solid var(--gold)' : '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                             borderRadius: '10px', cursor: 'pointer', transition: 'all 0.15s',
                         }}>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: currentStyle === key ? 'var(--gold)' : 'var(--white)', marginBottom: '3px' }}>
+                        <div style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: currentStyle === key ? 'var(--gold)' : 'var(--white)', marginBottom: '3px' }}>
                             {style.name} {currentStyle === key && '\u2713'}
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', lineHeight: 1.4 }}>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.4 }}>
                             {style.tone.substring(0, 120)}{style.tone.length > 120 ? '...' : ''}
                         </div>
                     </button>
                 ))}
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.5, marginTop: '8px' }}>Changes take effect on next page load.</div>
+            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5, marginTop: '8px' }}>Changes take effect on next page load.</div>
         </div>
         <div style={sectionStyle}>
             <div style={sectionTitle}>AVATAR</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.75rem' }}>Choose Alex's look. Displayed in briefings and chat.</div>
+            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem' }}>Choose Alex's look. Displayed in briefings and chat.</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
                 {[
                     { key: 'brain', emoji: '\u{1F9E0}', label: 'The Analyst' },
@@ -50,20 +50,20 @@
                     return <button key={av.key} onClick={() => { localStorage.setItem('wr_alex_avatar', av.key); setCurrentAvatar(av.key); }}
                         style={{
                             padding: '12px 8px', textAlign: 'center',
-                            background: isActive ? 'rgba(212,175,55,0.08)' : 'rgba(255,255,255,0.02)',
-                            border: isActive ? '2px solid var(--gold)' : '1px solid rgba(255,255,255,0.08)',
+                            background: isActive ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-1, rgba(255,255,255,0.02))',
+                            border: isActive ? '2px solid var(--gold)' : '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                             borderRadius: '10px', cursor: 'pointer',
                         }}>
                         <div style={{ fontSize: '1.6rem', marginBottom: '4px' }}>{av.emoji}</div>
-                        <div style={{ fontSize: '0.68rem', color: isActive ? 'var(--gold)' : 'var(--silver)' }}>{av.label}</div>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: isActive ? 'var(--gold)' : 'var(--silver)' }}>{av.label}</div>
                     </button>;
                 })}
             </div>
         </div>
         <div style={sectionStyle}>
             <div style={sectionTitle}>GM BRIEFING</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.45 }}>Replay the first-launch War Room briefing any time you want to re-orient the room.</div>
-            <button onClick={() => { if (window.replayWRTutorial) window.replayWRTutorial(); }} style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.35)', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>Replay GM Briefing</button>
+            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.45 }}>Replay the first-launch War Room briefing any time you want to re-orient the room.</div>
+            <button onClick={() => { if (window.replayWRTutorial) window.replayWRTutorial(); }} style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>Replay GM Briefing</button>
         </div>
         </>);
     }
@@ -113,32 +113,32 @@
         return (<>
         <div style={sectionStyle}>
             <div style={sectionTitle}>LEAGUE DOCUMENTS</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
                 Upload your league bylaws, awards history, custom rules, or any league-specific documents. Alex will use these to answer league questions and reference your league's customs.
             </div>
             {!leagueId ? (
-                <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.5 }}>Connect a league first to upload documents.</div>
+                <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.5 }}>Connect a league first to upload documents.</div>
             ) : (<>
                 <div style={{ marginBottom: '12px' }}>
                     <label style={{
                         display: 'block', padding: '14px', textAlign: 'center',
-                        background: 'rgba(212,175,55,0.06)', border: '2px dashed rgba(212,175,55,0.25)',
-                        borderRadius: '10px', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 600,
+                        background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '2px dashed var(--acc-line1, rgba(212,175,55,0.25))',
+                        borderRadius: '10px', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', fontWeight: 600,
                     }}>
                         {uploading ? 'Uploading...' : '+ Upload Document (.txt, .md, .csv)'}
                         <input type="file" accept=".txt,.md,.csv,.text" onChange={handleFileUpload} style={{ display: 'none' }} />
                     </label>
-                    {uploadMsg && <div style={{ fontSize: '0.72rem', color: uploadMsg.includes('fail') || uploadMsg.includes('Error') ? '#f87171' : '#34d399', marginTop: '6px' }}>{uploadMsg}</div>}
+                    {uploadMsg && <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: uploadMsg.includes('fail') || uploadMsg.includes('Error') ? 'var(--k-f87171, #f87171)' : 'var(--k-34d399, #34d399)', marginTop: '6px' }}>{uploadMsg}</div>}
                 </div>
                 {docs.length > 0 && (
                     <div>
-                        <div style={{ fontSize: '0.68rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>UPLOADED ({docs.length})</div>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>UPLOADED ({docs.length})</div>
                         {docs.map((d, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                                <span style={{ fontSize: '0.78rem', color: 'var(--white)', flex: 1 }}>{d.name}</span>
-                                <span style={{ fontSize: '0.68rem', color: 'var(--gold)', padding: '1px 6px', borderRadius: '6px', background: 'rgba(212,175,55,0.1)' }}>{d.category}</span>
-                                <span style={{ fontSize: '0.68rem', color: 'var(--silver)' }}>{new Date(d.uploadedAt).toLocaleDateString()}</span>
-                                <button onClick={() => handleDelete(d.name)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.72rem', padding: '2px 6px' }}>Delete</button>
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
+                                <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--white)', flex: 1 }}>{d.name}</span>
+                                <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', padding: '1px 6px', borderRadius: '6px', background: 'var(--acc-fill2, rgba(212,175,55,0.1))' }}>{d.category}</span>
+                                <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>{new Date(d.uploadedAt).toLocaleDateString()}</span>
+                                <button onClick={() => handleDelete(d.name)} style={{ background: 'none', border: 'none', color: 'var(--k-f87171, #f87171)', cursor: 'pointer', fontSize: 'var(--text-label, 0.75rem)', padding: '2px 6px', minHeight: '44px', minWidth: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>Delete</button>
                             </div>
                         ))}
                     </div>
@@ -175,8 +175,8 @@
         }, []);
 
         const tierLabel = { free: 'War Room Free', trial: 'War Room Trial', scout: 'Scout', warroom: 'War Room', pro: 'Dynasty HQ Pro', power: 'Dynasty HQ Power', paid: 'Paid' };
-        const tierColor = { free: 'var(--silver)', trial: 'var(--silver)', scout: 'var(--silver)', warroom: 'var(--gold)', pro: 'var(--gold)', power: '#A855F7', paid: 'var(--gold)' };
-        const tierBg    = { free: 'rgba(192,192,192,0.12)', trial: 'rgba(192,192,192,0.12)', scout: 'rgba(192,192,192,0.12)', warroom: 'rgba(212,175,55,0.12)', pro: 'rgba(212,175,55,0.12)', power: 'rgba(168,85,247,0.12)', paid: 'rgba(212,175,55,0.12)' };
+        const tierColor = { free: 'var(--silver)', trial: 'var(--silver)', scout: 'var(--silver)', warroom: 'var(--gold)', pro: 'var(--gold)', power: 'var(--k-a855f7, #a855f7)', paid: 'var(--gold)' };
+        const tierBg    = { free: 'rgba(192,192,192,0.12)', trial: 'rgba(192,192,192,0.12)', scout: 'rgba(192,192,192,0.12)', warroom: 'var(--acc-fill2, rgba(212,175,55,0.12))', pro: 'var(--acc-fill2, rgba(212,175,55,0.12))', power: 'rgba(168,85,247,0.12)', paid: 'var(--acc-fill2, rgba(212,175,55,0.12))' };
 
         function goToManagePlan() {
             window.location.href = 'onboarding.html?manage=true';
@@ -256,18 +256,18 @@
             setGiftingFor(null);
         }
 
-        const sectionStyle = { marginBottom: '1.25rem', padding: '1rem', background: 'rgba(212,175,55,0.07)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px' };
-        const sectionTitle = { fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.12em', marginBottom: '0.75rem' };
-        const inputStyle = { width: '100%', padding: '0.55rem 0.75rem', background: 'var(--black)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.85rem', marginBottom: '0.5rem' };
-        const btnPrimary = { flex: 1, padding: '0.6rem', background: 'var(--gold)', border: 'none', borderRadius: '6px', color: 'var(--black)', fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' };
-        const btnOutline = { flex: 1, padding: '0.6rem', background: 'transparent', border: '1px solid var(--gold)', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' };
+        const sectionStyle = { marginBottom: 'var(--space-xl)', padding: 'var(--card-pad)', background: 'var(--acc-fill1, rgba(212,175,55,0.07))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius)' };
+        const sectionTitle = { fontFamily: 'var(--font-title)', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--gold)', letterSpacing: '0.12em', marginBottom: '0.75rem' };
+        const inputStyle = { width: '100%', padding: '0.55rem 0.75rem', background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', marginBottom: '0.5rem' };
+        const btnPrimary = { flex: 1, padding: '0.6rem', minHeight: '44px', background: 'var(--gold)', border: 'none', borderRadius: '6px', color: 'var(--black)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' };
+        const btnOutline = { flex: 1, padding: '0.6rem', minHeight: '44px', background: 'transparent', border: '1px solid var(--gold)', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' };
         const isModule = mode === 'module';
         const shellStyle = isModule
-            ? { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid rgba(212,175,55,0.24)', borderRadius: '10px', padding: '1.1rem', width: '100%', boxSizing: 'border-box', boxShadow: '0 12px 28px rgba(0,0,0,0.22)' }
+            ? { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: '10px', padding: '1.1rem', width: '100%', boxSizing: 'border-box', boxShadow: '0 12px 28px rgba(0,0,0,0.22)' }
             : { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '3px solid var(--gold)', borderRadius: '12px', padding: '1.5rem', maxWidth: 'min(720px, calc(100vw - 48px))', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', maxHeight: '90vh', overflowY: 'auto' };
 
         if (isModule) {
-            const moduleSectionStyle = { ...sectionStyle, marginBottom: '0.7rem', background: 'rgba(255,255,255,0.025)' };
+            const moduleSectionStyle = { ...sectionStyle, marginBottom: '0.7rem', background: 'var(--ov-2, rgba(255,255,255,0.025))' };
             const moduleGridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', alignItems: 'start' };
             const moduleColumnStyle = { minWidth: 0 };
             return (
@@ -280,7 +280,7 @@
                         </div>
                     </div>
                     {isGiftedAccount && (
-                        <div style={{ marginBottom: '12px', fontSize: '0.72rem', color: 'var(--gold)', background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.22)', padding: '0.55rem 0.75rem', borderRadius: '6px' }}>
+                        <div style={{ marginBottom: '12px', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', padding: '0.55rem 0.75rem', borderRadius: '6px' }}>
                             Gifted account - change your password below.
                         </div>
                     )}
@@ -288,7 +288,7 @@
                         <div style={moduleColumnStyle}>
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>ACCOUNT</div>
-                                <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.5rem' }}>Display name</div>
+                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.5rem' }}>Display name</div>
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                                     <input
                                         style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
@@ -305,11 +305,11 @@
                                 <input style={inputStyle} type="password" placeholder="New password" value={newPw} onChange={e => setNewPw(e.target.value)} />
                                 <input style={{ ...inputStyle, marginBottom: '0.75rem' }} type="password" placeholder="Confirm new password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} />
                                 <button onClick={handleChangePassword} style={{ ...btnPrimary, width: '100%', flex: 'none' }}>Update Password</button>
-                                {pwMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.73rem', color: pwMsg.startsWith('ok') ? 'var(--win-green)' : '#E74C3C' }}>{pwMsg}</div>}
+                                {pwMsg && <div style={{ marginTop: '0.5rem', fontSize: 'var(--text-label, 0.75rem)', color: pwMsg.startsWith('ok') ? 'var(--win-green)' : 'var(--k-e74c3c, #e74c3c)' }}>{pwMsg}</div>}
                             </div>
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>ACCOUNT ACTIONS</div>
-                                <button onClick={handleLogout} style={{ width: '100%', padding: '0.7rem', background: 'rgba(231,76,60,0.18)', border: '1px solid rgba(231,76,60,0.45)', borderRadius: '6px', color: '#FCA5A5', fontFamily: 'var(--font-body)', fontSize: '0.82rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
+                                <button onClick={handleLogout} style={{ width: '100%', padding: '0.7rem', background: 'rgba(231,76,60,0.18)', border: '1px solid rgba(231,76,60,0.45)', borderRadius: '6px', color: 'var(--k-fca5a5, #fca5a5)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                                     Logout
                                 </button>
                             </div>
@@ -322,7 +322,7 @@
                         <div style={moduleColumnStyle}>
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>DISPLAY</div>
-                                <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                                <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
                                     Change the visual style of your dashboard widgets.
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -335,8 +335,8 @@
                                                 setSettingsTab('display');
                                             }} style={{
                                                 padding: '16px 14px',
-                                                background: isActive ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)',
-                                                border: isActive ? '2px solid var(--gold)' : '1px solid rgba(255,255,255,0.1)',
+                                                background: isActive ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                                                border: isActive ? '2px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
                                                 borderRadius: t.card?.radius || '8px',
                                                 cursor: 'pointer',
                                                 textAlign: 'center',
@@ -344,19 +344,19 @@
                                             }}>
                                                 <div style={{ fontSize: '1.6rem', marginBottom: '6px' }}>{t.preview || '\uD83C\uDFA8'}</div>
                                                 <div style={{
-                                                    fontFamily: 'Rajdhani, sans-serif',
-                                                    fontSize: '0.9rem',
+                                                    fontFamily: 'var(--font-title)',
+                                                    fontSize: 'var(--text-body, 1rem)',
                                                     fontWeight: 700,
                                                     color: isActive ? 'var(--gold)' : 'var(--white)',
                                                     letterSpacing: '0.06em',
                                                 }}>{t.name || themeId}</div>
-                                                <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.6, marginTop: '4px' }}>
+                                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '4px' }}>
                                                     {themeId === 'default' ? 'Dark mode - gold accent' : themeId === 'light' ? 'Light mode - clean and bright' : 'Custom theme'}
                                                 </div>
                                                 {isActive && (
                                                     <div style={{
                                                         marginTop: '8px',
-                                                        fontSize: '0.65rem',
+                                                        fontSize: 'var(--text-label, 0.75rem)',
                                                         fontWeight: 700,
                                                         color: 'var(--gold)',
                                                         textTransform: 'uppercase',
@@ -375,45 +375,44 @@
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>PLAN</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
-                                    <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>Current plan:</span>
-                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: tierColor[currentTier] || 'var(--silver)', background: tierBg[currentTier] || 'rgba(192,192,192,0.12)', padding: '0.15rem 0.55rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                    <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>Current plan:</span>
+                                    <span style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: tierColor[currentTier] || 'var(--silver)', background: tierBg[currentTier] || 'rgba(192,192,192,0.12)', padding: '0.15rem 0.55rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                         {tierLabel[currentTier] || 'War Room Free'}
                                     </span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                                    <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: '0.75rem' }}>Upgrade</button>
-                                    <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: '0.75rem' }}>Change Plan</button>
-                                    <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: '0.75rem' }}>Gift Sub</button>
-                                    <button onClick={handleCancelPlan} style={{ ...btnOutline, fontSize: '0.75rem', borderColor: 'rgba(231,76,60,0.35)', color: '#E74C3C' }}>Cancel</button>
+                                    <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: 'var(--text-label, 0.75rem)' }}>Upgrade</button>
+                                    <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Change Plan</button>
+                                    <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Gift Sub</button>
+                                    <button onClick={handleCancelPlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)', borderColor: 'rgba(231,76,60,0.35)', color: 'var(--k-e74c3c, #e74c3c)' }}>Cancel</button>
                                 </div>
                             </div>
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>AI KEY</div>
-                                <div style={{ fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
+                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
                                     Session-only BYO keys are supported during onboarding and in the AI controls.
                                 </div>
-                                <button onClick={() => { window.location.href = 'onboarding.html?manage=true#byo'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: '0.75rem' }}>Review AI Setup</button>
+                                <button onClick={() => { window.location.href = 'onboarding.html?manage=true#byo'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: 'var(--text-body, 1rem)' }}>Review AI Setup</button>
                             </div>
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>DATA</div>
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                     <button onClick={() => {
-                                        localStorage.removeItem('dhq_leagueintel_v10');
-                                        Object.keys(localStorage).filter(k => k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
+                                        Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
                                         if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; }
                                         alert('DHQ cache cleared. Reload to rebuild.');
-                                    }} style={{ padding: '6px 12px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.1)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', color: '#E74C3C', cursor: 'pointer' }}>
+                                    }} style={{ padding: '6px 12px', minHeight: '44px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.1)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', color: 'var(--k-e74c3c, #e74c3c)', cursor: 'pointer' }}>
                                         Clear DHQ Cache
                                     </button>
                                     <button onClick={() => { sessionStorage.clear(); alert('Session cache cleared.'); }}
-                                        style={{ padding: '6px 12px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer' }}>
+                                        style={{ padding: '6px 12px', minHeight: '44px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer' }}>
                                         Clear Session Cache
                                     </button>
                                 </div>
                             </div>
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>ABOUT</div>
-                                <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.65 }}>
+                                <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.65 }}>
                                     Dynasty HQ War Room v2.0 &middot; Powered by DHQ Engine
                                 </div>
                             </div>
@@ -425,11 +424,11 @@
 
         return (
                 <div className={isModule ? 'wr-settings-module' : 'wr-settings-modal'} style={shellStyle} onClick={isModule ? undefined : (e) => e.stopPropagation()}>
-                    <h2 style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', color: 'var(--gold)', marginBottom: '0.55rem', textAlign: isModule ? 'left' : 'center', letterSpacing: '0.12em' }}>SETTINGS</h2>
+                    <h2 style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', color: 'var(--gold)', marginBottom: '0.55rem', textAlign: isModule ? 'left' : 'center', letterSpacing: '0.12em' }}>SETTINGS</h2>
 
-                    <div style={{ fontSize: '0.85rem', color: 'var(--silver)', marginBottom: '1rem' }}>
+                    <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginBottom: '1rem' }}>
                         Logged in as: <strong style={{ color: 'var(--white)' }}>{sleeperUsername}</strong>
-                        {isGiftedAccount && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--gold)', background: 'rgba(212,175,55,0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>GIFTED — change your password below</span>}
+                        {isGiftedAccount && <span style={{ marginLeft: '0.5rem', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', background: 'var(--acc-fill3, rgba(212,175,55,0.15))', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>GIFTED — change your password below</span>}
                     </div>
 
                     {/* Tab bar */}
@@ -451,7 +450,7 @@
                     {/* ── DISPLAY NAME ── */}
                     <div style={sectionStyle}>
                         <div style={sectionTitle}>DISPLAY NAME</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginBottom: '0.5rem' }}>Custom name (optional)</div>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.5rem' }}>Custom name (optional)</div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <input
                                 style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
@@ -470,7 +469,7 @@
                         <input style={inputStyle} type="password" placeholder="New password" value={newPw} onChange={e => setNewPw(e.target.value)} />
                         <input style={{ ...inputStyle, marginBottom: '0.75rem' }} type="password" placeholder="Confirm new password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} />
                         <button onClick={handleChangePassword} style={{ ...btnPrimary, width: '100%', flex: 'none' }}>Update Password</button>
-                        {pwMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.73rem', color: pwMsg.startsWith('ok') ? 'var(--win-green)' : '#E74C3C' }}>{pwMsg}</div>}
+                        {pwMsg && <div style={{ marginTop: '0.5rem', fontSize: 'var(--text-label, 0.75rem)', color: pwMsg.startsWith('ok') ? 'var(--win-green)' : 'var(--k-e74c3c, #e74c3c)' }}>{pwMsg}</div>}
                     </div>
 
                     {/* Phase 10: Leaguemate Access card removed per user feedback (2026-04-18) */}
@@ -483,7 +482,7 @@
                     {settingsTab === 'display' && (<>
                         <div style={sectionStyle}>
                             <div style={sectionTitle}>DASHBOARD THEME</div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
+                            <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
                                 Change the visual style of your dashboard widgets.
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -497,8 +496,8 @@
                                             setSettingsTab('display');
                                         }} style={{
                                             padding: '16px 14px',
-                                            background: isActive ? 'rgba(212,175,55,0.12)' : 'rgba(255,255,255,0.03)',
-                                            border: isActive ? '2px solid var(--gold)' : '1px solid rgba(255,255,255,0.1)',
+                                            background: isActive ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                                            border: isActive ? '2px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
                                             borderRadius: t.card?.radius || '8px',
                                             cursor: 'pointer',
                                             textAlign: 'center',
@@ -506,19 +505,19 @@
                                         }}>
                                             <div style={{ fontSize: '1.6rem', marginBottom: '6px' }}>{t.preview || '🎨'}</div>
                                             <div style={{
-                                                fontFamily: 'Rajdhani, sans-serif',
-                                                fontSize: '0.9rem',
+                                                fontFamily: 'var(--font-title)',
+                                                fontSize: 'var(--text-body, 1rem)',
                                                 fontWeight: 700,
                                                 color: isActive ? 'var(--gold)' : 'var(--white)',
                                                 letterSpacing: '0.06em',
                                             }}>{t.name || themeId}</div>
-                                            <div style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.6, marginTop: '4px' }}>
+                                            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '4px' }}>
                                                 {themeId === 'default' ? 'Dark mode · gold accent' : themeId === 'light' ? 'Light mode · clean & bright' : 'Custom theme'}
                                             </div>
                                             {isActive && (
                                                 <div style={{
                                                     marginTop: '8px',
-                                                    fontSize: '0.65rem',
+                                                    fontSize: 'var(--text-label, 0.75rem)',
                                                     fontWeight: 700,
                                                     color: 'var(--gold)',
                                                     textTransform: 'uppercase',
@@ -540,26 +539,26 @@
                     <div style={sectionStyle}>
                         <div style={sectionTitle}>CURRENT PLAN</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>Current plan:</span>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: tierColor[currentTier] || 'var(--silver)', background: tierBg[currentTier] || 'rgba(192,192,192,0.12)', padding: '0.15rem 0.55rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>Current plan:</span>
+                            <span style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: tierColor[currentTier] || 'var(--silver)', background: tierBg[currentTier] || 'rgba(192,192,192,0.12)', padding: '0.15rem 0.55rem', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                                 {tierLabel[currentTier] || 'War Room Free'}
                             </span>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                            <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: '0.75rem' }}>Upgrade</button>
-                            <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: '0.75rem' }}>Change Plan</button>
-                            <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: '0.75rem' }}>Gift Sub</button>
-                            <button onClick={handleCancelPlan} style={{ ...btnOutline, fontSize: '0.75rem', borderColor: 'rgba(231,76,60,0.35)', color: '#E74C3C' }}>Cancel</button>
+                            <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: 'var(--text-label, 0.75rem)' }}>Upgrade</button>
+                            <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Change Plan</button>
+                            <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Gift Sub</button>
+                            <button onClick={handleCancelPlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)', borderColor: 'rgba(231,76,60,0.35)', color: 'var(--k-e74c3c, #e74c3c)' }}>Cancel</button>
                         </div>
-                        <div style={{ marginTop: '0.6rem', fontSize: '0.66rem', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>Manage your Dynasty HQ subscription</div>
+                        <div style={{ marginTop: '0.6rem', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', textAlign: 'center' }}>Manage your Dynasty HQ subscription</div>
                     </div>
 
                     <div style={sectionStyle}>
                         <div style={sectionTitle}>BYO AI KEY</div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
                             Session-only BYO keys are supported during onboarding and in the AI controls. They are not stored in localStorage and they bypass included query limits only for that session.
                         </div>
-                        <button onClick={() => { window.location.href = 'onboarding.html?manage=true#byo'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: '0.75rem' }}>Review AI Setup</button>
+                        <button onClick={() => { window.location.href = 'onboarding.html?manage=true#byo'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: 'var(--text-body, 1rem)' }}>Review AI Setup</button>
                     </div>
                     </>)}
 
@@ -569,15 +568,14 @@
                         <div style={sectionTitle}>CACHE MANAGEMENT</div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <button onClick={() => {
-                                localStorage.removeItem('dhq_leagueintel_v10');
-                                Object.keys(localStorage).filter(k => k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
+                                Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
                                 if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; }
                                 alert('DHQ cache cleared. Reload to rebuild.');
-                            }} style={{ padding: '6px 12px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.1)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', color: '#E74C3C', cursor: 'pointer' }}>
+                            }} style={{ padding: '6px 12px', minHeight: '44px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.1)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', color: 'var(--k-e74c3c, #e74c3c)', cursor: 'pointer' }}>
                                 Clear DHQ Cache
                             </button>
                             <button onClick={() => { sessionStorage.clear(); alert('Session cache cleared.'); }}
-                                style={{ padding: '6px 12px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer' }}>
+                                style={{ padding: '6px 12px', minHeight: '44px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer' }}>
                                 Clear Session Cache
                             </button>
                         </div>
@@ -586,17 +584,17 @@
                     {/* ── ABOUT ── */}
                     <div style={sectionStyle}>
                         <div style={sectionTitle}>ABOUT</div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.65 }}>
+                        <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.65 }}>
                             Dynasty HQ War Room v2.0 &middot; Powered by DHQ Engine
                         </div>
                     </div>
                     </>)}
 
                     <div style={{ display: 'flex', gap: '0.75rem', flexDirection: 'column', marginTop: '1.5rem' }}>
-                        <button onClick={handleLogout} style={{ padding: '0.75rem', background: 'linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)', border: 'none', borderRadius: '8px', color: 'white', fontFamily: 'var(--font-body)', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
+                        <button onClick={handleLogout} style={{ padding: '0.75rem', background: 'linear-gradient(135deg, var(--k-e74c3c, #e74c3c) 0%, var(--k-c0392b, #c0392b) 100%)', border: 'none', borderRadius: '8px', color: 'white', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                             Logout
                         </button>
-                        {!isModule && <button onClick={onClose} style={{ padding: '0.75rem', background: 'var(--black)', border: '2px solid var(--gold)', borderRadius: '8px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: '0.9rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
+                        {!isModule && <button onClick={onClose} style={{ padding: '0.75rem', background: 'var(--black)', border: '2px solid var(--gold)', borderRadius: '8px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                             Close
                         </button>}
                     </div>

@@ -159,10 +159,10 @@
             const top2 = [...picks].sort((a, b) => b.value - a.value).slice(0, 2);
 
             return (
-                <div onClick={onClick} style={{ ...cardStyle, padding: '12px 14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div onClick={onClick} style={{ ...cardStyle, padding: 'var(--card-pad-sm, 10px 12px)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexShrink: 0 }}>
                         <span style={{ fontSize: '0.95rem' }}>🎯</span>
-                        <span style={{ fontFamily: fonts.display, fontSize: fs(0.85), fontWeight: 700, color: colors.warn || '#F0A500', letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Draft Capital</span>
+                        <span style={{ fontFamily: fonts.display, fontSize: fs(0.85), fontWeight: 700, color: colors.warn || 'var(--k-f0a500, #f0a500)', letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Draft Capital</span>
                         {countdown && <span style={{ fontSize: fs(0.6), color: countdown.live ? colors.positive : colors.accent, fontWeight: 700, fontFamily: fonts.ui }}>{countdown.live ? '🔴' : countdown.text}</span>}
                     </div>
                     {/* Year value bars */}
@@ -173,7 +173,7 @@
                             return (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <span style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.textMuted, width: 30, fontFamily: fonts.mono }}>{y.year}</span>
-                                    <div style={{ flex: 1, height: 12, background: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+                                    <div style={{ flex: 1, height: 12, background: 'var(--ov-3, rgba(255,255,255,0.04))', borderRadius: 2, overflow: 'hidden' }}>
                                         <div style={{ width: pct + '%', height: '100%', background: col }} />
                                     </div>
                                     <span style={{ fontSize: fs(0.56), fontWeight: 700, color: col, fontFamily: fonts.mono, minWidth: 36, textAlign: 'right' }}>{y.count}p · {y.total >= 1000 ? (y.total / 1000).toFixed(1) + 'k' : y.total}</span>
@@ -182,7 +182,7 @@
                         })}
                     </div>
                     {/* Top picks */}
-                    <div style={{ flex: 1, minHeight: 0, fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui, lineHeight: 1.4, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '4px' }}>
+                    <div style={{ flex: 1, minHeight: 0, fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui, lineHeight: 1.4, borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop: '4px' }}>
                         Best: {top2.map(p => p.label + ' (' + (p.value >= 1000 ? (p.value / 1000).toFixed(1) + 'k' : p.value) + (pickEquiv(p.value) ? ', ' + pickEquiv(p.value) : '') + ')').join(' · ')}
                     </div>
                 </div>
@@ -200,7 +200,7 @@
                             <div key={year}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
                                     <span style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, fontFamily: fonts.ui }}>{year}</span>
-                                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                                    <div style={{ flex: 1, height: 1, background: 'var(--ov-4, rgba(255,255,255,0.06))' }} />
                                     <span style={{ fontSize: fs(0.54), color: colors.textMuted, fontFamily: fonts.mono }}>
                                         {yearPicks.length}p · {yearTotal >= 1000 ? (yearTotal / 1000).toFixed(1) + 'k' : yearTotal}
                                     </span>
@@ -210,9 +210,9 @@
                                     return (
                                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '1px 0', fontSize: fs(compact ? 0.56 : 0.62) }}>
                                             <span style={{ fontWeight: 700, color: p.own ? colors.text : colors.accent, minWidth: 60, fontFamily: fonts.ui }}>{p.label}</span>
-                                            {!p.own && <span style={{ fontSize: fs(0.48), fontWeight: 700, color: colors.purple || '#7C6BF8', padding: '0 3px', background: (colors.purple || '#7C6BF8') + '18', borderRadius: 2 }}>TR</span>}
-                                            <div style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
-                                                <div style={{ width: ((p.value / maxRoundVal) * 100) + '%', height: '100%', background: p.round <= 2 ? colors.accent : colors.textMuted + '88' }} />
+                                            {!p.own && <span style={{ fontSize: fs(0.48), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', padding: '0 3px', background: (colors.purple || 'var(--k-7c6bf8, #7c6bf8)') + '18', borderRadius: 2 }}>TR</span>}
+                                            <div style={{ flex: 1, height: 4, background: 'var(--ov-3, rgba(255,255,255,0.04))', borderRadius: 2, overflow: 'hidden' }}>
+                                                <div style={{ width: ((p.value / maxRoundVal) * 100) + '%', height: '100%', background: p.round <= 2 ? colors.accent : wrAlpha(colors.textMuted, '88') }} />
                                             </div>
                                             <span style={{ fontSize: fs(0.54), fontWeight: 700, color: colors.textMuted, minWidth: 30, textAlign: 'right', fontFamily: fonts.mono }}>
                                                 {p.value >= 1000 ? (p.value / 1000).toFixed(1) + 'k' : p.value}
@@ -234,8 +234,8 @@
                 <div style={{
                     display: 'flex', alignItems: 'center', gap: '10px',
                     padding: '6px 10px',
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid ' + (colors.border || 'rgba(255,255,255,0.06)'),
+                    background: 'var(--ov-1, rgba(255,255,255,0.02))',
+                    border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                     borderRadius: '6px',
                 }}>
                     <div style={{ textAlign: 'center', flex: 1 }}>
@@ -244,12 +244,12 @@
                         </div>
                         <div style={{ fontSize: fs(0.54), color: colors.textMuted, fontFamily: fonts.ui }}>TOTAL DHQ</div>
                     </div>
-                    <div style={{ width: 1, height: 28, background: 'rgba(255,255,255,0.08)' }} />
+                    <div style={{ width: 1, height: 28, background: 'var(--ov-5, rgba(255,255,255,0.08))' }} />
                     <div style={{ textAlign: 'center', flex: 1 }}>
                         <div style={{ fontFamily: fonts.mono, fontSize: fs(1.05), fontWeight: 700, color: colors.accent, lineHeight: 1 }}>#{leagueCapitalRank.rank}</div>
                         <div style={{ fontSize: fs(0.54), color: colors.textMuted, fontFamily: fonts.ui }}>OF {leagueCapitalRank.total}</div>
                     </div>
-                    <div style={{ width: 1, height: 28, background: 'rgba(255,255,255,0.08)' }} />
+                    <div style={{ width: 1, height: 28, background: 'var(--ov-5, rgba(255,255,255,0.08))' }} />
                     <div style={{ textAlign: 'center', flex: 1 }}>
                         <div style={{ fontFamily: fonts.mono, fontSize: fs(1.05), fontWeight: 700, color: colors.text, lineHeight: 1 }}>{pickCount}</div>
                         <div style={{ fontSize: fs(0.54), color: colors.textMuted, fontFamily: fonts.ui }}>PICKS</div>
@@ -263,9 +263,9 @@
             return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                     <span style={{ fontSize: '1rem' }}>🎯</span>
-                    <span style={{ fontFamily: fonts.display, fontSize: fs(0.95), fontWeight: 700, color: colors.warn || '#F0A500', letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>Draft Capital</span>
+                    <span style={{ fontFamily: fonts.display, fontSize: fs(0.95), fontWeight: 700, color: colors.warn || 'var(--k-f0a500, #f0a500)', letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>Draft Capital</span>
                     {countdown && <span style={{ fontSize: fs(0.62), color: countdown.live ? colors.positive : colors.accent, fontWeight: 700, fontFamily: fonts.ui }}>{countdown.live ? '🔴 LIVE' : countdown.text}</span>}
-                    <button onClick={openDraft} title="Open Draft Command" style={{ padding: '3px 8px', background: 'rgba(240,165,0,0.10)', color: colors.warn || '#F0A500', border: '1px solid rgba(240,165,0,0.28)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Draft</button>
+                    <button onClick={openDraft} title="Open Draft Command" style={{ padding: '3px 8px', background: 'rgba(240,165,0,0.10)', color: colors.warn || 'var(--k-f0a500, #f0a500)', border: '1px solid rgba(240,165,0,0.28)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Draft</button>
                 </div>
             );
         }
@@ -273,7 +273,7 @@
         // ── LG: capital rank + inventory (no scroll) ──
         if (size === 'lg') {
             return (
-                <div style={{ ...cardStyle, padding: '12px 14px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ ...cardStyle, padding: 'var(--card-pad-sm, 10px 12px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {header()}
                     <div style={{ marginBottom: '8px', flexShrink: 0 }}>{renderRankStrip()}</div>
                     <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -340,7 +340,7 @@
             }));
 
             return (
-                <div style={{ ...cardStyle, padding: '14px 16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ ...cardStyle, padding: 'var(--card-pad, 16px 18px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {header()}
                     <div style={{ marginBottom: '10px', flexShrink: 0 }}>{renderRankStrip()}</div>
                     {/* Top half: 2-col inventory + big board */}
@@ -357,7 +357,7 @@
                                     return (
                                         <div key={p.pid} role="button" tabIndex={0} title="Open player card" onClick={() => p.pid && openCard(p.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.pid && openCard(p.pid); } }} style={{
                                             display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0',
-                                            borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer',
+                                            borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', cursor: 'pointer',
                                             fontSize: fs(0.6), fontFamily: fonts.ui,
                                         }}>
                                             <span style={{ fontSize: fs(0.52), color: i < 3 ? colors.accent : colors.textFaint, fontWeight: 700, width: 16, textAlign: 'right', fontFamily: fonts.mono }}>{i + 1}</span>
@@ -375,7 +375,7 @@
                     <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
                         {/* Pick Strategy */}
                         <div style={{ padding: '8px 10px', background: 'rgba(240,165,0,0.05)', border: '1px solid rgba(240,165,0,0.2)', borderRadius: '6px' }}>
-                            <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.warn || '#F0A500', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Pick Strategy · Targets by Round</div>
+                            <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.warn || 'var(--k-f0a500, #f0a500)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Pick Strategy · Targets by Round</div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px 12px' }}>
                                 {strategy.map((s, i) => {
                                     const targetCol = window.App?.POS_COLORS?.[s.target] || colors.accent;
@@ -395,7 +395,7 @@
                             )}
                         </div>
                         {/* League Capital Distribution */}
-                        <div style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
+                        <div style={{ padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px' }}>
                             <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>League Capital Distribution</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                 {leagueCapital.map((t, i) => {
@@ -404,7 +404,7 @@
                                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: fs(0.54), fontFamily: fonts.ui }}>
                                             <span style={{ fontSize: fs(0.5), color: colors.textFaint, width: 12, textAlign: 'right', fontFamily: fonts.mono }}>{i + 1}</span>
                                             <span style={{ flex: 1, minWidth: 0, color: t.isMe ? colors.accent : colors.textMuted, fontWeight: t.isMe ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(t.isMe ? '★ ' : '') + (t.name || '').slice(0, 14)}</span>
-                                            <div style={{ width: 80, height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+                                            <div style={{ width: 80, height: 5, background: 'var(--ov-3, rgba(255,255,255,0.05))', borderRadius: 2, overflow: 'hidden' }}>
                                                 <div style={{ width: pct + '%', height: '100%', background: t.isMe ? colors.accent : colors.textMuted, opacity: t.isMe ? 1 : 0.5 }} />
                                             </div>
                                             <span style={{ fontSize: fs(0.5), color: colors.textFaint, fontFamily: fonts.mono, minWidth: 28, textAlign: 'right' }}>{t.cap >= 1000 ? (t.cap / 1000).toFixed(1) + 'k' : t.cap}</span>

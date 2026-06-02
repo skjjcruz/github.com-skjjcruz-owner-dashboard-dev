@@ -247,7 +247,7 @@
     }
 
     function tierColor(tier) {
-        return ({ titles: '#D4AF37', performance: '#2ECC71', tenure: '#5DADE2', misc: '#7C6BF8' })[tier] || '#D4AF37';
+        return ({ titles: 'var(--k-d4af37, #d4af37)', performance: 'var(--k-2ecc71, #2ecc71)', tenure: 'var(--k-5dade2, #5dade2)', misc: 'var(--k-7c6bf8, #7c6bf8)' })[tier] || 'var(--k-d4af37, #d4af37)';
     }
 
     window.WrAchievements = {

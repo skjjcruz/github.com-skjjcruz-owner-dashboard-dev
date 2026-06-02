@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "warroom",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8082"],
-      "port": 8082
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3001
     }
   ]
 }

@@ -174,15 +174,15 @@
         function windowRead(pos, age) {
             const peakYrs = peakYearsFor(pos, age);
             const valueYrs = valueYearsFor(pos, age);
-            if (peakYrs >= 4) return { label: peakYrs + 'yr peak', short: 'Rising', color: '#2ECC71', peakYrs, valueYrs };
+            if (peakYrs >= 4) return { label: peakYrs + 'yr peak', short: 'Rising', color: 'var(--k-2ecc71, #2ecc71)', peakYrs, valueYrs };
             if (peakYrs >= 1) return { label: peakYrs + 'yr peak', short: 'Prime', color: 'var(--gold)', peakYrs, valueYrs };
-            if (valueYrs >= 1) return { label: valueYrs + 'yr value', short: 'Vet', color: '#F0A500', peakYrs, valueYrs };
-            return { label: 'short term', short: 'Post', color: '#E74C3C', peakYrs, valueYrs };
+            if (valueYrs >= 1) return { label: valueYrs + 'yr value', short: 'Vet', color: 'var(--k-f0a500, #f0a500)', peakYrs, valueYrs };
+            return { label: 'short term', short: 'Post', color: 'var(--k-e74c3c, #e74c3c)', peakYrs, valueYrs };
         }
         function fitRead(pos) {
             const need = assess?.needs?.find(n => n.pos === pos);
-            if (need?.urgency === 'deficit') return { label: 'Fills deficit', short: 'Deficit', score: 4, color: '#2ECC71', need };
-            if (need) return { label: 'Fills thin room', short: 'Thin', score: 3, color: '#2ECC71', need };
+            if (need?.urgency === 'deficit') return { label: 'Fills deficit', short: 'Deficit', score: 4, color: 'var(--k-2ecc71, #2ecc71)', need };
+            if (need) return { label: 'Fills thin room', short: 'Thin', score: 3, color: 'var(--k-2ecc71, #2ecc71)', need };
             if (assess?.strengths?.includes(pos)) return { label: 'Surplus stash', short: 'Stash', score: 1, color: 'var(--silver)', need: null };
             return { label: 'Depth add', short: 'Depth', score: 2, color: 'var(--silver)', need: null };
         }
@@ -237,7 +237,7 @@
                 : win.peakYrs > 0
                     ? (skinFeatures.showDynastyValue === false ? 'Adds usable production runway without forcing a major FAAB commitment.' : 'Adds usable dynasty runway without forcing a major FAAB commitment.')
                     : 'Short-window depth. Treat as a tactical add, not a core asset.';
-            const why = formatReasons.length ? whyBase + ' ' + (formatReasons[0].detail || formatReasons[0].label) : whyBase;
+            const why = whyBase;
             const intelligence = typeof window.App?.Intelligence?.buildWaiverRecommendation === 'function'
                 ? window.App.Intelligence.buildWaiverRecommendation({
                     id: 'waiver_' + x.pid,
@@ -366,11 +366,6 @@
                 ? window.App.Intelligence.buildLeagueProfile({ league: currentLeague, rosters: currentLeague?.rosters || [], platform: currentLeague?._platform })
                 : null;
         }, [currentLeague]);
-        const leagueFormatBadges = useMemo(() => {
-            return leagueProfile && typeof window.App?.Intelligence?.buildFormatBadges === 'function'
-                ? window.App.Intelligence.buildFormatBadges(leagueProfile).filter(b => b.impact === 'major' || b.impact === 'scoring' || b.impact === 'confidence').slice(0, 4)
-                : [];
-        }, [leagueProfile]);
         const rookiesLocked = rookiesLockedForWaivers(currentLeague, briefDraftInfo);
         const prospectNames = useMemo(() => {
             if (!rookiesLocked || typeof window.getProspects !== 'function') return new Set();
@@ -399,7 +394,8 @@
         const availablePlayers = useMemo(() => {
             if (!rosterState.isUsable) return [];
             return Object.entries(playersData)
-                .filter(([pid, p]) => !rostered.has(pid) && p.team && p.status !== 'Inactive' && p.status !== 'Retired' && p.active !== false && !isDraftProspect(pid, p))
+                .filter(([pid, p]) => !rostered.has(pid) && p.team && p.status !== 'Inactive' && p.status !== 'Retired' && p.active !== false && !isDraftProspect(pid, p)
+                    && (p.full_name || p.first_name || p.last_name) && (window.App?.LI?.playerScores?.[pid] || 0) > 0)
                 .map(([pid, p]) => ({ pid, p, dhq: window.App?.LI?.playerScores?.[pid] || 0, pos: normPos(p.position) || p.position }))
                 .sort((a, b) => b.dhq - a.dhq)
                 .slice(0, 300);
@@ -457,7 +453,7 @@
             }).slice(0, 50);
         }, [availablePlayers, faFilter, faSearch, faSort, statsData]);
 
-        const faHeaderStyle = { fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'pointer', userSelect: 'none' };
+        const faHeaderStyle = { fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'pointer', userSelect: 'none' };
 
         // Compute roster needs for recommendations
         const assess = useMemo(() => typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null, [myRoster]);
@@ -540,7 +536,7 @@
                 });
             }
             const conf = competitors <= 1 ? 'Low competition' : competitors <= 3 ? 'Moderate' : 'High demand';
-            const confCol = competitors <= 1 ? '#2ECC71' : competitors <= 3 ? '#F0A500' : '#E74C3C';
+            const confCol = competitors <= 1 ? 'var(--good)' : competitors <= 3 ? 'var(--warn)' : 'var(--bad)';
             return { sug, lo, hi, conf, confCol, competitors, scarcity, modeMultiplier };
         }
 
@@ -619,23 +615,23 @@
         function windowRead(pos, age) {
             const peakYrs = peakYearsFor(pos, age);
             const valueYrs = valueYearsFor(pos, age);
-            if (peakYrs >= 4) return { label: peakYrs + 'yr peak', short: 'Rising', color: '#2ECC71', peakYrs, valueYrs };
+            if (peakYrs >= 4) return { label: peakYrs + 'yr peak', short: 'Rising', color: 'var(--k-2ecc71, #2ecc71)', peakYrs, valueYrs };
             if (peakYrs >= 1) return { label: peakYrs + 'yr peak', short: 'Prime', color: 'var(--gold)', peakYrs, valueYrs };
-            if (valueYrs >= 1) return { label: valueYrs + 'yr value', short: 'Vet', color: '#F0A500', peakYrs, valueYrs };
-            return { label: 'short term', short: 'Post', color: '#E74C3C', peakYrs, valueYrs };
+            if (valueYrs >= 1) return { label: valueYrs + 'yr value', short: 'Vet', color: 'var(--k-f0a500, #f0a500)', peakYrs, valueYrs };
+            return { label: 'short term', short: 'Post', color: 'var(--k-e74c3c, #e74c3c)', peakYrs, valueYrs };
         }
 
         function fitRead(pos) {
             const need = assess?.needs?.find(n => n.pos === pos);
-            if (need?.urgency === 'deficit') return { label: 'Fills deficit', short: 'Deficit', score: 4, color: '#2ECC71', need };
-            if (need) return { label: 'Fills thin room', short: 'Thin', score: 3, color: '#2ECC71', need };
+            if (need?.urgency === 'deficit') return { label: 'Fills deficit', short: 'Deficit', score: 4, color: 'var(--k-2ecc71, #2ecc71)', need };
+            if (need) return { label: 'Fills thin room', short: 'Thin', score: 3, color: 'var(--k-2ecc71, #2ecc71)', need };
             if (assess?.strengths?.includes(pos)) return { label: 'Surplus stash', short: 'Stash', score: 1, color: 'var(--silver)', need: null };
             return { label: 'Depth add', short: 'Depth', score: 2, color: 'var(--silver)', need: null };
         }
 
         function gradeLabel(g) {
             if (g === 'A') return { label: 'Strong', bg: 'rgba(46,204,113,0.12)' };
-            if (g === 'B') return { label: 'OK', bg: 'rgba(255,255,255,0.06)' };
+            if (g === 'B') return { label: 'OK', bg: 'var(--ov-4, rgba(255,255,255,0.06))' };
             if (g === 'C') return { label: 'Thin', bg: 'rgba(240,165,0,0.10)' };
             if (g === 'D') return { label: 'Weak', bg: 'rgba(240,165,0,0.10)' };
             return { label: 'Deficit', bg: 'rgba(231,76,60,0.10)' };
@@ -682,7 +678,7 @@
                 : win.peakYrs > 0
                     ? (skinFeatures.showDynastyValue === false ? 'Adds usable production runway without forcing a major FAAB commitment.' : 'Adds usable dynasty runway without forcing a major FAAB commitment.')
                     : 'Short-window depth. Treat as a tactical add, not a core asset.';
-            const why = formatReasons.length ? whyBase + ' ' + (formatReasons[0].detail || formatReasons[0].label) : whyBase;
+            const why = whyBase;
             const intelligence = typeof window.App?.Intelligence?.buildWaiverRecommendation === 'function'
                 ? window.App.Intelligence.buildWaiverRecommendation({
                     id: 'waiver_' + x.pid,
@@ -731,7 +727,7 @@
             .filter(pos => (assess?.posAssessment || {})[pos])
             .map(pos => {
                 const data = assess.posAssessment[pos] || {};
-                const pg = posGradeMap[pos] || { grade: 'C', col: '#F0A500', rank: 0, totalTeams: 0 };
+                const pg = posGradeMap[pos] || { grade: 'C', col: 'var(--k-f0a500, #f0a500)', rank: 0, totalTeams: 0 };
                 const gl = gradeLabel(pg.grade);
                 const bestWire = availablePlayers.find(x => x.pos === pos);
                 return { pos, data, grade: pg.grade, label: gl.label, color: pg.col, bg: gl.bg, rank: pg.rank, totalTeams: pg.totalTeams, bestWire };
@@ -801,13 +797,7 @@
             .filter(x => x.top);
 
         function renderCandidateRow(x, i, isPrimary) {
-            const dhqCol = x.dhq >= 4000 ? '#3498DB' : x.dhq >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.45)';
-            const whyView = typeof window.App?.Intelligence?.buildWhyView === 'function'
-                ? window.App.Intelligence.buildWhyView(x.intelligence, { title: 'Why this waiver target', limit: 3 })
-                : null;
-            const whyLines = whyView?.lines || (typeof window.App?.Intelligence?.recommendationWhyLines === 'function'
-                ? window.App.Intelligence.recommendationWhyLines(x.intelligence, 3)
-                : []);
+            const dhqCol = x.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : x.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.45))';
             return (
                 <button key={x.pid} className={'fa-hq-candidate' + (isPrimary ? ' is-primary' : '')} title="Open player card" onClick={() => openFaPlayer(x.pid)}>
                     <span className="fa-hq-rank">{i + 1}</span>
@@ -821,7 +811,6 @@
                         <em>{x.faab ? '$' + x.faab.lo + '-' + x.faab.hi : 'No bid'}</em>
                     </span>
                     <span className="fa-hq-why">{x.why}</span>
-                    {whyLines.length > 0 && <span className="fa-hq-evidence">{whyLines.slice(0, 3).map(line => <em key={line}>{line}</em>)}</span>}
                 </button>
             );
         }
@@ -842,8 +831,8 @@
             const starterCoverage = starterReq ? Math.round((starterFilled / starterReq) * 100) : null;
             const pressureScore = boardRows.reduce((s, r) => s + (r.faab?.competitors || 0), 0);
             const pressure = pressureScore >= 14 ? 'High' : pressureScore >= 7 ? 'Moderate' : 'Low';
-            const pressureColor = pressure === 'High' ? '#E74C3C' : pressure === 'Moderate' ? '#F0A500' : '#2ECC71';
-            const faabColor = remaining > budget * 0.5 ? '#2ECC71' : remaining > budget * 0.25 ? '#F0A500' : '#E74C3C';
+            const pressureColor = pressure === 'High' ? 'var(--k-e74c3c, #e74c3c)' : pressure === 'Moderate' ? 'var(--k-f0a500, #f0a500)' : 'var(--k-2ecc71, #2ecc71)';
+            const faabColor = remaining > budget * 0.5 ? 'var(--k-2ecc71, #2ecc71)' : remaining > budget * 0.25 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
             return (
                 <section className={'fa-hq-shell' + (compact ? ' is-compact' : '')}>
                     <div className="fa-hq-hero">
@@ -851,9 +840,6 @@
                             <span>Free Agency Action HQ</span>
                             <h2>{topAdds[0] ? topAdds[0].p.full_name || playerName(topAdds[0].p) : 'No urgent add surfaced'}</h2>
                             <p>{topAdds[0] ? topAdds[0].why : 'Your market is clean enough to browse for stashes and tactical depth.'}</p>
-                            {leagueFormatBadges.length > 0 && <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
-                                {leagueFormatBadges.map(badge => <span key={badge.code} style={{ fontSize: '0.66rem', color: '#D0E7FA', border: '1px solid rgba(125,183,232,0.25)', background: 'rgba(125,183,232,0.08)', borderRadius: '5px', padding: '2px 7px', fontWeight: 700 }}>{badge.label}</span>)}
-                            </div>}
                         </div>
                         <div className="fa-hq-hero-kpis">
                             {hasFAAB && <div><span>FAAB</span><strong style={{ color: faabColor }}>${remaining}</strong><em>#{myFaabRank || '—'}/{faabMarketRows.length || '—'} · avg ${leagueAvgRemaining}</em></div>}
@@ -1080,9 +1066,9 @@
                 </div>
 
                 {showFaColPicker && (
-                    <div style={{ background: '#0a0a0a', border: '2px solid rgba(212,175,55,0.3)', borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
+                    <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
                         {/* Active columns — reorderable */}
-                        <div style={{ fontSize: '0.64rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', fontWeight: 700 }}>Active order (click ◀ ▶ to reorder)</div>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', fontWeight: 700 }}>Active order (click ◀ ▶ to reorder)</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '12px' }}>
                             {visibleFaCols.map((key, i) => {
                                 const col = faColumns[key]; if (!col) return null;
@@ -1090,26 +1076,26 @@
                                 const moveRight = () => { setFaColPreset('custom'); setVisibleFaCols(prev => { if (i === prev.length - 1) return prev; const next = [...prev]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; return next; }); };
                                 const remove = () => { setFaColPreset('custom'); setVisibleFaCols(prev => prev.filter(c => c !== key)); };
                                 return (
-                                    <span key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '2px 4px 2px 8px', borderRadius: '4px', fontSize: '0.72rem', background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.35)', color: 'var(--gold)' }}>
+                                    <span key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '2px 4px 2px 8px', borderRadius: '4px', fontSize: 'var(--text-label, 0.75rem)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', color: 'var(--gold)' }}>
                                         <span style={{ marginRight: '4px' }}>{col.shortLabel}</span>
-                                        <button onClick={moveLeft} disabled={i === 0} title="Move left" style={{ padding: '0 3px', background: 'transparent', border: 'none', color: i === 0 ? 'rgba(212,175,55,0.25)' : 'var(--gold)', cursor: i === 0 ? 'default' : 'pointer', fontSize: '0.66rem' }}>◀</button>
-                                        <button onClick={moveRight} disabled={i === visibleFaCols.length - 1} title="Move right" style={{ padding: '0 3px', background: 'transparent', border: 'none', color: i === visibleFaCols.length - 1 ? 'rgba(212,175,55,0.25)' : 'var(--gold)', cursor: i === visibleFaCols.length - 1 ? 'default' : 'pointer', fontSize: '0.66rem' }}>▶</button>
-                                        <button onClick={remove} title="Remove" style={{ padding: '0 4px', background: 'transparent', border: 'none', color: '#E74C3C', cursor: 'pointer', fontSize: '0.7rem' }}>×</button>
+                                        <button onClick={moveLeft} disabled={i === 0} title="Move left" style={{ padding: '0 3px', minWidth: '32px', minHeight: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: i === 0 ? 'var(--acc-line1, rgba(212,175,55,0.25))' : 'var(--gold)', cursor: i === 0 ? 'default' : 'pointer', fontSize: 'var(--text-label, 0.75rem)' }}>◀</button>
+                                        <button onClick={moveRight} disabled={i === visibleFaCols.length - 1} title="Move right" style={{ padding: '0 3px', minWidth: '32px', minHeight: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: i === visibleFaCols.length - 1 ? 'var(--acc-line1, rgba(212,175,55,0.25))' : 'var(--gold)', cursor: i === visibleFaCols.length - 1 ? 'default' : 'pointer', fontSize: 'var(--text-label, 0.75rem)' }}>▶</button>
+                                        <button onClick={remove} title="Remove" style={{ padding: '0 4px', minWidth: '32px', minHeight: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--bad)', cursor: 'pointer', fontSize: 'var(--text-label, 0.75rem)' }}>×</button>
                                     </span>
                                 );
                             })}
                         </div>
 
                         {/* All available columns — tick to add */}
-                        <div style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', fontWeight: 700 }}>Available columns</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', fontWeight: 700 }}>Available columns</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '4px' }}>
                             {Object.entries(faColumns).map(([key, col]) => {
                                 const active = visibleFaCols.includes(key);
                                 return (
                                     <label key={key} style={{
                                         display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px',
-                                        borderRadius: '4px', cursor: 'pointer', fontSize: '0.76rem',
-                                        background: active ? 'rgba(212,175,55,0.1)' : 'transparent',
+                                        borderRadius: '4px', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)',
+                                        background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'transparent',
                                         color: active ? 'var(--gold)' : 'var(--silver)'
                                     }}>
                                         <input type="checkbox" checked={active} onChange={() => {
@@ -1117,7 +1103,7 @@
                                             setFaColPreset('custom');
                                         }} style={{ accentColor: 'var(--gold)' }} />
                                         {col.label}
-                                        <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: 'auto' }}>{col.group}</span>
+                                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', opacity: 0.6, marginLeft: 'auto' }}>{col.group}</span>
                                     </label>
                                 );
                             })}
@@ -1128,9 +1114,9 @@
                 {/* Dynamic grid — photo + Player + configured columns */}
                 {(() => {
                     const gridTemplate = '32px 1fr ' + visibleFaCols.map(k => (faColumns[k]?.width || '44px')).join(' ');
-                    return <div style={{ background: 'var(--black)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '10px', overflow: 'hidden' }}>
+                    return <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', overflow: 'hidden' }}>
                         {/* Header */}
-                        <div style={{ display: 'grid', gridTemplateColumns: gridTemplate, gap: '4px', padding: '8px 12px', background: 'rgba(212,175,55,0.06)', borderBottom: '2px solid rgba(212,175,55,0.2)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: gridTemplate, gap: '4px', padding: '8px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))' }}>
                             <span style={faHeaderStyle}></span>
                             <span style={faHeaderStyle} onClick={() => handleFaSort('name')}>Player{faSortIndicator('name')}</span>
                             {visibleFaCols.map(k => {
@@ -1162,41 +1148,41 @@
                                     if (rolling > 0) { ppg = rolling; ppgMarker = ' · L' + n; }
                                     else { ppgMarker = ' · Szn'; }
                                 }
-	                                const dhqCol = dhq >= 7000 ? '#2ECC71' : dhq >= 4000 ? '#3498DB' : dhq >= 2000 ? 'var(--silver)' : 'rgba(255,255,255,0.25)';
+	                                const dhqCol = dhq >= 7000 ? 'var(--good)' : dhq >= 4000 ? 'var(--k-3498db, #3498db)' : dhq >= 2000 ? 'var(--silver)' : 'var(--ov-7, rgba(255,255,255,0.25))';
 	                                const faab = faabSuggest(dhq, pos);
 		                                const peakYrs = peakYearsFor(pos, p.age);
 		                                const valueYrs = valueYearsFor(pos, p.age);
 		                                const peakLabel = peakYrs >= 4 ? 'Rising' : peakYrs >= 1 ? 'Prime' : valueYrs >= 1 ? 'Vet' : 'Post';
-		                                const peakCol = peakYrs >= 4 ? '#2ECC71' : peakYrs >= 1 ? 'var(--gold)' : valueYrs >= 1 ? '#F0A500' : '#E74C3C';
+		                                const peakCol = peakYrs >= 4 ? 'var(--good)' : peakYrs >= 1 ? 'var(--gold)' : valueYrs >= 1 ? 'var(--warn)' : 'var(--bad)';
                                 const fit = fitRead(pos);
                                 const renderCell = (k) => {
                                     switch (k) {
-                                        case 'pos':        return <span style={{ fontSize: '0.76rem', fontWeight: 700, color: posColors[pos] || 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</span>;
-                                        case 'team':       return <span style={{ fontSize: '0.74rem', color: 'var(--silver)', fontWeight: 600 }}>{p.team || 'FA'}</span>;
-                                        case 'age':        return <span style={{ fontSize: '0.78rem', color: 'var(--silver)' }}>{p.age || '\u2014'}</span>;
-                                        case 'dhq':        return <span style={{ fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-body)', color: dhqCol }}>{dhq > 0 ? dhq.toLocaleString() : '\u2014'}</span>;
-                                        case 'ppg':        return <span style={{ fontSize: '0.78rem', color: ppg >= 10 ? '#2ECC71' : ppg >= 5 ? 'var(--silver)' : 'rgba(255,255,255,0.3)' }}>{ppg > 0 ? ppg : '\u2014'}{ppgMarker}</span>;
-                                        case 'peakYr':     return <span style={{ fontSize: '0.74rem', color: peakCol, fontWeight: 600 }}>{peakLabel}</span>;
-                                        case 'yrsExp':     return <span style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>{p.years_exp != null ? p.years_exp : '\u2014'}</span>;
-                                        case 'college':    return <span style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.college || '\u2014'}</span>;
-                                        case 'height':     return <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>{p.height ? Math.floor(p.height/12) + "'" + (p.height%12) + '"' : '\u2014'}</span>;
-                                        case 'weight':     return <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>{p.weight || '\u2014'}</span>;
-                                        case 'depthChart': return <span style={{ fontSize: '0.72rem', color: p.depth_chart_order != null ? 'var(--silver)' : 'rgba(255,255,255,0.3)' }}>{p.depth_chart_order != null ? pos + (p.depth_chart_order + 1) : '\u2014'}</span>;
-                                        case 'injury':     return <span style={{ fontSize: '0.72rem', fontWeight: 600, color: p.injury_status ? '#E74C3C' : 'rgba(255,255,255,0.3)' }}>{p.injury_status || '—'}</span>;
-                                        case 'faab':       return <span style={{ fontSize: '0.74rem', color: 'var(--gold)', fontWeight: 700 }}>{faab ? '$' + faab.lo + '-' + faab.hi : '\u2014'}</span>;
-                                        case 'fit':        return <span style={{ fontSize: '0.72rem', color: fit.color, fontWeight: 700 }}>{fit.short}</span>;
+                                        case 'pos':        return <span style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: posColors[pos] || 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</span>;
+                                        case 'team':       return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontWeight: 600 }}>{p.team || 'FA'}</span>;
+                                        case 'age':        return <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)' }}>{p.age || '\u2014'}</span>;
+                                        case 'dhq':        return <span style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 700, fontFamily: 'var(--font-body)', color: dhqCol }}>{dhq > 0 ? dhq.toLocaleString() : '\u2014'}</span>;
+                                        case 'ppg':        return <span style={{ fontSize: 'var(--text-body, 1rem)', color: ppg >= 10 ? 'var(--good)' : ppg >= 5 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{ppg > 0 ? ppg : '\u2014'}{ppgMarker}</span>;
+                                        case 'peakYr':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: peakCol, fontWeight: 600 }}>{peakLabel}</span>;
+                                        case 'yrsExp':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>{p.years_exp != null ? p.years_exp : '\u2014'}</span>;
+                                        case 'college':    return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.college || '\u2014'}</span>;
+                                        case 'height':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>{p.height ? Math.floor(p.height/12) + "'" + (p.height%12) + '"' : '\u2014'}</span>;
+                                        case 'weight':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>{p.weight || '\u2014'}</span>;
+                                        case 'depthChart': return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.depth_chart_order != null ? pos + (p.depth_chart_order + 1) : '\u2014'}</span>;
+                                        case 'injury':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: p.injury_status ? 'var(--bad)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.injury_status || '—'}</span>;
+                                        case 'faab':       return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 700 }}>{faab ? '$' + faab.lo + '-' + faab.hi : '\u2014'}</span>;
+                                        case 'fit':        return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: fit.color, fontWeight: 700 }}>{fit.short}</span>;
                                         default:           return <span>—</span>;
                                     }
                                 };
                                 return <div key={pid} role="button" tabIndex={0} title="Open player card" onClick={() => {
                                     openFaPlayer(pid);
-                                }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFaPlayer(pid); } }} style={{ display: 'grid', gridTemplateColumns: gridTemplate, background: faSelectedPid === pid ? 'rgba(212,175,55,0.08)' : 'transparent', gap: '4px', padding: '7px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', alignItems: 'center', transition: 'background 0.1s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                    <div className={'wr-ring wr-ring-' + pos} style={{ width: '26px', height: '26px', borderRadius: '50%', overflow: 'hidden', background: 'rgba(212,175,55,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        <img src={'https://sleepercdn.com/content/nfl/players/' + pid + '.jpg'} alt="" style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }} onError={e => { e.target.style.display='none'; const s=document.createElement('span'); s.style.cssText='font-size:10px;font-weight:700;color:var(--gold)'; s.textContent=((p.first_name||'?')[0]+(p.last_name||'?')[0]).toUpperCase(); e.target.after(s); }} />
+                                }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFaPlayer(pid); } }} style={{ display: 'grid', gridTemplateColumns: gridTemplate, background: faSelectedPid === pid ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'transparent', gap: '4px', padding: '7px 12px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))', cursor: 'pointer', alignItems: 'center', transition: 'background 0.1s' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <div className={'wr-ring wr-ring-' + pos} style={{ width: '26px', height: '26px', borderRadius: '50%', overflow: 'hidden', background: 'var(--acc-fill3, rgba(212,175,55,0.15))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <img src={'https://sleepercdn.com/content/nfl/players/' + pid + '.jpg'} alt="" style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))' }} onError={e => { e.target.style.display='none'; const s=document.createElement('span'); s.style.cssText='font-size:var(--text-label, 0.75rem);font-weight:700;color:var(--gold)'; s.textContent=((p.first_name||'?')[0]+(p.last_name||'?')[0]).toUpperCase(); e.target.after(s); }} />
                                     </div>
                                     <div style={{ overflow: 'hidden' }}>
-                                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.full_name || 'Unknown'}</div>
-                                        <div style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.55 }}>{p.team || 'FA'}{p.injury_status ? ' · ' : ''}{p.injury_status ? <span style={{ color: '#E74C3C' }}>{p.injury_status}</span> : ''}</div>
+                                        <div style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 600, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.full_name || 'Unknown'}</div>
+                                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.55 }}>{p.team || 'FA'}{p.injury_status ? ' · ' : ''}{p.injury_status ? <span style={{ color: 'var(--bad)' }}>{p.injury_status}</span> : ''}</div>
                                     </div>
                                     {visibleFaCols.map(k => <span key={k} style={{ display: 'flex', alignItems: 'center' }}>{renderCell(k)}</span>)}
                                 </div>;
@@ -1207,42 +1193,42 @@
                 </section>
 
                 {/* ── RIGHT: PLAYER DETAIL PANEL ── */}
-                {faSelectedPid && selPlayer && <div style={{ position: 'fixed', right: 0, top: 0, bottom: 0, width: '380px', background: 'linear-gradient(135deg, var(--off-black), var(--charcoal))', borderLeft: '2px solid var(--gold)', zIndex: 200, overflowY: 'auto', padding: '20px', boxShadow: '-8px 0 32px rgba(0,0,0,0.5)' }}>
+                {faSelectedPid && selPlayer && <div style={{ position: 'fixed', right: 0, top: 0, bottom: 0, width: 'min(380px, 92vw)', background: 'linear-gradient(135deg, var(--off-black), var(--charcoal))', borderLeft: '2px solid var(--gold)', zIndex: 200, overflowY: 'auto', padding: '20px', boxShadow: '-8px 0 32px rgba(0,0,0,0.5)' }}>
                     {/* Close */}
-                    <button onClick={() => setFaSelectedPid(null)} style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(212,175,55,0.3)', color: 'var(--silver)', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&times;</button>
+                    <button onClick={() => setFaSelectedPid(null)} style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', color: 'var(--silver)', width: '44px', height: '44px', minWidth: '44px', minHeight: '44px', borderRadius: '50%', cursor: 'pointer', fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&times;</button>
 
                     {/* Photo + Name */}
                     <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '16px' }}>
-                        <div style={{ width: '64px', height: '64px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(212,175,55,0.1)', border: '2px solid rgba(212,175,55,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <div style={{ width: '64px', height: '64px', borderRadius: '12px', overflow: 'hidden', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             <img src={'https://sleepercdn.com/content/nfl/players/' + faSelectedPid + '.jpg'} style={{ width: '64px', height: '64px', objectFit: 'cover' }} onError={e => { e.target.style.display='none'; const s=document.createElement('span'); s.style.cssText='font-size:20px;font-weight:700;color:var(--gold)'; s.textContent=selInitials; e.target.after(s); }} />
                         </div>
                         <div>
                             <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.4rem', color: 'var(--white)', letterSpacing: '0.02em' }}>{selPlayer.full_name || 'Unknown'}</div>
-                            <div style={{ fontSize: '0.82rem', color: 'var(--silver)' }}>{selPos} · {selPlayer.team || 'FA'} · Age {selPlayer.age || '?'} · {selPlayer.years_exp ?? 0}yr exp{selPlayer.college ? ' · ' + selPlayer.college : ''}</div>
+                            <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)' }}>{selPos} · {selPlayer.team || 'FA'} · Age {selPlayer.age || '?'} · {selPlayer.years_exp ?? 0}yr exp{selPlayer.college ? ' · ' + selPlayer.college : ''}</div>
                         </div>
                     </div>
 
                     {/* Key Stats Grid */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' }}>
                         {[
-                            { val: selDhq > 0 ? selDhq.toLocaleString() : '\u2014', label: valueKpiLabel, col: selDhq >= 7000 ? '#2ECC71' : selDhq >= 4000 ? '#3498DB' : selDhq >= 2000 ? 'var(--silver)' : 'var(--silver)' },
-                            { val: selPpg || '\u2014', label: 'PPG', col: selPpg >= 10 ? '#2ECC71' : selPpg >= 5 ? 'var(--silver)' : 'var(--silver)' },
-	                            { val: selPeakYrs > 0 ? selPeakYrs + 'yr' : selValueYrs + 'yr', label: selPeakYrs > 0 ? 'PEAK LEFT' : 'VALUE LEFT', col: selPeakYrs >= 4 ? '#2ECC71' : selPeakYrs >= 1 ? 'var(--gold)' : selValueYrs >= 1 ? '#F0A500' : '#E74C3C' },
-                        ].map((s, i) => <div key={i} style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                            { val: selDhq > 0 ? selDhq.toLocaleString() : '\u2014', label: valueKpiLabel, col: selDhq >= 7000 ? 'var(--good)' : selDhq >= 4000 ? 'var(--k-3498db, #3498db)' : selDhq >= 2000 ? 'var(--silver)' : 'var(--silver)' },
+                            { val: selPpg || '\u2014', label: 'PPG', col: selPpg >= 10 ? 'var(--good)' : selPpg >= 5 ? 'var(--silver)' : 'var(--silver)' },
+	                            { val: selPeakYrs > 0 ? selPeakYrs + 'yr' : selValueYrs + 'yr', label: selPeakYrs > 0 ? 'PEAK LEFT' : 'VALUE LEFT', col: selPeakYrs >= 4 ? 'var(--good)' : selPeakYrs >= 1 ? 'var(--gold)' : selValueYrs >= 1 ? 'var(--warn)' : 'var(--bad)' },
+                        ].map((s, i) => <div key={i} style={{ textAlign: 'center', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px', padding: '10px 6px', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.3rem', fontWeight: 600, color: s.col }}>{s.val}</div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</div>
+                            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</div>
                         </div>)}
                     </div>
 
                     {/* FAAB Recommendation */}
-                    {selFaab && <div style={{ background: 'rgba(212,175,55,0.06)', border: '1px solid rgba(212,175,55,0.25)', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
-                        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.82rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>FAAB Recommendation</div>
+                    {selFaab && <div style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+                        <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>FAAB Recommendation</div>
                         <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.8rem', fontWeight: 600, color: 'var(--gold)' }}>{'$' + selFaab.lo + ' \u2013 $' + selFaab.hi}</div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginTop: '4px' }}>Suggested: <strong style={{ color: 'var(--white)' }}>{'$' + selFaab.sug}</strong> of ${remaining} remaining</div>
+                        <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginTop: '4px' }}>Suggested: <strong style={{ color: 'var(--white)' }}>{'$' + selFaab.sug}</strong> of ${remaining} remaining</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
                             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: selFaab.confCol }} />
-                            <span style={{ fontSize: '0.78rem', color: selFaab.confCol, fontWeight: 600 }}>{selFaab.conf}</span>
-                            <span style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.6 }}>{selFaab.competitors} other team{selFaab.competitors !== 1 ? 's' : ''} need {selPos}</span>
+                            <span style={{ fontSize: 'var(--text-body, 1rem)', color: selFaab.confCol, fontWeight: 600 }}>{selFaab.conf}</span>
+                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6 }}>{selFaab.competitors} other team{selFaab.competitors !== 1 ? 's' : ''} need {selPos}</span>
                         </div>
                     </div>}
 
@@ -1250,20 +1236,17 @@
                     {assess && (() => {
                         const need = assess.needs?.find(n => n.pos === selPos);
                         const strength = assess.strengths?.includes(selPos);
-                        return <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
-                            <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.82rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>ROSTER FIT</div>
-                            {need && <div style={{ fontSize: '0.82rem', color: '#2ECC71', fontWeight: 600, marginBottom: '4px' }}>Fills {selPos} {need.urgency}</div>}
-                            {strength && <div style={{ fontSize: '0.82rem', color: 'var(--silver)', opacity: 0.7, marginBottom: '4px' }}>You already have {selPos} surplus — stash only</div>}
-                            {!need && !strength && <div style={{ fontSize: '0.82rem', color: 'var(--silver)', marginBottom: '4px' }}>Depth add at {selPos}</div>}
-                            <div style={{ fontSize: '0.76rem', color: 'var(--silver)', opacity: 0.6 }}>
-	                                {selPeakYrs >= 4 ? (skinFeatures.showDynastyValue === false ? 'Long value window - upside add' : 'Long dynasty window - buy low candidate') : selPeakYrs >= 1 ? 'In production window - immediate contributor' : selValueYrs >= 1 ? 'Veteran value window - short-term contributor' : 'Past value window - short-term rental only'}
-                            </div>
+                        return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+                            <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>ROSTER FIT</div>
+                            {need && <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--k-2ecc71, #2ecc71)', fontWeight: 600, marginBottom: '4px' }}>Fills {selPos} {need.urgency}</div>}
+                            {strength && <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.7, marginBottom: '4px' }}>You already have {selPos} surplus — stash only</div>}
+                            {!need && !strength && <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginBottom: '4px' }}>Depth add at {selPos}</div>}
                         </div>;
                     })()}
 
                     {/* Season Stats */}
                     {selStats.gp > 0 && <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.82rem', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>SEASON STATS</div>
+                        <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>SEASON STATS</div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                             {[
                                 ['Games', selStats.gp],
@@ -1272,15 +1255,15 @@
                                 selStats.pass_yd ? ['Pass Yds', Math.round(selStats.pass_yd).toLocaleString()] : selStats.rush_yd ? ['Rush Yds', Math.round(selStats.rush_yd).toLocaleString()] : selStats.rec ? ['Receptions', selStats.rec] : null,
                                 selStats.pass_td ? ['Pass TD', selStats.pass_td] : selStats.rush_td ? ['Rush TD', selStats.rush_td] : selStats.rec_td ? ['Rec TD', selStats.rec_td] : null,
                                 selStats.rec_yd ? ['Rec Yds', Math.round(selStats.rec_yd).toLocaleString()] : null,
-                            ].filter(Boolean).map(([label, val], i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
-                                <span style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>{label}</span>
-                                <span style={{ fontSize: '0.78rem', color: 'var(--white)', fontWeight: 600 }}>{val}</span>
+                            ].filter(Boolean).map(([label, val], i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '4px' }}>
+                                <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 }}>{label}</span>
+                                <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--white)', fontWeight: 600 }}>{val}</span>
                             </div>)}
                         </div>
                     </div>}
 
                     {/* Physical */}
-                    {(selPlayer.height || selPlayer.weight) && <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '16px' }}>
+                    {(selPlayer.height || selPlayer.weight) && <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '16px' }}>
                         {selPlayer.height ? Math.floor(selPlayer.height/12) + "'" + (selPlayer.height%12) + '"' : ''}{selPlayer.weight ? ' · ' + selPlayer.weight + 'lbs' : ''}
                     </div>}
 

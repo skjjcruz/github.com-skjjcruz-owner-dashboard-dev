@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://c2-football.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hovnqztlbsgsywrbidbh.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <title>Draft Command Center - Dynasty HQ</title>
@@ -60,7 +60,8 @@
             padding: 0.6rem;
             box-sizing: border-box;
         }
-        @media (max-width: 900px) { .wr-grid { grid-template-columns: 1fr; height: auto; overflow: visible; } }
+        @media (min-width: 1024px) and (max-width: 1200px) { .wr-grid { grid-template-columns: 1fr 320px 340px; } }
+        @media (max-width: 1023px) { .wr-grid { grid-template-columns: 1fr; height: auto; overflow: visible; } }
 
         /* ---- Panels ---- */
         .panel { display: flex; flex-direction: column; overflow: hidden; background: rgba(10,10,10,0.85); border: 2px solid rgba(212,175,55,0.2); border-radius: 10px; }
@@ -122,6 +123,15 @@
         .ai-chat-input { width: 100%; background: var(--charcoal); border: 1.5px solid rgba(212,175,55,0.25); color: var(--white); font-family: 'Inter', sans-serif; font-size: 0.74rem; padding: 0.5rem 0.6rem; border-radius: 5px; resize: vertical; min-height: 58px; margin-bottom: 0.6rem; box-sizing: border-box; }
         .ai-chat-input:focus { outline: none; border-color: var(--gold); }
         .ai-error-msg { color: #E74C3C; font-size: 0.73rem; padding: 0.5rem 0; }
+
+        /* ---- Touch hit-area targets (tablet / coarse pointer) ---- */
+        @media (pointer: coarse) {
+            .back-btn,
+            .league-select,
+            .filter-btn,
+            .ai-mode-btn { min-height: 44px; }
+            .player-row { min-height: 44px; }
+        }
     </style>
 </head>
 <body>
@@ -722,7 +732,7 @@
                         <button className="back-btn" onClick={() => window.location.href='index.html'}>&larr; Dashboard</button>
                         <div className="wr-title">&#9965; {selectedYear} DRAFT COMMAND CENTER</div>
                         <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)}
-                            style={{ background:'var(--charcoal)', border:'1px solid rgba(212,175,55,0.4)', borderRadius:'4px', color:'var(--gold)', fontFamily:'Inter,sans-serif', fontWeight:'700', fontSize:'0.72rem', padding:'0.18rem 0.45rem', cursor:'pointer', outline:'none', flexShrink:0 }}>
+                            style={{ background:'var(--charcoal)', border:'1px solid rgba(212,175,55,0.4)', borderRadius:'4px', color:'var(--gold)', fontFamily:'Inter,sans-serif', fontWeight:'700', fontSize:'0.72rem', padding:'0.18rem 0.45rem', minHeight:'44px', cursor:'pointer', outline:'none', flexShrink:0 }}>
                             {AVAILABLE_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
                         </select>
                         <select className="league-select" value={leagueId} onChange={e => setLeagueId(e.target.value)}>

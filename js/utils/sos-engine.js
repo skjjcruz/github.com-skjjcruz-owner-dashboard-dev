@@ -173,11 +173,11 @@
 
     // ── sosLabel — human-readable label + color for a SOS rank ────────────────
     function sosLabel(rank) {
-        if (rank >= 25) return { label: 'Easy',      color: '#2ECC71' };
-        if (rank >= 20) return { label: 'Favorable', color: '#1ABC9C' };
+        if (rank >= 25) return { label: 'Easy',      color: 'var(--k-2ecc71, #2ecc71)' };
+        if (rank >= 20) return { label: 'Favorable', color: 'var(--k-1abc9c, #1abc9c)' };
         if (rank >= 12) return { label: 'Neutral',   color: 'var(--silver)' };
-        if (rank >=  7) return { label: 'Tough',     color: '#F0A500' };
-        return              { label: 'Hard',      color: '#E74C3C' };
+        if (rank >=  7) return { label: 'Tough',     color: 'var(--k-f0a500, #f0a500)' };
+        return              { label: 'Hard',      color: 'var(--k-e74c3c, #e74c3c)' };
     }
 
     // ── Module state ──────────────────────────────────────────────────────────

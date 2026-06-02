@@ -11,6 +11,9 @@
 (function() {
     'use strict';
 
+    // Seeded phrase variation so projected picks don't all read identically.
+    const avPick = (seed, arr) => (window.AlexVoice ? window.AlexVoice.pick(seed, arr) : arr[0]);
+
     const PRESETS = [
         {
             id: 'chalk',
@@ -487,9 +490,16 @@
 
     function buildNote(slot, player, drivers, alternatives, confidence) {
         const owner = slot.ownerName || ('Team ' + slot.slot);
-        const driverText = drivers.map(d => d.label).join(', ');
-        const altText = alternatives.length ? ' Alternate: ' + alternatives.map(p => p.name).join(', ') + '.' : '';
-        return owner + ' projects to take ' + player.name + ' (' + player.pos + ') on ' + driverText + '. Confidence ' + confidence + '.' + altText;
+        const driverText = firstDriverPhrase(drivers);
+        const altText = alternatives.length ? ' Could pivot to ' + alternatives.map(p => p.name).join(' or ') + '.' : '';
+        const seed = 'amnote:' + slot.overall + ':' + (player.pid || player.name);
+        const core = avPick(seed, [
+            owner + ' goes ' + player.name + ' (' + player.pos + ') here — ' + driverText + '.',
+            'I\'ve got ' + owner + ' on ' + player.name + ' (' + player.pos + '), driven by ' + driverText + '.',
+            'Look for ' + owner + ' to grab ' + player.name + ' (' + player.pos + ') on ' + driverText + '.',
+            owner + ' lands ' + player.name + ' (' + player.pos + ') — ' + driverText + ' makes the call.',
+        ]);
+        return core + ' (' + confidence + ' confidence.)' + altText;
     }
 
     function confidenceLabel(score, runnerUp, drivers) {
@@ -544,49 +554,103 @@
             ? alternatives.slice(0, 2).map(p => p.name + ' (' + p.pos + ')').join(' or ')
             : '';
         const isUser = idKey(slot.rosterId) === idKey(state?.userRosterId) || (!slot.rosterId && Number(slot.slot) === Number(state?.userSlot));
+        const seed = 'amc:' + slot.overall + ':' + (player.pid || player.name);
 
         let teamImpact;
         if (hitsNeed) {
-            teamImpact = team + ' is using this pick to patch a real ' + pos + ' pressure point instead of staying purely BPA.';
+            teamImpact = avPick(seed + ':ti', [
+                team + ' is spending this pick to patch a real ' + pos + ' hole rather than just taking the best name left.',
+                'This is ' + team + ' fixing a ' + pos + ' problem — need over pure BPA.',
+                team + ' had ' + pos + ' circled, and they\'re solving it here.',
+            ]);
         } else if (leansStrength) {
-            teamImpact = team + ' is doubling down on a roster strength, which usually means they are building a weekly edge instead of filling holes.';
+            teamImpact = avPick(seed + ':ti', [
+                team + ' is doubling down on a strength — usually a sign they\'re chasing a weekly edge, not filling holes.',
+                'Interesting — ' + team + ' is stacking ' + pos + ' where they\'re already strong. That\'s an edge play.',
+                team + ' leans into a position of strength here instead of patching elsewhere.',
+            ]);
         } else if (driverHas(drivers, 'tier')) {
-            teamImpact = team + ' is protecting access to the current tier before the room forces a drop-off.';
+            teamImpact = avPick(seed + ':ti', [
+                team + ' is grabbing the tier before the room forces a drop-off.',
+                'This is ' + team + ' protecting access to the ' + pos + ' tier before it cliffs.',
+                team + ' jumps the tier here — get in before the value\'s gone.',
+            ]);
         } else {
-            teamImpact = team + ' is keeping the build flexible and taking the cleanest value profile on the board.';
+            teamImpact = avPick(seed + ':ti', [
+                team + ' keeps the build flexible and takes the cleanest value on the board.',
+                'No drama — ' + team + ' just takes the best value profile available.',
+                team + ' stays flexible and lets the board come to them.',
+            ]);
         }
 
         let ownerFit;
         if (driverHas(drivers, 'owner_history')) {
-            ownerFit = 'This tracks with the ' + draftLabel + ' owner profile';
-            if (topReason?.detail) ownerFit += ': ' + topReason.detail;
-            else ownerFit += ' and the historical lean toward ' + pos + '.';
+            const lead = avPick(seed + ':of', [
+                'Right in line with the ' + draftLabel + ' owner profile',
+                'Classic ' + draftLabel + ' move for this owner',
+                'This is the ' + draftLabel + ' tendency showing up',
+            ]);
+            ownerFit = lead + (topReason?.detail ? ': ' + topReason.detail : ', given the historical lean toward ' + pos + '.');
+            if (!topReason?.detail && !/\.$/.test(ownerFit)) ownerFit += '.';
         } else if (driverHas(drivers, 'history_pace')) {
-            ownerFit = 'I am letting the league historical pace correct the board so the projection does not manufacture a position run the room has not shown before.';
+            ownerFit = avPick(seed + ':of', [
+                'I\'m letting the league\'s historical pace steer this so the projection doesn\'t invent a run the room has never actually shown.',
+                'This leans on how this league has actually drafted, not a manufactured position run.',
+            ]);
         } else if (driverHas(drivers, 'need')) {
-            ownerFit = 'This is more roster-context driven than pure owner habit, with ' + confidenceText + ' confidence in the historical profile.';
+            ownerFit = avPick(seed + ':of', [
+                'More about roster context than owner habit here, with ' + confidenceText + ' confidence in the profile.',
+                'This one\'s need-driven more than personality — ' + confidenceText + ' read on the owner profile.',
+            ]);
         } else if (basis === 'my') {
-            ownerFit = 'Through your board lens, I read this as a pick your prep already had elevated.';
+            ownerFit = avPick(seed + ':of', [
+                'Through your board, this is a name your prep already had elevated.',
+                'Your own board had this guy up, so it lines up with how you see it.',
+            ]);
         } else {
-            ownerFit = 'Owner history is not the main signal here; board value and room shape are doing most of the work.';
+            ownerFit = avPick(seed + ':of', [
+                'Owner history isn\'t the driver here — board value and room shape are doing the work.',
+                'This is less about tendencies and more about where the value sits.',
+            ]);
         }
 
         let roomImpact;
         if (isUser) {
-            roomImpact = 'For your build, this becomes the anchor pick the rest of the mock should grade against.';
+            roomImpact = avPick(seed + ':ri', [
+                'For our build, this is the anchor pick the rest of the mock grades against.',
+                'This is our pick — everything else in the mock keys off it.',
+            ]);
         } else if (slot.overall < Number(state?.userNextPickOverall || Infinity)) {
-            roomImpact = 'For you, it removes one of the clean ' + pos + ' options before your next pick and tightens that position tier.';
+            roomImpact = avPick(seed + ':ri', [
+                'For us, that\'s one fewer clean ' + pos + ' before our next pick — the tier just got tighter.',
+                'Watch the impact on us: a ' + pos + ' option comes off before we\'re up.',
+            ]);
         } else if (driverHas(drivers, 'trade_logic') || tuning.tradeActivity >= 75) {
-            roomImpact = 'It also creates a trade-pressure signal because this is the kind of tier chase that can pull offers into the room.';
+            roomImpact = avPick(seed + ':ri', [
+                'This is the kind of tier chase that can pull trade offers into the room.',
+                'A move like this tends to spark trade pressure around the board.',
+            ]);
         } else {
-            roomImpact = 'It nudges the room toward ' + pos + ' and changes which alternatives should survive to later picks.';
+            roomImpact = avPick(seed + ':ri', [
+                'It nudges the room toward ' + pos + ' and reshapes which alternatives survive to later picks.',
+                'Expect the room to tilt toward ' + pos + ' after this one.',
+            ]);
         }
 
-        const boardRead = player.name + ' at #' + slot.overall + ' ' + boardWindowPhrase(player, slot) + ' with ' + confidence + ' confidence.';
-        const fallbackAlt = altText ? 'I had ' + altText + ' as the pivot path.' : 'I do not see a cleaner pivot in the immediate pocket.';
+        const boardRead = avPick(seed + ':br', [
+            player.name + ' at #' + slot.overall + ' ' + boardWindowPhrase(player, slot) + ' (' + confidence + ' confidence).',
+            'At #' + slot.overall + ', ' + player.name + ' ' + boardWindowPhrase(player, slot) + ' — ' + confidence + ' confidence.',
+        ]);
+        const fallbackAlt = altText
+            ? avPick(seed + ':pv', ['I had ' + altText + ' as the pivot path.', 'If not, ' + altText + ' was the fallback.'])
+            : avPick(seed + ':pv', ['No cleaner pivot in the immediate pocket.', 'Nothing better to pivot to right here.']);
         const summary = teamImpact + ' ' + ownerFit + ' ' + roomImpact;
         return {
-            headline: 'Alex: ' + team + ' takes ' + player.name + ' as a ' + pos + ' signal.',
+            headline: avPick(seed + ':hl', [
+                'Alex: ' + team + ' takes ' + player.name + ' as a ' + pos + ' signal.',
+                'Alex read — ' + team + ' grabs ' + player.name + ' (' + pos + ').',
+                'Alex: watch ' + team + ' land ' + player.name + ' at ' + pos + '.',
+            ]),
             teamImpact,
             ownerFit,
             boardRead,
@@ -778,7 +842,11 @@
         return {
             author: 'Alex Ingram',
             headline: (report?.label || 'League History') + ' projected mock - ' + roundLabel,
-            intro: 'I ran this like a pre-draft analyst note: owner DNA, league draft history, roster needs, and the current board all matter. The main pressure before your path is ' + pressureText + '.',
+            intro: avPick('amintro:' + (report?.label || '') + ':' + pressureText, [
+                'I ran this like a pre-draft analyst note — owner DNA, league draft history, roster needs, and the live board all factored in. The main pressure ahead of your path is ' + pressureText + '.',
+                'Treat this like my scouting note before the draft: I weighed owner tendencies, this league\'s history, your needs, and the board. What to watch before you\'re up: ' + pressureText + '.',
+                'This is my projected read, not a guarantee — owner DNA, draft history, needs, and board value all in the mix. Biggest pressure before your pick: ' + pressureText + '.',
+            ]),
             userPath,
             pickLines: shown.map(pick => {
                 const drivers = firstDriverPhrase(pick.drivers);

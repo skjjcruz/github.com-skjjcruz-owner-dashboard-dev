@@ -67,6 +67,14 @@
         return Math.max(0, Math.min(100, n));
     }
 
+    // GM's Office "Roster Fit" slider (BPA ⇄ Need-driven). Used as a small nudge on
+    // how hard a package is to close — need-driven rooms hold assets a touch tighter.
+    function needFitFor(state) {
+        const n = Number(state?.draftTuning?.needFit);
+        if (!Number.isFinite(n)) return 60;
+        return Math.max(0, Math.min(100, n));
+    }
+
     function cpuOfferTradeActivityFor(state) {
         const historical = historicalDraftPickTradeSignal(state);
         return historical ? historical.activity : tradeActivityFor(state);
@@ -243,6 +251,81 @@
         return Math.max(52, Math.min(96, line));
     }
 
+    // ── GM's Office–driven package targeting ───────────────────────────────
+    // Auto-generated packages used to size the user's give to a flat ~0.9× of the
+    // value acquired — a structural underpay that never cleared a 62-96 buyer line,
+    // which is why the rail felt "low acceptance". Instead, derive the give/receive
+    // value RATIO that actually clears the partner's line, scaled by the user's GM's
+    // Office sliders (Trade Activity is the dominant lever; Roster Fit a small nudge).
+    //
+    // Returns r >= 1: for a package where the user ACQUIRES an asset, give r× the
+    // value acquired. For a package where the user RECEIVES picks for a fixed asset,
+    // take back at most 1/r of what they give (the most the partner says yes to).
+    function giveTargetMultiplier(state, persona, opts = {}) {
+        const line = (opts.acceptanceLine != null) ? opts.acceptanceLine : acceptanceLineFor(state, persona);
+        const activity = tradeActivityFor(state);
+        // Cushion above the bare line. Trade Activity dominates; Roster Fit nudges.
+        let cushion = 4 + Math.round((activity - 50) * 0.10);
+        cushion += Math.round((needFitFor(state) - 60) * 0.04);
+        const target = Math.max(52, Math.min(94, line + cushion));
+        const margin = Math.max(2, Math.min(44, target - 50));
+        // Invert the acceptance curve likelihood ≈ 50 + 200·(1 − 1/r) for r at `target`.
+        const r = 1 / (1 - margin / 200);
+        return Math.max(1.0, Math.min(1.6, r));
+    }
+
+    // User ACQUIRES an asset: build the give side up to the value that actually CLEARS
+    // the partner's buyer line, with the LEAST overpay. A flat value target overshoots
+    // badly with chunky picks (a single big pick blows past it), so instead add picks
+    // incrementally and stop the moment the package clears — trying both biggest-first
+    // (best when one pick clears) and smallest-first (finer increments when it doesn't),
+    // then keep whichever clears with the smaller give. If neither clears (a genuinely
+    // hard partner — e.g. a DOMINATOR at zero Trade Activity), fall back to the sane
+    // closed-form attempt; the moonshot fallback covers the no-path case.
+    function buildGiveToClear(state, persona, baseProposal, acquiredValue) {
+        const line = acceptanceLineFor(state, persona);
+        const tryOrder = (order) => {
+            const picks = remainingPicksByValue(state, state.userRosterId, baseProposal.myGive || [], order);
+            let proposal = baseProposal;
+            for (const pick of picks) {
+                if ((proposal.myGive || []).length >= 4) break;
+                proposal = { ...proposal, myGive: [...(proposal.myGive || []), pick] };
+                const ev = evaluateUserProposal(state, proposal, { preview: true, noCounter: true });
+                if ((ev.likelihood || 0) >= line) return { proposal, cleared: true };
+            }
+            return { proposal, cleared: false };
+        };
+        const give = (p) => proposalValue(state, p, 'my');
+        const clearing = [tryOrder('desc'), tryOrder('asc')].filter(r => r.cleared).map(r => r.proposal);
+        if (clearing.length) return clearing.sort((a, b) => give(a) - give(b))[0];
+        // Nothing clears (a genuinely hard partner — e.g. a DOMINATOR at zero Trade
+        // Activity): offer a clean single-pick opener rather than piling capital; the
+        // moonshot fallback provides the explicit overpay path when it stays declined.
+        return addUserPicksUntil(state, baseProposal, Math.round(Math.max(1, acquiredValue)), 1);
+    }
+
+    // User RECEIVES the partner's picks for a fixed asset (move-down / sell-player).
+    // Add their picks (best first) only while the package still CLEARS the buyer line,
+    // so the user gets the most value back without tipping the partner into a decline.
+    // This responds to the GM's Office sliders implicitly (a higher line ⇒ less comes
+    // back) and avoids the chunky-pick overshoot a fixed value target produces.
+    function buildReceiveToClear(state, persona, baseProposal, targetRosterId) {
+        const line = acceptanceLineFor(state, persona);
+        const picks = remainingPicksByValue(state, targetRosterId, baseProposal.theirGive || [], 'desc');
+        let proposal = baseProposal;
+        for (const pick of picks) {
+            if ((proposal.theirGive || []).length >= 3) break;
+            const candidate = { ...proposal, theirGive: [...(proposal.theirGive || []), pick] };
+            const ev = evaluateUserProposal(state, candidate, { preview: true, noCounter: true });
+            if ((ev.likelihood || 0) >= line) proposal = candidate; else break;
+        }
+        // Guarantee the package is two-sided even against a partner who clears nothing.
+        if (!(proposal.theirGive || []).length && picks[0]) {
+            proposal = { ...proposal, theirGive: [picks[0]] };
+        }
+        return proposal;
+    }
+
     function packageComplexityPenalty(proposal) {
         const assets =
             (proposal.myGive || []).length +
@@ -282,12 +365,27 @@
             + faabToDhq(proposal.theirGiveFaab);
         const realism = validateProposalRealism(state, proposal);
 
-        const taxes = helpers.calcPsychTaxes(
+        const basePsychTaxes = helpers.calcPsychTaxes(
             myPersona.assessment,
             theirPersona.assessment,
             theirPersona.tradeDna?.key,
             theirPersona.posture
         );
+
+        // Grudge tax: logged trade-history sentiment between these two owners. Mirrors
+        // the main Trade Center analyzer, which folds it into the acceptance math and
+        // surfaces it as a tax row. 0 (and omitted) when no grudges are on record.
+        const grudgeTotal = helpers.calcGrudgeTax
+            ? (helpers.calcGrudgeTax(state.userRosterId, proposal.targetRosterId, window._tcGrudges) || 0)
+            : 0;
+        const taxes = grudgeTotal !== 0
+            ? [...basePsychTaxes, {
+                name: 'Grudge Tax',
+                impact: grudgeTotal,
+                type: grudgeTotal > 0 ? 'BONUS' : 'TAX',
+                desc: 'Logged trade-history sentiment between you two.',
+            }]
+            : basePsychTaxes;
 
         let likelihood = helpers.calcAcceptanceLikelihood(
             myGiveDHQ,
@@ -326,11 +424,16 @@
         const grade = helpers.fairnessGrade(myGiveDHQ, theirGiveDHQ);
         if (realism.blocked) likelihood = Math.min(2, likelihood);
 
+        const netModifier = taxes.reduce((s, t) => s + (Number(t.impact) || 0), 0)
+            + modifiers.reduce((s, m) => s + (Number(m.impact) || 0), 0);
+
         const evaluation = {
             likelihood,
             grade,
             taxes,
             modifiers,
+            grudgeTax: grudgeTotal,
+            netModifier,
             realism,
             realismFlags: realism.flags,
             myGiveDHQ,
@@ -616,6 +719,81 @@
         };
     }
 
+    // ── buildSuggestionReasoning — interface contract consumed by ──────
+    // command-center.js (trade-up reasoning) AND the proposer's SuggestionRail.
+    // Shape: { headline: string, drivers: [{ label, detail, tone }] }
+    // where tone ∈ 'good' | 'bad' | 'neutral'. Derived purely from the
+    // evaluation object already computed — never recomputes value tables.
+    function buildSuggestionReasoning(state, persona, evaluation, opts = {}) {
+        const drivers = [];
+        const myGiveDHQ = Math.round(Number(evaluation?.myGiveDHQ || 0));
+        const theirGiveDHQ = Math.round(Number(evaluation?.theirGiveDHQ || 0));
+        const acquired = opts.acquiredPick || null;
+        const acquiredVal = acquired ? pickValueFor(state, acquired) : theirGiveDHQ;
+        const slotLabel = acquired
+            ? 'R' + acquired.round + '.' + String(acquired.slot || 0).padStart(2, '0')
+            : 'their slot';
+
+        // Net DHQ — what you pay vs the value you acquire.
+        if (myGiveDHQ > 0 || theirGiveDHQ > 0) {
+            const net = theirGiveDHQ - myGiveDHQ;
+            drivers.push({
+                label: 'Net value',
+                detail: 'You pay ~' + myGiveDHQ.toLocaleString() + ', get ~' + theirGiveDHQ.toLocaleString()
+                    + (acquired ? ' (' + slotLabel + ' slot)' : ''),
+                tone: net >= 0 ? 'good' : (net >= -Math.max(150, myGiveDHQ * 0.08) ? 'neutral' : 'bad'),
+            });
+        }
+
+        // Timing — the +10% / +5% move-up motive from timingModifier.
+        const timingMod = (evaluation?.modifiers || []).find(m => /move-up|pick-window|timing/i.test(m.label || ''));
+        if (timingMod && Number(timingMod.impact)) {
+            const up = Number(timingMod.impact) > 0;
+            drivers.push({
+                label: 'Timing',
+                detail: (up ? '+' : '') + timingMod.impact + '% — ' + (up ? 'they value moving up' : 'they surrender the earlier window'),
+                tone: up ? 'good' : 'bad',
+            });
+        }
+
+        // Their buyer line / DNA — where the deal has to clear.
+        const dnaLabel = persona?.tradeDna?.label || persona?.draftDna?.label || 'Balanced';
+        const line = Math.round(Number(evaluation?.acceptanceLine || acceptanceLineFor(state, persona) || 70));
+        drivers.push({
+            label: 'Buyer line',
+            detail: dnaLabel + ' profile clears at ' + line + '%',
+            tone: 'neutral',
+        });
+
+        // Value cliff / window — why act now on the earlier pick.
+        if (acquired) {
+            const cliff = opts.cliffNote ? ' ' + opts.cliffNote : '';
+            drivers.push({
+                label: 'Why now',
+                detail: 'Buy the earlier ' + slotLabel + ' window before the tier breaks.' + cliff,
+                tone: 'good',
+            });
+        }
+
+        const likelihood = Math.round(Number(evaluation?.likelihood || 0));
+        const cleared = likelihood >= line;
+        let headline = opts.headline;
+        if (!headline) {
+            if (opts.isMoonshot) {
+                headline = 'Long shot — you overpay to force the window open.';
+            } else if (acquired) {
+                headline = cleared
+                    ? 'Pay a small premium to jump to ' + slotLabel + ' — it clears their line.'
+                    : 'Package your capital against their buyer line for the earlier ' + slotLabel + ' slot.';
+            } else {
+                headline = cleared
+                    ? 'Value and owner profile both say this can get done.'
+                    : 'Close, but the package is still light against their buyer line.';
+            }
+        }
+        return { headline, drivers };
+    }
+
     function buildTradeSuggestions(state, targetRosterId, opts = {}) {
         const persona = state.personas?.[targetRosterId];
         const myPersona = state.personas?.[state.userRosterId];
@@ -625,26 +803,27 @@
         const seen = new Set();
         const myPicksHigh = remainingPicksByValue(state, state.userRosterId, [], 'desc');
         const myPicksLow = remainingPicksByValue(state, state.userRosterId, [], 'asc');
-        const theirPicksHigh = remainingPicksByValue(state, targetRosterId, [], 'desc');
         const theirPicksLow = remainingPicksByValue(state, targetRosterId, [], 'asc');
         const theirNeeds = personaNeeds(persona);
         const myNeedFits = topPlayersFor(state, state.userRosterId, 4, { matchNeeds: theirNeeds });
         const myTopPlayers = topPlayersFor(state, state.userRosterId, 4);
         const theirTopPlayers = topPlayersFor(state, targetRosterId, 4);
 
-        function push(id, label, intent, rationale, proposal) {
-            if (!proposalHasAssets(proposal)) return;
-            if (!(proposal.myGive || []).length && !(proposal.myGivePlayers || []).length && !proposal.myGiveFaab) return;
-            if (!(proposal.theirGive || []).length && !(proposal.theirGivePlayers || []).length && !proposal.theirGiveFaab) return;
+        function push(id, label, intent, rationale, proposal, reasonOpts = {}) {
+            if (!proposalHasAssets(proposal)) return null;
+            if (!(proposal.myGive || []).length && !(proposal.myGivePlayers || []).length && !proposal.myGiveFaab) return null;
+            if (!(proposal.theirGive || []).length && !(proposal.theirGivePlayers || []).length && !proposal.theirGiveFaab) return null;
             const key = proposalKey(proposal);
-            if (seen.has(key)) return;
+            if (seen.has(key)) return null;
             seen.add(key);
             const evaluation = evaluateUserProposal(state, proposal, { preview: true, noCounter: true });
-            suggestions.push({
+            const reasoning = buildSuggestionReasoning(state, persona, evaluation, reasonOpts);
+            const suggestion = {
                 id,
                 label,
                 intent,
                 rationale,
+                reasoning,
                 proposal,
                 evaluation,
                 likelihood: evaluation.likelihood || 0,
@@ -654,26 +833,44 @@
                     : 'declined',
                 myGiveDHQ: evaluation.myGiveDHQ || 0,
                 theirGiveDHQ: evaluation.theirGiveDHQ || 0,
-            });
+            };
+            suggestions.push(suggestion);
+            return suggestion;
         }
 
-        if (theirPicksHigh[0]) {
-            const targetPickValue = pickValueFor(state, theirPicksHigh[0]);
-            let proposal = normalizeProposal(targetRosterId, { theirGive: [theirPicksHigh[0]] });
-            proposal = addUserPicksUntil(state, proposal, Math.round(targetPickValue * 0.92), 3);
+        // Target the partner's EARLIEST remaining pick (the one literally on the
+        // clock when this partner is on the clock), not just their highest-value
+        // pick. pickValueFor can return 0 for a slot the value tables miss, which
+        // would otherwise sort the on-clock pick last and make Move Up target a
+        // later pick — leaving the on-clock window with nothing that acquires it.
+        const theirEarliest = remainingPicksFor(state, targetRosterId, [])
+            .slice()
+            .sort((a, b) => Number(a.overall || 9999) - Number(b.overall || 9999))[0];
+        if (theirEarliest) {
+            const targetPickValue = pickValueFor(state, theirEarliest);
+            let proposal = normalizeProposal(targetRosterId, { theirGive: [theirEarliest] });
+            // Build the user's give up to the value that clears the partner's buyer
+            // line (scaled by GM's Office sliders), not a flat underpay. Math.max(1, …)
+            // keeps the package two-sided even when the pick value resolves to 0.
+            proposal = buildGiveToClear(state, persona, proposal, Math.max(1, targetPickValue));
+            const earliestLabel = 'R' + theirEarliest.round + '.' + String(theirEarliest.slot || 0).padStart(2, '0');
             push(
                 'move-up',
                 'Move Up',
-                'Buy the earlier pick window',
+                'Buy the earlier ' + earliestLabel + ' window',
+                // Fallback rationale only — reasoning.headline (set below) is the
+                // dynamic, evaluation-aware version the UI surfaces.
                 'Packages your draft capital against their buyer line for an earlier slot.',
-                proposal
+                proposal,
+                { acquiredPick: theirEarliest }
             );
         }
 
         if (myPicksHigh[0] && theirPicksLow.length >= 2) {
-            const userPickValue = pickValueFor(state, myPicksHigh[0]);
             let proposal = normalizeProposal(targetRosterId, { myGive: [myPicksHigh[0]] });
-            proposal = addTargetPicksUntil(state, proposal, targetRosterId, Math.round(userPickValue * 0.88), 3);
+            // User receives the partner's picks: take back the most value that still
+            // clears their buyer line (tighter line ⇒ less volume comes back).
+            proposal = buildReceiveToClear(state, persona, proposal, targetRosterId);
             push(
                 'move-down',
                 'Move Down',
@@ -686,7 +883,8 @@
         if (theirTopPlayers[0]) {
             const targetPlayer = theirTopPlayers[0];
             let proposal = normalizeProposal(targetRosterId, { theirGivePlayers: [targetPlayer.pid] });
-            proposal = addUserPicksUntil(state, proposal, Math.round(targetPlayer.value * 0.94), 3);
+            // Acquiring their player: build the give up to clear the buyer line.
+            proposal = buildGiveToClear(state, persona, proposal, targetPlayer.value);
             push(
                 'buy-player',
                 'Buy Player',
@@ -699,7 +897,8 @@
         const sellPlayer = myNeedFits[0] || myTopPlayers[0];
         if (sellPlayer) {
             let proposal = normalizeProposal(targetRosterId, { myGivePlayers: [sellPlayer.pid] });
-            proposal = addTargetPicksUntil(state, proposal, targetRosterId, Math.round(sellPlayer.value * 0.9), 3);
+            // Selling a player for their picks: take back the most value that clears.
+            proposal = buildReceiveToClear(state, persona, proposal, targetRosterId);
             push(
                 'sell-player',
                 'Sell Player',
@@ -739,7 +938,7 @@
             }
         }
 
-        return suggestions
+        const ranked = suggestions
             .sort((a, b) => {
                 const aClear = a.likelihood >= a.acceptanceLine ? 1 : 0;
                 const bClear = b.likelihood >= b.acceptanceLine ? 1 : 0;
@@ -747,6 +946,49 @@
                 return b.likelihood - a.likelihood;
             })
             .slice(0, 4);
+
+        // Moonshot fallback: when NO normal package even clears the counter
+        // line (all declined, or nothing generated), the user has no path to
+        // "get in." Build exactly ONE aggressively-overpaying deal to acquire
+        // the partner's earliest pick so the rail always offers a move.
+        const hasViable = ranked.some(s => s.verdict !== 'declined');
+        if (!hasViable && theirEarliest) {
+            const targetPickValue = Math.max(1, pickValueFor(state, theirEarliest));
+            const overpayTarget = Math.round(targetPickValue * 1.3);
+            let moonshot = normalizeProposal(targetRosterId, { theirGive: [theirEarliest] });
+            moonshot = addUserPicksUntil(state, moonshot, overpayTarget, 4);
+            // If picks alone can't reach the overpay target, sweeten with FAAB
+            // (converted via the same conservative ratio the evaluator uses).
+            const shortfall = overpayTarget - proposalValue(state, moonshot, 'my');
+            if (shortfall > 0) {
+                moonshot = { ...moonshot, myGiveFaab: Math.min(1000, Math.round(shortfall / 0.7)) };
+            }
+            const moonEval = evaluateUserProposal(state, moonshot, { preview: true, noCounter: true });
+            const earliestLabel = 'R' + theirEarliest.round + '.' + String(theirEarliest.slot || 0).padStart(2, '0');
+            ranked.push({
+                id: 'moonshot',
+                label: 'MOONSHOT',
+                intent: 'Overpay to force the ' + earliestLabel + ' window open',
+                rationale: 'Aggressive overpay — low odds, but the only path in when nothing else clears their line.',
+                reasoning: buildSuggestionReasoning(state, persona, moonEval, {
+                    acquiredPick: theirEarliest,
+                    isMoonshot: true,
+                    headline: 'Long shot — you overpay to force the window open.',
+                }),
+                proposal: moonshot,
+                evaluation: moonEval,
+                likelihood: moonEval.likelihood || 0,
+                acceptanceLine: moonEval.acceptanceLine || acceptanceLineFor(state, persona),
+                verdict: (moonEval.likelihood || 0) >= (moonEval.acceptanceLine || 70) ? 'accepted'
+                    : (moonEval.likelihood || 0) >= (moonEval.counterLine || 50) ? 'countered'
+                    : 'declined',
+                myGiveDHQ: moonEval.myGiveDHQ || 0,
+                theirGiveDHQ: moonEval.theirGiveDHQ || 0,
+                isMoonshot: true,
+            });
+        }
+
+        return ranked;
     }
 
     function buildLiveTradeWindows(state, opts = {}) {
@@ -766,9 +1008,35 @@
             if (!profile) return;
             const suggestions = buildTradeSuggestions(state, slot.rosterId);
             if (!suggestions.length) return;
-            const best = suggestions.find(s => s.likelihood >= s.acceptanceLine)
-                || suggestions.find(s => s.verdict === 'countered')
-                || suggestions[0];
+            // For the team on the clock (idx === 0), the window MUST headline a
+            // trade that actually acquires the pick on the clock. Otherwise the
+            // banner names the on-clock pick but recommends an unrelated package
+            // (Sell Player / Move Down / Buy Player), because "Move Up" is the
+            // costliest, lowest-acceptance option and loses the single headline slot
+            // under a pure likelihood sort. Prefer the acquires-on-clock suggestion;
+            // fall back to the old heuristic only if none exists.
+            const onClockKey = pickKey(slot);
+            const acquiresOnClock = s => (s.proposal?.theirGive || []).some(p => pickKey(p) === onClockKey);
+            const clears = s => s.likelihood >= s.acceptanceLine;
+            const countered = s => s.verdict === 'countered';
+            // 'declined' = below the partner's counter line — a non-starter not worth
+            // surfacing as a recommendation.
+            const isViable = s => !!s && s.verdict !== 'declined';
+            let best, viable;
+            if (idx === 0) {
+                best = suggestions.find(s => acquiresOnClock(s) && clears(s))
+                    || suggestions.find(s => acquiresOnClock(s) && countered(s))
+                    || suggestions.find(acquiresOnClock)
+                    || suggestions[0];
+                // Viable only when the headline both acquires the on-clock pick AND
+                // clears the partner's counter line. A 14%-acceptance Move Up (or no
+                // acquiring package at all) is flagged non-viable so the banner can
+                // read "No viable trade" instead of a misleading low-odds rec.
+                viable = isViable(best) && acquiresOnClock(best);
+            } else {
+                best = suggestions.find(clears) || suggestions.find(countered) || suggestions[0];
+                viable = isViable(best);
+            }
             if (!best) return;
             windows.push({
                 rosterId: slot.rosterId,
@@ -779,12 +1047,16 @@
                 likelihood: best.likelihood,
                 acceptanceLine: best.acceptanceLine,
                 verdict: best.verdict,
+                viable,
                 onClock: idx === 0,
                 picksAway: idx,
                 pickLabel: 'R' + slot.round + '.' + String(slot.slot || 0).padStart(2, '0'),
                 overall: slot.overall,
                 motive: best.intent || best.label,
                 reason: best.rationale,
+                // Trade-up reasoning contract (consumed by command-center.js):
+                // { headline, drivers:[{ label, detail, tone }] }.
+                reasoning: best.reasoning || null,
             });
         });
 
@@ -1053,6 +1325,7 @@
         computeProposalEvaluation,
         buildCounterOffer,
         buildTradeSuggestions,
+        buildSuggestionReasoning,
         buildLiveTradeWindows,
         describeTradePartner,
         validateProposalRealism,
@@ -1060,6 +1333,8 @@
         offerShape,
         negotiationReadFor,
         acceptanceLineFor,
+        giveTargetMultiplier,
+        needFitFor,
         pickValueFor,
         sumPickValue,
         playerValueFor,

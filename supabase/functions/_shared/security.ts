@@ -9,6 +9,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'http://127.0.0.1:3001',
   'http://127.0.0.1:3002',
   'https://jcc100218.github.io',
+  'https://c2-football.github.io',
   'https://warroom.skjjcruz.com',
 ];
 
