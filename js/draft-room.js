@@ -85,10 +85,22 @@
         // no stale-order clobber.
         const boardSyncSigRef = useRef('');
         const [draftedPids, setDraftedPids] = useState(new Set());
+        // Players already taken in the live draft. Seeded from the persisted
+        // live-sync state so a freshly opened Draft tab strikes them through
+        // immediately, then kept live by the wr:live-draft-picks broadcast the
+        // command center emits on every pick. Held apart from the manual "Off"
+        // marks in draftedPids so neither overwrites the other.
+        const [liveDraftedPids, setLiveDraftedPids] = useState(() => {
+            try {
+                const lid = window.S?.currentLeagueId || leagueKey;
+                const d = window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids;
+                return d ? new Set(Object.keys(d)) : new Set();
+            } catch (e) { return new Set(); }
+        });
         const [boardNotes, setBoardNotes] = useState({});
         const [boardTags, setBoardTags] = useState({}); // pid -> 'target'|'avoid'|'sleeper'|'must'
         const [boardMode, setBoardMode] = useState('dhq'); // 'dhq' | 'ai' | 'my'
-        const [myBoardOrder, setMyBoardOrder] = useState([]); // custom ordered pid array
+        const [myBoardOrder, setMyBoardOrder] = useState([]); // custom ordered pid array, reordered via drag
         const [boardPosFilter, setBoardPosFilter] = useState(''); // '' | 'QB' | 'RB' | 'WR' | 'TE' | 'DL' | 'LB' | 'DB'
         const [boardSearch, setBoardSearch] = useState(''); // player/team/college lookup
         const [boardTeamFilter, setBoardTeamFilter] = useState(''); // '' | NFL team abbr
@@ -96,7 +108,6 @@
         const [boardSort, setBoardSort] = useState({ key: 'dhq', dir: -1 }); // sortable columns
         const [expandedDraftPid, setExpandedDraftPid] = useState(null);
         const [scoutDrawerPid, setScoutDrawerPid] = useState(null);
-        const [dragPid, setDragPid] = useState(null); // currently dragging pid
         const [draftStrategyEditing, setDraftStrategyEditing] = useState(false);
         const draftStrategyKey = 'wr_draft_strategy_' + leagueKey;
         const [customDraftStrategy, setCustomDraftStrategy] = useState(() => {
@@ -588,6 +599,13 @@
             setDraftView('board');
         }, [aiRecommendedOrder, boardPosFilter, draftPoolRows, normPos]);
 
+        // Touch-capable drag-to-reorder for the User Board (replaces up/down arrows).
+        const { dragPid: boardDragPid, handleProps: boardDragHandle, handleStyle: boardDragHandleStyle } = window.App.usePointerReorder({
+            getOrder: () => (myBoardOrder.length ? myBoardOrder : (aiRecommendedOrder.length ? aiRecommendedOrder : draftPoolRows.map(r => r.pid))),
+            setOrder: (arr) => setMyBoardOrder(arr),
+            onDragEnd: () => { setBoardMode(prev => prev === 'my' ? prev : 'my'); },
+        });
+
         // Auto-save board data to localStorage on changes. The AI order is saved
         // so mocks, context, and the visible Big Board share one recommendation source.
         useEffect(() => {
@@ -652,6 +670,21 @@
                 window.removeEventListener('storage', onStorage);
             };
         }, [boardStorageKey, leagueKey]);
+
+        // Keep the User Board's strike-throughs in step with the live draft: each
+        // pick the command center makes arrives here as a wr:live-draft-picks event
+        // carrying the full taken-player set, which re-renders the board instantly.
+        useEffect(() => {
+            const onLivePicks = (e) => {
+                const d = e?.detail;
+                if (!d) return;
+                const lid = window.S?.currentLeagueId || leagueKey;
+                if (d.leagueId && lid && String(d.leagueId) !== String(lid)) return;
+                setLiveDraftedPids(new Set(d.drafted || []));
+            };
+            window.addEventListener('wr:live-draft-picks', onLivePicks);
+            return () => window.removeEventListener('wr:live-draft-picks', onLivePicks);
+        }, [leagueKey]);
 
         const draftProjectionMeta = useMemo(() => {
             const rosters = currentLeague?.rosters || window.S?.rosters || [];
@@ -2480,37 +2513,6 @@
 
                     const aiSeedOrder = aiRecommendedOrder.length ? aiRecommendedOrder : draftPoolRows.map(r => r.pid);
 
-                    // Drag handlers
-                    const handleDragStart = (pid) => setDragPid(pid);
-                    const handleDragOver = (e) => e.preventDefault();
-                    const handleDrop = (targetPid) => {
-                        if (!dragPid || dragPid === targetPid) return;
-                        setMyBoardOrder(prev => {
-                            const order = prev.length ? [...prev] : aiSeedOrder.slice();
-                            const fromIdx = order.indexOf(dragPid);
-                            const toIdx = order.indexOf(targetPid);
-                            if (fromIdx === -1 || toIdx === -1) return order;
-                            order.splice(fromIdx, 1);
-                            order.splice(toIdx, 0, dragPid);
-                            return order;
-                        });
-                        setDragPid(null);
-                        if (boardMode !== 'my') setBoardMode('my');
-                    };
-                    const handleBoardMove = (pid, delta) => {
-                        setMyBoardOrder(prev => {
-                            const order = prev.length ? [...prev] : aiSeedOrder.slice();
-                            const fromIdx = order.indexOf(pid);
-                            if (fromIdx === -1) return order;
-                            const toIdx = Math.max(0, Math.min(order.length - 1, fromIdx + delta));
-                            if (fromIdx === toIdx) return order;
-                            const [moved] = order.splice(fromIdx, 1);
-                            order.splice(toIdx, 0, moved);
-                            return order;
-                        });
-                        if (boardMode !== 'my') setBoardMode('my');
-                    };
-
                     const buildOrderedPlayers = (order) => {
                         const cleanOrder = Array.isArray(order) && order.length ? order : draftPoolRows.map(r => r.pid);
                         const ordered = cleanOrder.map(pid => draftPoolRows.find(r => r.pid === pid)).filter(Boolean);
@@ -2543,12 +2545,9 @@
                     const renderCompactBoard = (players, isDhq) => {
                         // Auto cross-off players already taken in the live draft (parallel to
                         // the live Command Center board), merged with manual "Off" marks.
-                        const liveDrafted = (() => {
-                            try {
-                                const lid = window.S?.currentLeagueId || currentLeague?.league_id || currentLeague?.id;
-                                return window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids || null;
-                            } catch (e) { return null; }
-                        })();
+                        // liveDraftedPids is kept current by the wr:live-draft-picks listener
+                        // above, so this re-renders the instant a pick lands in the live draft.
+                        const liveDrafted = liveDraftedPids;
                         const boardGridCols = isSeasonalDraft
                             ? '58px minmax(220px, 1.25fr) 96px 88px 68px 72px 64px minmax(156px, 0.95fr) 92px'
                             : '58px minmax(205px, 1.15fr) minmax(128px, 0.82fr) 88px 64px 58px 82px 64px 58px minmax(156px, 0.95fr) 92px';
@@ -2587,7 +2586,12 @@
                             {players.map((r, idx) => {
                                 const pos = normPos(r.p.position) || r.p.position;
                                 const dhqC = r.dhq >= 7000 ? 'var(--good)' : r.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : r.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))';
-                                const isDrafted = draftedPids.has(r.pid) || !!(liveDrafted && liveDrafted[r.pid]);
+                                // Match on Sleeper pid (how the live draft keys picks) and
+                                // fall back to the CSV prospect id for rookies that aren't
+                                // linked to a Sleeper player.
+                                const isDrafted = draftedPids.has(r.pid)
+                                    || liveDrafted.has(r.pid) || liveDrafted.has(String(r.pid))
+                                    || (r.csv?.pid != null && liveDrafted.has(String(r.csv.pid)));
                                 const tag = boardTags[r.pid];
                                 const note = boardNotes[r.pid] || '';
                                 const isExp = expandedDraftPid === r.pid;
@@ -2663,21 +2667,15 @@
                                     <React.Fragment key={r.pid}>
                                     <div
                                         data-draft-pid={r.pid}
-                                        draggable={!isDhq}
-                                        onDragStart={!isDhq ? () => handleDragStart(r.pid) : undefined}
-                                        onDragOver={!isDhq ? handleDragOver : undefined}
-                                        onDrop={!isDhq ? () => handleDrop(r.pid) : undefined}
+                                        {...(!isDhq ? { 'data-drag-pid': r.pid } : {})}
                                         onClick={openPlayerDetail}
-                                        style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : 1, borderBottom: isExp ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: 'pointer', background: isExp ? 'var(--acc-fill1, rgba(212,175,55,0.065))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent', transition: 'background 0.1s', position: 'relative' }}
-                                        onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.04))'; }}
-                                        onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>
+                                        style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : (boardDragPid === r.pid ? 0.5 : 1), borderBottom: isExp ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: 'pointer', background: boardDragPid === r.pid ? 'var(--acc-fill2, rgba(212,175,55,0.10))' : isExp ? 'var(--acc-fill1, rgba(212,175,55,0.065))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent', transition: 'background 0.1s', position: 'relative' }}
+                                        onMouseEnter={e => { if (!isExp && boardDragPid !== r.pid) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.04))'; }}
+                                        onMouseLeave={e => { if (!isExp && boardDragPid !== r.pid) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>
                                             <span>{idx + 1}</span>
                                             {!isDhq && (
-                                                <span style={{ display: 'inline-grid', gap: 2 }}>
-                                                    <button type="button" title="Move up" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, -1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▲</button>
-                                                    <button type="button" title="Move down" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, 1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▼</button>
-                                                </span>
+                                                <span {...boardDragHandle(r.pid)} title="Drag to reorder" style={{ ...boardDragHandleStyle, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 26, color: 'var(--gold)', fontSize: '0.95rem', lineHeight: 1, borderRadius: 4, border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))' }}>⠿</span>
                                             )}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, padding: '5px 7px' }}>
@@ -2882,7 +2880,7 @@
                             {(typeof getLeaguePositions === 'function' ? getLeaguePositions() : ['QB','RB','WR','TE','K','DEF','DL','LB','DB']).map(pos => (
                                 <button key={pos} onClick={() => setBoardPosFilter(boardPosFilter === pos ? '' : pos)} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '55' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '18' : 'transparent', color: boardPosFilter === pos ? posColors[pos] : 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</button>
                             ))}
-                            <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Use arrows or drag to reorder My Board</span>
+                            <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Drag the {'\u283F'} handle to reorder My Board</span>
                         </div>
 
                         {/* Team & Round filters */}
@@ -2920,7 +2918,7 @@
                         <div style={{ marginBottom: '14px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 8, color: 'var(--silver)', opacity: 0.65, fontSize: 'var(--text-micro, 0.6875rem)' }}>
                                 <span>{activeBoardInfo.label} - {visibleBoardPlayers.length} visible players</span>
-                                <span>{boardMode === 'my' ? 'Drag rows to reorder - click a player for notes' : 'Switch to User Board to edit rank order'}</span>
+                                <span>{boardMode === 'my' ? 'Drag the ⠿ handle to reorder - click a player for notes' : 'Switch to User Board to edit rank order'}</span>
                             </div>
                             {renderCompactBoard(visibleBoardPlayers, boardMode !== 'my')}
                         </div>

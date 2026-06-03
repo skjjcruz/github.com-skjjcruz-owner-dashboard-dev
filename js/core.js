@@ -305,6 +305,67 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // We extend it here with War Room constants all tabs need in one place.
     window.App = window.App || {};
 
+    // Touch-capable drag-to-reorder for list rows. Built on Pointer Events so it
+    // works on iPad/WKWebView (the native HTML5 drag API does not fire on touch).
+    // Each draggable row needs a `data-drag-pid` attribute; spread the returned
+    // handleProps onto a grab handle inside the row and merge handleStyle into its
+    // style. getOrder()/setOrder() read and write the live pid order; the hook
+    // reorders on the fly as the pointer crosses each row's midpoint.
+    window.App.usePointerReorder = window.App.usePointerReorder || function usePointerReorder(opts) {
+        const o = opts || {};
+        const rowAttr = o.rowAttr || 'data-drag-pid';
+        const [dragPid, setDragPid] = useState(null);
+        const draggingRef = useRef(null);
+
+        const reorder = (dragId, targetId, placeAfter) => {
+            const cur = (o.getOrder && o.getOrder()) || [];
+            const arr = cur.slice();
+            const fromIdx = arr.findIndex(x => String(x) === String(dragId));
+            if (fromIdx === -1) return;
+            const [moved] = arr.splice(fromIdx, 1);
+            let toIdx = arr.findIndex(x => String(x) === String(targetId));
+            if (toIdx === -1) return;
+            if (placeAfter) toIdx += 1;
+            arr.splice(toIdx, 0, moved);
+            if (o.setOrder) o.setOrder(arr);
+        };
+
+        const handleProps = (pid) => ({
+            onClick: (e) => e.stopPropagation(),
+            onPointerDown: (e) => {
+                if (o.enabled === false) return;
+                if (e.button != null && e.button > 0) return; // primary button / touch only
+                e.stopPropagation();
+                draggingRef.current = pid;
+                setDragPid(pid);
+                try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+            },
+            onPointerMove: (e) => {
+                if (draggingRef.current == null) return;
+                e.preventDefault();
+                const el = document.elementFromPoint(e.clientX, e.clientY);
+                const row = el && el.closest ? el.closest('[' + rowAttr + ']') : null;
+                if (!row) return;
+                const targetPid = row.getAttribute(rowAttr);
+                if (!targetPid || String(targetPid) === String(draggingRef.current)) return;
+                const rect = row.getBoundingClientRect();
+                reorder(draggingRef.current, targetPid, e.clientY > rect.top + rect.height / 2);
+            },
+            onPointerUp: (e) => {
+                if (draggingRef.current == null) return;
+                try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+                const pid = draggingRef.current;
+                draggingRef.current = null;
+                setDragPid(null);
+                if (o.onDragEnd) o.onDragEnd(pid);
+            },
+            onPointerCancel: () => { draggingRef.current = null; setDragPid(null); },
+        });
+
+        return { dragPid, handleProps, handleStyle: { touchAction: 'none', cursor: 'grab', userSelect: 'none' } };
+    };
+
+
     // Position colors — single source of truth (was copy-pasted across 6 locations)
     window.App.POS_COLORS = window.App.POS_COLORS || {
         QB:'var(--k-e74c3c, #e74c3c)', RB:'var(--k-2ecc71, #2ecc71)', WR:'var(--k-3498db, #3498db)', TE:'var(--k-f0a500, #f0a500)',
