@@ -187,7 +187,7 @@
       <span class="nav-title">DYNASTY HQ</span>
     </div>
     <div class="nav-links">
-      <button class="nav-btn nav-btn-primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('sleeperJoin').focus()">Join</button>
+      <button class="nav-btn nav-btn-primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Join</button>
     </div>
   </nav>
 
@@ -239,9 +239,9 @@
       <h1>Dynasty HQ</h1>
       <p class="hero-sub">Most tools stop at player rankings. Dynasty HQ turns your Sleeper league into the model: DHQ values, owner tendencies, draft history, trade memory, and Scout decisions in one operating system.</p>
       <div class="hero-actions">
-        <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('sleeperJoin').focus()">Join with Sleeper</button>
+        <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Join with Sleeper</button>
       </div>
-      <p class="hero-free">Just your Sleeper username. No email, no password.</p>
+      <p class="hero-free">Create a free account with Google or email, add your Sleeper username, and you're in.</p>
     </div>
   </section>
 
@@ -328,14 +328,43 @@
   <!-- Join -->
   <section class="auth" id="auth">
     <img src="icon-192.png" alt="Dynasty HQ" style="display:block;width:56px;height:56px;border-radius:14px;margin:0 auto 16px;box-shadow:0 4px 20px rgba(212,175,55,.2)">
-    <h2 class="auth-title">Join Dynasty HQ</h2>
-    <p style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 22px">Enter your Sleeper username and you're in. We read your leagues from Sleeper's public API — no email, no password.</p>
+    <h2 class="auth-title" id="authTitle">Create your account</h2>
+    <p id="authSub" style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 22px">Sign up with Google or email and add your Sleeper username — your account keeps your league data private to you.</p>
 
     <div class="alert" id="alertJoin"></div>
-    <input class="auth-input" type="text" id="sleeperJoin" placeholder="Your Sleeper username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <button class="auth-submit" id="btnJoin" onclick="joinWithSleeper()">Enter Dynasty HQ →</button>
-    <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:14px">This is your <strong style="color:var(--silver)">username</strong> on Sleeper — not your email.</p>
+
+    <!-- Google -->
+    <button id="btnGoogle" class="auth-google" onclick="handleGoogle()">
+      <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.1 0-11-4.9-11-11s4.9-11 11-11c2.8 0 5.4 1.1 7.3 2.8l5.7-5.7C33.6 6.1 29.1 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c2.8 0 5.4 1.1 7.3 2.8l5.7-5.7C33.6 6.1 29.1 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35 26.7 36 24 36c-5.3 0-9.7-2.6-11.3-7l-6.6 5.1C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.2 5.2C39.9 36 44 30.6 44 24c0-1.3-.1-2.3-.4-3.5z"/></svg>
+      Continue with Google
+    </button>
+
+    <div class="auth-or"><span>or</span></div>
+
+    <!-- Email signup / signin -->
+    <input class="auth-input" type="email" id="acctEmail" placeholder="Email" autocomplete="email" autocapitalize="off">
+    <input class="auth-input" type="password" id="acctPassword" placeholder="Password (8+ characters)" autocomplete="current-password">
+    <!-- Sleeper username — required at signup, hidden on sign-in -->
+    <input class="auth-input" id="sleeperJoin" placeholder="Your Sleeper username" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button class="auth-submit" id="btnJoin" onclick="handleEmailAuth()">Create account &amp; enter →</button>
+
+    <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:12px">
+      <span id="sleeperHint">Sleeper username — not your email. We use it to load your leagues.</span>
+    </p>
+    <div style="text-align:center;margin-top:14px;font-size:13px">
+      <button class="auth-linkbtn" id="toggleMode" onclick="toggleAuthMode()">Already have an account? Sign in</button>
+      <button class="auth-linkbtn" id="forgotBtn" onclick="handleForgot()" style="display:none">Forgot password?</button>
+    </div>
   </section>
+
+  <style>
+    .auth-google{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f2328;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:6px}
+    .auth-google:hover{box-shadow:0 4px 14px rgba(0,0,0,.25)}
+    .auth-or{display:flex;align-items:center;text-align:center;color:var(--muted);font-size:12px;margin:14px 0;gap:10px}
+    .auth-or::before,.auth-or::after{content:'';flex:1;height:1px;background:var(--border)}
+    .auth-linkbtn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit}
+    .auth-linkbtn:hover{color:var(--gold)}
+  </style>
 
   <footer class="footer">&copy; 2026 Dynasty HQ &middot; All rights reserved</footer>
 
@@ -421,6 +450,10 @@
     const WARROOM_URL = 'index.html';
     const AUTH_KEY = 'od_auth_v1';
     const PROFILE_KEY = 'od_profile_v1';
+    const FW_API_BASE = SUPABASE_URL + '/functions/v1';
+    const SLEEPER_PENDING_KEY = 'fw_pending_sleeper_v1'; // survives the Google OAuth round-trip
+
+    let authMode = 'signup'; // 'signup' | 'signin'
 
     function destForUser() {
       const pref = localStorage.getItem('fw_preferred_view');
@@ -430,19 +463,6 @@
       return window.innerWidth < 768 ? SCOUT_URL : WARROOM_URL;
     }
 
-    // Redirect if a tester is already in
-    (function checkSession() {
-      try {
-        if (LANDING_EDITOR_PREVIEW) return;
-        const legacy = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
-        const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-        if (legacy?.username || session?.token) {
-          trackLandingEvent('landing_existing_session_redirected');
-          window.location.href = destForUser();
-        }
-      } catch {}
-    })();
-
     function showAlert(type, message) {
       const el = document.getElementById('alertJoin');
       el.className = 'alert alert-' + type + ' show';
@@ -450,50 +470,161 @@
       if (type !== 'success') setTimeout(() => el.classList.remove('show'), 6000);
     }
 
-    async function joinWithSleeper() {
-      const input = document.getElementById('sleeperJoin');
-      const username = input.value.trim();
+    // \u2500\u2500 Resolve + bind a Sleeper username to the local profile \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // Validates against Sleeper's public API, then stores the legacy
+    // od_auth_v1 (what the app reads to load leagues) + od_profile_v1.
+    async function bindSleeper(username) {
+      const res = await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(username)}`);
+      const user = res.ok ? await res.json() : null;
+      if (!user || !user.user_id) return null;
+      const uname = user.username || username;
+      localStorage.setItem(AUTH_KEY, JSON.stringify({ username: uname, sleeperUserId: user.user_id, createdAt: new Date().toISOString() }));
+      localStorage.setItem('od_locked_username_v2', uname);
+      const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
+      localStorage.setItem(PROFILE_KEY, JSON.stringify({
+        ...profile, sleeperUsername: uname, sleeperUserId: user.user_id,
+        platforms: ['sleeper'], onboardingComplete: true,
+      }));
+      return uname;
+    }
+
+    function toggleAuthMode() {
+      authMode = authMode === 'signup' ? 'signin' : 'signup';
+      const signup = authMode === 'signup';
+      document.getElementById('authTitle').textContent = signup ? 'Create your account' : 'Welcome back';
+      document.getElementById('authSub').textContent = signup
+        ? 'Sign up with Google or email and add your Sleeper username \u2014 your account keeps your league data private to you.'
+        : 'Sign in to your Dynasty HQ account.';
+      document.getElementById('sleeperJoin').style.display = signup ? '' : 'none';
+      document.getElementById('sleeperHint').parentElement.style.display = signup ? '' : 'none';
+      document.getElementById('btnJoin').textContent = signup ? 'Create account & enter \u2192' : 'Sign in \u2192';
+      document.getElementById('btnGoogle').lastChild.textContent = signup ? ' Continue with Google' : ' Sign in with Google';
+      document.getElementById('toggleMode').textContent = signup ? 'Already have an account? Sign in' : 'Need an account? Sign up';
+      document.getElementById('forgotBtn').style.display = signup ? 'none' : '';
+    }
+
+    // \u2500\u2500 Email signup / signin (+ Sleeper bind on signup) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    async function handleEmailAuth() {
+      const email = document.getElementById('acctEmail').value.trim();
+      const password = document.getElementById('acctPassword').value;
+      const sleeper = document.getElementById('sleeperJoin').value.trim();
       const btn = document.getElementById('btnJoin');
-      if (!username) { trackLandingEvent('join_blocked', { reason: 'missing_username' }); showAlert('error', 'Enter your Sleeper username to continue.'); input.focus(); return; }
-      trackLandingEvent('join_started');
-      btn.disabled = true; btn.textContent = 'Finding your leagues\u2026';
+      const signup = authMode === 'signup';
+      if (!email || !password) { showAlert('error', 'Email and password are required.'); return; }
+      if (signup && password.length < 8) { showAlert('error', 'Password must be at least 8 characters.'); return; }
+      if (signup && !sleeper) { showAlert('error', 'Add your Sleeper username to finish signing up.'); document.getElementById('acctEmail').focus(); return; }
+      trackLandingEvent(signup ? 'signup_started' : 'signin_started');
+      btn.disabled = true; btn.textContent = signup ? 'Creating account\u2026' : 'Signing in\u2026';
       try {
-        const res = await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(username)}`);
-        const user = res.ok ? await res.json() : null;
-        if (!user || !user.user_id) {
-          trackLandingEvent('join_failed', { reason: 'username_not_found' });
-          showAlert('error', "We couldn't find that Sleeper username. Check the spelling and try again.");
-          btn.disabled = false; btn.textContent = 'Enter Dynasty HQ \u2192';
+        const path = signup ? 'fw-signup' : 'fw-signin';
+        const body = signup ? { email, password, displayName: sleeper } : { email, password };
+        const res = await fetch(`${FW_API_BASE}/${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.token) {
+          trackLandingEvent(signup ? 'signup_failed' : 'signin_failed', { status: res.status });
+          showAlert('error', data.error || (signup ? 'Sign-up failed.' : 'Invalid email or password.'));
+          btn.disabled = false; btn.textContent = signup ? 'Create account & enter \u2192' : 'Sign in \u2192';
           return;
         }
-        // Legacy Sleeper-username auth \u2014 the app reads this to load leagues (read-only, no password).
-        localStorage.setItem(AUTH_KEY, JSON.stringify({
-          username: user.username || username,
-          sleeperUserId: user.user_id,
-          createdAt: new Date().toISOString(),
-        }));
-        localStorage.setItem('od_locked_username_v2', user.username || username);
-        // Mark onboarding complete so testers go straight into the app.
-        const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
-        localStorage.setItem(PROFILE_KEY, JSON.stringify({
-          ...profile,
-          sleeperUsername: user.username || username,
-          sleeperUserId: user.user_id,
-          platforms: ['sleeper'],
-          onboardingComplete: true,
-        }));
-        trackLandingEvent('join_succeeded');
+        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        // Bind Sleeper: required at signup; on sign-in reuse stored binding if present.
+        if (signup) {
+          const bound = await bindSleeper(sleeper);
+          if (!bound) {
+            showAlert('error', "Account created, but we couldn't find that Sleeper username. Check the spelling \u2014 you can also set it later in Settings.");
+            btn.disabled = false; btn.textContent = 'Create account & enter \u2192';
+            return;
+          }
+        }
+        trackLandingEvent(signup ? 'signup_succeeded' : 'signin_succeeded');
         showAlert('success', 'You\u2019re in! Loading Dynasty HQ\u2026');
         setTimeout(() => { window.location.href = destForUser(); }, 700);
       } catch (err) {
-        trackLandingEvent('join_failed', { reason: 'network' });
+        trackLandingEvent(signup ? 'signup_failed' : 'signin_failed', { reason: 'network' });
         showAlert('error', 'Network error: ' + (err?.message || String(err)));
-        btn.disabled = false; btn.textContent = 'Enter Dynasty HQ \u2192';
+        btn.disabled = false; btn.textContent = signup ? 'Create account & enter \u2192' : 'Sign in \u2192';
       }
     }
 
+    // \u2500\u2500 Google OAuth (+ Sleeper bind) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    function handleGoogle() {
+      const db = getSbClient();
+      if (!db) { showAlert('error', 'Sign-in is still loading \u2014 try again in a moment.'); return; }
+      const sleeper = document.getElementById('sleeperJoin').value.trim();
+      if (authMode === 'signup' && !sleeper) { showAlert('error', 'Add your Sleeper username first, then continue with Google.'); document.getElementById('acctEmail').focus(); return; }
+      // Sleeper name must survive the OAuth redirect \u2014 stash it.
+      if (sleeper) sessionStorage.setItem(SLEEPER_PENDING_KEY, sleeper);
+      trackLandingEvent('oauth_started', { provider: 'google' });
+      db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } });
+    }
+
+    // Handle Google redirect back: store session, bind pending Sleeper, route in.
+    (async function handleOAuthCallback() {
+      try {
+        if (LANDING_EDITOR_PREVIEW) return;
+        const db = getSbClient();
+        if (!db) return;
+        const { data } = await db.auth.getSession();
+        if (!data?.session) return;
+        const user = data.session.user;
+        const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (!existing?.token) {
+          localStorage.setItem(SESSION_KEY, JSON.stringify({
+            token: data.session.access_token,
+            user: { email: user.email, displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email },
+          }));
+        }
+        trackLandingEvent('oauth_succeeded', { provider: 'google' });
+        // Bind the Sleeper name captured before the redirect (signup via Google).
+        const pending = sessionStorage.getItem(SLEEPER_PENDING_KEY);
+        const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
+        if (pending && !(profile && profile.sleeperUsername)) {
+          const bound = await bindSleeper(pending);
+          sessionStorage.removeItem(SLEEPER_PENDING_KEY);
+          if (!bound) {
+            showAlert('error', "Signed in, but that Sleeper username wasn't found. Enter it in Settings to load your leagues.");
+            return;
+          }
+        }
+        window.location.href = destForUser();
+      } catch (e) { console.warn('[WR] OAuth callback error:', e); }
+    })();
+
+    // \u2500\u2500 Forgot password \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    async function handleForgot() {
+      const email = document.getElementById('acctEmail').value.trim();
+      if (!email) { showAlert('error', 'Enter your email first, then tap \u201cForgot password?\u201d'); document.getElementById('acctEmail').focus(); return; }
+      trackLandingEvent('password_reset_requested');
+      try {
+        await fetch(`${FW_API_BASE}/fw-request-password-reset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
+          body: JSON.stringify({ email }),
+        });
+      } catch {}
+      // Always show success \u2014 never reveal whether an email exists.
+      showAlert('success', 'If that email has an account, a password reset link is on the way.');
+    }
+
+    // Redirect if a tester already has a real account session (not just a
+    // Sleeper-name binding \u2014 an account is now required).
+    (function checkSession() {
+      try {
+        if (LANDING_EDITOR_PREVIEW) return;
+        const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (session?.token) {
+          trackLandingEvent('landing_existing_session_redirected');
+          window.location.href = destForUser();
+        }
+      } catch {}
+    })();
+
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && document.activeElement?.id === 'sleeperJoin') joinWithSleeper();
+      if (e.key === 'Enter' && ['acctEmail', 'acctPassword', 'sleeperJoin'].includes(document.activeElement?.id)) handleEmailAuth();
     });
   </script>
 </body>
