@@ -506,6 +506,35 @@
             return () => clearTimeout(saveTimerRef.current);
         }, [state]);
 
+        // Broadcast live-draft picks so a player taken in the live draft shows
+        // struck-through on the Draft tab's User Board too (the live board already
+        // strikes from state.draftedPids). We send the pick set on its own channel —
+        // kept separate from the board-edit sync and from the User Board's manual
+        // "Off" marks — so the prep board reflects the live draft without either side
+        // clobbering the other. Only live-sync drafts feed this; mocks stay
+        // hypothetical and never cross off the prep board.
+        const draftedSyncRef = React.useRef(null);
+        React.useEffect(() => {
+            if (state.mode !== 'live-sync') return;
+            const leagueId = state.leagueId || currentLeague?.league_id || currentLeague?.id;
+            if (!leagueId) return;
+            const drafted = Object.keys(state.draftedPids || {});
+            const sig = drafted.slice().sort().join(',');
+            if (sig === draftedSyncRef.current) return; // no pick change since last sync
+            // Don't clear the User Board's seeded picks with the initial empty set
+            // before live state hydrates — only emit empty once we've sent real picks
+            // (i.e. a genuine undo back to zero).
+            if (drafted.length === 0 && draftedSyncRef.current === null) return;
+            draftedSyncRef.current = sig;
+            if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+                try {
+                    window.dispatchEvent(new CustomEvent('wr:live-draft-picks', {
+                        detail: { leagueId, variant: state.variant || 'startup', drafted },
+                    }));
+                } catch (e) { /* CustomEvent unsupported — non-fatal */ }
+            }
+        }, [state.draftedPids, state.mode, state.leagueId, state.variant, currentLeague]);
+
         // Current slot + whose turn is it
         // isUserTurn prefers rosterId match (post-trade ownership), but falls back
         // to teamIdx match for leagues where rosterId is null (e.g., unmapped slots).

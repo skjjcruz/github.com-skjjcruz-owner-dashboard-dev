@@ -85,6 +85,18 @@
         // no stale-order clobber.
         const boardSyncSigRef = useRef('');
         const [draftedPids, setDraftedPids] = useState(new Set());
+        // Players already taken in the live draft. Seeded from the persisted
+        // live-sync state so a freshly opened Draft tab strikes them through
+        // immediately, then kept live by the wr:live-draft-picks broadcast the
+        // command center emits on every pick. Held apart from the manual "Off"
+        // marks in draftedPids so neither overwrites the other.
+        const [liveDraftedPids, setLiveDraftedPids] = useState(() => {
+            try {
+                const lid = window.S?.currentLeagueId || leagueKey;
+                const d = window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids;
+                return d ? new Set(Object.keys(d)) : new Set();
+            } catch (e) { return new Set(); }
+        });
         const [boardNotes, setBoardNotes] = useState({});
         const [boardTags, setBoardTags] = useState({}); // pid -> 'target'|'avoid'|'sleeper'|'must'
         const [boardMode, setBoardMode] = useState('dhq'); // 'dhq' | 'ai' | 'my'
@@ -652,6 +664,21 @@
                 window.removeEventListener('storage', onStorage);
             };
         }, [boardStorageKey, leagueKey]);
+
+        // Keep the User Board's strike-throughs in step with the live draft: each
+        // pick the command center makes arrives here as a wr:live-draft-picks event
+        // carrying the full taken-player set, which re-renders the board instantly.
+        useEffect(() => {
+            const onLivePicks = (e) => {
+                const d = e?.detail;
+                if (!d) return;
+                const lid = window.S?.currentLeagueId || leagueKey;
+                if (d.leagueId && lid && String(d.leagueId) !== String(lid)) return;
+                setLiveDraftedPids(new Set(d.drafted || []));
+            };
+            window.addEventListener('wr:live-draft-picks', onLivePicks);
+            return () => window.removeEventListener('wr:live-draft-picks', onLivePicks);
+        }, [leagueKey]);
 
         const draftProjectionMeta = useMemo(() => {
             const rosters = currentLeague?.rosters || window.S?.rosters || [];
@@ -2543,12 +2570,9 @@
                     const renderCompactBoard = (players, isDhq) => {
                         // Auto cross-off players already taken in the live draft (parallel to
                         // the live Command Center board), merged with manual "Off" marks.
-                        const liveDrafted = (() => {
-                            try {
-                                const lid = window.S?.currentLeagueId || currentLeague?.league_id || currentLeague?.id;
-                                return window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids || null;
-                            } catch (e) { return null; }
-                        })();
+                        // liveDraftedPids is kept current by the wr:live-draft-picks listener
+                        // above, so this re-renders the instant a pick lands in the live draft.
+                        const liveDrafted = liveDraftedPids;
                         const boardGridCols = isSeasonalDraft
                             ? '58px minmax(220px, 1.25fr) 96px 88px 68px 72px 64px minmax(156px, 0.95fr) 92px'
                             : '58px minmax(205px, 1.15fr) minmax(128px, 0.82fr) 88px 64px 58px 82px 64px 58px minmax(156px, 0.95fr) 92px';
@@ -2587,7 +2611,12 @@
                             {players.map((r, idx) => {
                                 const pos = normPos(r.p.position) || r.p.position;
                                 const dhqC = r.dhq >= 7000 ? 'var(--good)' : r.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : r.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))';
-                                const isDrafted = draftedPids.has(r.pid) || !!(liveDrafted && liveDrafted[r.pid]);
+                                // Match on Sleeper pid (how the live draft keys picks) and
+                                // fall back to the CSV prospect id for rookies that aren't
+                                // linked to a Sleeper player.
+                                const isDrafted = draftedPids.has(r.pid)
+                                    || liveDrafted.has(r.pid) || liveDrafted.has(String(r.pid))
+                                    || (r.csv?.pid != null && liveDrafted.has(String(r.csv.pid)));
                                 const tag = boardTags[r.pid];
                                 const note = boardNotes[r.pid] || '';
                                 const isExp = expandedDraftPid === r.pid;
