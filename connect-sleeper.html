@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://c2-football.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hovnqztlbsgsywrbidbh.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
+  <title>Dynasty HQ — Connect Sleeper</title>
+  <link rel="icon" href="icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    :root{--gold:#D4AF37;--dark-gold:#B8941E;--bg:#0A0A0A;--bg2:#141414;--border:rgba(255,255,255,.1);--white:#FFFFFF;--silver:#C0C0C0;--muted:rgba(255,255,255,.5);--green:#34d399;--red:#f87171}
+    html,body{min-height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--white);-webkit-font-smoothing:antialiased}
+    body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+    .card{width:100%;max-width:440px;text-align:center}
+    .logo{width:56px;height:56px;border-radius:14px;margin:0 auto 16px;display:block;box-shadow:0 4px 20px rgba(212,175,55,.2)}
+    .step{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-bottom:8px}
+    h1{font-size:24px;font-weight:800;margin-bottom:10px}
+    .sub{font-size:14px;color:var(--silver);line-height:1.55;margin-bottom:24px}
+    .input{width:100%;padding:14px;font-size:15px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--white);font-family:inherit;margin-bottom:12px;outline:none;transition:border-color .15s}
+    .input:focus{border-color:var(--gold)}
+    .input::placeholder{color:var(--muted)}
+    .btn{width:100%;min-height:50px;font-size:15px;font-weight:800;border-radius:10px;border:none;background:linear-gradient(135deg,var(--gold),var(--dark-gold));color:#0a0a0a;cursor:pointer;transition:box-shadow .15s}
+    .btn:hover{box-shadow:0 6px 20px rgba(212,175,55,.3)}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .hint{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.5}
+    .alert{font-size:13px;padding:11px 14px;border-radius:8px;margin-bottom:14px;display:none;text-align:left}
+    .alert.show{display:block}
+    .alert-error{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.25)}
+    .alert-success{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+    .signout{margin-top:18px;background:none;border:none;color:var(--muted);font-size:12px;text-decoration:underline;cursor:pointer;font-family:inherit}
+    .signout:hover{color:var(--gold)}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <img src="icon-192.png" alt="Dynasty HQ" class="logo">
+    <div class="step">Step 2 of 2</div>
+    <h1>Connect your Sleeper</h1>
+    <p class="sub">Your account is set. Add your Sleeper username so we can load your leagues.</p>
+
+    <div class="alert" id="alert"></div>
+    <input class="input" id="sleeperName" placeholder="Your Sleeper username" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button class="btn" id="connectBtn" onclick="connectSleeper()">Connect &amp; enter Dynasty HQ →</button>
+    <p class="hint">This is your <strong style="color:var(--silver)">username</strong> on Sleeper — not your email. You can change it later in Settings.</p>
+
+    <button class="signout" onclick="signOut()">Not you? Sign out</button>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"></script>
+  <script>
+    const SUPABASE_URL = 'https://hovnqztlbsgsywrbidbh.supabase.co';
+    const SESSION_KEY = 'fw_session_v1';
+    const AUTH_KEY = 'od_auth_v1';
+    const PROFILE_KEY = 'od_profile_v1';
+    const WARROOM_URL = 'index.html';
+    const SCOUT_URL = 'https://c2-football.github.io/ReconAI/';
+
+    function destForUser() {
+      const pref = localStorage.getItem('fw_preferred_view');
+      if (pref === 'scout') return SCOUT_URL;
+      if (pref === 'warroom') return WARROOM_URL;
+      return window.innerWidth < 768 ? SCOUT_URL : WARROOM_URL;
+    }
+
+    // Require an account session — this page is step 2 of signup.
+    (function requireAccount() {
+      try {
+        const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (!session?.token) { window.location.href = 'landing.html'; return; }
+        // Already connected a Sleeper account? Skip straight into the app.
+        const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
+        const legacy = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
+        if (profile?.sleeperUsername || legacy?.username) window.location.href = destForUser();
+      } catch {}
+    })();
+
+    function showAlert(type, message) {
+      const el = document.getElementById('alert');
+      el.className = 'alert alert-' + type + ' show';
+      el.textContent = message;
+      if (type !== 'success') setTimeout(() => el.classList.remove('show'), 6000);
+    }
+
+    async function connectSleeper() {
+      const input = document.getElementById('sleeperName');
+      const username = input.value.trim();
+      const btn = document.getElementById('connectBtn');
+      if (!username) { showAlert('error', 'Enter your Sleeper username to continue.'); input.focus(); return; }
+      btn.disabled = true; btn.textContent = 'Finding your leagues…';
+      try {
+        const res = await fetch(`https://api.sleeper.app/v1/user/${encodeURIComponent(username)}`);
+        const user = res.ok ? await res.json() : null;
+        if (!user || !user.user_id) {
+          showAlert('error', "We couldn't find that Sleeper username. Check the spelling and try again.");
+          btn.disabled = false; btn.textContent = 'Connect & enter Dynasty HQ →';
+          return;
+        }
+        const uname = user.username || username;
+        localStorage.setItem(AUTH_KEY, JSON.stringify({ username: uname, sleeperUserId: user.user_id, createdAt: new Date().toISOString() }));
+        localStorage.setItem('od_locked_username_v2', uname);
+        const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
+        localStorage.setItem(PROFILE_KEY, JSON.stringify({
+          ...profile, sleeperUsername: uname, sleeperUserId: user.user_id,
+          platforms: ['sleeper'], onboardingComplete: true,
+        }));
+        showAlert('success', 'You’re in! Loading Dynasty HQ…');
+        setTimeout(() => { window.location.href = destForUser(); }, 700);
+      } catch (err) {
+        showAlert('error', 'Network error: ' + (err?.message || String(err)));
+        btn.disabled = false; btn.textContent = 'Connect & enter Dynasty HQ →';
+      }
+    }
+
+    function signOut() {
+      try {
+        localStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(AUTH_KEY);
+      } catch {}
+      window.location.href = 'landing.html';
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && document.activeElement?.id === 'sleeperName') connectSleeper();
+    });
+  </script>
+</body>
+</html>
