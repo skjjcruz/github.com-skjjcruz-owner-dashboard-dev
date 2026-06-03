@@ -17,6 +17,124 @@
         return escapeHtml(str).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
     }
 
+    // ── DHQ-ranked startable pool (mirrors trade-calc.calcNflStarterSet) ──
+    // Built once after the DHQ engine loads. For each position, the top
+    // NFL_STARTER_POOL[pos] players by DHQ dynasty value are the legitimate NFL
+    // starters. Used to recompute starter COUNTS below. Works year-round (DHQ
+    // values are always loaded), unlike depth_chart_order which is offseason-null.
+    let _dhqStarterSet = null;
+    function buildDhqStarterSet() {
+        try {
+            const players = window.App?._playersCache;
+            const dhqScores = window.App?.LI?.playerScores || {};
+            const POOL = window.App?.PlayerValue?.NFL_STARTER_POOL;
+            const normPos = window.App?.normPos;
+            if (!POOL || !normPos || !players || !Object.keys(players).length) return null;
+            const byPos = {};
+            for (const [id, p] of Object.entries(players)) {
+                const pos = normPos(p?.position);
+                if (!pos || !(pos in POOL) || !p?.team) continue;
+                const score = dhqScores[id];
+                if (!(score > 0)) continue;
+                (byPos[pos] = byPos[pos] || []).push({ id, score });
+            }
+            const set = {};
+            for (const [pos, arr] of Object.entries(byPos)) {
+                arr.sort((a, b) => b.score - a.score);
+                set[pos] = new Set(arr.slice(0, POOL[pos]).map(x => x.id));
+            }
+            return set;
+        } catch (_) { return null; }
+    }
+
+    // ── Starter-requirement + count correction over the upstream assessor ──
+    // The shared assessTeamFromGlobal (ReconAI CDN) uses its own per-position
+    // starter requirements (incl. QB:3, unreachable in deep leagues) and counts
+    // startable players by last-season points (missing rookies/breakouts). We
+    // wrap it — upstream untouched — to recompute startingReq/minQuality/ideal
+    // from our constants, recount nflStarters via the DHQ starter set, and
+    // rebuild status/needs/strengths so every consumer stays consistent.
+    let _assessorWrapped = false;
+    function installStarterReqCorrection() {
+        try {
+            if (_assessorWrapped) return;
+            const upstream = window.assessTeamFromGlobal;
+            if (typeof upstream !== 'function') return;
+            const PV = window.App?.PlayerValue;
+            const MINQ = PV?.MIN_STARTER_QUALITY;
+            const IDEAL = PV?.IDEAL_ROSTER;
+            if (!MINQ) return;
+
+            function correct(result, rosterId) {
+                if (!result || !result.posAssessment) return result;
+                const pa = result.posAssessment;
+                // Count starter-quality players per position via the DHQ-ranked set.
+                const confirmedByPos = (() => {
+                    const out = {};
+                    try {
+                        const starterSet = _dhqStarterSet || (_dhqStarterSet = buildDhqStarterSet());
+                        if (!starterSet) return out;
+                        const roster = (window.S?.rosters || []).find(r => String(r.roster_id) === String(rosterId));
+                        const players = roster?.players || [];
+                        const cache = window.App?._playersCache || {};
+                        const normPos = window.App?.normPos;
+                        for (const pid of players) {
+                            const p = cache[pid];
+                            const np = p ? (normPos ? normPos(p.position) : p.position) : null;
+                            if (!np || !starterSet[np]) continue;
+                            if (starterSet[np].has(pid)) out[np] = (out[np] || 0) + 1;
+                        }
+                    } catch (_) {}
+                    return out;
+                })();
+                for (const [pos, data] of Object.entries(pa)) {
+                    if (!data || MINQ[pos] == null) continue;
+                    const req = MINQ[pos];
+                    const ideal = (IDEAL && IDEAL[pos] != null) ? IDEAL[pos] : data.ideal;
+                    const actual = data.actual ?? 0;
+                    // Only ever raise the count (fix undercounts, never invent starters).
+                    const upstreamStarters = data.nflStarters ?? 0;
+                    const confirmed = confirmedByPos[pos] || 0;
+                    const nflStarters = Math.min(actual, Math.max(upstreamStarters, confirmed));
+                    let status;
+                    if (nflStarters === 0) status = 'deficit';
+                    else if (nflStarters < req) status = 'thin';
+                    else if (actual >= ideal) status = 'surplus';
+                    else status = 'ok';
+                    if ((status === 'ok' || status === 'surplus') && actual < ideal) status = 'thin';
+                    data.nflStarters = nflStarters;
+                    data.startingReq = req;
+                    data.minQuality = req;
+                    data.ideal = ideal;
+                    data.status = status;
+                }
+                result.needs = Object.entries(pa)
+                    .filter(([, v]) => v.status === 'deficit' || v.status === 'thin')
+                    .sort((a, b) => {
+                        const aGap = (a[1].nflStarters || 0) - (a[1].startingReq || 1);
+                        const bGap = (b[1].nflStarters || 0) - (b[1].startingReq || 1);
+                        return aGap !== bGap ? aGap - bGap : (a[1].diff || 0) - (b[1].diff || 0);
+                    })
+                    .map(([pos, v]) => ({ pos, urgency: v.status, gap: Math.max(0, (v.startingReq || 1) - (v.nflStarters || 0)), diff: v.diff }))
+                    .slice(0, 5);
+                result.strengths = Object.entries(pa).filter(([, v]) => v.status === 'surplus').map(([pos]) => pos);
+                return result;
+            }
+
+            const wrapped = function (rosterId) { return correct(upstream.apply(this, arguments), rosterId); };
+            Object.defineProperty(wrapped, '_cache', {
+                get() { return upstream._cache; },
+                set(v) { upstream._cache = v; },
+                configurable: true,
+            });
+            wrapped._wrappedUpstream = upstream;
+            window.assessTeamFromGlobal = wrapped;
+            _assessorWrapped = true;
+        } catch (e) {
+            console.warn('[War Room] installStarterReqCorrection failed:', e);
+        }
+    }
+
     function wrCanPageScroll() {
         const doc = document.documentElement;
         const body = document.body;
@@ -620,6 +738,7 @@
                     // Clear assessTeamFromGlobal cache so health scores recompute with fresh data.
                     if (window.assessTeamFromGlobal?._cache) window.assessTeamFromGlobal._cache = {};
                     if (window.assessAllTeamsFromGlobal?._cache) window.assessAllTeamsFromGlobal._cache = {};
+                    _dhqStarterSet = null; // rebuild DHQ starter set with refreshed values
                     if (window.S) {
                         window.S._timeContextTs = Date.now();
                     }
@@ -1760,6 +1879,8 @@
                     try {
                         await window.App.loadLeagueIntel();
                         console.log('[War Room] DHQ engine loaded:', Object.keys(window.App.LI?.playerScores || {}).length, 'players valued');
+                        _dhqStarterSet = null; // rebuild with freshly-loaded DHQ values
+                        installStarterReqCorrection(); // QB:2 requirement + DHQ-based starter counts
                         setDhqStatus({ loading: false, step: 'Complete!', progress: 100 });
                         setStatsData(prev => ({ ...prev })); // force re-render
                         setTimeRecomputeTs(Date.now()); // refresh KPIs and rankings
@@ -1768,6 +1889,11 @@
                         setDhqStatus({ loading: false, step: 'Error: ' + e.message, progress: 0 });
                     }
                 }
+
+                // Ensure the assessor correction is installed even when intel was
+                // already loaded on a prior mount/league switch (block above is
+                // skipped when LI_LOADED is already true). Idempotent.
+                installStarterReqCorrection();
 
                 // Load rookie prospect data from enrichment CSVs (fire-and-forget)
                 if (typeof window.loadRookieProspects === 'function') {
