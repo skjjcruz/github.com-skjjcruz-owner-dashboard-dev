@@ -10,6 +10,24 @@
     // Rotated pick — spreads variants across rows by index so same-tier
     // neighbours don't open with the same sentence on a hash collision.
     const avPickRot = (seed, arr, off) => (window.AlexVoice ? window.AlexVoice.pickRot(seed, arr, off) : arr[(off | 0) % arr.length]);
+    // Content signature of a Big Board snapshot (manual order, AI order, tags,
+    // notes, drafted, active lane). Used to tell a real cross-view edit apart from a
+    // view's own echo so the Draft tab and live draft room can share one store
+    // without clobbering each other or looping, while still persisting every field
+    // the auto-save used to write.
+    const boardSyncSig = (b) => {
+        if (!b) return '';
+        try {
+            return JSON.stringify({
+                my: b.myOrder || [],
+                ai: b.aiOrder || [],
+                tags: b.tags || {},
+                notes: b.notes || {},
+                drafted: (b.drafted || []).slice().sort(),
+                lane: b.activeLane || b.boardMode || 'dhq',
+            });
+        } catch (e) { return ''; }
+    };
     // ══════════════════════════════════════════════════════════════════════════
     // END FREE AGENCY TAB
     // ══════════════════════════════════════════════════════════════════════════
@@ -60,6 +78,12 @@
             ? DRAFT_WR_KEYS.BIGBOARD_DRAFT(leagueKey, draftVariant)
             : DRAFT_WR_KEYS.BIGBOARD(leagueKey);
         const [boardData, setBoardData] = useState(() => DraftStorage.get(boardStorageKey, DraftStorage.get(DRAFT_WR_KEYS.BIGBOARD(leagueKey), null)));
+        // Last board signature this view has persisted or absorbed. When a write
+        // arrives from the live draft room (shared store) we stamp the incoming
+        // signature here first, so the auto-save effect that fires as we hydrate
+        // recognises the data as already-current and skips re-writing it — no echo,
+        // no stale-order clobber.
+        const boardSyncSigRef = useRef('');
         const [draftedPids, setDraftedPids] = useState(new Set());
         const [boardNotes, setBoardNotes] = useState({});
         const [boardTags, setBoardTags] = useState({}); // pid -> 'target'|'avoid'|'sleeper'|'must'
@@ -567,14 +591,24 @@
         // Auto-save board data to localStorage on changes. The AI order is saved
         // so mocks, context, and the visible Big Board share one recommendation source.
         useEffect(() => {
+            const payload = {
+                tags: boardTags,
+                notes: boardNotes,
+                drafted: Array.from(draftedPids),
+                aiOrder: aiRecommendedOrder,
+                myOrder: myBoardOrder,
+                activeLane: boardMode,
+            };
+            // Skip the write when nothing the user owns actually changed since the
+            // last value we persisted or absorbed from the live draft room. This is
+            // what stops a hydration from the shared store echoing straight back out
+            // (and overwriting a fresher live edit with our now-stale in-memory copy).
+            const sig = boardSyncSig(payload);
+            if (sig === boardSyncSigRef.current) return;
+            boardSyncSigRef.current = sig;
             DraftStorage.set(boardStorageKey,
                 {
-                    tags: boardTags,
-                    notes: boardNotes,
-                    drafted: Array.from(draftedPids),
-                    aiOrder: aiRecommendedOrder,
-                    myOrder: myBoardOrder,
-                    activeLane: boardMode,
+                    ...payload,
                     lineage: {
                         source: 'wr_bigboard',
                         seededFrom: myBoardOrder.length ? null : 'ai',
@@ -584,6 +618,40 @@
                     updatedAt: new Date().toISOString(),
                 });
         }, [boardTags, boardNotes, draftedPids, aiRecommendedOrder, myBoardOrder, boardMode, boardStorageKey]);
+
+        // Re-hydrate from the shared Big Board store when the live draft room (or
+        // another tab) edits the same league's board. Without this, the Draft tab's
+        // Big Board only reads on mount and silently drifts from the live draft's
+        // User Board even though both persist to the same key. We stamp the incoming
+        // signature first so the auto-save above treats the hydration as current.
+        useEffect(() => {
+            const legacyKey = DRAFT_WR_KEYS.BIGBOARD(leagueKey);
+            const absorb = (value) => {
+                if (!value) return;
+                boardSyncSigRef.current = boardSyncSig(value);
+                setBoardData(value);
+            };
+            const onBoardWrite = (e) => {
+                const d = e?.detail;
+                if (!d || (d.key !== boardStorageKey && d.key !== legacyKey)) return;
+                if (boardSyncSig(d.value) === boardSyncSigRef.current) return; // our own echo
+                absorb(d.value);
+            };
+            // Cross-tab fallback (the native CustomEvent only fires in-document):
+            const onStorage = (e) => {
+                if (!e || (e.key !== boardStorageKey && e.key !== legacyKey) || e.newValue == null) return;
+                let value = null;
+                try { value = JSON.parse(e.newValue); } catch (err) { return; }
+                if (boardSyncSig(value) === boardSyncSigRef.current) return;
+                absorb(value);
+            };
+            window.addEventListener('wr:bigboard-write', onBoardWrite);
+            window.addEventListener('storage', onStorage);
+            return () => {
+                window.removeEventListener('wr:bigboard-write', onBoardWrite);
+                window.removeEventListener('storage', onStorage);
+            };
+        }, [boardStorageKey, leagueKey]);
 
         const draftProjectionMeta = useMemo(() => {
             const rosters = currentLeague?.rosters || window.S?.rosters || [];

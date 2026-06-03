@@ -469,6 +469,16 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         set(key, value) {
             try {
                 localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+                // Broadcast Big Board writes so every mounted board view (the Draft
+                // tab's Big Board and the live draft room) can re-hydrate from this
+                // one shared store instead of drifting out of sync. Listeners filter
+                // by key; the content-signature guards on each side stop echo loops.
+                if (key.indexOf('wr_bigboard_') === 0 && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+                    try {
+                        const parsed = typeof value === 'string' ? WrStorage.get(key) : value;
+                        window.dispatchEvent(new CustomEvent('wr:bigboard-write', { detail: { key, value: parsed } }));
+                    } catch (e2) { /* CustomEvent unsupported — non-fatal, persistence already succeeded */ }
+                }
             } catch(e) { wrLog('storage.set:' + key, e); }
         },
         remove(key) {

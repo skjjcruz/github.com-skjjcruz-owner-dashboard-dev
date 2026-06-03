@@ -12,6 +12,22 @@
 (function() {
     const { FONT_UI, FONT_DISPL, FONT_MONO, panelCard, dhqColor, tierColor, bpBucket } = window.DraftCC.styles;
 
+    // Content signature of the user-owned parts of a Big Board snapshot. Mirrors
+    // the helper in draft-room.js so the live room can tell a genuine edit from the
+    // Draft tab apart from the echo of its own write to the shared store.
+    function boardUserSig(b) {
+        if (!b) return '';
+        try {
+            return JSON.stringify({
+                my: b.myOrder || b.my || [],
+                tags: b.tags || {},
+                notes: b.notes || {},
+                drafted: (b.drafted || []).slice().sort(),
+                lane: b.activeLane || b.boardMode || 'dhq',
+            });
+        } catch (e) { return ''; }
+    }
+
     const LANE_LABELS = {
         dhq: { label: 'DHQ Board', short: 'DHQ', sub: 'canonical value' },
         ai:  { label: 'AI Recommended', short: 'AI', sub: 'GM strategy' },
@@ -116,6 +132,60 @@
                 setBoardLane(boardContext.activeLane);
             }
         }, [boardContext?.activeLane]);
+
+        // Track the signature of the board we're currently showing so the listener
+        // below can tell a real edit from the Draft tab apart from the echo of our
+        // own writes to the shared store.
+        const liveBoardSigRef = React.useRef('');
+        React.useEffect(() => {
+            liveBoardSigRef.current = boardUserSig({
+                myOrder: boardContext?.lanes?.my?.order || [],
+                tags: boardContext?.tags || {},
+                notes: boardContext?.notes || {},
+                drafted: boardContext?.drafted || [],
+                activeLane: boardContext?.activeLane,
+            });
+        }, [boardContext]);
+
+        // Absorb Big Board edits made on the Draft tab (or another tab) into the live
+        // draft room. Both views persist to the same key; this dispatch folds an
+        // incoming snapshot into the live board context so a reorder/tag/note on one
+        // side flows to the other. This path never writes storage, so it can't loop.
+        React.useEffect(() => {
+            const keys = window.App?.WR_KEYS;
+            const typedKey = keys?.BIGBOARD_DRAFT ? keys.BIGBOARD_DRAFT(state.leagueId, state.variant || 'startup') : null;
+            const legacyKey = keys?.BIGBOARD ? keys.BIGBOARD(state.leagueId) : null;
+            const absorb = (value) => {
+                if (!value || boardUserSig(value) === liveBoardSigRef.current) return; // our own echo / no change
+                liveBoardSigRef.current = boardUserSig(value);
+                dispatch({
+                    type: 'UPDATE_BOARD_CONTEXT',
+                    patch: {
+                        myOrder: value.myOrder,
+                        tags: value.tags,
+                        notes: value.notes,
+                        tiers: value.tiers,
+                        drafted: value.drafted,
+                        activeLane: value.activeLane,
+                    },
+                });
+            };
+            const onBoardWrite = (e) => {
+                const d = e?.detail;
+                if (!d || (d.key !== typedKey && d.key !== legacyKey)) return;
+                absorb(d.value);
+            };
+            const onStorage = (e) => {
+                if (!e || (e.key !== typedKey && e.key !== legacyKey) || e.newValue == null) return;
+                try { absorb(JSON.parse(e.newValue)); } catch (err) { /* ignore malformed */ }
+            };
+            window.addEventListener('wr:bigboard-write', onBoardWrite);
+            window.addEventListener('storage', onStorage);
+            return () => {
+                window.removeEventListener('wr:bigboard-write', onBoardWrite);
+                window.removeEventListener('storage', onStorage);
+            };
+        }, [state.leagueId, state.variant, dispatch]);
 
         // Re-read viewport bucket on resize so the iPad/narrow row cap stays accurate.
         React.useEffect(() => {
