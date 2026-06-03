@@ -2507,9 +2507,23 @@
 
                     const aiSeedOrder = aiRecommendedOrder.length ? aiRecommendedOrder : draftPoolRows.map(r => r.pid);
 
-                    // Drag handlers
-                    const handleDragStart = (pid) => setDragPid(pid);
-                    const handleDragOver = (e) => e.preventDefault();
+                    // Drag handlers — mirror the live Big Board exactly. Setting
+                    // dataTransfer in onDragStart (and dropEffect in onDragOver) is
+                    // what actually initiates the native drag on iPad/WKWebView;
+                    // without it the touch falls back to selecting text.
+                    const handleDragStart = (e, pid) => {
+                        setDragPid(pid);
+                        try {
+                            if (e?.dataTransfer) {
+                                e.dataTransfer.effectAllowed = 'move';
+                                e.dataTransfer.setData('text/plain', String(pid));
+                            }
+                        } catch (_) {}
+                    };
+                    const handleDragOver = (e) => {
+                        e.preventDefault();
+                        try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+                    };
                     const handleDrop = (targetPid) => {
                         if (!dragPid || dragPid === targetPid) return;
                         setMyBoardOrder(prev => {
@@ -2680,11 +2694,12 @@
                                     <div
                                         data-draft-pid={r.pid}
                                         draggable={!isDhq}
-                                        onDragStart={!isDhq ? () => handleDragStart(r.pid) : undefined}
+                                        onDragStart={!isDhq ? (e) => handleDragStart(e, r.pid) : undefined}
                                         onDragOver={!isDhq ? handleDragOver : undefined}
+                                        onDragEnd={!isDhq ? () => setDragPid(null) : undefined}
                                         onDrop={!isDhq ? () => handleDrop(r.pid) : undefined}
                                         onClick={openPlayerDetail}
-                                        style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : 1, borderBottom: isExp ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: !isDhq ? 'grab' : 'pointer', background: isExp ? 'var(--acc-fill1, rgba(212,175,55,0.065))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent', transition: 'background 0.1s', position: 'relative' }}
+                                        style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : (dragPid === r.pid ? 0.5 : 1), borderBottom: isExp ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: !isDhq ? 'grab' : 'pointer', background: isExp ? 'var(--acc-fill1, rgba(212,175,55,0.065))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent', transition: 'background 0.1s', position: 'relative', ...(!isDhq ? { userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' } : {}) }}
                                         onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.04))'; }}
                                         onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>
