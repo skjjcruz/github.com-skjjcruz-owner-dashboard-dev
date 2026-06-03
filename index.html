@@ -530,6 +530,47 @@
         }
     }
 
+    /* Hub welcome banner */
+    .hub-welcome {
+        max-width: 640px;
+        margin: 1.5rem auto 0.25rem;
+        padding: 0 12px;
+        text-align: center;
+        animation: hubFadeIn 0.5s ease both;
+    }
+    .hub-welcome h2 {
+        font-family: 'DM Sans', sans-serif;
+        font-size: 1.5rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        color: var(--white);
+        margin: 0;
+    }
+    .hub-welcome h2 span { color: var(--gold); }
+    .hub-welcome p {
+        font-size: 0.82rem;
+        color: var(--silver);
+        opacity: 0.7;
+        margin-top: 4px;
+    }
+
+    /* Platform grid — centers a single card, goes 2-up only with multiple */
+    .hub-platform-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+        padding: 1rem 12px 2rem;
+        max-width: 560px;
+        margin: 0 auto;
+        width: 100%;
+    }
+    .hub-platform-grid.is-multi {
+        max-width: 1040px;
+    }
+    @media (min-width: 768px) {
+        .hub-platform-grid.is-multi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
     /* Product Card — shared base for both pillars */
     .product-card {
         background: var(--black);
@@ -637,12 +678,17 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: var(--card-pad-sm);
+        padding: 14px 16px;
         background: rgba(255,255,255,0.02);
         border: 1px solid rgba(212,175,55,0.15);
-        border-radius: 8px;
+        border-radius: 10px;
         cursor: pointer;
-        transition: all 0.15s;
+        transition: border-color 0.15s, background 0.15s, transform 0.15s;
+    }
+    .hub-league-item:hover {
+        border-color: rgba(212,175,55,0.55);
+        background: rgba(212,175,55,0.06);
+        transform: translateY(-1px);
     }
     .accent-scout .hub-league-item {
         border-color: rgba(212,175,55,0.15);
