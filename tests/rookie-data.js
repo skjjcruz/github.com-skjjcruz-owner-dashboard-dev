@@ -123,7 +123,7 @@ test('War Room root uses shared-loader for ReconAI shared modules', () => {
   ok(rootIndex.includes('WRShared.loadMany('), 'root shared loadMany call missing');
   ok(rootIndex.includes('WR_SHARED_FILES'), 'root shared file registry missing');
   ok(rootIndex.includes("'rookie-data.js'"), 'root rookie-data shared load missing');
-  ok(!rootIndex.includes('https://c2-football.github.io/ReconAI/shared/'), 'root still hardcodes remote shared scripts');
+  ok(!rootIndex.includes('https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/'), 'root still hardcodes remote shared scripts');
 });
 
 test('standalone pages use shared-loader instead of hardcoded remote shared scripts', () => {
@@ -131,14 +131,14 @@ test('standalone pages use shared-loader instead of hardcoded remote shared scri
     const html = read(ROOT, page);
     ok(html.includes('shared-loader.js'), `${page} missing shared-loader`);
     ok(html.includes('rookie-data.js'), `${page} missing rookie-data shared load`);
-    ok(!html.includes('https://c2-football.github.io/ReconAI/shared/'), `${page} still hardcodes remote shared scripts`);
+    ok(!html.includes('https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/'), `${page} still hardcodes remote shared scripts`);
   });
 });
 
 test('shared-loader supports local/prod switching and rookie data base override', () => {
   [
     'reconai-shared/',
-    'https://c2-football.github.io/ReconAI/shared/',
+    'https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/',
     "shared === 'remote'",
     'sharedBase',
     'window.ROOKIE_DATA_BASE',

@@ -5,14 +5,14 @@
     const REMOTE_BASE = (function () {
         try {
             const h = window.location.hostname || '';
-            // ReconAI shared scripts are deployed at <origin>/ReconAI/ ONLY on the
-            // c2-football Pages host. Load same-origin there (covered by CSP 'self').
-            // This dev fork (skjjcruz.github.io/github.com-...) does NOT host ReconAI,
-            // so it must point at c2-football explicitly — same-origin would resolve
-            // to skjjcruz.github.io/ReconAI/ which doesn't exist and breaks data load.
-            if (h === 'c2-football.github.io') return `${window.location.origin}/ReconAI/shared/`;
+            // ReconAI shared scripts are deployed at <origin>/ReconAI-sandbox-dev/ on the
+            // skjjcruz Pages host. When War Room is served from skjjcruz.github.io the
+            // ReconAI-sandbox-dev project site is same-origin, so load it relative to the
+            // origin (covered by CSP 'self'). Any other host loads it cross-origin from
+            // skjjcruz.github.io explicitly.
+            if (h === 'skjjcruz.github.io') return `${window.location.origin}/ReconAI-sandbox-dev/shared/`;
         } catch (e) {}
-        return 'https://c2-football.github.io/ReconAI/shared/';
+        return 'https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/';
     })();
     const DEFAULT_VERSION = '20260531sandbox2';
     const config = {
