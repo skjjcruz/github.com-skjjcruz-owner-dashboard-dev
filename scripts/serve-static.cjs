@@ -6,7 +6,7 @@ const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
 
-const LIVE_AI_ENDPOINT = 'https://sxshiqyxhhifvtfqawbq.supabase.co/functions/v1/ai-analyze';
+const LIVE_AI_ENDPOINT = 'https://hovnqztlbsgsywrbidbh.supabase.co/functions/v1/ai-analyze';
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
