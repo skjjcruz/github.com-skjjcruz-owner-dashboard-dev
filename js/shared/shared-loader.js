@@ -5,9 +5,12 @@
     const REMOTE_BASE = (function () {
         try {
             const h = window.location.hostname || '';
-            // Scout is deployed at <origin>/ReconAI/ on each GitHub Pages host, so load
-            // shared scripts same-origin (covered by CSP 'self') instead of a fixed domain.
-            if (h.endsWith('.github.io')) return `${window.location.origin}/ReconAI/shared/`;
+            // ReconAI shared scripts are deployed at <origin>/ReconAI/ ONLY on the
+            // c2-football Pages host. Load same-origin there (covered by CSP 'self').
+            // This dev fork (skjjcruz.github.io/github.com-...) does NOT host ReconAI,
+            // so it must point at c2-football explicitly — same-origin would resolve
+            // to skjjcruz.github.io/ReconAI/ which doesn't exist and breaks data load.
+            if (h === 'c2-football.github.io') return `${window.location.origin}/ReconAI/shared/`;
         } catch (e) {}
         return 'https://c2-football.github.io/ReconAI/shared/';
     })();
