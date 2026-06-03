@@ -33,7 +33,7 @@ jobs:
       - name: Checkout ReconAI shared source
         uses: actions/checkout@v4
         with:
-          repository: C2-Football/ReconAI
+          repository: skjjcruz/ReconAI-sandbox-dev
           path: reconai-src
 
       - name: Setup Node

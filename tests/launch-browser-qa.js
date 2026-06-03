@@ -141,7 +141,7 @@ async function installRoutes(context, network) {
       return route.fulfill({ status: 200, contentType: 'text/javascript', body: supabaseStub() });
     }
 
-    if (url.includes('c2-football.github.io/ReconAI/shared/supabase-client.js')) {
+    if (url.includes('skjjcruz.github.io/ReconAI-sandbox-dev/shared/supabase-client.js')) {
       return route.fulfill({ status: 200, contentType: 'text/javascript', body: reconSharedStub() });
     }
 

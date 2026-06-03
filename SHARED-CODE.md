@@ -8,7 +8,7 @@ War Room (`warroom/`) consumes it via CDN at runtime.
 ## CDN Base URL
 
 ```
-https://jcc100218.github.io/ReconAI/shared/
+https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/
 ```
 
 War Room HTML pages load shared scripts from this URL. Any change to a
@@ -95,7 +95,7 @@ thresholds inline.
 
 ## How War Room Consumes Shared Code
 
-War Room loads shared scripts via `<script src="https://jcc100218.github.io/ReconAI/shared/...">` tags in each HTML page. Scripts run in the browser before War Room's own JS.
+War Room loads shared scripts via `<script src="https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/...">` tags in each HTML page. Scripts run in the browser before War Room's own JS.
 
 **Pattern for constants that could fail to load:**
 
