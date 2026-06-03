@@ -252,7 +252,7 @@ Create test cases for these scenarios:
 ## FAQ
 
 **Q: Why are 10 ReconAI checks marked UNKNOWN?**
-A: The CDN (https://jcc100218.github.io/ReconAI/shared/dhq-ai.js) is blocked and cannot be analyzed. We can infer from integration code that ReconAI receives a simple mentality string, but we cannot verify its actual system prompt or context builder.
+A: The CDN (https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/dhq-ai.js) is blocked and cannot be analyzed. We can infer from integration code that ReconAI receives a simple mentality string, but we cannot verify its actual system prompt or context builder.
 
 **Q: Shouldn't we just block ReconAI completely?**
 A: Not necessarily. ReconAI is useful for mentality-based recommendations (rebuild/contend/balanced). The issue is using it for high-stakes decisions that require league format and quality gate awareness. Solution: Disable ReconAI for FAAB/draft/trade analysis, keep it for strategic/GM-talk features.
