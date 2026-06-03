@@ -842,8 +842,16 @@
                     </div>
                 )}
 
-                {/* ── 4 Platform Cards ── */}
-                <div className="hub-platform-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', padding: '0 12px' }}>
+                {/* ── Welcome banner ── */}
+                {!loading && (
+                    <div className="hub-welcome">
+                        <h2>Welcome back, <span>{String(displayName)}</span></h2>
+                        <p>Choose a league to enter your War Room.</p>
+                    </div>
+                )}
+
+                {/* ── Platform Cards (centers a single card; 2-up when multiple) ── */}
+                <div className={'hub-platform-grid' + (platformAccessAllowed('mfl') ? ' is-multi' : '')}>
 
                     {/* ──── SLEEPER ──── */}
                     <div className="product-card" style={{ borderColor: 'rgba(26,153,170,0.3)', background: 'linear-gradient(135deg, rgba(26,153,170,0.04), transparent)' }}>
