@@ -124,6 +124,7 @@
         const [sortKey, setSortKey] = React.useState('board');
         const [sortDir, setSortDir] = React.useState(1);
         const [boardLane, setBoardLane] = React.useState(defaultLane);
+        const [dragPid, setDragPid] = React.useState(null);
         const [bucket, setBucket] = React.useState(() => bpBucket());
 
         React.useEffect(() => {
@@ -342,13 +343,30 @@
             persistBoardPatch({ activeLane: 'my', myOrder: order });
         }, [persistBoardPatch]);
 
-        // Touch-capable drag-to-reorder (Pointer Events) so the board can be
-        // re-ranked on iPad, where the native HTML5 drag API does not fire.
-        const { dragPid, handleProps: rowDragHandle, handleStyle: rowDragHandleStyle } = window.App.usePointerReorder({
-            enabled: activeLane === 'my',
-            getOrder: () => manualOrderIds(),
-            setOrder: (order) => saveManualOrder(order),
-        });
+        const onMovePlayer = (player, delta) => {
+            const pid = idOf(player);
+            const order = manualOrderIds();
+            const idx = order.indexOf(pid);
+            if (!pid || idx < 0) return;
+            const nextIdx = Math.max(0, Math.min(order.length - 1, idx + delta));
+            if (nextIdx === idx) return;
+            const next = order.slice();
+            const [moved] = next.splice(idx, 1);
+            next.splice(nextIdx, 0, moved);
+            saveManualOrder(next);
+        };
+
+        const onDropPlayer = (target) => {
+            const sourcePid = dragPid;
+            const targetPid = idOf(target);
+            setDragPid(null);
+            if (!sourcePid || !targetPid || sourcePid === targetPid || activeLane !== 'my') return;
+            const order = manualOrderIds().filter(pid => pid !== sourcePid);
+            const targetIdx = order.indexOf(targetPid);
+            if (targetIdx < 0) return;
+            order.splice(targetIdx, 0, sourcePid);
+            saveManualOrder(order);
+        };
 
         const onEditTier = (player) => {
             const pid = idOf(player);
@@ -533,7 +551,7 @@
 
                 {activeLane === 'my' && (
                     <div style={{ padding: '4px 2px 7px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', opacity: 0.72, fontFamily: FONT_UI, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ fontWeight: 900 }}>{'⠿'}</span> Drag the handle to reorder your board
+                        <span style={{ fontWeight: 900 }}>{'↕'}</span> Drag rows to reorder your board
                     </div>
                 )}
 
@@ -573,8 +591,26 @@
                         return (
                             <div
                                 key={p.pid}
-                                {...(activeLane === 'my' && !p._drafted ? { 'data-drag-pid': idOf(p) } : {})}
                                 onClick={() => onOpenModal(p)}
+                                draggable={activeLane === 'my' && !p._drafted}
+                                onDragStart={e => {
+                                    if (activeLane !== 'my' || p._drafted) return;
+                                    setDragPid(idOf(p));
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    try { e.dataTransfer.setData('text/plain', idOf(p)); } catch (_) {}
+                                }}
+                                onDragEnd={() => setDragPid(null)}
+                                onDragOver={e => {
+                                    if (activeLane === 'my') {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                    }
+                                }}
+                                onDrop={e => {
+                                    if (activeLane !== 'my') return;
+                                    e.preventDefault();
+                                    onDropPlayer(p);
+                                }}
                                 style={{
                                     display: 'grid',
                                     gridTemplateColumns: (isUserTurn || state.overrideMode || state.mode === 'manual') ? '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 50px' : '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px',
@@ -584,19 +620,15 @@
                                     borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))',
                                     borderLeft: b.tier ? '2px solid ' + tCol : '2px solid transparent',
                                     paddingLeft: '5px',
-                                    cursor: 'pointer',
+                                    cursor: activeLane === 'my' && !p._drafted ? 'grab' : 'pointer',
                                     opacity: p._drafted ? 0.4 : (dragPid === idOf(p) ? 0.52 : 1),
                                     background: dragPid === idOf(p) ? 'var(--acc-fill2, rgba(212,175,55,0.10))' : (idx === 0 ? 'var(--acc-fill1, rgba(212,175,55,0.045))' : 'transparent'),
                                     transition: 'background 0.1s',
                                 }}
-                                onMouseEnter={e => { if (dragPid !== idOf(p)) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'; }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'}
                                 onMouseLeave={e => e.currentTarget.style.background = dragPid === idOf(p) ? 'var(--acc-fill2, rgba(212,175,55,0.10))' : (idx === 0 ? 'var(--acc-fill1, rgba(212,175,55,0.045))' : 'transparent')}
                             >
-                                {activeLane === 'my' && !p._drafted ? (
-                                    <span {...rowDragHandle(idOf(p))} title="Drag to reorder" style={{ ...rowDragHandleStyle, fontSize: '0.8rem', color: 'var(--gold)', fontFamily: FONT_MONO, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>⠿</span>
-                                ) : (
-                                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rowRank <= 12 ? 'var(--gold)' : 'var(--ov-8, rgba(255,255,255,0.34))', textAlign: 'right', fontFamily: FONT_MONO }}>{rowRank}</span>
-                                )}
+                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rowRank <= 12 ? 'var(--gold)' : 'var(--ov-8, rgba(255,255,255,0.34))', textAlign: 'right', fontFamily: FONT_MONO }}>{rowRank}</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
                                     <span style={{ color: 'var(--white)', fontWeight: 700, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: p._drafted ? 'line-through' : 'none' }}>{p.name}</span>
                                     {tag && (
