@@ -14,6 +14,189 @@
 (function() {
     const { FONT_UI, FONT_DISPL, FONT_MONO } = window.DraftCC.styles;
 
+    // Compact error boundary for the embedded Find-a-Trade tab: a render failure in the
+    // borrowed Trade Center component degrades to a switch-to-Build hint instead of
+    // unmounting the whole drawer.
+    class FinderBoundary extends React.Component {
+        constructor(props) { super(props); this.state = { failed: false }; }
+        static getDerivedStateFromError() { return { failed: true }; }
+        componentDidCatch(err) { if (window.wrLog) window.wrLog('draft.tradeFinder', err); }
+        render() {
+            if (this.state.failed) {
+                return (
+                    <div style={{ padding: '20px 14px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.5 }}>
+                        Find-a-Trade hit a snag in this view. Switch to <strong style={{ color: 'var(--gold)' }}>Build a Trade</strong> to keep going.
+                    </div>
+                );
+            }
+            return this.props.children;
+        }
+    }
+
+    // BUILD / FIND mode toggle — mirrors the main Trade Center analyzer's mode switch.
+    function AnalyzerModeToggle({ mode, onChange, disabled }) {
+        const tab = (key, label) => (
+            <button
+                onClick={() => !disabled && onChange(key)}
+                disabled={disabled}
+                style={{
+                    flex: 1,
+                    padding: '7px 8px',
+                    background: mode === key ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-3, rgba(255,255,255,0.04))',
+                    border: '1px solid ' + (mode === key ? 'var(--acc-line2, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.12))'),
+                    color: mode === key ? 'var(--gold)' : 'var(--silver)',
+                    fontFamily: FONT_DISPL,
+                    fontWeight: 700,
+                    fontSize: '0.72rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    borderRadius: '5px',
+                    cursor: disabled ? 'default' : 'pointer',
+                    opacity: disabled ? 0.6 : 1,
+                }}
+            >{label}</button>
+        );
+        return (
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+                {tab('build', 'Build a Trade')}
+                {tab('find', 'Find a Trade')}
+            </div>
+        );
+    }
+
+    // Mounts the main Trade Center Find-a-Trade auto-proposer inside the draft Trade
+    // Desk, fed by draft-context value/assessment adapters. The draft renders inside the
+    // main app, so TradeFinderTab's globals (AlexSettings, LeagueSkin, LI) are present.
+    // Asset option groups for a roster — picks of all years (current draft + future) in
+    // ONE group, players in another. Shared shape with the Build dropdowns.
+    function buildAssetGroups(state, rosterId) {
+        const sim = window.DraftCC?.tradeSimulator || {};
+        const stt = window.DraftCC?.state || {};
+        const pdata = window.S?.players || {};
+        const fmtDhq = (v) => { const n = Number(v) || 0; return (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n))) + ' DHQ'; };
+        const seasonPrefix = state.season ? state.season + ' ' : '';
+        const remaining = (state.pickOrder || []).slice(state.currentIdx || 0).filter(p => String(p.rosterId) === String(rosterId));
+        const pickOpts = remaining.map(p => ({ key: 'pick:' + p.round + '-' + p.teamIdx, type: 'pick', label: seasonPrefix + 'R' + p.round + '.' + String(p.slot || 0).padStart(2, '0'), sub: sim.pickValueFor ? fmtDhq(sim.pickValueFor(state, p)) : '', asset: p }));
+        const futures = (stt.buildFuturePickPool ? stt.buildFuturePickPool(state) : []).filter(fp => String(fp.ownerRosterId) === String(rosterId));
+        const futureOpts = futures.map(fp => ({ key: 'fut:' + fp.year + ':' + fp.round + ':' + fp.fromRosterId, type: 'future', label: fp.year + ' R' + fp.round, sub: stt.futurePickValueFor ? fmtDhq(stt.futurePickValueFor(state, fp)) : '', asset: fp }));
+        const pickedPids = new Set((state.picks || []).map(p => p.pid).filter(Boolean));
+        const roster = (window.S?.rosters || []).find(r => String(r.roster_id) === String(rosterId));
+        const playerIds = (roster?.players || []).filter(pid => pid && !pickedPids.has(pid));
+        const playerOpts = playerIds.map(pid => ({ pid, val: sim.playerValueFor ? sim.playerValueFor(pid) : 0 })).sort((a, b) => b.val - a.val).slice(0, 60).map(({ pid, val }) => { const pd = pdata[pid] || {}; const pos = pd.position || pd.fantasy_positions?.[0] || ''; const nm = pd.full_name || ((pd.first_name || '') + ' ' + (pd.last_name || '')).trim() || pid; return { key: 'plr:' + pid, type: 'player', label: nm + (pos ? ' · ' + pos : ''), sub: fmtDhq(val), asset: pid }; });
+        return [
+            { label: 'Picks', options: [...pickOpts, ...futureOpts] },
+            { label: 'Players', options: playerOpts },
+        ].filter(g => g.options.length);
+    }
+
+    // Native draft Find-a-Trade: pick a target asset (the partner's to ACQUIRE, or your
+    // own to TRADE AWAY) from the same dropdowns as Build — picks of all years AND players
+    // — and see fair candidate packages with DHQ variance, acceptance %, and grade. Click
+    // a card to load it into Build.
+    function DraftTradeFinder({ state, dispatch }) {
+        const sim = window.DraftCC?.tradeSimulator || {};
+        const drawer = state.proposerDrawer || {};
+        const targetId = drawer.targetRosterId;
+        const targetPersona = state.personas?.[targetId] || {};
+        const mode = drawer.finderMode || 'acquire';
+        const targetKey = drawer.finderTargetKey || '';
+        const setMode = (m) => dispatch({ type: 'UPDATE_PROPOSER', payload: { finderMode: m, finderTargetKey: '' } });
+        const setTargetKey = (k) => dispatch({ type: 'UPDATE_PROPOSER', payload: { finderTargetKey: k } });
+
+        const sourceRoster = mode === 'acquire' ? targetId : state.userRosterId;
+        const groups = React.useMemo(() => buildAssetGroups(state, sourceRoster),
+            [state.pickOrder, state.currentIdx, state.season, state.futurePicksLedger, state.tradedAssets, sourceRoster]);
+        const allOpts = groups.flatMap(g => g.options);
+        const target = allOpts.find(o => o.key === targetKey);
+
+        const candidates = React.useMemo(() => {
+            if (!target || !sim.findFairPackages) return [];
+            try { return sim.findFairPackages(state, targetId, target.asset, target.type, mode); }
+            catch (e) { if (window.wrLog) window.wrLog('draft.findFair', e); return []; }
+        }, [state.pickOrder, state.currentIdx, state.personas, state.tradedAssets, targetKey, mode, targetId]);
+
+        const loadProposal = (proposal) => {
+            dispatch({ type: 'UPDATE_PROPOSER', payload: {
+                analyzerMode: 'build',
+                myGive: proposal.myGive || [], theirGive: proposal.theirGive || [],
+                myGivePlayers: proposal.myGivePlayers || [], theirGivePlayers: proposal.theirGivePlayers || [],
+                myGiveFuture: proposal.myGiveFuture || [], theirGiveFuture: proposal.theirGiveFuture || [],
+                myGiveFaab: proposal.myGiveFaab || 0, theirGiveFaab: proposal.theirGiveFaab || 0,
+                status: 'building',
+            }});
+        };
+
+        const modeBtn = (key, label) => (
+            <button onClick={() => setMode(key)} style={{
+                flex: 1, padding: '7px 8px',
+                background: mode === key ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-3, rgba(255,255,255,0.04))',
+                border: '1px solid ' + (mode === key ? 'var(--acc-line2, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.12))'),
+                color: mode === key ? 'var(--gold)' : 'var(--silver)', fontFamily: FONT_DISPL, fontWeight: 700,
+                fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: '5px', cursor: 'pointer',
+            }}>{label}</button>
+        );
+        const metric = (label, value, valCol) => (
+            <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: '0.95rem', fontWeight: 800, fontFamily: FONT_DISPL, color: valCol }}>{value}</div>
+                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.85 }}>{label}</div>
+            </div>
+        );
+
+        return (
+            <FinderBoundary>
+                <div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                        {modeBtn('acquire', 'Acquire')}
+                        {modeBtn('away', 'Trade away')}
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                        {mode === 'acquire' ? ('Acquire from ' + (targetPersona.teamName || 'them')) : 'Trade away (your asset)'}
+                    </div>
+                    <select value={targetKey} onChange={(e) => setTargetKey(e.target.value)}
+                        style={{ width: '100%', minHeight: '38px', padding: '6px 8px', marginBottom: 12, background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '5px', color: 'var(--white)', fontFamily: FONT_UI, fontSize: '0.74rem', cursor: 'pointer' }}>
+                        <option value="">{mode === 'acquire' ? '+ pick an asset to acquire…' : '+ pick an asset to shop…'}</option>
+                        {groups.map((g, gi) => (
+                            <optgroup key={gi} label={g.label}>
+                                {g.options.map(o => <option key={o.key} value={o.key}>{o.label + (o.sub ? ' · ' + o.sub : '')}</option>)}
+                            </optgroup>
+                        ))}
+                    </select>
+                    {target && candidates.length === 0 && (
+                        <div style={{ padding: '16px 12px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', opacity: 0.8 }}>
+                            No fair package found for {target.label}. Try another asset or Build one manually.
+                        </div>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {candidates.map((c, ci) => {
+                            const ev = c.evaluation || {};
+                            const variance = Math.round((ev.theirGiveDHQ || 0) - (ev.myGiveDHQ || 0));
+                            const vCol = variance > 0 ? 'var(--good)' : variance < 0 ? 'var(--bad)' : 'var(--silver)';
+                            const accCol = (ev.likelihood || 0) >= (ev.acceptanceLine || 70) ? 'var(--good)' : (ev.likelihood || 0) >= (ev.counterLine || 50) ? 'var(--warn)' : 'var(--bad)';
+                            const grade = ev.grade?.grade || '—';
+                            return (
+                                <button key={ci} onClick={() => loadProposal(c.proposal)} style={{
+                                    textAlign: 'left', padding: '8px', background: 'var(--ov-2, rgba(255,255,255,0.03))',
+                                    border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderLeft: '3px solid ' + accCol,
+                                    borderRadius: '5px', color: 'var(--silver)', cursor: 'pointer', fontFamily: FONT_UI,
+                                }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, marginBottom: 6 }}>
+                                        <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--bad)' }}>Give:</strong> {proposalAssets(c.proposal, 'my')}</span>
+                                        <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--good)' }}>Get:</strong> {proposalAssets(c.proposal, 'their')}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 6, paddingTop: 6, borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))' }}>
+                                        {metric('DHQ variance', (variance > 0 ? '+' : '') + variance.toLocaleString(), vCol)}
+                                        {metric('Acceptance', (ev.likelihood || 0) + '%', accCol)}
+                                        {metric('Grade', grade, 'var(--gold)')}
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            </FinderBoundary>
+        );
+    }
+
     function TradeProposer({ state, dispatch }) {
         const drawer = state.proposerDrawer;
         if (!drawer) return null;
@@ -26,6 +209,14 @@
         const simulator = window.DraftCC.tradeSimulator;
         const isLiveSync = state.mode === 'live-sync';
         const currentSlot = state.pickOrder[state.currentIdx] || null;
+
+        // Analyzer mode: 'build' (manual two-sided builder, the default) vs 'find'
+        // (the embedded Trade Center auto-proposer) — full analyzer parity.
+        const analyzerMode = drawer.analyzerMode || 'build';
+        const setAnalyzerMode = (m) => {
+            if (drawer.status === 'sending' || drawer.status === 'accepted') return;
+            dispatch({ type: 'UPDATE_PROPOSER', payload: { analyzerMode: m } });
+        };
 
         const partnerOptions = React.useMemo(() => {
             return Object.entries(state.personas || {})
@@ -68,9 +259,11 @@
             theirGive: drawer.theirGive || [],
             myGivePlayers: drawer.myGivePlayers || [],
             theirGivePlayers: drawer.theirGivePlayers || [],
+            myGiveFuture: drawer.myGiveFuture || [],
+            theirGiveFuture: drawer.theirGiveFuture || [],
             myGiveFaab: drawer.myGiveFaab || 0,
             theirGiveFaab: drawer.theirGiveFaab || 0,
-        }), [targetId, drawer.myGive, drawer.theirGive, drawer.myGivePlayers, drawer.theirGivePlayers, drawer.myGiveFaab, drawer.theirGiveFaab]);
+        }), [targetId, drawer.myGive, drawer.theirGive, drawer.myGivePlayers, drawer.theirGivePlayers, drawer.myGiveFuture, drawer.theirGiveFuture, drawer.myGiveFaab, drawer.theirGiveFaab]);
 
         const partnerProfile = React.useMemo(() => {
             return simulator?.describeTradePartner ? simulator.describeTradePartner(state, targetId) : null;
@@ -81,10 +274,18 @@
             return simulator.evaluateUserProposal(state, currentProposal, { preview: true });
         }, [simulator, currentProposal, state.pickOrder, state.currentIdx, targetPersona, myPersona]);
 
+        // NOTE: intentionally NOT fed the live currentProposal. Doing so made the rail
+        // regenerate an "Add Sweetener" package the moment you loaded a suggestion —
+        // i.e. clicking one package spawned a new one. The rail stays stable now.
         const packageSuggestions = React.useMemo(() => {
             if (!simulator?.buildTradeSuggestions) return [];
-            return simulator.buildTradeSuggestions(state, targetId, { currentProposal });
-        }, [simulator, state.pickOrder, state.currentIdx, state.personas, state.tradedAssets, currentProposal, targetId]);
+            return simulator.buildTradeSuggestions(state, targetId);
+        }, [simulator, state.pickOrder, state.currentIdx, state.personas, state.tradedAssets, targetId]);
+
+        // Sandbox future-pick pool (next-season picks), ownership reflecting the ledger.
+        const futurePool = React.useMemo(() => (
+            window.DraftCC?.state?.buildFuturePickPool ? window.DraftCC.state.buildFuturePickPool(state) : []
+        ), [state.season, state.rounds, state.leagueSize, state.futurePicksLedger, state.personas]);
 
         // Phase 7 deferred: players + FAAB togglers
         const togglePlayer = (pid, side) => {
@@ -100,6 +301,25 @@
             const key = side === 'my' ? 'myGiveFaab' : 'theirGiveFaab';
             dispatch({ type: 'UPDATE_PROPOSER', payload: { [key]: Math.max(0, Math.min(1000, Number(val) || 0)), status: 'building' } });
         };
+        // Future (next-season) picks — sandbox assets keyed by year:round:fromRosterId.
+        const futureKeyOf = (fp) => 'FUT:' + fp.year + ':' + fp.round + ':' + fp.fromRosterId;
+        const toggleFuture = (fp, side) => {
+            if (drawer.status === 'sending' || drawer.status === 'accepted') return;
+            const key = side === 'my' ? 'myGiveFuture' : 'theirGiveFuture';
+            const arr = drawer[key] || [];
+            const exists = arr.some(p => futureKeyOf(p) === futureKeyOf(fp));
+            const next = exists ? arr.filter(p => futureKeyOf(p) !== futureKeyOf(fp)) : [...arr, fp];
+            dispatch({ type: 'UPDATE_PROPOSER', payload: { [key]: next, status: 'building' } });
+        };
+        const myFuturePicks = futurePool.filter(fp => String(fp.ownerRosterId) === String(state.userRosterId));
+        const theirFuturePicks = futurePool.filter(fp => String(fp.ownerRosterId) === String(targetId));
+        const myFutureSel = new Set((drawer.myGiveFuture || []).map(futureKeyOf));
+        const theirFutureSel = new Set((drawer.theirGiveFuture || []).map(futureKeyOf));
+        const addAsset = (asset, type, side) => {
+            if (type === 'pick') togglePick(asset, side);
+            else if (type === 'player') togglePlayer(asset, side);
+            else if (type === 'future') toggleFuture(asset, side);
+        };
 
         const onTargetChange = (targetRosterId) => {
             if (drawer.status === 'sending' || drawer.status === 'accepted') return;
@@ -109,6 +329,7 @@
                     targetRosterId,
                     theirGive: [],
                     theirGivePlayers: [],
+                    theirGiveFuture: [],
                     theirGiveFaab: 0,
                     status: 'building',
                     counterOffer: null,
@@ -127,6 +348,8 @@
                     theirGive: proposal.theirGive || [],
                     myGivePlayers: proposal.myGivePlayers || [],
                     theirGivePlayers: proposal.theirGivePlayers || [],
+                    myGiveFuture: proposal.myGiveFuture || [],
+                    theirGiveFuture: proposal.theirGiveFuture || [],
                     myGiveFaab: proposal.myGiveFaab || 0,
                     theirGiveFaab: proposal.theirGiveFaab || 0,
                     status: 'building',
@@ -146,10 +369,31 @@
         const myPlayerIds = rosterOf(state.userRosterId);
         const theirPlayerIds = rosterOf(targetId);
 
+        // Asset selectors as scrollable dropdowns (one per side, grouped) instead of a
+        // grid of chips — keeps the drawer light. Each option carries its type so a
+        // single handler routes to the right toggler.
+        const fmtDhq = (v) => { const n = Number(v) || 0; return (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n))) + ' DHQ'; };
+        const pdata = window.S?.players || {};
+        const playerName = (pid) => { const p = pdata[pid] || {}; return p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || pid; };
+        const seasonPrefix = state.season ? state.season + ' ' : '';
+        const pickOpts = (picks) => (picks || []).map(p => ({ key: p.round + '-' + p.teamIdx, type: 'pick', label: seasonPrefix + 'R' + p.round + '.' + String(p.slot || 0).padStart(2, '0'), sub: simulator ? fmtDhq(simulator.pickValueFor(state, p)) : '', asset: p }));
+        const playerOpts = (pids) => (pids || []).map(pid => ({ pid, val: simulator ? simulator.playerValueFor(pid) : 0 })).sort((a, b) => b.val - a.val).slice(0, 60).map(({ pid, val }) => { const pd = pdata[pid] || {}; const pos = pd.position || pd.fantasy_positions?.[0] || ''; return { key: pid, type: 'player', label: playerName(pid) + (pos ? ' · ' + pos : ''), sub: fmtDhq(val), asset: pid }; });
+        const futureOpts = (picks) => (picks || []).map(fp => ({ key: futureKeyOf(fp), type: 'future', label: fp.year + ' R' + fp.round, sub: window.DraftCC?.state?.futurePickValueFor ? fmtDhq(window.DraftCC.state.futurePickValueFor(state, fp)) : '', asset: fp }));
+        // Picks of all years (current draft + future seasons) share one group, ordered
+        // earliest-first; players are their own group.
+        const buildGroups = (picks, pids, futures) => [
+            { label: 'Picks', options: [...pickOpts(picks), ...futureOpts(futures)] },
+            { label: 'Players', options: playerOpts(pids) },
+        ].filter(g => g.options.length);
+        const giveGroups = buildGroups(myRemainingPicks, myPlayerIds, myFuturePicks);
+        const getGroups = buildGroups(theirRemainingPicks, theirPlayerIds, theirFuturePicks);
+        const giveSelectedKeys = new Set([...myGiveIds, ...(drawer.myGivePlayers || []), ...myFutureSel]);
+        const getSelectedKeys = new Set([...theirGiveIds, ...(drawer.theirGivePlayers || []), ...theirFutureSel]);
+
         const onClose = () => dispatch({ type: 'CLOSE_PROPOSER' });
 
-        const mySideHasAssets = (drawer.myGive?.length || 0) + (drawer.myGivePlayers?.length || 0) + (drawer.myGiveFaab || 0) > 0;
-        const theirSideHasAssets = (drawer.theirGive?.length || 0) + (drawer.theirGivePlayers?.length || 0) + (drawer.theirGiveFaab || 0) > 0;
+        const mySideHasAssets = (drawer.myGive?.length || 0) + (drawer.myGivePlayers?.length || 0) + (drawer.myGiveFuture?.length || 0) + (drawer.myGiveFaab || 0) > 0;
+        const theirSideHasAssets = (drawer.theirGive?.length || 0) + (drawer.theirGivePlayers?.length || 0) + (drawer.theirGiveFuture?.length || 0) + (drawer.theirGiveFaab || 0) > 0;
 
         const onSend = () => {
             if (!mySideHasAssets || !theirSideHasAssets) return;
@@ -191,6 +435,8 @@
                         myGive: currentProposal.myGive,
                         theirGivePlayers: currentProposal.theirGivePlayers || [],
                         myGivePlayers: currentProposal.myGivePlayers || [],
+                        theirGiveFuture: currentProposal.theirGiveFuture || [],
+                        myGiveFuture: currentProposal.myGiveFuture || [],
                         theirGiveFaab: currentProposal.theirGiveFaab || 0,
                         myGiveFaab: currentProposal.myGiveFaab || 0,
                         myGainDHQ: result.theirGiveDHQ,
@@ -453,6 +699,13 @@
                         </div>
                     )}
 
+                    {/* Analyzer mode toggle — Build vs Find (Trade Center parity) */}
+                    <AnalyzerModeToggle mode={analyzerMode} onChange={setAnalyzerMode} disabled={isSending || isAccepted} />
+
+                    {analyzerMode === 'find' ? (
+                        <DraftTradeFinder state={state} dispatch={dispatch} />
+                    ) : (
+                    <React.Fragment>
                     <OwnerIntelCard profile={partnerProfile} />
 
                     <SuggestionRail
@@ -576,37 +829,22 @@
                         />
                     </div>
 
-                    {/* Pick selectors */}
-                    <PickList
-                        title="Your picks"
-                        picks={myRemainingPicks}
-                        selected={myGiveIds}
-                        onToggle={pick => togglePick(pick, 'my')}
-                        state={state}
+                    {/* Asset selectors — two scrollable dropdowns (picks / players /
+                        future picks grouped), instead of a grid of chips. */}
+                    <AssetSelect
+                        title="You give"
+                        placeholder="+ add a pick, player, or future pick…"
+                        groups={giveGroups}
+                        selectedKeys={giveSelectedKeys}
+                        onPick={(asset, type) => addAsset(asset, type, 'my')}
                         disabled={isSending || isAccepted}
                     />
-                    <PickList
-                        title={targetPersona.teamName + "'s picks"}
-                        picks={theirRemainingPicks}
-                        selected={theirGiveIds}
-                        onToggle={pick => togglePick(pick, 'their')}
-                        state={state}
-                        disabled={isSending || isAccepted}
-                    />
-
-                    {/* Phase 7 deferred: player + FAAB lanes */}
-                    <PlayerList
-                        title="Your players"
-                        playerIds={myPlayerIds}
-                        selected={new Set(drawer.myGivePlayers || [])}
-                        onToggle={pid => togglePlayer(pid, 'my')}
-                        disabled={isSending || isAccepted}
-                    />
-                    <PlayerList
-                        title={targetPersona.teamName + "'s players"}
-                        playerIds={theirPlayerIds}
-                        selected={new Set(drawer.theirGivePlayers || [])}
-                        onToggle={pid => togglePlayer(pid, 'their')}
+                    <AssetSelect
+                        title={'You get from ' + targetPersona.teamName}
+                        placeholder="+ add a pick, player, or future pick…"
+                        groups={getGroups}
+                        selectedKeys={getSelectedKeys}
+                        onPick={(asset, type) => addAsset(asset, type, 'their')}
                         disabled={isSending || isAccepted}
                     />
                     <FaabRow
@@ -617,6 +855,11 @@
                         myLabel="Your FAAB"
                         theirLabel={targetPersona.teamName + "'s FAAB"}
                     />
+                    {(drawer.myGiveFuture?.length || drawer.theirGiveFuture?.length) ? (
+                        <div style={{ marginTop: '4px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.4 }}>
+                            Future picks are sandboxed to this draft — they don't affect your real league.
+                        </div>
+                    ) : null}
 
                     {/* Psych taxes */}
                     {evaluation.taxes && evaluation.taxes.length > 0 && (
@@ -717,6 +960,8 @@
                             }}>{(evaluation.netModifier || 0) > 0 ? '+' : ''}{evaluation.netModifier || 0}%</span>
                         </div>
                     ) : null}
+                    </React.Fragment>
+                    )}
                 </div>
 
                 {/* Footer actions */}
@@ -964,38 +1209,33 @@
                                             }}>MOONSHOT</span>
                                         )}
                                     </span>
-                                    <span style={{ color, fontFamily: FONT_MONO, fontSize: 'var(--text-label, 0.75rem)', fontWeight: 800, flexShrink: 0 }}>
-                                        {s.likelihood}% / {s.acceptanceLine}%
+                                    <span style={{ color, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
+                                        {isMoonshot ? 'Long shot' : clears ? 'Likely' : near ? 'Stretch' : 'Unlikely'}
                                     </span>
                                 </div>
-                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 700, marginBottom: 4 }}>
-                                    {s.intent}
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, marginBottom: 4 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, marginBottom: 6 }}>
                                     <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--bad)' }}>Give:</strong> {proposalAssets(s.proposal, 'my')}</span>
                                     <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--good)' }}>Get:</strong> {proposalAssets(s.proposal, 'their')}</span>
                                 </div>
-                                {/* Why — trade-up reasoning (headline + tone-colored drivers) */}
-                                {s.reasoning && (
-                                    <div style={{
-                                        marginTop: 5,
-                                        paddingTop: 5,
-                                        borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
-                                    }}>
-                                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--white)', fontWeight: 700, lineHeight: 1.35, marginBottom: 3 }}>
-                                            Why: {s.reasoning.headline}
+                                {/* DHQ variance · Acceptance · Grade — the numbers the user judges by */}
+                                {(() => {
+                                    const variance = Math.round((s.theirGiveDHQ || 0) - (s.myGiveDHQ || 0));
+                                    const vCol = variance > 0 ? 'var(--good)' : variance < 0 ? 'var(--bad)' : 'var(--silver)';
+                                    const grade = s.evaluation?.grade?.grade || s.grade?.grade || '—';
+                                    const metric = (label, value, valCol) => (
+                                        <div style={{ flex: 1, textAlign: 'center' }}>
+                                            <div style={{ fontSize: '0.95rem', fontWeight: 800, fontFamily: FONT_DISPL, color: valCol }}>{value}</div>
+                                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.85 }}>{label}</div>
                                         </div>
-                                        {(s.reasoning.drivers || []).slice(0, 4).map((d, i) => {
-                                            const tCol = d.tone === 'good' ? 'var(--good)' : d.tone === 'bad' ? 'var(--bad)' : 'var(--silver)';
-                                            return (
-                                                <div key={i} style={{ fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, opacity: 0.95 }}>
-                                                    <strong style={{ color: tCol }}>{d.label}:</strong>{' '}
-                                                    <span style={{ color: 'var(--silver)' }}>{d.detail}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                    );
+                                    return (
+                                        <div style={{ display: 'flex', gap: 6, marginTop: 5, paddingTop: 6, borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))' }}>
+                                            {metric('DHQ variance', (variance > 0 ? '+' : '') + variance.toLocaleString(), vCol)}
+                                            {metric('Acceptance', (s.likelihood || 0) + '%', color)}
+                                            {metric('Grade', grade, 'var(--gold)')}
+                                        </div>
+                                    );
+                                })()}
                                 {isMoonshot && (
                                     <div style={{ marginTop: 5, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--warn)', fontWeight: 600, lineHeight: 1.35 }}>
                                         Low odds — but possible if they're desperate.
@@ -1081,22 +1321,15 @@
         );
     }
 
-    function PlayerList({ title, playerIds, selected, onToggle, disabled }) {
-        const simulator = window.DraftCC.tradeSimulator;
-        const pdata = window.S?.players || {};
-        if (!playerIds || playerIds.length === 0) return null;
-        const playerName = (pid) => {
-            const p = pdata[pid];
-            const n = p?.full_name || ((p?.first_name || '') + ' ' + (p?.last_name || '')).trim();
-            return n || pid;
-        };
-        // Sort by DHQ value desc, cap to 40 to keep the drawer light
-        const sorted = [...playerIds]
-            .map(pid => ({ pid, val: simulator ? simulator.playerValueFor(pid) : 0 }))
-            .sort((a, b) => b.val - a.val)
-            .slice(0, 40);
+    // Scrollable dropdown asset selector — replaces the per-asset chip grids. Options
+    // are grouped (Picks / Players / Future picks); selected items are listed as small
+    // removable pills beneath, and marked with a ✓ in the list.
+    function AssetSelect({ title, placeholder, groups, selectedKeys, onPick, disabled }) {
+        const allOptions = (groups || []).flatMap(g => g.options);
+        if (allOptions.length === 0) return null;
+        const selected = allOptions.filter(o => selectedKeys.has(o.key));
         return (
-            <div style={{ marginBottom: '10px' }}>
+            <div style={{ marginBottom: '8px' }}>
                 <div style={{
                     fontSize: '0.6875rem',
                     fontWeight: 700,
@@ -1105,42 +1338,62 @@
                     letterSpacing: '0.08em',
                     marginBottom: '4px',
                 }}>{title}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '120px', overflowY: 'auto' }}>
-                    {sorted.map(({ pid, val }) => {
-                        const isSel = selected.has(pid);
-                        const p = pdata[pid] || {};
-                        const pos = p.position || p.fantasy_positions?.[0] || '';
-                        return (
+                <select
+                    value=""
+                    disabled={disabled}
+                    onChange={(e) => { const o = allOptions.find(x => x.key === e.target.value); if (o) onPick(o.asset, o.type); e.target.value = ''; }}
+                    style={{
+                        width: '100%',
+                        minHeight: '38px',
+                        padding: '6px 8px',
+                        background: 'var(--ov-3, rgba(255,255,255,0.04))',
+                        border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
+                        borderRadius: '5px',
+                        color: 'var(--white)',
+                        fontFamily: FONT_UI,
+                        fontSize: '0.74rem',
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        opacity: disabled ? 0.5 : 1,
+                    }}
+                >
+                    <option value="">{placeholder}</option>
+                    {(groups || []).map((g, gi) => (
+                        <optgroup key={gi} label={g.label}>
+                            {g.options.map(o => (
+                                <option key={o.key} value={o.key}>{(selectedKeys.has(o.key) ? '✓ ' : '') + o.label + (o.sub ? ' · ' + o.sub : '')}</option>
+                            ))}
+                        </optgroup>
+                    ))}
+                </select>
+                {selected.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '5px' }}>
+                        {selected.map(o => (
                             <button
-                                key={pid}
+                                key={o.key}
                                 disabled={disabled}
-                                onClick={() => onToggle(pid)}
-                                title={playerName(pid) + ' · ' + pos + ' · ~' + val.toLocaleString() + ' DHQ'}
+                                onClick={() => onPick(o.asset, o.type)}
+                                title="Remove"
                                 style={{
-                                    padding: '4px 8px',
-                                    minHeight: '40px',
+                                    padding: '3px 7px',
+                                    minHeight: '26px',
                                     display: 'inline-flex',
                                     alignItems: 'center',
+                                    gap: '4px',
                                     fontSize: '0.6875rem',
                                     fontWeight: 700,
-                                    background: isSel ? 'rgba(124,107,248,0.25)' : 'var(--ov-2, rgba(255,255,255,0.03))',
-                                    border: '1px solid ' + (isSel ? 'rgba(155,138,251,0.55)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                                    background: 'var(--acc-line1, rgba(212,175,55,0.2))',
+                                    border: '1px solid var(--acc-line3, rgba(212,175,55,0.5))',
                                     borderRadius: '4px',
-                                    color: isSel ? 'var(--purple)' : 'var(--silver)',
+                                    color: 'var(--gold)',
                                     cursor: disabled ? 'not-allowed' : 'pointer',
                                     fontFamily: FONT_UI,
-                                    opacity: disabled ? 0.5 : 1,
-                                    maxWidth: '100%',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
                                 }}
                             >
-                                {playerName(pid)}{pos ? ' · ' + pos : ''}
+                                {o.label} <span style={{ opacity: 0.6 }}>×</span>
                             </button>
-                        );
-                    })}
-                </div>
+                        ))}
+                    </div>
+                )}
             </div>
         );
     }
@@ -1169,59 +1422,6 @@
                     <span style={{ color: 'var(--silver)' }}>$</span>
                     <input type="number" min="0" max="1000" value={theirFaab} onChange={e => onChange(e.target.value, 'their')} disabled={disabled} style={inputStyle} />
                 </label>
-            </div>
-        );
-    }
-
-    function PickList({ title, picks, selected, onToggle, state, disabled }) {
-        const simulator = window.DraftCC.tradeSimulator;
-        return (
-            <div style={{ marginBottom: '10px' }}>
-                <div style={{
-                    fontSize: '0.6875rem',
-                    fontWeight: 700,
-                    color: 'var(--gold)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    marginBottom: '4px',
-                }}>{title}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {picks.slice(0, 12).map((p, i) => {
-                        const key = p.round + '-' + p.teamIdx;
-                        const isSel = selected.has(key);
-                        const val = simulator ? simulator.pickValueFor(state, p) : 0;
-                        return (
-                            <button
-                                key={i}
-                                disabled={disabled}
-                                onClick={() => onToggle(p)}
-                                title={'Round ' + p.round + ' pick · ~' + val.toLocaleString() + ' DHQ'}
-                                style={{
-                                    padding: '4px 8px',
-                                    minHeight: '40px',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    fontSize: '0.6875rem',
-                                    fontWeight: 700,
-                                    background: isSel ? 'var(--acc-line1, rgba(212,175,55,0.2))' : 'var(--ov-2, rgba(255,255,255,0.03))',
-                                    border: '1px solid ' + (isSel ? 'var(--acc-line3, rgba(212,175,55,0.5))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
-                                    borderRadius: '4px',
-                                    color: isSel ? 'var(--gold)' : 'var(--silver)',
-                                    cursor: disabled ? 'not-allowed' : 'pointer',
-                                    fontFamily: FONT_UI,
-                                    opacity: disabled ? 0.5 : 1,
-                                }}
-                            >
-                                R{p.round}.{String(p.slot || 0).padStart(2, '0')}
-                            </button>
-                        );
-                    })}
-                    {picks.length === 0 && (
-                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4, fontStyle: 'italic' }}>
-                            no remaining picks
-                        </div>
-                    )}
-                </div>
             </div>
         );
     }

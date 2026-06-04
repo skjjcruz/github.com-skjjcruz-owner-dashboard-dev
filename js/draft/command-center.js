@@ -1430,15 +1430,15 @@
         }, [currentLeague]);
 
         // Phase 3: open the trade proposer drawer for a given CPU roster
-        const onPropose = React.useCallback((rosterId) => {
+        const onPropose = React.useCallback((rosterId, seed) => {
             if (!rosterId || String(rosterId) === String(state.userRosterId)) return;
-            dispatch({ type: 'OPEN_PROPOSER', targetRosterId: rosterId });
+            dispatch({ type: 'OPEN_PROPOSER', targetRosterId: rosterId, seed: seed || undefined });
         }, [state.userRosterId]);
 
         // ── Render ───────────────────────────────────────────────────
         // Mobile redirect
         if (viewport === 'mobile') {
-            return <MobileFeed state={state} dispatch={dispatch} onStart={onStartDraft} isUserTurn={isUserTurn} currentSlot={currentSlot} />;
+            return <MobileFeed state={state} dispatch={dispatch} onStart={onStartDraft} isUserTurn={isUserTurn} currentSlot={currentSlot} onPropose={onPropose} />;
         }
 
         // Setup phase
@@ -3239,7 +3239,7 @@
         );
     }
 
-    function DraftPickListPanel({ state, currentSlot }) {
+    function DraftPickListPanel({ state, currentSlot, onPropose }) {
         const posColors = window.App?.POS_COLORS || {
             QB: 'var(--k-ff6b6b, #ff6b6b)', RB: 'var(--k-4ecdc4, #4ecdc4)', WR: 'var(--k-45b7d1, #45b7d1)', TE: 'var(--k-f7dc6f, #f7dc6f)',
             DL: 'var(--k-e67e22, #e67e22)', LB: 'var(--k-f0a500, #f0a500)', DB: 'var(--k-5dade2, #5dade2)', K: 'var(--k-bb8fce, #bb8fce)',
@@ -3320,10 +3320,14 @@
                         const isCurrent = row.kind === 'current' || Number(slot.overall) === Number(currentOverall);
                         const pos = pick?.pos || '';
                         const posCol = posColors[pos] || 'var(--gold)';
+                        // Queue a trade for a not-yet-made pick owned by a CPU: opens the
+                        // Trade Desk targeting that team with this pick preselected on the
+                        // "you get" side.
+                        const canQueue = !!onPropose && (row.kind === 'upcoming' || row.kind === 'current') && rosterId && rosterId !== userRosterId;
                         return (
                             <div key={row.key} style={{
                                 display: 'grid',
-                                gridTemplateColumns: '48px minmax(0, 0.85fr) minmax(0, 1.35fr) 36px 54px',
+                                gridTemplateColumns: '48px minmax(0, 0.85fr) minmax(0, 1.35fr) 36px 54px 26px',
                                 gap: '7px',
                                 alignItems: 'center',
                                 minHeight: 34,
@@ -3348,6 +3352,20 @@
 	                                <span style={{ color: pick ? 'var(--gold)' : 'var(--silver)', opacity: pick || slot.value ? 1 : 0.5, fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>
 	                                    {pick ? fmt(pick.dhq) : (slot.value ? fmt(slot.value) : '#' + (slot.overall || '--'))}
 	                                </span>
+                                {canQueue ? (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onPropose(rosterId, { theirGive: [slot] }); }}
+                                        title={'Queue a trade for ' + ownerName(slot, pick) + "'s " + row.label + ' pick'}
+                                        style={{
+                                            width: 24, height: 24, minWidth: 24, padding: 0,
+                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                            background: 'transparent',
+                                            border: '1px solid var(--acc-line1, rgba(212,175,55,0.3))',
+                                            borderRadius: '4px', color: 'var(--gold)',
+                                            fontSize: '0.72rem', cursor: 'pointer', lineHeight: 1,
+                                        }}
+                                    >⇄</button>
+                                ) : <span />}
                             </div>
                         );
                     })}
@@ -4777,7 +4795,7 @@
                         </div>
                     )}
 	                    <div style={{ minHeight: isCompact ? 'clamp(240px, 26vh, 320px)' : '100%', minWidth: 0 }}>
-	                        <DraftPickListPanel state={state} currentSlot={currentSlot} />
+	                        <DraftPickListPanel state={state} currentSlot={currentSlot} onPropose={onPropose} />
                     </div>
                     <div style={{ minHeight: isCompact ? 'clamp(240px, 26vh, 320px)' : '100%', minWidth: 0 }}>
                         <AlexStreamPanel state={state} dispatch={dispatch} />
@@ -5869,7 +5887,7 @@
         }
 
         // ── Mobile: read-only feed ───────────────────────────────────────
-        function MobileFeed({ state, dispatch, onStart, isUserTurn, currentSlot }) {
+        function MobileFeed({ state, dispatch, onStart, isUserTurn, currentSlot, onPropose }) {
         const BigBoardPanel = window.DraftCC.BigBoardPanel;
         const AlexStreamPanel = window.DraftCC.AlexStreamPanel;
         const AskAnswerWindow = window.DraftCC.AskAnswerWindow;
@@ -5920,7 +5938,7 @@
                     <AlexStreamPanel state={state} dispatch={dispatch} />
                 </div>
                 <div style={{ minHeight: 260, maxHeight: '44vh' }}>
-                    <DraftPickListPanel state={state} currentSlot={currentSlot} />
+                    <DraftPickListPanel state={state} currentSlot={currentSlot} onPropose={onPropose} />
                 </div>
                 {AskAnswerWindow && <AskAnswerWindow state={state} />}
                 {AlexCall && <AlexCall state={state} isUserTurn={isUserTurn} />}

@@ -365,6 +365,10 @@
             // { [rosterId]: { incomingPlayers: [pid], outgoingPlayers: [pid], faabDelta: number } }
             tradedAssets: {},
 
+            // Sandbox-only ledger of next-season picks that changed hands in-sim.
+            // { [futurePickKey]: newOwnerRosterId }. Never written to Sleeper.
+            futurePicksLedger: {},
+
             // Analytics (Phase 4)
             analytics: {
                 liveHealth: { at: 0, delta: 0 },
@@ -606,6 +610,58 @@
             }
         } catch (e) {}
         return { value: Math.max(0, Math.round(value || 0)), source, overall };
+    }
+
+    // ── Future (next-season) pick pool — SANDBOX ONLY ──────────────────────
+    // The draft sim has no concept of next-season picks. Trading them stays entirely
+    // inside the simulation — never written to Sleeper or window.S.tradedPicks. We
+    // synthesize a clean 1-pick-per-round-per-team pool for the next N seasons;
+    // in-sim ownership changes are recorded in state.futurePicksLedger and reflected
+    // back onto the pool here. Values use resolveDraftPickValue with the future season,
+    // which already applies the dynasty future discount (~12%/yr) via getPickValue.
+    function futurePickKey(p) {
+        return 'FUT:' + p.year + ':' + p.round + ':' + p.fromRosterId;
+    }
+
+    function futurePickValueFor(state, p) {
+        if (Number(p?.value) > 0) return Math.round(Number(p.value));
+        const r = resolveDraftPickValue({
+            season: p?.year,
+            round: p?.round,
+            leagueSize: state?.leagueSize,
+            rounds: state?.rounds,
+        });
+        return r?.value || 0;
+    }
+
+    function buildFuturePickPool(state, opts = {}) {
+        const rosters = window.S?.rosters || [];
+        const baseSeason = Number(state?.season) || Number(window.S?.season) || new Date().getFullYear();
+        const horizon = Math.max(1, Math.min(3, opts.horizon || 2)); // next 1–2 seasons by default
+        const rounds = Math.max(1, Number(state?.rounds) || (window.App?.PlayerValue?.DRAFT_ROUNDS) || 5);
+        const ledger = state?.futurePicksLedger || {};
+        const pool = [];
+        for (let y = baseSeason + 1; y <= baseSeason + horizon; y++) {
+            for (const roster of rosters) {
+                const fromRosterId = String(roster.roster_id);
+                for (let rd = 1; rd <= rounds; rd++) {
+                    const pick = {
+                        type: 'pick',
+                        future: true,
+                        year: y,
+                        round: rd,
+                        fromRosterId,
+                        id: 'FPICK-' + y + '-' + rd + '-' + fromRosterId,
+                        label: y + ' R' + rd,
+                    };
+                    pick.value = futurePickValueFor(state, pick);
+                    const owner = ledger[futurePickKey(pick)];
+                    pick.ownerRosterId = owner != null ? String(owner) : fromRosterId;
+                    pool.push(pick);
+                }
+            }
+        }
+        return pool;
     }
 
     // ── Pool builder — use canonical rookie data or Sleeper DHQ scores ──
@@ -1309,6 +1365,14 @@
         };
     }
 
+    // Rebuild the available pool from the full original pool minus everyone now
+    // drafted — used when reconciliation replaces a pick mid-array (a single
+    // restore/filter can't express "give back X, take away Y" cleanly).
+    function rebuildPoolFromDrafted(state, draftedPids) {
+        const original = (state.originalPool && state.originalPool.length) ? state.originalPool : (state.pool || []);
+        return original.filter(p => p?.pid != null && !draftedPids[p.pid]);
+    }
+
     function restorePoolAfterUndo(state, remainingPicks, undonePick) {
         const drafted = new Set((remainingPicks || []).map(p => String(p.pid)).filter(Boolean));
         const original = state.originalPool || [];
@@ -1388,7 +1452,11 @@
 	                const resolvedDhq = resolvePlayerDhq(player).value;
 	                const newPool = state.pool.filter(p => p.pid !== player.pid);
                 const newDrafted = { ...state.draftedPids, [player.pid]: true };
-                const pickSource = action.source || (state.mode === 'live-sync' && state.overrideMode ? 'manual-live' : state.mode === 'manual' ? 'manual-draft' : null);
+                // In live-sync, every MAKE_PICK is a hand-entered pick (the live poll
+                // uses APPLY_LIVE_SYNC_PICKS, and AI auto-picks are disabled). Tag them
+                // all 'manual-live' — whether entered via override or on the user's own
+                // turn — so they're undoable and get reconciled when the real pick lands.
+                const pickSource = action.source || (state.mode === 'live-sync' ? 'manual-live' : state.mode === 'manual' ? 'manual-draft' : null);
                 const newPick = {
                     id: 'pick_' + slot.overall + '_' + Date.now(),
                     round: slot.round,
@@ -1583,10 +1651,16 @@
                 }
                 if (myGiveFaab > 0) { ensure(userRid).faabDelta -= myGiveFaab; ensure(cpuRid).faabDelta += myGiveFaab; }
                 if (theirGiveFaab > 0) { ensure(cpuRid).faabDelta -= theirGiveFaab; ensure(userRid).faabDelta += theirGiveFaab; }
+                // Future picks have no pickOrder slot (different season) — they're tracked
+                // solely in the sandbox ledger, never swapped in pickOrder.
+                const fpl = { ...(state.futurePicksLedger || {}) };
+                (offer.myGiveFuture || []).forEach(fp => { fpl[futurePickKey(fp)] = cpuRid; });
+                (offer.theirGiveFuture || []).forEach(fp => { fpl[futurePickKey(fp)] = userRid; });
                 return {
                     ...state,
                     pickOrder: newPickOrder,
                     tradedAssets: ta,
+                    futurePicksLedger: fpl,
                     activeOffer: null,
                     speed: offer.resumeSpeed || state.speed,
                     completedTrades: [
@@ -1601,18 +1675,26 @@
             }
 
             case 'OPEN_PROPOSER': {
-                // payload: { targetRosterId }
+                // payload: { targetRosterId, seed? }
+                // seed (optional) preselects assets so the desk opens pre-loaded — used
+                // by the "Queue trade" affordance on the draft log. Future-pick lanes
+                // (myGiveFuture/theirGiveFuture) are sandbox-only: they never touch
+                // pickOrder or Sleeper; accepted ones land in state.futurePicksLedger.
+                const seed = action.seed || {};
                 return {
                     ...state,
                     proposerDrawer: {
                         targetRosterId: action.targetRosterId,
-                        myGive: [],
-                        theirGive: [],
-                        myGivePlayers: [],
-                        theirGivePlayers: [],
-                        myGiveFaab: 0,
-                        theirGiveFaab: 0,
-                            status: 'building', // 'building' | 'sending' | 'countered' | 'accepted' | 'declined' | 'planned' | 'pending'
+                        myGive: seed.myGive || [],
+                        theirGive: seed.theirGive || [],
+                        myGivePlayers: seed.myGivePlayers || [],
+                        theirGivePlayers: seed.theirGivePlayers || [],
+                        myGiveFaab: seed.myGiveFaab || 0,
+                        theirGiveFaab: seed.theirGiveFaab || 0,
+                        myGiveFuture: seed.myGiveFuture || [],
+                        theirGiveFuture: seed.theirGiveFuture || [],
+                        analyzerMode: seed.analyzerMode || 'build', // 'build' | 'find'
+                        status: 'building', // 'building' | 'sending' | 'countered' | 'accepted' | 'declined' | 'planned' | 'pending'
                     },
                 };
             }
@@ -1698,6 +1780,8 @@
                 let draftContext = state.draftContext;
                 let duplicateCount = 0;
                 let missedPickCount = 0;
+                let reconciledCount = 0;
+                let overwriteCount = 0;
                 let lastPickNo = state.liveSync?.lastPickNo || 0;
                 const existingPickNos = new Set(picks.map(livePickNo).filter(Boolean));
                 const statusDuplicateCount = Number(action.status?.duplicateCount || 0);
@@ -1720,6 +1804,80 @@
                         duplicateCount += 1;
                         return;
                     }
+
+                    // ── Reconcile against a pick already recorded at this slot ──
+                    // Hand-entered picks have no sleeperPickNo (so they're absent from
+                    // existingPickNos) — match by overall slot number. If the live pick
+                    // confirms the manual guess, mark it authoritative; if it differs,
+                    // the real pick wins and the displaced player returns to the pool.
+                    const occupantIdx = picks.findIndex(p => Number(p.overall) === pickNo);
+                    if (occupantIdx >= 0) {
+                        const occupant = picks[occupantIdx];
+                        const occupantIsManual = occupant.source === 'manual-live' || occupant.source === 'manual-draft';
+                        if (String(occupant.pid) === String(player.pid)) {
+                            // Manual guess matched reality — confirm it once as live-sourced.
+                            if (occupantIsManual) {
+                                const confirmed = { ...occupant, source: 'live-sync', sleeperPickNo: pickNo, sleeperPickedBy: sleeperPick?.picked_by || occupant.sleeperPickedBy || null };
+                                picks = picks.map((p, i) => i === occupantIdx ? confirmed : p);
+                                pickedByIdx = { ...pickedByIdx, [confirmed.overall]: confirmed };
+                                existingPickNos.add(pickNo);
+                                reconciledCount += 1;
+                            } else {
+                                duplicateCount += 1;
+                            }
+                            return;
+                        }
+                        if (!occupantIsManual) {
+                            // Two live records disagree for the same slot — a real conflict, don't clobber.
+                            duplicateCount += 1;
+                            return;
+                        }
+                        // Manual guess was wrong — overwrite with the real pick.
+                        const ovRosterId = sleeperPick?.roster_id || occupant.rosterId;
+                        const ovDhq = resolvePlayerDhq(player).value;
+                        const liveReplacement = {
+                            ...occupant,
+                            id: 'pick_' + occupant.overall + '_' + Date.now(),
+                            rosterId: ovRosterId,
+                            isUser: String(ovRosterId) === String(state.userRosterId),
+                            pid: player.pid,
+                            name: player.name,
+                            pos: player.pos,
+                            dhq: ovDhq,
+                            consensusRank: player.consensusRank || null,
+                            photoUrl: player.photoUrl || '',
+                            college: player.college || '',
+                            tier: player.tier || null,
+                            csv: player.csv || null,
+                            reasoning: item.reasoning || { primary: 'Live pick corrected a manual entry', baseVal: ovDhq, nudges: [] },
+                            confidence: item.confidence || 1.0,
+                            alexReaction: null,
+                            sleeperPickNo: pickNo,
+                            sleeperPickedBy: sleeperPick?.picked_by || null,
+                            source: 'live-sync',
+                            ts: Date.now(),
+                        };
+                        const beforePicks = picks;
+                        picks = picks.map((p, i) => i === occupantIdx ? liveReplacement : p);
+                        const derived = rebuildDraftDerived(picks);
+                        draftedPids = derived.draftedPids;
+                        teamRosters = derived.teamRosters;
+                        pickedByIdx = derived.pickedByIdx;
+                        pool = rebuildPoolFromDrafted(state, draftedPids);
+                        existingPickNos.add(pickNo);
+                        overwriteCount += 1;
+                        // Walk context back over the displaced manual pick, then forward over the live one.
+                        const undoInterim = { ...state, picks: beforePicks.filter((_, i) => i !== occupantIdx), pool, draftedPids, teamRosters, currentIdx };
+                        draftContext = window.DraftCC?.context?.undoPickInContext
+                            ? window.DraftCC.context.undoPickInContext(draftContext, occupant, undoInterim)
+                            : draftContext;
+                        const applyInterim = { ...state, picks, pool, draftedPids, teamRosters, currentIdx };
+                        draftContext = window.DraftCC?.context?.applyPickToContext
+                            ? window.DraftCC.context.applyPickToContext(draftContext, liveReplacement, applyInterim)
+                            : draftContext;
+                        return;
+                    }
+
                     if (existingPickNos.has(pickNo) || draftedPids[player.pid]) {
                         duplicateCount += 1;
                         return;
@@ -1801,6 +1959,8 @@
                     conflictCount: statusConflictCount,
                     conflictPickNos: statusConflictPickNos,
                     invalidPickCount: statusInvalidPickCount,
+                    reconciledCount: (reconciledCount || 0) + overwriteCount,
+                    overwriteCount,
                     remoteBehind: !!action.status?.remoteBehind,
                 };
                 if (missedPickCount > 0 || statusConflictCount > 0 || statusInvalidPickCount > 0) {
@@ -1945,10 +2105,15 @@
                 }
                 if (myGiveFaab > 0) { ensure(userRid).faabDelta -= myGiveFaab; ensure(cpuRid).faabDelta += myGiveFaab; }
                 if (theirGiveFaab > 0) { ensure(cpuRid).faabDelta -= theirGiveFaab; ensure(userRid).faabDelta += theirGiveFaab; }
+                // Future picks (sandbox-only) are recorded in the ledger, not pickOrder.
+                const fpl = { ...(state.futurePicksLedger || {}) };
+                (offer.myGiveFuture || []).forEach(fp => { fpl[futurePickKey(fp)] = cpuRid; });
+                (offer.theirGiveFuture || []).forEach(fp => { fpl[futurePickKey(fp)] = userRid; });
                 return {
                     ...state,
                     pickOrder: newPickOrder,
                     tradedAssets: ta,
+                    futurePicksLedger: fpl,
                     proposerDrawer: { ...state.proposerDrawer, status: 'accepted' },
                     completedTrades: [
                         ...state.completedTrades,
@@ -2487,6 +2652,9 @@
         buildPickOrder,
         resolvePlayerDhq,
         resolveDraftPickValue,
+        buildFuturePickPool,
+        futurePickKey,
+        futurePickValueFor,
         reducer,
         saveToLocal,
         loadFromLocal,
