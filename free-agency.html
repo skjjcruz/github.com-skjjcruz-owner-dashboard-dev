@@ -560,7 +560,10 @@
         const { useState, useEffect, useMemo, useRef } = React;
 
         // ===== DEV MODE =====
-        const DEV_MODE = new URLSearchParams(window.location.search).has('dev') || window.location.hostname.includes('sandbox');
+        // Auth bypass is allowed only on a local dev machine — never via ?dev or a
+        // "sandbox" hostname, which anyone could reach.
+        const IS_LOCAL = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        const DEV_MODE = IS_LOCAL;
         if (DEV_MODE) {
             console.log('%c[DEV MODE] All features unlocked, auth bypassed','color:#D4AF37;font-weight:bold;font-size:14px');
             const b = document.createElement('div');
@@ -570,10 +573,24 @@
         }
 
         // ===== AUTH =====
+        // Require a valid, unexpired session token (Supabase JWT). Presence of
+        // od_auth_v1 is only a Sleeper-username link and is NOT proof of identity.
         const AUTH_KEY = 'od_auth_v1';
+        const SESSION_KEY = 'fw_session_v1';
         const authRaw = localStorage.getItem(AUTH_KEY);
-        const isAuthed = !!authRaw;
-        if (!isAuthed && !DEV_MODE) window.location.href = 'login.html';
+        function jwtUnexpired(t) {
+            try {
+                const p = String(t || '').split('.')[1];
+                if (!p) return false;
+                const b = p.replace(/-/g, '+').replace(/_/g, '/');
+                const pad = b.length % 4 ? b + '='.repeat(4 - (b.length % 4)) : b;
+                const o = JSON.parse(decodeURIComponent(window.atob(pad).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')));
+                return !o.exp || Number(o.exp) * 1000 > Date.now();
+            } catch (e) { return false; }
+        }
+        const sessionToken = (() => { try { return (JSON.parse(localStorage.getItem(SESSION_KEY) || 'null') || {}).token || ''; } catch (e) { return ''; } })();
+        const isAuthed = !!sessionToken && jwtUnexpired(sessionToken);
+        if (!isAuthed && !DEV_MODE) { try { localStorage.removeItem(AUTH_KEY); } catch (e) {} window.location.href = 'login.html'; }
         let sleeperUsername = '';
         if (DEV_MODE) {
             sleeperUsername = new URLSearchParams(window.location.search).get('user') || 'jcc100218';
