@@ -2060,7 +2060,10 @@ const WR_SHARED_FILES = [
   'player-modal.js',
   'rookie-data.js',
 ];
-if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'espn-api.js', 'mfl-api.js', 'yahoo-api.js');
+// MFL is live for everyone, so its connector loads on every host.
+WR_SHARED_FILES.splice(7, 0, 'mfl-api.js');
+// ESPN/Yahoo stay sandbox-only beta.
+if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'espn-api.js', 'yahoo-api.js');
 WRShared.loadMany(WR_SHARED_FILES);
 </script>
 <!-- Preserve shared/tier.js canAccess before core.js hoists its own canAccess over window.canAccess -->

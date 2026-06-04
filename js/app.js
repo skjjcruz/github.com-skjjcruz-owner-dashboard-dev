@@ -9,7 +9,8 @@
     const MFL_SANDBOX_ACCESS = PLATFORM_SANDBOX_ACCESS;
     function platformAccessAllowed(platform) {
         platform = platform || 'sleeper';
-        return platform === 'sleeper' || PLATFORM_SANDBOX_ACCESS;
+        // Sleeper and MFL are live for everyone; ESPN/Yahoo remain sandbox-only beta.
+        return platform === 'sleeper' || platform === 'mfl' || PLATFORM_SANDBOX_ACCESS;
     }
     function platformBetaMessage(platform) {
         const labels = { espn: 'ESPN', mfl: 'MFL', yahoo: 'Yahoo' };
