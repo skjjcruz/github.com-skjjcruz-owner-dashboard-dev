@@ -222,8 +222,31 @@
 <script src="https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/supabase-client.js"></script>
 <script>
     const AUTH_KEY = 'od_auth_v1';
+    const SESSION_KEY = 'fw_session_v1';
     const errorEl = document.getElementById('errorMessage');
     const loginForm = document.getElementById('loginForm');
+
+    // A session is valid only when fw_session_v1 holds a well-formed, unexpired JWT.
+    // The app shell (components.js) enforces the same check, so login.html must mint
+    // and store that token rather than relying on od_auth_v1 presence.
+    function jwtIsUnexpired(token) {
+        try {
+            const part = String(token || '').split('.')[1];
+            if (!part) return false;
+            const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = b64.length % 4 ? b64 + '='.repeat(4 - (b64.length % 4)) : b64;
+            const payload = JSON.parse(decodeURIComponent(atob(padded).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')));
+            return !payload.exp || Number(payload.exp) * 1000 > Date.now();
+        } catch (e) { return false; }
+    }
+    function storeSession(session, username) {
+        if (!session?.token) return;
+        localStorage.setItem(SESSION_KEY, JSON.stringify({
+            token: session.token,
+            expiresAt: session.expiresAt || null,
+            user: { sleeperUsername: username, isGifted: session.isGifted || false },
+        }));
+    }
 
     // Pre-fill username from ?for= URL param (gifted dashboard links)
     const urlParams = new URLSearchParams(window.location.search);
@@ -249,17 +272,15 @@
         setTimeout(() => errorEl.classList.remove('show'), 5000);
     }
 
-    // Check if already logged in
-    const existingAuth = localStorage.getItem(AUTH_KEY);
-    if (existingAuth) {
-        try {
-            const auth = JSON.parse(existingAuth);
-            if (auth.username && auth.passwordHash) {
-                window.location.href = 'index.html';
-            }
-        } catch (e) {
-            localStorage.removeItem(AUTH_KEY);
+    // Already logged in only if we hold a valid, unexpired session token — presence
+    // of od_auth_v1 alone is no longer enough to enter the app.
+    try {
+        const existingSession = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (existingSession?.token && jwtIsUnexpired(existingSession.token)) {
+            window.location.href = 'index.html';
         }
+    } catch (e) {
+        localStorage.removeItem(SESSION_KEY);
     }
 
     loginForm.addEventListener('submit', async (e) => {
@@ -284,6 +305,7 @@
                 if (auth.username === username && auth.passwordHash === inputHash) {
                     const session = await window.OD.acquireSessionToken(username, password);
                     if (session?.token) {
+                        storeSession(session, username);
                         window.location.href = 'index.html';
                     } else {
                         showError('This legacy login now requires a password-backed gifted account. Use email sign-in for Dynasty HQ accounts.');
@@ -311,6 +333,7 @@
                     isGifted: session.isGifted || false,
                     createdAt: new Date().toISOString()
                 }));
+                storeSession(session, username);
                 localStorage.setItem('od_locked_username_v2', username);
                 window.location.href = 'index.html';
                 return;

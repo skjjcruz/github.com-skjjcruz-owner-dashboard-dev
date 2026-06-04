@@ -850,10 +850,22 @@
 
     // ── Boot ───────────────────────────────────────────────
     (function init() {
-      // Accept either auth system (fw_session_v1 from landing.html, or od_auth_v1 from login.html)
-      const hasNewSession  = !!JSON.parse(localStorage.getItem(SESSION_KEY)  || 'null')?.token;
-      const hasLegacyAuth  = !!JSON.parse(localStorage.getItem(LEGACY_KEY)   || 'null')?.username;
-      if (!hasNewSession && !hasLegacyAuth) { window.location.href = 'landing.html'; return; }
+      // Require a valid, unexpired session token (Supabase JWT). od_auth_v1
+      // presence is only a Sleeper-username link, not proof of identity —
+      // login.html now also stores fw_session_v1, so password-backed users qualify.
+      function jwtUnexpired(t) {
+        try {
+          const p = String(t || '').split('.')[1];
+          if (!p) return false;
+          const b = p.replace(/-/g, '+').replace(/_/g, '/');
+          const pad = b.length % 4 ? b + '='.repeat(4 - (b.length % 4)) : b;
+          const o = JSON.parse(decodeURIComponent(window.atob(pad).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')));
+          return !o.exp || Number(o.exp) * 1000 > Date.now();
+        } catch (e) { return false; }
+      }
+      const sess = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; } })();
+      const hasNewSession = !!(sess?.token && jwtUnexpired(sess.token));
+      if (!hasNewSession) { window.location.href = 'landing.html'; return; }
 
       const params = new URLSearchParams(window.location.search);
       const isManaging = params.get('manage') === 'true';

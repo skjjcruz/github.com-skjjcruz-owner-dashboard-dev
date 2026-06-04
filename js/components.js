@@ -669,9 +669,13 @@
     }
 
     // ===== DEV MODE =====
+    // Dev bypass (unlocks features AND skips the auth gate) is allowed ONLY on a
+    // local dev machine. A `?dev` URL param or a "sandbox" hostname must never open
+    // the app or unlock paid tiers in a deployed environment — anyone could append
+    // the param or land on a sandbox host.
     const IS_LOCAL = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-    const DEV_MODE = new URLSearchParams(window.location.search).has('dev') || window.location.hostname.includes('sandbox') || IS_LOCAL;
-    const DEV_DEBUG = new URLSearchParams(window.location.search).get('dev') === 'true';
+    const DEV_MODE = IS_LOCAL;
+    const DEV_DEBUG = IS_LOCAL && new URLSearchParams(window.location.search).get('dev') === 'true';
     if (DEV_MODE) {
         console.log('%c[DEV MODE] All features unlocked, auth bypassed','color:var(--k-d4af37, #d4af37);font-weight:bold;font-size:var(--text-body, 1rem)');
         document.documentElement.style.setProperty('--wr-dev-banner-height', '18px');
@@ -683,26 +687,59 @@
     }
 
     // ===== AUTHENTICATION CHECK =====
+    // The app shell renders only with a verified session token. The legacy
+    // od_auth_v1 key is just a Sleeper-username link — it is NOT proof of identity
+    // and no longer grants access on its own (the no-password "Connect" path used to
+    // satisfy the gate that way). Real enforcement is server-side: Supabase RLS keyed
+    // on the JWT rejects any data request without a valid token. This client check is
+    // a UX gate that requires a well-formed, unexpired token and clears stale or
+    // forged state otherwise.
     const AUTH_KEY    = 'od_auth_v1';
     const SESSION_KEY = 'fw_session_v1';
 
-    const legacyAuth   = localStorage.getItem(AUTH_KEY);
-    const newSession   = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } })();
-    const isAuthed     = !!(legacyAuth || newSession?.token || DEV_MODE);
+    function decodeJwtPayload(token) {
+        try {
+            const part = String(token || '').split('.')[1];
+            if (!part) return null;
+            const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = b64.length % 4 ? b64 + '='.repeat(4 - (b64.length % 4)) : b64;
+            const decoded = decodeURIComponent(window.atob(padded).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+            return JSON.parse(decoded);
+        } catch (e) { return null; }
+    }
+    function hasValidSessionToken(sess) {
+        const token = sess && sess.token;
+        if (!token || typeof token !== 'string' || token.split('.').length !== 3) return false;
+        const payload = decodeJwtPayload(token);
+        if (!payload) return false;
+        // exp is seconds since epoch — reject expired tokens.
+        if (payload.exp && Number(payload.exp) * 1000 <= Date.now()) return false;
+        return true;
+    }
+
+    const legacyAuth = localStorage.getItem(AUTH_KEY); // Sleeper-username link only — not auth
+    const newSession = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } })();
+    const hasSession = hasValidSessionToken(newSession);
+    const isAuthed   = hasSession || DEV_MODE;
 
     if (!isAuthed) {
+        // Drop stale/forged client state so a tampered od_auth_v1 or an expired
+        // token can't keep someone in a half-authenticated state, then bounce to
+        // the sign-in page.
+        try { localStorage.removeItem(AUTH_KEY); } catch (e) {}
+        try { if (newSession && !hasSession) localStorage.removeItem(SESSION_KEY); } catch (e) {}
         window.location.href = 'landing.html';
     }
 
     let sleeperUsername = '';
-    // Dev mode: use URL param or default test username
+    // Dev mode (local machine only): use URL param or default test username.
     if (DEV_MODE) {
         sleeperUsername = new URLSearchParams(window.location.search).get('user') || 'bigloco';
     }
     try {
         if (legacyAuth && !sleeperUsername) {
             const credentials = JSON.parse(legacyAuth);
-            sleeperUsername = credentials.username || '';
+            sleeperUsername = credentials.username || credentials.sleeperUsername || '';
             // Sync username to Team Comps page localStorage key so it auto-logs in
             if (sleeperUsername) {
                 localStorage.setItem('od_locked_username_v2', sleeperUsername);
@@ -710,5 +747,4 @@
         }
     } catch (e) {
         localStorage.removeItem(AUTH_KEY);
-        if (!newSession?.token) window.location.href = 'landing.html';
     }
