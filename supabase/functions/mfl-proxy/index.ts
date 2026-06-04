@@ -4,13 +4,28 @@
 // MFL blocks all cross-origin browser requests; this function
 // relays them server-side.
 //
+// AUTH: requires a valid app session token (same gate as fw-profile).
+//   Without it the relay is an open, unauthenticated proxy that anyone
+//   could abuse for bandwidth/quota, so callers MUST send the user's
+//   session token: Authorization: Bearer <fw_session_v1 token>.
+//
 // POST body: { url: string }   — must be a myfantasyleague.com URL
 //
-// DEPLOY:
-//   supabase functions deploy mfl-proxy
+// DEPLOY (in-function auth, matches the other functions):
+//   supabase functions deploy mfl-proxy --use-api --no-verify-jwt
 // ══════════════════════════════════════════════════════════════════
 
-import { corsHeaders, handleOptions, json } from '../_shared/security.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  auditEvent,
+  corsHeaders,
+  handleOptions,
+  json,
+  requireActiveAppSession,
+} from '../_shared/security.ts';
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
@@ -30,17 +45,9 @@ function isValidMflUrl(url: string): boolean {
   }
 }
 
-function clientIp(req: Request): string {
-  return (
-    req.headers.get('CF-Connecting-IP') ||
-    req.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
-    req.headers.get('X-Real-IP') ||
-    'unknown'
-  );
-}
-
-function checkRateLimit(req: Request): boolean {
-  const id = clientIp(req);
+// Per-identity sliding-window limit. Keyed by app user id (not a spoofable
+// IP header), so a single account can't burn the shared proxy quota.
+function checkRateLimit(id: string): boolean {
   const bucket = Math.floor(Date.now() / RATE_LIMIT_WINDOW_MS);
   const current = rateBuckets.get(id);
   if (!current || current.bucket !== bucket) {
@@ -55,7 +62,19 @@ Deno.serve(async (req: Request) => {
   const options = handleOptions(req);
   if (options) return options;
 
-  if (!checkRateLimit(req)) {
+  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+  // Auth gate: only signed-in app users may use the relay. This closes the
+  // open-proxy abuse vector (the relay touches no user data and uses no
+  // service_role privileges for the fetch itself, but an unauthenticated
+  // endpoint could still be abused for bandwidth/invocation quota).
+  const session = await requireActiveAppSession(admin, req);
+  if (!session) {
+    await auditEvent(admin, req, 'mfl_proxy', 'blocked', {}, { reason: 'invalid_session' });
+    return json(req, { error: 'Unauthorized' }, 401);
+  }
+
+  if (!checkRateLimit(session.userId)) {
     return json(req, { error: 'Proxy rate limit exceeded. Try again shortly.' }, 429);
   }
 

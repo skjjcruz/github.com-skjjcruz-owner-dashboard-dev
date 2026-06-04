@@ -126,3 +126,6 @@ jobs:
 
       - name: Deploy admin-analytics-report function
         run: supabase functions deploy admin-analytics-report --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+
+      - name: Deploy mfl-proxy function
+        run: supabase functions deploy mfl-proxy --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
