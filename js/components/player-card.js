@@ -260,6 +260,13 @@
             : meta.roleMult && meta.roleMult < 0.9 ? 'var(--k-f0a500, #f0a500)'
                 : meta.opportunityMult && meta.opportunityMult < 1 ? 'var(--k-f0a500, #f0a500)'
                     : 'var(--text-muted)';
+        // "Alex NFL Fit" — deterministic real-situation read from the engine's
+        // signals (depth-chart role, named blockers + PPG, status, trend). No LLM
+        // here to keep card opens cheap; the draft board layers a live read on top.
+        const nflFit = (() => {
+            try { return window.App?.computeNFLFit?.(pid, { pos, player: p, dhq }) || null; }
+            catch (e) { return null; }
+        })();
 
         // Roster context
         const S = window.S || {};
@@ -344,6 +351,18 @@
                         lineHeight: 1.45,
                     }
                 }, dhqContext),
+                nflFit && nflFit.narrative && React.createElement('div', {
+                    style: {
+                        margin: '10px 20px 0',
+                        padding: '9px 11px',
+                        border: '1px solid rgba(46,204,113,0.18)',
+                        borderRadius: '7px',
+                        background: 'rgba(46,204,113,0.05)',
+                    }
+                },
+                    React.createElement('div', { style: { color: 'var(--k-2ecc71, #2ecc71)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '4px' } }, 'Alex NFL Fit'),
+                    React.createElement('div', { style: { color: 'var(--text-muted)', fontSize: 'var(--text-body, 0.92rem)', lineHeight: 1.45 } }, nflFit.narrative)
+                ),
                 // Age curve
                 React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
 	                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' } },

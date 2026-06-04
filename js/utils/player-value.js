@@ -10,9 +10,7 @@
 window.App.PlayerValue = (function () {
 
     // ── Roster construction targets ──────────────────────────────────
-    // QB ideal depth is 2 (1 starter + 1 backup): in single-QB leagues a 3rd QB
-    // is redundant, and league-wide there aren't enough startable QBs to expect 3.
-    const IDEAL_ROSTER = { QB:2, RB:7, WR:7, TE:4, K:2, DL:7, LB:6, DB:6 };
+    const IDEAL_ROSTER = { QB:3, RB:7, WR:7, TE:4, K:2, DL:7, LB:6, DB:6 };
     const DRAFT_ROUNDS  = 7;
     const PICK_HORIZON  = 3;
     const PICK_IDEAL    = DRAFT_ROUNDS * PICK_HORIZON;

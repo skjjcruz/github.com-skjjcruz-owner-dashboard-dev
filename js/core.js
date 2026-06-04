@@ -362,6 +362,25 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     };
     window.tradeValueTier = window.App.tradeValueTier;
 
+    // formatNFLDraftSlot — NFL draft-capital label "R{round}.{pickInRound}".
+    // Shared owner is reconai/shared/utils.js; this is the CDN-down fallback.
+    // Divides by 32 (NFL teams), NOT the fantasy league size.
+    window.App.formatNFLDraftSlot = window.App.formatNFLDraftSlot || function formatNFLDraftSlot(round, overallPick) {
+        const rd = Number(round) || 0;
+        const overall = Number(overallPick) || 0;
+        if (rd <= 0) return overall > 0 ? '#' + overall : '';
+        if (overall <= 0) return 'R' + rd;
+        const pickInRound = Math.max(1, overall - (rd - 1) * 32);
+        return 'R' + rd + '.' + String(pickInRound).padStart(2, '0');
+    };
+    window.formatNFLDraftSlot = window.App.formatNFLDraftSlot;
+
+    // computeNFLFit — fallback no-op if nfl-fit.js (shared) failed to load,
+    // so callers can safely optional-chain. Real impl lives in shared/nfl-fit.js.
+    window.App.computeNFLFit = window.App.computeNFLFit || function computeNFLFit() {
+        return { fitTier: 'Unknown', fitScore: 50, signals: {}, narrative: '', contextString: '', confidence: 0, sources: [] };
+    };
+
     // normPos — canonical position normalizer (was identical in draft-room, free-agency, trade-calc)
     window.App.normPos = window.App.normPos || function normPos(pos) {
         if (!pos) return null;

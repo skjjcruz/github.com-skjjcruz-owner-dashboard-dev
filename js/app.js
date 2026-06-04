@@ -486,12 +486,31 @@
                         } catch {}
                     }));
                     window.S.tradedPicks = allTradedPicks;
-                    // Load DHQ engine if not already loaded
-                    if (typeof window.App?.loadLeagueIntel === 'function' && !window.App.LI_LOADED) {
-                        await window.App.loadLeagueIntel().catch(() => {});
+                    // Empire mode opens no single league, so S.currentLeagueId is unset and
+                    // loadLeagueIntel() bails — DHQ player scores never populate, leaving Empire
+                    // Value 0 and every asset unvalued. Point LeagueIntel at a representative league
+                    // (mirrors the canonical league-open S setup in league-detail.js) so the Empire
+                    // gets DHQ-scale values — the documented one-league proxy (see H5 note, global-view.js).
+                    if (!window.S.currentLeagueId) {
+                        const rep = allLeaguesList.find(l => (l.rosters || []).length && (l.id || l.league_id)) || allLeaguesList[0];
+                        if (rep) {
+                            const repId = rep.id || rep.league_id;
+                            window.S.leagues = [{ league_id: repId, name: rep.name, scoring_settings: rep.scoring_settings, roster_positions: rep.roster_positions, settings: rep.settings }];
+                            window.S.currentLeagueId = repId;
+                            window.S.season = window.S.season || rep.season || String(new Date().getFullYear());
+                            // loadLeagueIntel reads S.rosters for the rep league's team count / starter pool.
+                            // The cross-league merged array (set above) is deduped by roster_id and would
+                            // give a wrong totalTeams, so point it at the rep league's own rosters.
+                            if (rep.rosters && rep.rosters.length) window.S.rosters = rep.rosters;
+                        }
                     }
-                    // Unblock the dashboard immediately.
+                    // Unblock the dashboard immediately; load DHQ scores in the background and
+                    // re-render the Empire once they land (don't block the UI on the ~15s first load).
                     setEmpirePlayersLoaded(true);
+                    if (typeof window.App?.loadLeagueIntel === 'function' && !window.App.LI_LOADED) {
+                        if (window.DhqEvents?.once) window.DhqEvents.once('li:loaded', () => setEmpireAssessReady(Date.now()));
+                        window.App.loadLeagueIntel().catch(() => {});
+                    }
                     // Then assess every roster in the background, yielding between
                     // leagues so a heavy or oddly-shaped league can't freeze the load.
                     if (typeof window.App?.assessAllTeams === 'function') {

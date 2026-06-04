@@ -251,6 +251,74 @@ test('state keeps live sync stale when Sleeper returns conflicting pick data', (
   eq(next.liveSync.conflictPickNos[0], 2, 'conflict pick stored');
 });
 
+test('live-sync manual pick is tagged manual-live and is undoable', () => {
+  const initial = ctx.DraftCC.state.initialDraftState({ mode: 'live-sync', leagueId: 'L1', userRosterId: 1 });
+  const pool = [
+    { pid: 'p1', name: 'One', pos: 'QB', dhq: 100 },
+    { pid: 'p2', name: 'Two', pos: 'RB', dhq: 90 },
+  ];
+  const started = ctx.DraftCC.state.reducer(initial, {
+    type: 'START_DRAFT', pool, originalPool: pool, pickOrder, personas: {}, liveDraftStatus: 'drafting',
+  });
+  // On-clock board click records the pick with no explicit source (override off).
+  const picked = ctx.DraftCC.state.reducer(started, { type: 'MAKE_PICK', player: started.pool[0], isUser: true });
+  eq(picked.picks[0].source, 'manual-live', 'live-sync hand-entered pick tagged manual-live');
+  const undone = ctx.DraftCC.state.reducer(picked, { type: 'UNDO_LAST_PICK', manualOnly: true });
+  eq(undone.picks.length, 0, 'manual live pick can be undone');
+  eq(undone.currentIdx, 0, 'index rewound after undo');
+});
+
+test('live sync overwrites a manual pick when the real pick differs', () => {
+  const initial = ctx.DraftCC.state.initialDraftState({ mode: 'live-sync', leagueId: 'L1', userRosterId: 1 });
+  const pool = [
+    { pid: 'p1', name: 'One', pos: 'QB', dhq: 100 },
+    { pid: 'p2', name: 'Two', pos: 'RB', dhq: 90 },
+    { pid: 'p3', name: 'Three', pos: 'WR', dhq: 80 },
+  ];
+  const started = ctx.DraftCC.state.reducer(initial, {
+    type: 'START_DRAFT', pool, originalPool: pool, pickOrder, personas: {}, liveDraftStatus: 'drafting',
+  });
+  const guessed = ctx.DraftCC.state.reducer(started, { type: 'MAKE_PICK', player: started.pool[0] });
+  eq(guessed.picks[0].pid, 'p1', 'manual guess recorded');
+  eq(guessed.currentIdx, 1, 'manual guess advanced the clock');
+  const reconciled = ctx.DraftCC.state.reducer(guessed, {
+    type: 'APPLY_LIVE_SYNC_PICKS',
+    picks: [{ sleeperPick: { pick_no: 1, player_id: 'p2', roster_id: 1, picked_by: 'u1' }, player: { pid: 'p2', name: 'Two', pos: 'RB', dhq: 90 } }],
+    status: { status: 'mirroring' },
+  });
+  eq(reconciled.picks.length, 1, 'pick replaced in place, not appended');
+  eq(reconciled.picks[0].pid, 'p2', 'manual pick overwritten with reality');
+  eq(reconciled.picks[0].source, 'live-sync', 'overwritten pick marked authoritative');
+  eq(reconciled.currentIdx, 1, 'overwrite does not change the clock');
+  ok(reconciled.draftedPids.p2 && !reconciled.draftedPids.p1, 'drafted set reflects reality');
+  ok(reconciled.pool.some(p => p.pid === 'p1'), 'displaced manual player returned to pool');
+  ok(!reconciled.pool.some(p => p.pid === 'p2'), 'real pick removed from pool');
+  eq(reconciled.liveSync.overwriteCount, 1, 'overwrite counted');
+});
+
+test('live sync confirms a manual pick that matched reality without duplicating it', () => {
+  const initial = ctx.DraftCC.state.initialDraftState({ mode: 'live-sync', leagueId: 'L1', userRosterId: 1 });
+  const pool = [
+    { pid: 'p1', name: 'One', pos: 'QB', dhq: 100 },
+    { pid: 'p2', name: 'Two', pos: 'RB', dhq: 90 },
+  ];
+  const started = ctx.DraftCC.state.reducer(initial, {
+    type: 'START_DRAFT', pool, originalPool: pool, pickOrder, personas: {}, liveDraftStatus: 'drafting',
+  });
+  const guessed = ctx.DraftCC.state.reducer(started, { type: 'MAKE_PICK', player: started.pool[0] });
+  const reconciled = ctx.DraftCC.state.reducer(guessed, {
+    type: 'APPLY_LIVE_SYNC_PICKS',
+    picks: [{ sleeperPick: { pick_no: 1, player_id: 'p1', roster_id: 1, picked_by: 'u1' }, player: { pid: 'p1', name: 'One', pos: 'QB', dhq: 100 } }],
+    status: { status: 'mirroring' },
+  });
+  eq(reconciled.picks.length, 1, 'matching live pick does not duplicate');
+  eq(reconciled.picks[0].pid, 'p1', 'pick unchanged');
+  eq(reconciled.picks[0].source, 'live-sync', 'manual guess confirmed as live-sourced');
+  eq(reconciled.picks[0].sleeperPickNo, 1, 'sleeper pick number stamped on confirm');
+  eq(reconciled.currentIdx, 1, 'confirm does not advance the clock');
+  eq(reconciled.liveSync.reconciledCount, 1, 'reconcile counted');
+});
+
 test('state stores staged live offers for handoff', () => {
   const initial = ctx.DraftCC.state.initialDraftState({ mode: 'live-sync', leagueId: 'L1', userRosterId: 1 });
   const withDrawer = ctx.DraftCC.state.reducer(initial, { type: 'OPEN_PROPOSER', targetRosterId: 2 });
