@@ -1291,7 +1291,7 @@
                 }
                 liveDraftStatus = activeState.liveDraftMeta?.status || '';
                 narrative = liveDraftStatus === 'pre_draft'
-                    ? '📡 LIVE SYNC · Waiting room open. War Room will mirror Sleeper as soon as picks begin.'
+                    ? '📡 LIVE SYNC · Waiting room open. Dynasty HQ will mirror Sleeper as soon as picks begin.'
                     : '📡 LIVE SYNC · Mirroring draft from Sleeper every 5s. Read-only — no picks are sent back.';
             }
 

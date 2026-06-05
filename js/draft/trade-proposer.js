@@ -614,7 +614,7 @@
                             lineHeight: 1.35,
                         }}>
                             <strong style={{ color: 'rgba(155,138,251,1)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live Draft Mode</strong>
-                            {' '}Stages a package only. War Room does not write trades to Sleeper.
+                            {' '}Stages a package only. Dynasty HQ does not write trades to Sleeper.
                         </div>
                     )}
                     {isSending && (
@@ -1051,7 +1051,7 @@
             'Live draft trade offer to ' + partnerName,
             'I give: ' + giveText,
             'I get: ' + getText,
-            'War Room read: ' + likelihood + '% acceptance vs ' + line + '% Buyer Line, grade ' + grade + '.',
+            'Dynasty HQ read: ' + likelihood + '% acceptance vs ' + line + '% Buyer Line, grade ' + grade + '.',
             reason,
         ].join('\n');
         return {

@@ -2216,7 +2216,7 @@
           setGmOnboardStep(1);
           setReconMessages([{
             role: 'assistant',
-            content: 'Welcome to the War Room. I\'m Alex — your AI General Manager. Before we get started, let me learn how you want to run this team.\n\n**First things first — are we competing for a title this year, or building for the future?**',
+            content: 'Welcome to Dynasty HQ. I\'m Alex — your AI General Manager. Before we get started, let me learn how you want to run this team.\n\n**First things first — are we competing for a title this year, or building for the future?**',
             onboardChoices: [
               { label: 'Win Now', value: 'contend' },
               { label: 'Balanced', value: 'balanced' },
@@ -2338,7 +2338,7 @@
 	          });
 	          // Free tier: 1 AI call per day
           if (!canUseAI()) {
-            setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to War Room for unlimited AI access.' }]);
+            setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to Dynasty HQ for unlimited AI access.' }]);
             return;
           }
           // Only track local daily use if NOT using server AI (server handles its own rate limiting)
@@ -2456,7 +2456,7 @@
                 <div className="app-container" style={{ paddingBottom: '60px' }}>
                     {/* Skeleton left nav */}
                     <div style={{ position:'fixed', left:0, top:0, bottom:0, width:'160px', background:'var(--black)', borderRight:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', padding:'16px 0', zIndex:100 }}>
-                        <div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1.3rem', color:'var(--gold)', padding:'0 16px', marginBottom:'20px' }}>WAR ROOM</div>
+                        <div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1.3rem', color:'var(--gold)', padding:'0 16px', marginBottom:'20px' }}>DYNASTY HQ</div>
                         {['Home','My Team','League','Analytics','Trades','Free Agency','Draft'].map((label,i) => (
                             <div key={i} style={{ padding:'10px 16px', fontSize:'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', color: i===0?'var(--gold)':'var(--ov-8, rgba(255,255,255,0.3))', borderLeft: i===0?'3px solid var(--gold)':'3px solid transparent', background: i===0?'var(--acc-fill2, rgba(212,175,55,0.12))':'transparent' }}>{label}</div>
                         ))}
@@ -2860,7 +2860,7 @@
                       <img src={iconSrc} alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: '6px' }} onError={e => { e.target.style.display = 'none'; }} />
                       <div className="wr-sidebar-wordmark">
                         <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', lineHeight: 1.1 }}>DYNASTY HQ</div>
-                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5, fontFamily: 'var(--font-body)', letterSpacing: '0.04em' }}>WAR ROOM</div>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5, fontFamily: 'var(--font-body)', letterSpacing: '0.04em' }}>DYNASTY HQ</div>
                       </div>
                       {(() => {
                         const champs = window.App?.LI?.championships || {};

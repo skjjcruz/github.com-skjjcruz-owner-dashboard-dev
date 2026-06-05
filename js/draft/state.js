@@ -2052,10 +2052,10 @@
                     }
                     statusPatch.error = action.status?.error || (
                         statusConflictCount > 0
-                            ? 'Sleeper returned conflicting pick records. War Room paused before applying the wrong player.'
+                            ? 'Sleeper returned conflicting pick records. Dynasty HQ paused before applying the wrong player.'
                             : statusInvalidPickCount > 0
-                                ? 'Sleeper returned invalid pick data. War Room paused so you can reconcile manually.'
-                                : 'Sleeper pick order skipped ahead. War Room paused rather than applying picks to the wrong slots.'
+                                ? 'Sleeper returned invalid pick data. Dynasty HQ paused so you can reconcile manually.'
+                                : 'Sleeper pick order skipped ahead. Dynasty HQ paused rather than applying picks to the wrong slots.'
                     );
                 }
 
@@ -2615,7 +2615,7 @@
 
     function formatDraftShareReport(recap) {
         const lines = [
-            '# War Room Draft Recap',
+            '# Dynasty HQ Draft Recap',
             '',
             `Grade: ${recap?.grade?.letter || '?'} | DHQ: ${Number(recap?.totalDHQ || 0).toLocaleString()} | League Rank: ${recap?.rank ? '#' + recap.rank : 'N/A'} | Percentile: ${Number(recap?.percentile || 0)}th`,
             `Format: ${recap?.variant || 'draft'} | Season: ${recap?.season || ''}`,

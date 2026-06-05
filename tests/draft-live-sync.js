@@ -242,7 +242,7 @@ test('state keeps live sync stale when Sleeper returns conflicting pick data', (
       remotePickCount: 2,
       conflictCount: 1,
       conflictPickNos: [2],
-      error: 'Sleeper returned conflicting records for pick 2. War Room paused before applying the wrong player.',
+      error: 'Sleeper returned conflicting records for pick 2. Dynasty HQ paused before applying the wrong player.',
     },
   });
   eq(next.currentIdx, 0, 'conflict does not advance current pick');

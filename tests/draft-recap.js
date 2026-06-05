@@ -177,7 +177,7 @@ test('draft recap archive can list, export, delete, and create future mock defau
   const archive = ctx.DraftCC.state.listDraftRecaps('L1');
   ok(archive.some(row => row.id === recap.id), 'recap archived');
   const report = ctx.DraftCC.state.formatDraftShareReport(recap);
-  ok(report.includes('# War Room Draft Recap'), 'share report title');
+  ok(report.includes('# Dynasty HQ Draft Recap'), 'share report title');
   ok(report.includes('## Next Moves'), 'share report next moves');
   ok(report.includes('Owner Learning Signals'), 'share report learning signals');
 
