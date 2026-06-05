@@ -144,11 +144,135 @@
         return '';
     }
 
+    // ── Rookie Scouting Report (deterministic, no LLM) ────────────
+    // Consensus/positional rank, grade+tier, draft round/pick or UDFA, physicals
+    // (when present), per-source rank chips, highlight link, and a summary
+    // (prospect.summary if present, else a short rank-derived line). HONESTY:
+    // model/consensus-derived numbers are labeled; physicals + real summary render
+    // only when the prospect actually carries them.
+    function scoutingReportBlock(pr) {
+        if (!pr) return null;
+        const gold = 'var(--gold)';
+        const muted = 'var(--text-muted)';
+        const labelStyle = { fontSize: 'var(--text-label, 0.75rem)', color: muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' };
+        const valStyle = { fontSize: 'var(--text-body, 1rem)', color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'JetBrains Mono, monospace' };
+
+        const consensus = Number.isFinite(pr.consensusRank) && pr.consensusRank > 0 ? Math.round(pr.consensusRank * 10) / 10 : null;
+        const overall = Number.isFinite(pr.rank) && pr.rank > 0 ? pr.rank : null;
+        const posRank = Number.isFinite(pr.rookiePosRank) && pr.rookiePosRank > 0 ? pr.rookiePosRank : null;
+        const posLabel = (pr.position || pr.pos || pr.rawPos || '').toUpperCase();
+        const grade = Number.isFinite(pr.grade) && pr.grade > 0 ? pr.grade : null;
+        const tierTxt = pr.tierLabel ? String(pr.tierLabel).replace(/_/g, ' ') : null;
+
+        let capital = null;
+        if (pr.draftPick) capital = 'Pick ' + pr.draftPick + (pr.draftRound ? ' (Rd ' + pr.draftRound + ')' : '') + (pr.nflTeam ? ' · ' + pr.nflTeam : '');
+        else if (pr.draftRound) capital = 'Round ' + pr.draftRound + (pr.nflTeam ? ' · ' + pr.nflTeam : '');
+        else if (pr.isUDFA) capital = 'UDFA' + (pr.nflTeam ? ' · ' + pr.nflTeam : '');
+
+        const physicals = [
+            pr.size ? { l: 'Size', v: pr.size } : null,
+            pr.weight ? { l: 'Weight', v: pr.weight } : null,
+            pr.speed ? { l: '40 / Speed', v: pr.speed } : null,
+        ].filter(Boolean);
+
+        let sourceChips = [];
+        if (pr.sourceRanks && typeof pr.sourceRanks === 'object') {
+            sourceChips = Object.keys(pr.sourceRanks)
+                .filter(k => Number.isFinite(pr.sourceRanks[k]) && pr.sourceRanks[k] > 0)
+                .map(k => ({ source: k, rank: pr.sourceRanks[k] }));
+        }
+        if (!sourceChips.length && Array.isArray(pr.sources)) {
+            sourceChips = pr.sources.filter(s => s && s.rank > 0).map(s => ({ source: s.source, rank: s.rank }));
+        }
+
+        const summaryReal = pr.summary && String(pr.summary).trim() ? String(pr.summary).trim() : '';
+        let summaryDerived = '';
+        if (!summaryReal) {
+            const parts = [];
+            if (tierTxt) parts.push(tierTxt + ' prospect');
+            if (posRank && posLabel) parts.push(posLabel + posRank + ' at the position');
+            else if (overall) parts.push('No. ' + overall + ' overall');
+            if (consensus) parts.push('consensus ' + consensus);
+            summaryDerived = parts.length ? 'Model read: ' + parts.join(' · ') + '. Pre-NFL — no verified film summary on file.' : '';
+        }
+
+        const tiles = [];
+        if (consensus || overall) tiles.push({ l: 'Consensus Rank', v: (consensus ? consensus : '#' + overall), note: 'model' });
+        if (posRank && posLabel) tiles.push({ l: 'Positional Rank', v: posLabel + posRank, note: 'model' });
+        if (grade != null || tierTxt) tiles.push({ l: 'Grade / Tier', v: (grade != null ? grade.toFixed(1) : '—') + (tierTxt ? ' · ' + tierTxt : ''), note: 'model' });
+        if (capital) tiles.push({ l: 'Draft Capital', v: capital, note: null });
+
+        if (!tiles.length && !physicals.length && !sourceChips.length && !summaryReal && !summaryDerived) return null;
+
+        return React.createElement('div', {
+            key: 'scouting-report',
+            style: { margin: '12px 20px 0', padding: '12px 14px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))' }
+        },
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' } },
+                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', color: gold } }, '🔍 Scouting Report'),
+                React.createElement('div', { style: { fontSize: 'var(--text-label, 0.7rem)', color: muted } }, 'Rookie prospect')
+            ),
+            tiles.length ? React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: (physicals.length || sourceChips.length || summaryReal || summaryDerived) ? '10px' : '0' } },
+                tiles.map((t, i) => React.createElement('div', { key: i },
+                    React.createElement('div', { style: labelStyle }, t.l, t.note ? React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.6, fontWeight: 600, marginLeft: '4px', textTransform: 'none', letterSpacing: 0 } }, '(' + t.note + ')') : null),
+                    React.createElement('div', { style: valStyle }, t.v)
+                ))
+            ) : null,
+            physicals.length ? React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: (sourceChips.length || summaryReal || summaryDerived) ? '10px' : '0' } },
+                physicals.map((ph, i) => React.createElement('div', { key: i },
+                    React.createElement('div', { style: labelStyle }, ph.l),
+                    React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--text-primary)', fontWeight: 500 } }, ph.v)
+                ))
+            ) : null,
+            sourceChips.length ? React.createElement('div', { style: { marginBottom: (summaryReal || summaryDerived) ? '10px' : '0' } },
+                React.createElement('div', { style: { ...labelStyle, marginBottom: '5px' } }, 'Source Ranks'),
+                React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } },
+                    sourceChips.map((c, i) => React.createElement('span', { key: i, style: { padding: '3px 8px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '6px', fontSize: 'var(--text-label, 0.72rem)', color: 'var(--k-d0d0d0, #d0d0d0)', fontFamily: 'JetBrains Mono, monospace' } }, c.source + ' ' + c.rank))
+                )
+            ) : null,
+            (summaryReal || summaryDerived) ? React.createElement('div', { style: { fontSize: 'var(--text-body, 0.92rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.45, marginBottom: pr.highlightUrl ? '8px' : '0' } }, summaryReal || summaryDerived) : null,
+            pr.highlightUrl ? React.createElement('a', { href: pr.highlightUrl, target: '_blank', rel: 'noopener noreferrer', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-label, 0.78rem)', color: gold, textDecoration: 'none', fontWeight: 600 } }, '▶ Watch highlights') : null
+        );
+    }
+
     function PlayerCard({ pid, playersData, statsData, scoringSettings, onClose, initialTab }) {
         const [tab, setTab] = useState(initialTab || 'overview');
         const [tagMenu, setTagMenu] = useState(false);
         const closeRef = useRef(null);
-        const p = playersData?.[pid];
+        const sleeperPlayer = playersData?.[pid];
+
+        // Resolve a draft prospect for this card via window.findProspect (keyed by
+        // name with alias matching). Covers (1) a Sleeper player who is also a
+        // current rookie, and (2) a synthetic `csv_*` id with no Sleeper player —
+        // reversed back into a name. Hoisted above the early return for stable hooks.
+        const prospect = React.useMemo(() => {
+            try {
+                if (typeof window.findProspect !== 'function') return null;
+                let name = sleeperPlayer
+                    ? (sleeperPlayer.full_name || ((sleeperPlayer.first_name || '') + ' ' + (sleeperPlayer.last_name || '')).trim())
+                    : '';
+                if (!name && typeof pid === 'string' && pid.indexOf('csv_') === 0) {
+                    name = pid.slice(4).replace(/_/g, ' ').trim();
+                }
+                if (!name) return null;
+                return window.findProspect(name) || null;
+            } catch (e) { return null; }
+        }, [pid, sleeperPlayer?.full_name, sleeperPlayer?.first_name, sleeperPlayer?.last_name]);
+
+        // No Sleeper player (synthetic `csv_*` id) but a prospect resolved →
+        // synthesize a minimal player so the card body renders instead of blank.
+        const p = sleeperPlayer || (prospect ? {
+            full_name: prospect.name,
+            first_name: (prospect.name || '').split(' ')[0] || '',
+            last_name: (prospect.name || '').split(' ').slice(1).join(' ') || '',
+            position: prospect.position || prospect.pos || prospect.rawPos || '',
+            team: prospect.nflTeam || 'FA',
+            college: prospect.college || prospect.school || '',
+            years_exp: 0,
+            age: 0,
+            _synthetic: true,
+            _fromProspect: true,
+        } : null);
 
         // ESC closes
         useEffect(() => {
@@ -363,6 +487,8 @@
                     React.createElement('div', { style: { color: 'var(--k-2ecc71, #2ecc71)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '4px' } }, 'Alex NFL Fit'),
                     React.createElement('div', { style: { color: 'var(--text-muted)', fontSize: 'var(--text-body, 0.92rem)', lineHeight: 1.45 } }, nflFit.narrative)
                 ),
+                // Rookie Scouting Report — only when a prospect resolves (no regression for vets)
+                prospect && scoutingReportBlock(prospect),
                 // Age curve
                 React.createElement('div', { style: { padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
 	                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' } },

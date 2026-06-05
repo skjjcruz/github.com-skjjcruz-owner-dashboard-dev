@@ -146,7 +146,7 @@ function buildState() {
 test('buildDraftRecap creates P4 strategic user and league outputs', () => {
   const state = buildState();
   const recap = ctx.DraftCC.state.buildDraftRecap(state);
-  eq(recap.schemaVersion, 'draft-recap-v3', 'schema');
+  eq(recap.schemaVersion, 'draft-recap-v4', 'schema');
   eq(recap.bestPick.name, 'Alpha QB', 'best pick');
   eq(recap.biggestReach.name, 'Gamma RB', 'reach');
   eq(recap.missedTarget.name, 'Delta WR', 'missed target');
@@ -200,6 +200,25 @@ test('formatDraftRecapText includes action plan and team grades', () => {
   ok(text.includes('League recap:'), 'league recap section');
   ok(text.includes('Team grades:'), 'team grades section');
   ok(text.includes('Alpha QB - QB'), 'pick line preserved');
+});
+
+test('scorePick / gradeLetter produce a sane per-pick spread incl D/F', () => {
+  const s = ctx.DraftCC.state;
+  const steal = s.scorePick({ round: 3, overall: 30, consensusRank: 5, dhq: 5000, pos: 'WR' });
+  const onValue = s.scorePick({ round: 1, overall: 12, consensusRank: 11, dhq: 4600, pos: 'WR' });
+  const slightReach = s.scorePick({ round: 2, overall: 18, consensusRank: 24, dhq: 2300, pos: 'RB' });
+  const bigReach = s.scorePick({ round: 1, overall: 6, consensusRank: 40, dhq: 1500, pos: 'QB' });
+  ok(steal > onValue, 'steal beats on-value');
+  ok(onValue > slightReach, 'on-value beats slight reach');
+  ok(slightReach > bigReach, 'slight reach beats big reach');
+  ok(s.gradeLetter(steal).startsWith('A') || s.gradeLetter(steal) === 'B+', 'steal grades high: ' + s.gradeLetter(steal));
+  ok(['D', 'F', 'C-'].includes(s.gradeLetter(bigReach)), 'big reach grades low: ' + s.gradeLetter(bigReach));
+  // Missing consensusRank must be NEUTRAL (no false value hit, no penalty):
+  const noRank = s.scorePick({ round: 4, overall: 50, dhq: 1000, pos: 'TE' });
+  ok(noRank >= 45 && noRank <= 72, 'missing rank is neutral: ' + noRank);
+  // Aggregate transform gives a real team-level spread (D/F reachable):
+  ok(s.gradeLetter(s.aggregateGrade(35)) === 'F' || s.gradeLetter(s.aggregateGrade(35)) === 'D', 'bad team avg → D/F');
+  ok(s.gradeLetter(s.aggregateGrade(65)).startsWith('A'), 'great team avg → A');
 });
 
 console.log('\n');

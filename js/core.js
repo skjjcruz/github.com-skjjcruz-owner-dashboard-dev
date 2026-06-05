@@ -288,16 +288,85 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     }
 
     let _wrPlayersCache = null;
+    // IndexedDB key/value cache for payloads too big for Web Storage's ~5MB quota
+    // (the Sleeper players map is ~15MB). Degrades to a no-op cache miss if IDB is
+    // unavailable, so callers always fall back to a network refetch.
+    const WrIDB = (() => {
+        const DB_NAME = 'warroom', STORE = 'kv';
+        let _dbPromise = null;
+        function open() {
+            if (_dbPromise) return _dbPromise;
+            _dbPromise = new Promise((resolve, reject) => {
+                if (typeof window.indexedDB === 'undefined') return reject(new Error('indexedDB unavailable'));
+                const req = window.indexedDB.open(DB_NAME, 1);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error || new Error('indexedDB open failed'));
+            });
+            _dbPromise.catch(() => { _dbPromise = null; }); // allow retry after a failed open
+            return _dbPromise;
+        }
+        return {
+            get(key) {
+                return open().then(db => new Promise((resolve, reject) => {
+                    const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
+                    req.onsuccess = () => resolve(req.result ?? null);
+                    req.onerror = () => reject(req.error);
+                }));
+            },
+            set(key, value) {
+                return open().then(db => new Promise((resolve, reject) => {
+                    const tx = db.transaction(STORE, 'readwrite');
+                    tx.objectStore(STORE).put(value, key);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(tx.error || new Error('indexedDB write aborted'));
+                }));
+            },
+            del(key) {
+                return open().then(db => new Promise((resolve, reject) => {
+                    const tx = db.transaction(STORE, 'readwrite');
+                    tx.objectStore(STORE).delete(key);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                }));
+            },
+        };
+    })();
+
+    let _wrPlayersInflight = null;
+    const PLAYERS_TTL_MS = 43200000; // 12h — player data barely changes intra-day
     async function fetchAllPlayers() {
         if (_wrPlayersCache) return _wrPlayersCache;
-        // Check sessionStorage first (avoid re-fetching 10k players on every load)
-        const cached = WrStorage.getSession(WR_KEYS.PLAYERS_CACHE);
-        // 12-hour TTL — player data barely changes during a session. The old 1-hour
-        // TTL caused unnecessary 10k-player refetches on league switches.
-        if (cached && Date.now() - cached.ts < 43200000) { _wrPlayersCache = cached.data; return cached.data; }
-        _wrPlayersCache = await fetchJSON(`${SLEEPER_BASE_URL}/players/nfl`);
-        WrStorage.setSession(WR_KEYS.PLAYERS_CACHE, { data: _wrPlayersCache, ts: Date.now() });
-        return _wrPlayersCache;
+        // Dedup concurrent callers (app hub + league detail both request on boot) so
+        // the ~15MB /players/nfl payload is fetched at most once.
+        if (_wrPlayersInflight) return _wrPlayersInflight;
+        _wrPlayersInflight = (async () => {
+            // Persist the players map in IndexedDB, NOT sessionStorage: at ~15MB it far
+            // exceeds the ~5MB Web Storage quota, so the old sessionStorage write always
+            // threw QuotaExceededError and the cache never survived a reload — forcing a
+            // full re-download on every load. IndexedDB has ample quota.
+            try {
+                const cached = await WrIDB.get(WR_KEYS.PLAYERS_CACHE);
+                if (cached && cached.data && Date.now() - cached.ts < PLAYERS_TTL_MS) {
+                    _wrPlayersCache = cached.data;
+                    return cached.data;
+                }
+            } catch (e) { wrLog('players.cacheRead', e); }
+            const data = await fetchJSON(`${SLEEPER_BASE_URL}/players/nfl`);
+            _wrPlayersCache = data;
+            // Fire-and-forget persist — never block returning data on the IDB write.
+            WrIDB.set(WR_KEYS.PLAYERS_CACHE, { data, ts: Date.now() }).catch(e => wrLog('players.cacheWrite', e));
+            return data;
+        })();
+        try {
+            return await _wrPlayersInflight;
+        } finally {
+            _wrPlayersInflight = null;
+        }
     }
 
     // ─── Shared Constants ──────────────────────────────────────────────────────
@@ -514,9 +583,10 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
             try {
                 sessionStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
             } catch(e) {
-                if (e.name === 'QuotaExceededError') {
-                    try { sessionStorage.clear(); sessionStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); } catch(e2) { /* give up silently */ }
-                } else { wrLog('storage.setSession:' + key, e); }
+                // Never sessionStorage.clear() on quota errors — that wiped unrelated
+                // state as collateral. Oversized payloads (e.g. the players map) belong
+                // in WrIDB (IndexedDB) instead, which has far more room.
+                wrLog('storage.setSession:' + key, e);
             }
         },
         removeSession(key) {
@@ -526,6 +596,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
     window.App.WR_KEYS  = WR_KEYS;
     window.App.WrStorage = WrStorage;
+    window.App.WrIDB = WrIDB;
     window.App.fetchAllPlayers = fetchAllPlayers;
 
     window.App.getRosterDataState = function getRosterDataState(opts = {}) {

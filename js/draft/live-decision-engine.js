@@ -120,7 +120,7 @@
         return out;
     }
 
-    function decorateCandidate(state, player, idx, lane, rankLookup) {
+    function decorateCandidate(state, player, idx, lane, rankLookup, needs) {
         const boardContext = state?.draftContext?.boardContext || {};
         const entry = boardEntry(boardContext, player);
         const rank = boardRank(boardContext, player, lane) || rankLookup[idKey(player?.pid)] || idx + 1;
@@ -130,8 +130,10 @@
         const tagTarget = isTarget(entry);
         const tagFade = isFade(entry);
         const tier = entry.tier || player?.tier || player?.csv?.tier || null;
-        const needs = userNeedMap(state);
-        const needBoost = needs[posOf(player)] || 0;
+        // userNeedMap depends only on state, not the player — built once by candidates()
+        // and passed in (was rebuilt for every one of the ~300-440 pool candidates).
+        const needMap = needs || userNeedMap(state);
+        const needBoost = needMap[posOf(player)] || 0;
         const score = dhq / 100
             + needBoost
             + (tagTarget ? 24 : 0)
@@ -158,9 +160,10 @@
         const boardContext = state?.draftContext?.boardContext || {};
         const lane = activeLane(boardContext);
         const rankLookup = rankMap(boardContext?.lanes?.[lane]?.order || []);
+        const needs = userNeedMap(state);
         return asArray(state?.pool)
             .filter(p => p?.pid && !state?.draftedPids?.[p.pid])
-            .map((p, idx) => decorateCandidate(state, p, idx, lane, rankLookup))
+            .map((p, idx) => decorateCandidate(state, p, idx, lane, rankLookup, needs))
             .sort((a, b) => (a.rank - b.rank) || (b.dhq - a.dhq))
             .slice(0, limit);
     }
@@ -213,6 +216,12 @@
                 drivers: ['y5_projection', upside?.target ? 'user_target' : 'age_curve'],
             }),
         ].filter(Boolean);
+
+        // Avoid Warning: surface the most tempting (highest-score) player the user has
+        // tagged fade / do-not-draft, drawn from the UNFILTERED rows.
+        const faded = rows.filter(c => c.fade).sort((a, b) => b.score - a.score)[0];
+        const avoidCard = faded ? card('avoid', 'Avoid Warning', faded, 'User-board fade or do-not-draft flag is active.', 'red', { drivers: ['user_board'] }) : null;
+        if (avoidCard) cards.push(avoidCard);
 
         if (tradeWindow) {
             cards.push({
@@ -423,11 +432,67 @@
         return out;
     }
 
+    // ── Mid-draft trade-evolution signal (rule-based, NO model spend) ──────
+    // Buckets state.completedTrades by draft round and compares the per-round and
+    // whole-draft trade rate against an EXPECTED baseline derived from the tuning
+    // knob (state.draftTuning.tradeActivity, 0-100). Classifies 'heavy'/'typical'/'quiet'.
+    // acceptedAt is state.currentIdx — a 0-based pick index; round = floor(idx/size)+1.
+    // In live-sync mode completedTrades is empty (read-only), so this is inert there.
+    function liveTradeEvolutionSignal(state) {
+        const leagueSize = Math.max(1, num(state?.leagueSize, 12));
+        const rounds = Math.max(1, num(state?.rounds, 5));
+        const trades = asArray(state?.completedTrades);
+        const tradedRounds = Math.max(1, Math.floor(num(state?.currentIdx, 0) / leagueSize) + 1);
+
+        const activityRaw = Number(state?.draftTuning?.tradeActivity);
+        const activity = Number.isFinite(activityRaw) ? Math.max(0, Math.min(100, activityRaw)) : 50;
+        const expectedPerRound = Math.max(0, (0.2 + activity * 0.008));
+
+        const byRound = {};
+        let counted = 0;
+        trades.forEach(t => {
+            const idx = num(t?.acceptedAt, NaN);
+            if (!Number.isFinite(idx) || idx < 0) return;
+            const round = Math.floor(idx / leagueSize) + 1;
+            byRound[round] = (byRound[round] || 0) + 1;
+            counted++;
+        });
+
+        const total = counted;
+        const overallRate = total / tradedRounds;
+        const currentRound = Math.min(rounds, Math.floor(num(state?.currentIdx, 0) / leagueSize) + 1);
+        const currentRoundCount = byRound[currentRound] || 0;
+
+        const classify = (count, perRoundExpect, roundsSeen) => {
+            const expect = Math.max(0.0001, perRoundExpect * Math.max(1, roundsSeen));
+            if (count >= Math.max(2, expect * 1.6)) return 'heavy';
+            if (roundsSeen >= 2 && count <= expect * 0.4) return 'quiet';
+            return 'typical';
+        };
+
+        return {
+            schemaVersion: SCHEMA,
+            leagueSize,
+            rounds,
+            totalTrades: total,
+            tradedRounds,
+            currentRound,
+            currentRoundCount,
+            byRound,
+            expectedPerRound: Math.round(expectedPerRound * 100) / 100,
+            overallRate: Math.round(overallRate * 100) / 100,
+            roundClass: classify(currentRoundCount, expectedPerRound, 1),
+            draftClass: classify(total, expectedPerRound, tradedRounds),
+            activity,
+        };
+    }
+
     window.DraftCC = window.DraftCC || {};
     window.DraftCC.liveDecisionEngine = {
         buildDecisionDeck,
         buildLiveReadout,
         liveStreamSignals,
+        liveTradeEvolutionSignal,
         tierAlert,
         _private: {
             candidates,

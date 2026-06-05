@@ -720,11 +720,15 @@
     }
 
     function proposalKey(proposal) {
+        const futureKeyOf = window.DraftCC?.state?.futurePickKey || (p => 'FUT:' + p.year + ':' + p.round + ':' + p.fromRosterId);
         const side = list => (list || []).map(pickKey).sort().join(',');
+        const futSide = list => (list || []).map(futureKeyOf).sort().join(',');
         return [
             proposal?.targetRosterId,
             side(proposal?.myGive),
             side(proposal?.theirGive),
+            futSide(proposal?.myGiveFuture),
+            futSide(proposal?.theirGiveFuture),
             (proposal?.myGivePlayers || []).slice().sort().join(','),
             (proposal?.theirGivePlayers || []).slice().sort().join(','),
             proposal?.myGiveFaab || 0,
@@ -734,9 +738,9 @@
 
     function proposalValue(state, proposal, side) {
         if (side === 'my') {
-            return sumPickValue(state, proposal.myGive) + sumPlayerValue(proposal.myGivePlayers) + faabToDhq(proposal.myGiveFaab);
+            return sumPickValue(state, proposal.myGive) + sumFutureValue(state, proposal.myGiveFuture) + sumPlayerValue(proposal.myGivePlayers) + faabToDhq(proposal.myGiveFaab);
         }
-        return sumPickValue(state, proposal.theirGive) + sumPlayerValue(proposal.theirGivePlayers) + faabToDhq(proposal.theirGiveFaab);
+        return sumPickValue(state, proposal.theirGive) + sumFutureValue(state, proposal.theirGiveFuture) + sumPlayerValue(proposal.theirGivePlayers) + faabToDhq(proposal.theirGiveFaab);
     }
 
     function addUserPicksUntil(state, proposal, targetValue, maxAdds = 3) {

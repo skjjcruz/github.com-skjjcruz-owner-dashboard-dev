@@ -30,7 +30,7 @@
             grade.letter === '?' ? 'var(--k-95a5a6, #95a5a6)' :
             grade.letter.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' :
             grade.letter.startsWith('B') ? 'var(--k-d4af37, #d4af37)' :
-            grade.letter === 'C' ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+            grade.letter.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
 
         // Build a hidden DOM node (1080×1920 portrait)
         const card = document.createElement('div');

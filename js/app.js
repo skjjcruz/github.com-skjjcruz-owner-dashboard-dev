@@ -324,6 +324,7 @@
         async function loadSleeperData() {
             setLoading(true);
             setError(null);
+            setSleeperLeagues([]);
 
             try {
                 const user = await fetchSleeperUser(sleeperUsername);
@@ -334,9 +335,19 @@
                 }
                 setSleeperUser(user);
 
-                const leagues = await fetchUserLeagues(user.user_id, selectedYear);
+                const leagues = (await fetchUserLeagues(user.user_id, selectedYear)) || [];
+                if (!leagues.length) { setSleeperLeagues([]); setLoading(false); return; }
 
-                const leaguesWithDetails = await Promise.all(
+                // Stream each league's full details into state as it resolves, preserving
+                // the original order, instead of awaiting the slowest league via a single
+                // Promise.all. The hub paints fast leagues immediately rather than blocking
+                // on the slowest one. Each streamed entry is always complete (never a
+                // partial skeleton), so opening a card is safe. `loading` stays true until
+                // every league settles, which preserves the deep-link routing guards below.
+                const byId = new Map();
+                const orderedBuilt = () => leagues.map(lg => byId.get(lg.league_id)).filter(Boolean);
+
+                await Promise.all(
                     leagues.map(async (league) => {
                         try {
                             const [rosters, users] = await Promise.all([
@@ -345,8 +356,8 @@
                             ]);
 
                             const myRoster = rosters.find(r => r.owner_id === user.user_id);
-                            
-                            return {
+
+                            byId.set(league.league_id, {
                                 id: league.league_id,
                                 name: league.name,
                                 wins: myRoster?.settings?.wins || 0,
@@ -358,16 +369,16 @@
                                 settings: league.settings || {},
                                 rosters,
                                 users
-                            };
+                            });
                         } catch (e) {
                             console.error(`Failed to load league ${league.name}:`, e);
-                            return null;
+                        } finally {
+                            // Re-render with everything loaded so far, in original order.
+                            setSleeperLeagues(orderedBuilt());
                         }
                     })
                 );
 
-                const validLeagues = leaguesWithDetails.filter(l => l !== null);
-                setSleeperLeagues(validLeagues);
                 setLoading(false);
             } catch (err) {
                 console.error('Failed to load Sleeper data:', err);
@@ -515,8 +526,19 @@
                     // Then assess every roster in the background, yielding between
                     // leagues so a heavy or oddly-shaped league can't freeze the load.
                     if (typeof window.App?.assessAllTeams === 'function') {
-                        const stats = window.S.playerStats || {};
                         (async () => {
+                            // Empire mode never populated S.playerStats, so assessments ran with no
+                            // production data → degraded health/tier. Fetch current-season stats once
+                            // (league-independent season totals) and feed them to every assessment.
+                            if ((!window.S.playerStats || !Object.keys(window.S.playerStats).length) && typeof window.fetchSeasonStats === 'function') {
+                                const season = parseInt(window.S.season || new Date().getFullYear(), 10);
+                                let st = (await window.fetchSeasonStats(String(season)).catch(() => ({}))) || {};
+                                // Offseason: the current season has no games yet — fall back to the last
+                                // completed season so dynasty health/tier reflect real production.
+                                if (!Object.keys(st).length) st = (await window.fetchSeasonStats(String(season - 1)).catch(() => ({}))) || {};
+                                window.S.playerStats = st;
+                            }
+                            const stats = window.S.playerStats || {};
                             for (const l of allLeaguesList) {
                                 await new Promise(r => setTimeout(r, 0));
                                 const lid = l.id || l.league_id;
@@ -645,9 +667,11 @@
             const accentBg = 'var(--acc-fill2, rgba(212,175,55,0.08))';
             const accentBorder = 'var(--acc-line2, rgba(212,175,55,0.3))';
             if (!sleeperUsername) return null;
-            if (loading) return <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' }}>Loading leagues...</div>;
-            if (error) return <div style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--k-e74c3c, #e74c3c)', fontSize: 'var(--text-body, 1rem)' }}>{error}</div>;
-            if (sleeperLeagues.length === 0) return <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' }}>No leagues found for {selectedYear}</div>;
+            // Only show the full-screen loader before the FIRST league streams in; once
+            // cards start arriving we render them live and show a "loading more" hint.
+            if (loading && sleeperLeagues.length === 0) return <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' }}>Loading leagues...</div>;
+            if (error && sleeperLeagues.length === 0) return <div style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--k-e74c3c, #e74c3c)', fontSize: 'var(--text-body, 1rem)' }}>{error}</div>;
+            if (!loading && sleeperLeagues.length === 0) return <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' }}>No leagues found for {selectedYear}</div>;
 
             const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
             // Pre-live: treat everyone as paid so Empire is a free tool for now.
@@ -712,6 +736,7 @@
                                 </div>
                             );
                         })}
+                        {loading && <div style={{ padding: '0.5rem', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', opacity: 0.6 }}>Loading more leagues…</div>}
                     </div>
                 </div>
             );

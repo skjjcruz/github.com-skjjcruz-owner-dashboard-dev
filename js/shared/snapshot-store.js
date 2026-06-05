@@ -119,9 +119,10 @@
         const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
         return {
             totalDHQ,
+            curDHQ: anyPrev ? curDHQp : null,   // current sum over ONLY the leagues that have a prior (the delta's universe)
             totalDHQDelta: anyPrev ? curDHQp - prevDHQp : null,
             avgHealth: avg(allHealth),
-            avgHealthDelta: (anyPrev && prevHealthP.length) ? avg(curHealthP) - avg(prevHealthP) : null,
+            avgHealthDelta: (anyPrev && prevHealthP.length && curHealthP.length) ? avg(curHealthP) - avg(prevHealthP) : null,
         };
     }
 
