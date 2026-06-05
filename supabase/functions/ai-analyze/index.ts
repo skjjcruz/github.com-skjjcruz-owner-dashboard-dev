@@ -1162,6 +1162,44 @@ function buildQualityThresholdBlock(): string {
 `;
 }
 
+// Generic chat/scout surfaces (home-chat, trade-chat, waiver-chat, trade-scout,
+// rookie-scout, strategy-analysis, …) run the generic branch, which uses
+// genericContext.system and SKIPS the league-format / team-mode / quality blocks
+// that the structured FAAB/draft path gets via buildSystemPrompt. This injects
+// the same discipline so chat matches the structured path (parity).
+//
+// Idempotent: each block is added only if its marker is not already present in
+// the system prompt or user message, so callers that already fold dhqContext()
+// text into the message are NOT double-injected. Structured fields (rosterPositions
+// / scoringSettings / teamTier / teamWindow) produce the authoritative TS blocks;
+// when those are absent we fall back to the client's _dhqContext text blob.
+function enrichGenericSystemPrompt(systemPrompt: string, ctx: any, userPrompt: string): string {
+    const seen = `${systemPrompt}\n${userPrompt || ''}`;
+    const blocks: string[] = [];
+    const hasStructured = !!(ctx?.rosterPositions || ctx?.roster_positions || ctx?.teamTier || ctx?.tier);
+
+    if (hasStructured) {
+        if (!/LEAGUE FORMAT CONTEXT/.test(seen) && (ctx.rosterPositions || ctx.roster_positions)) {
+            const fmtBlock = buildLeagueFormatBlock(detectLeagueFormat(ctx));
+            if (fmtBlock) blocks.push(fmtBlock);
+        }
+        if (!/TEAM COMPETITIVE MODE/.test(seen)) {
+            const modeBlock = buildTeamModeBlock(ctx);
+            if (modeBlock) blocks.push(modeBlock);
+        }
+        if (!/MINIMUM QUALITY THRESHOLDS/.test(seen)) {
+            blocks.push(buildQualityThresholdBlock());
+        }
+    } else if (ctx?._dhqContext
+        && !/\[QUALITY_RULES\]|MINIMUM QUALITY THRESHOLDS/.test(seen)
+        && !systemPrompt.includes(ctx._dhqContext)) {
+        // No structured fields — use the shared dhqContext() text the client sent.
+        blocks.push(`--- WAR ROOM CONTEXT ---\n${ctx._dhqContext}`);
+    }
+
+    return blocks.length ? `${systemPrompt}\n${blocks.join('\n')}` : systemPrompt;
+}
+
 // ── Prompt builders ───────────────────────────────────────────────────────────
 
 function buildSystemPrompt(ctx?: any): string {
@@ -1778,9 +1816,16 @@ Deno.serve(async (req) => {
         }
         const globalOutputCap = envNumber('AI_MAX_OUTPUT_TOKENS', 8000);
         const maxTokens = Math.max(100, Math.min(requestedMaxTokens, routeOutputCap, globalOutputCap));
-        const systemPrompt = genericContext?.system || (isMockDraft
+        let systemPrompt = genericContext?.system || (isMockDraft
             ? 'You are a dynasty fantasy football draft simulator. Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no prose before or after. Start your response with [ and end with ]. Never repeat a player. Track all prior picks carefully so each player is selected at most once.'
             : buildSystemPrompt(context));
+
+        // Hold generic chat/scout surfaces to the same league-format / team-mode /
+        // quality discipline as the structured path. Off by default; enable via
+        // AI_GENERIC_ENRICH for a staged rollout (changes live chat prompts).
+        if (genericContext && envFlag('AI_GENERIC_ENRICH', false)) {
+            systemPrompt = enrichGenericSystemPrompt(systemPrompt, parseContextPayload(context), userPrompt);
+        }
 
         let route = routeForType(routeType);
         if (['deep-analysis', 'league-report', 'rule-simulator', 'trade-audit'].includes(routeType)) {

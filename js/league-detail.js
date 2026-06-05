@@ -2373,7 +2373,7 @@
             const isRookieScout = /SEARCH FOR CURRENT INFO.*scouting report|Full dynasty scouting report/i.test(text.trim());
             const aiType = isRookieScout ? 'rookie-scout' : isScoutRequest ? 'trade-scout' : 'home-chat';
             const reply = typeof dhqAI === 'function'
-              ? await dhqAI(aiType, null, null, { messages })
+              ? await dhqAI(aiType, null, (typeof dhqContext === 'function' ? dhqContext(true) : null), { messages })
               : typeof callClaude === 'function'
                 ? await callClaude(messages)
                 : 'AI not available. Add an API key in Settings.';

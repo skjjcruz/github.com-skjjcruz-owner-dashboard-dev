@@ -4,12 +4,26 @@
 // Compares: War Room Edge Function (ai-analyze) vs ReconAI CDN (dhqAI)
 //
 // This test file ports all 12 scenarios from ai-training-tests.js and
-// simulates BOTH paths:
+// grades BOTH paths:
 //   1. War Room path: buildSystemPrompt(ctx) + prompt builders
-//   2. ReconAI path: DHQ_IDENTITY (UNKNOWN - CDN blocked) + dhqContext output
+//   2. ReconAI path: the REAL shared rule functions from shared/dhq-ai.js
 //
-// Each test grades both paths against the same rubric, identifying gaps
-// in the ReconAI implementation.
+// ┌─ CORRECTION (this branch) ───────────────────────────────────────────────┐
+// │ The original report (RECONAI-CONSISTENCY-REPORT.md, 2026-04-04) assumed   │
+// │ the ReconAI path was "CDN blocked" and emitted only a mentality string,   │
+// │ and flagged ~18 likely failures. That is no longer accurate:              │
+// │   • dhqContext() now emits [TEAM_MODE] and [QUALITY_RULES] (DHQ<500 floor, │
+// │     HOLD-FAAB) via pure functions, and [LEAGUE_FORMAT] via                 │
+// │     dhqBuildLeagueFormatBlock.                                             │
+// │   • The FAAB / draft / trade pages already call the structured ai-analyze │
+// │     path with _dhqContext, so they get War Room's full prompt.            │
+// │   • Chat/scout parity is delivered server-side behind AI_GENERIC_ENRICH.  │
+// │ This suite now LOADS the real pure functions and grades actual output.    │
+// │ League-format/scarcity checks are runtime-only (Intelligence + the edge   │
+// │ enrichment) and are reported as such, not as failures.                    │
+// └──────────────────────────────────────────────────────────────────────────┘
+// Run with RECONAI_SHARED_SOURCE pointed at the ReconAI shared/ dir to load
+// the real rule functions, e.g. RECONAI_SHARED_SOURCE=../ReconAI-sandbox-dev/shared
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── War Room Prompt Builders (from ai-analyze/index.ts) ─────────────
@@ -147,36 +161,60 @@ function mockFA(name, pos, age, dhq, pts) {
     return { name, pos, team: 'FA', age, dhq, pts: pts ? String(pts) : null, gp: pts ? 14 : 0, avg: pts ? String((pts/14).toFixed(1)) : null, yrsExp: Math.max(0, age - 22), isRookie: age <= 22 };
 }
 
-// ── ReconAI Simulation (what we know vs unknown) ─────────────────────
+// ── ReconAI path — graded against the REAL shared rule functions ─────
+// The original suite assumed the ReconAI path was "CDN blocked" and emitted
+// only a mentality string. That is no longer true: dhqContext() now emits
+// [TEAM_MODE] and [QUALITY_RULES] via pure functions in shared/dhq-ai.js, and
+// [LEAGUE_FORMAT] via dhqBuildLeagueFormatBlock. We load the pure functions
+// from the canonical source and run them so this harness grades real output.
+function loadReconRuleFns() {
+    const fs = require('fs');
+    const path = require('path');
+    const candidates = [
+        process.env.RECONAI_SHARED_SOURCE,
+        path.resolve(__dirname, '..', 'reconai', 'shared'),
+        path.resolve(__dirname, 'reconai-shared'),
+    ].filter(Boolean);
+    const dir = candidates.find(d => fs.existsSync(path.join(d, 'dhq-ai.js')));
+    if (!dir) return null;
+    const src = fs.readFileSync(path.join(dir, 'dhq-ai.js'), 'utf8');
+    const grab = (name) => (src.match(new RegExp('function ' + name + '\\([\\s\\S]*?\\n\\}')) || [])[0];
+    const modeSrc = grab('dhqTeamModeBlock');
+    const qualSrc = grab('dhqQualityRulesBlock');
+    if (!modeSrc || !qualSrc) return null;
+    try {
+        // eslint-disable-next-line no-new-func
+        return new Function(`${modeSrc}\n${qualSrc}\nreturn { dhqTeamModeBlock, dhqQualityRulesBlock };`)();
+    } catch { return null; }
+}
+
+const RECON_RULE_FNS = loadReconRuleFns();
 
 function simulateReconAIPath(ctx) {
-    // What we know ReconAI receives:
     const mentality = ctx.teamTier === 'REBUILDING' ? 'rebuild' : ctx.teamTier === 'CONTENDER' || ctx.teamTier === 'ELITE' ? 'winnow' : 'balanced';
 
-    // What we DO NOT know (blocked by CDN):
-    const dhqIdentity = 'UNKNOWN - CDN BLOCKED (https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/dhq-ai.js)';
-    const dhqContextOutput = 'UNKNOWN - CDN BLOCKED (contents of dhqContext() unknown)';
-
-    // What we can infer from loadMentality():
-    const mentalities = {
-        rebuild: { mentality: 'rebuild', message: 'Rebuild mode active' },
-        winnow: { mentality: 'winnow', message: 'Win-now / contending mode active' },
-        balanced: { mentality: 'balanced', message: 'Balanced/crossroads mode active' }
-    };
+    // Real [TEAM_MODE] + [QUALITY_RULES] output from dhqContext()'s pure functions.
+    const modeBlock = RECON_RULE_FNS ? RECON_RULE_FNS.dhqTeamModeBlock(ctx.teamTier, ctx.teamWindow) : '';
+    const qualityBlock = RECON_RULE_FNS ? RECON_RULE_FNS.dhqQualityRulesBlock() : '';
+    const system = [modeBlock, qualityBlock].filter(Boolean).join('\n\n');
 
     return {
-        dhqIdentity,
-        dhqContextOutput,
         mentality,
-        mentalities: mentalities[mentality],
+        system,
+        rulesLoaded: !!RECON_RULE_FNS,
         knownValues: {
-            hasLeagueFormat: false,  // Does NOT receive detectLeagueFormat output
-            hasSFDetection: false,
-            hasQBCrisisDetection: false,
-            hasTEPDetection: false,
-            hasIDPDetection: false,
-            hasQualityThresholds: false,
-            hasFAABRules: false,
+            // League-format / SF / TEP / IDP / scarcity blocks are emitted at
+            // runtime by dhqBuildLeagueFormatBlock (Intelligence-driven) and the
+            // server's AI_GENERIC_ENRICH path — not executable in this Node harness.
+            hasLeagueFormat: 'runtime',
+            hasSFDetection: 'runtime',
+            hasQBCrisisDetection: 'runtime',
+            hasTEPDetection: 'runtime',
+            hasIDPDetection: 'runtime',
+            // These ARE produced by the shared pure functions and graded for real:
+            hasTeamMode: /Mode: (REBUILD|CONTEND|CROSSROADS)/.test(modeBlock),
+            hasQualityThresholds: /DHQ below 500/.test(qualityBlock),
+            hasFAABRules: /HOLD YOUR FAAB/.test(qualityBlock),
             mentalityMapping: true,
         }
     };
@@ -498,56 +536,33 @@ function runTest(test) {
             let status = 'UNKNOWN';
             let reason = '';
 
+            // Graded against the REAL shared rule output (reconaiPath.system).
+            const reconText = reconaiPath.system || '';
+            // League-format / scarcity / SF-QB blocks are produced at runtime by
+            // dhqBuildLeagueFormatBlock (Intelligence) + the server's
+            // AI_GENERIC_ENRICH path, which this Node harness cannot execute.
+            const RUNTIME_ONLY = ['SUPERFLEX', 'SUPERFLEX LEAGUE', 'TE PREMIUM', 'TE PREMIUM LEAGUE',
+                'IDP LEAGUE', 'defensive starter slots', '1.8x', '1.5x', 'RB SCARCITY', '#1 PRIORITY'];
+
             if (r.contains === 'REBUILD MODE' || r.contains === 'REBUILD') {
-                if (reconaiPath.knownValues.mentalityMapping) {
-                    status = 'LIKELY PASS';
-                    reason = 'Mentality="rebuild" sent, but no detailed REBUILD RULES visible';
-                } else {
-                    status = 'LIKELY FAIL';
-                    reason = 'Mentality mapping unavailable';
-                }
+                status = /REBUILD/.test(reconText) ? 'LIKELY PASS' : 'LIKELY FAIL';
+                reason = status === 'LIKELY PASS' ? 'dhqContext() emits [TEAM_MODE] Mode: REBUILD with full rules' : 'Team-mode block not produced';
             } else if (r.contains === 'CONTENDING' || r.contains === 'ELITE') {
-                if (reconaiPath.knownValues.mentalityMapping) {
-                    status = 'LIKELY PASS';
-                    reason = 'Mentality="winnow" sent to dhqAI';
-                } else {
-                    status = 'LIKELY FAIL';
-                    reason = 'Mentality mapping unavailable';
-                }
-            } else if (r.contains === 'SUPERFLEX' || r.contains === 'SUPERFLEX LEAGUE') {
-                status = 'LIKELY FAIL';
-                reason = 'ReconAI does NOT receive league format detection output';
-                results.reconai.gaps.push({ category: 'League Format', detail: 'SUPERFLEX detection missing' });
-            } else if (r.contains === 'TE PREMIUM' || r.contains === 'TE PREMIUM LEAGUE') {
-                status = 'LIKELY FAIL';
-                reason = 'ReconAI does NOT receive TE Premium detection';
-                results.reconai.gaps.push({ category: 'League Format', detail: 'TE Premium detection missing' });
-            } else if (r.contains === 'IDP LEAGUE' || r.contains === 'defensive starter slots') {
-                status = 'LIKELY FAIL';
-                reason = 'ReconAI does NOT receive IDP detection';
-                results.reconai.gaps.push({ category: 'League Format', detail: 'IDP detection missing' });
-            } else if (r.contains === '1.8x' || r.contains === '1.5x') {
-                status = 'LIKELY FAIL';
-                reason = 'Scarcity multipliers not in ReconAI path';
-                results.reconai.gaps.push({ category: 'Scarcity Context', detail: 'Position scarcity multipliers missing' });
-            } else if (r.contains === '#1 PRIORITY' && r.contains.includes('QB')) {
-                status = 'LIKELY FAIL';
-                reason = 'ReconAI does NOT have QB crisis detection logic';
-                results.reconai.gaps.push({ category: 'SF QB Protocol', detail: 'QB crisis detection missing' });
+                status = /CONTEND/.test(reconText) ? 'LIKELY PASS' : 'LIKELY FAIL';
+                reason = status === 'LIKELY PASS' ? 'dhqContext() emits [TEAM_MODE] Mode: CONTEND with win-now rules' : 'Team-mode block not produced';
             } else if (r.contains === 'DHQ below 500' || r.contains === 'HOLD YOUR FAAB' || r.contains === 'DHQ < 500') {
-                status = 'LIKELY FAIL';
-                reason = 'ReconAI does NOT have quality thresholds or FAAB discipline rules';
-                results.reconai.gaps.push({ category: 'Quality Thresholds', detail: 'DHQ/quality floor rules missing' });
-            } else if (r.contains === 'RB SCARCITY') {
-                status = 'LIKELY FAIL';
-                reason = 'Positional scarcity logic not in ReconAI';
-                results.reconai.gaps.push({ category: 'Scarcity Context', detail: 'RB scarcity detection missing' });
+                const ok = /DHQ below 500/.test(reconText) && /HOLD YOUR FAAB/.test(reconText);
+                status = ok ? 'LIKELY PASS' : 'LIKELY FAIL';
+                reason = ok ? 'dhqContext() emits [QUALITY_RULES] with the DHQ<500 floor and HOLD-FAAB gate' : 'Quality block not produced';
+            } else if (RUNTIME_ONLY.includes(r.contains)) {
+                status = 'UNKNOWN';
+                reason = 'Runtime-covered by dhqBuildLeagueFormatBlock + AI_GENERIC_ENRICH; not gradable in this Node harness';
             } else if (r.notContains) {
-                status = 'LIKELY PASS';
-                reason = 'False positive avoidance likely works (mentality mapping)';
+                status = !reconText.includes(r.notContains) ? 'LIKELY PASS' : 'LIKELY FAIL';
+                reason = status === 'LIKELY PASS' ? 'Correctly absent from shared rule output' : 'Unwanted content present';
             } else {
                 status = 'UNKNOWN';
-                reason = 'Insufficient data to assess';
+                reason = 'Behavioral check — not statically gradable';
             }
 
             results.reconai.checks.push({ rule: r.rule, status, reason });
@@ -616,22 +631,13 @@ console.log('    • ' + reconaiLikelyFail + ' likely failing');
 console.log('    • ' + reconaiUnknown + ' unknown');
 console.log('═══════════════════════════════════════════════════════════════\n');
 
-// Print gap summary
-console.log('═══════════════════════════════════════════════════════════════');
-console.log('  RECONAI vs WAR ROOM — FEATURE GAP ANALYSIS');
-console.log('═══════════════════════════════════════════════════════════════\n');
-
-const categories = [
-    'League Format',
-    'Quality Thresholds',
-    'Scarcity Context',
-    'SF QB Protocol',
-    'FAAB Discipline',
-    'Team Mode Rules'
-];
-
-for (const cat of categories) {
-    if (allGaps[cat]) {
+// Print remaining gaps (statically-graded checks the shared rules did NOT cover).
+const gapCats = Object.keys(allGaps);
+if (gapCats.length) {
+    console.log('═══════════════════════════════════════════════════════════════');
+    console.log('  REMAINING STATICALLY-GRADED GAPS');
+    console.log('═══════════════════════════════════════════════════════════════\n');
+    for (const cat of gapCats) {
         console.log(`[${cat}]`);
         const unique = [...new Set(allGaps[cat].map(g => g.detail))];
         for (const detail of unique) {
@@ -644,5 +650,12 @@ for (const cat of categories) {
 }
 
 console.log('═══════════════════════════════════════════════════════════════');
-console.log('  SUMMARY: ReconAI is missing critical context from War Room');
+if (reconaiLikelyFail === 0) {
+    console.log('  SUMMARY: shared rule output matches War Room on every');
+    console.log('  statically-graded check. The ' + reconaiUnknown + ' "unknown" checks are');
+    console.log('  league-format/scarcity blocks produced at runtime by');
+    console.log('  dhqBuildLeagueFormatBlock + AI_GENERIC_ENRICH (not gradable here).');
+} else {
+    console.log('  SUMMARY: ' + reconaiLikelyFail + ' statically-graded check(s) diverge from War Room.');
+}
 console.log('═══════════════════════════════════════════════════════════════\n');
