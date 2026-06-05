@@ -521,7 +521,7 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
         research:  { label: 'Research',       color: 'var(--gold)' },
         league:    { label: 'League intel',   color: 'var(--info)' },
         scout:     { label: 'Scout sessions', color: 'var(--k-00c8b4, #00c8b4)' },
-        warroom:   { label: 'War Room',       color: 'var(--gold)' },
+        warroom:   { label: 'Dynasty HQ',     color: 'var(--gold)' },
     };
     const classify = (e) => {
         const cat = (e.category || '').toLowerCase();

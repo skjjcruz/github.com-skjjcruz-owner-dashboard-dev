@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hovnqztlbsgsywrbidbh.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
-    <title>Waiver War Room - Dynasty HQ</title>
+    <title>Waiver Wire - Dynasty HQ</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
@@ -1203,7 +1203,7 @@
             // ---- Boot/error states ----
             if (phase === 'boot') return (
                 <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:'0.75rem' }}>
-                    <div style={{ color:'var(--gold)', fontFamily:'Inter,sans-serif', fontSize:'1.4rem', letterSpacing:'0.12em' }}>LOADING WAIVER WAR ROOM</div>
+                    <div style={{ color:'var(--gold)', fontFamily:'Inter,sans-serif', fontSize:'1.4rem', letterSpacing:'0.12em' }}>LOADING WAIVER WIRE</div>
                     <div style={{ color:'var(--silver)', fontSize:'0.75rem', opacity:0.6 }}>Connecting to Sleeper API...</div>
                 </div>
             );
@@ -1244,7 +1244,7 @@
                     <div className="tracker-header" style={{ flexDirection:'column', gap:'0.3rem', padding:'0.4rem 1rem' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:'0.7rem', width:'100%', flexWrap:'wrap' }}>
                             <button className="back-btn" onClick={() => window.location.href='index.html'}>&larr; Dashboard</button>
-                            <div className="tracker-title" style={{ fontSize:'1.35rem' }}>&#9881; WAIVER WAR ROOM</div>
+                            <div className="tracker-title" style={{ fontSize:'1.35rem' }}>&#9881; WAIVER WIRE</div>
                             <select
                                 value={selectedYear}
                                 onChange={e => setSelectedYear(e.target.value)}
