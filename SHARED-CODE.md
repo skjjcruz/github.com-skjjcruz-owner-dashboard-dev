@@ -11,9 +11,9 @@ War Room (`warroom/`) consumes it via CDN at runtime.
 https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/
 ```
 
-War Room HTML pages load shared scripts from this URL. Any change to a
-file in `reconai/shared/` is live to War Room after the next GitHub Pages
-deploy — no War Room deploy needed.
+War Room production pages load shared scripts from this URL through
+`js/shared/shared-loader.js`. Any change to a file in `reconai/shared/` is
+live to War Room after the next GitHub Pages deploy and War Room cache-bust.
 
 ---
 
@@ -21,10 +21,13 @@ deploy — no War Room deploy needed.
 
 | File | Purpose | Key exports |
 |------|---------|-------------|
+| `app-config.js` | Public backend/runtime config — must load before provider/auth modules | `App.CONFIG`, `OD.CONFIG`, backend endpoint URLs |
 | `constants.js` | Core constants — must load first | `App.POS_COLORS`, `App.ageCurveWindows`, `App.peakWindows`, `App.decayRates`, `App.BASE_PICK_VALUES`, `App.tradeValueTier`, `App.posMap`, `App.posClass`, `App.NFL_TEAMS` |
-| `utils.js` | Utility functions | `App.normPos`, `App.posColor` (delegates to `POS_COLORS`), `App.calcRawPts`, `App.isElitePlayer`, `App.dhqLog` |
+| `utils.js` | Utility functions | `App.normPos`, `App.posColor` (delegates to `POS_COLORS`), `App.calcRawPts`, `App.isElitePlayer` (7000+ DHQ or top 5 at position), `App.dhqLog` |
 | `pick-value-model.js` | Dynamic dynasty pick valuation (3-phase exponential decay, KTC-calibrated) | `App.LI.dhqPickValueFn` |
+| `dhq-core.js` | Standalone DHQ calculation helpers and lab engine | `App.DhqCore.*`, `calculateValues()` |
 | `dhq-engine.js` | League Intel engine — scores every player using real league data | `App.LI`, `App.loadLeagueIntel()`, `App.calcOptimalPPG()` |
+| `nfl-fit.js` | "Alex NFL Fit" — real-situation scouting signals + narrative (loads after `dhq-engine.js`) | `App.computeNFLFit()`, `App.fetchNFLFitNews()` |
 | `dhq-providers.js` | Provider scoring logic | `dynastyValue()`, `getPlayerAction()` |
 | `dhq-ai.js` | AI integration (Claude/Gemini) | `App.askAlex()` |
 | `ai-dispatch.js` | AI message queue and routing | `App.AI.*` |
@@ -42,9 +45,13 @@ deploy — no War Room deploy needed.
 
 ### Load Order (required)
 
-`constants.js` → `utils.js` → `dhq-core.js` and `intelligence-context.js` before `dhq-engine.js` → everything else
+`app-config.js` → `constants.js` → `utils.js` → `dhq-core.js` and `intelligence-context.js` before `dhq-engine.js` → `nfl-fit.js` (after `dhq-engine.js`) → everything else
 
-`constants.js` must come first because `posColor()` in `utils.js` reads
+`app-config.js` must load before `supabase-client.js`, `espn-api.js`,
+`mfl-api.js`, `yahoo-api.js`, and AI/provider modules so all backend
+function URLs and public Supabase values come from one source.
+
+`constants.js` must come before `utils.js` because `posColor()` reads
 `App.POS_COLORS`, which `constants.js` defines.
 
 ---
@@ -81,7 +88,16 @@ position colors anywhere else.
 ```
 Annual value decline rate after the valuable decline band. Higher = steeper cliff.
 
-### Player value tiers — `App.tradeValueTier(val)`
+### Elite assets and player value tiers
+
+`App.isElitePlayer(pid)` is the canonical elite-asset rule:
+
+```
+DHQ >= 7000 OR top 5 at position → Elite asset
+```
+
+`App.tradeValueTier(val)` remains the pure value-band helper:
+
 ```
 DHQ >= 7000  → Elite
 DHQ >= 4000  → Starter
@@ -95,7 +111,10 @@ thresholds inline.
 
 ## How War Room Consumes Shared Code
 
-War Room loads shared scripts via `<script src="https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/...">` tags in each HTML page. Scripts run in the browser before War Room's own JS.
+War Room loads shared scripts through `js/shared/shared-loader.js`. In
+production the loader resolves to `https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/`;
+in local/file mode it resolves to `reconai-shared/` after
+`npm run sync:shared`. Scripts run in the browser before War Room's own JS.
 
 **Pattern for constants that could fail to load:**
 
@@ -143,5 +162,32 @@ function.
 - **Changing `posColor()`** — update `POS_COLORS` in `constants.js`. `posColor()` delegates automatically.
 - **Adding a new shared function** — add to the appropriate `reconai/shared/` file, then add a fallback in `warroom/js/core.js` with the `|| fallback` pattern.
 - **Adding a new constant** — add to `reconai/shared/constants.js` and add a matching fallback in `warroom/js/core.js`.
+
+## Backend Ownership
+
+The two apps deploy to **separate Supabase projects**, each from its own
+`.github/workflows/deploy-functions.yml`:
+
+- **ReconAI** → project `sxshiqyxhhifvtfqawbq`. Deploys the provider proxies:
+  `espn-proxy`, `mfl-proxy`, `yahoo-proxy`.
+- **War Room** → project `hovnqztlbsgsywrbidbh`. Deploys account, billing,
+  admin, and server AI: `ai-analyze`, `get-session-token`, `set-password`,
+  `fw-signup`, `fw-signin`, `fw-create-checkout`, `fw-stripe-webhook`,
+  `admin-list-users`, plus its own `mfl-proxy` (see note below).
+- `yahoo-auth` is retired; `yahoo-proxy` is the single Yahoo OAuth/API surface.
+
+**`mfl-proxy` exists in both repos by design** — each project needs its own
+copy. ReconAI's is an anon-tolerant, rate-limited CORS relay (Scout-app users
+may be anonymous). War Room's requires a valid app session token
+(`requireActiveAppSession`), because dashboard users are always signed in.
+They are not a deploy collision: each deploys only to its own project, so
+deploy each function by explicit name from its owning repo.
+
+### DHQ Labs
+
+- `shared/dhq-core.js` is the standalone calculation surface for controlled experiments.
+- `App.DhqCore.buildLineupContext()` simulates the configured starting lineup and reports position point share, marginal share, slot share, and lineup importance.
+- `tools/dhq-playground.html` can be opened directly in a browser to adjust league size, roster slots, scoring, and mode.
+- `npm run dhq:lab -- --data-file tools/dhq-sample-data.json` runs the same core from Node without app state.
 
 After editing any shared file: `git push origin main` in `reconai/` triggers GitHub Pages deploy (~1-2 min).
