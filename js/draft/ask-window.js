@@ -153,7 +153,7 @@
             + '.meta{color:#6b7280;font-size:12px;margin-bottom:16px}hr{border:0;border-top:1px solid #e5e7eb;margin:14px 0}'
             + '@media print{body{margin:0;max-width:none}}</style></head><body>'
             + '<h1>' + safeTitle + '</h1>'
-            + '<div class="meta">Alex · Draft War Room — ' + esc(new Date().toLocaleString()) + '</div><hr/>'
+            + '<div class="meta">Alex · Draft Room — ' + esc(new Date().toLocaleString()) + '</div><hr/>'
             + body + '</body></html>';
     }
 
@@ -390,7 +390,7 @@
                                 textOverflow: 'ellipsis',
                             }}>{title}</div>
                             <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                                Alex · Draft War Room
+                                Alex · Draft Room
                             </div>
                         </div>
                         <button

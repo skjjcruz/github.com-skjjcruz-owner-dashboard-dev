@@ -833,6 +833,11 @@
         const lastTierBreakRef = React.useRef('');
         const lastValueCliffRef = React.useRef('');
         const lastNeedTensionRef = React.useRef('');
+        // Mid-draft trade-evolution narration: dedupe on completedTrades.length so
+        // each new trade fires one per-trade line + (on a round boundary) a room
+        // evolution callout. The count ref guards StrictMode double-invoke.
+        const lastTradeEvoRef = React.useRef(0);
+        const lastTradeEvoRoundRef = React.useRef(0);
         React.useEffect(() => {
             if (state.phase !== 'drafting') return;
             if (state.picks.length === lastAlexPickCountRef.current) return;
@@ -1023,7 +1028,6 @@
                 ].filter(Boolean).join(' ');
 
                 dispatch({ type: 'ALEX_SET_THINKING', thinking: true });
-                dispatch({ type: 'ALEX_SPEND_SONNET' });
 
                 const prompt = lastPick.isUser
                     ? `React to the user's draft pick in 1-2 sentences. Be Alex the draft analyst — direct, punchy, in character. Say if it's a good fit, a reach, or a steal. Context: ${contextLines}`
@@ -1034,6 +1038,9 @@
                     .then(response => {
                         const replyText = typeof response === 'string' ? response : (response?.content || response?.text || '');
                         if (!replyText) return;
+                        // Debit the budget only once we actually have a reply, so a failed
+                        // or empty call doesn't silently drain the per-draft Sonnet budget.
+                        dispatch({ type: 'ALEX_SPEND_SONNET' });
                         dispatch({
                             type: 'ALEX_EVENT_ADD',
                             event: {
@@ -1055,6 +1062,81 @@
                     });
             }
         }, [state.picks.length, state.phase]);
+
+        // ── Mid-draft trade-evolution callouts (rule-based, NO Sonnet spend) ─
+        // Fires only when completedTrades grows. Live-sync keeps that array empty
+        // (read-only), so this is inert in live drafts and never narrates there.
+        React.useEffect(() => {
+            if (state.phase !== 'drafting') return;
+            const trades = state.completedTrades || [];
+            const tradeCount = trades.length;
+            if (tradeCount <= lastTradeEvoRef.current) {
+                if (tradeCount < lastTradeEvoRef.current) { // draft reset → re-arm
+                    lastTradeEvoRef.current = tradeCount;
+                    lastTradeEvoRoundRef.current = 0;
+                }
+                return;
+            }
+            const newlyClosed = trades.slice(lastTradeEvoRef.current);
+            lastTradeEvoRef.current = tradeCount;
+
+            const leagueSize = Math.max(1, Number(state.leagueSize) || 12);
+            const teamName = (rid) => {
+                const key = String(rid == null ? '' : rid);
+                return (key && state.personas?.[key]?.teamName) || 'a rival room';
+            };
+            const assetCount = (offer) => (
+                (offer?.myGive || []).length + (offer?.myGivePlayers || []).length + (offer?.myGiveFaab ? 1 : 0)
+                + (offer?.theirGive || []).length + (offer?.theirGivePlayers || []).length + (offer?.theirGiveFaab ? 1 : 0)
+            );
+
+            // (a) One concise line per newly-closed trade.
+            newlyClosed.forEach((t) => {
+                const partner = t.fromRosterId ?? t.toRosterId ?? t.targetRosterId ?? null;
+                const idx = Number.isFinite(Number(t.acceptedAt)) ? Number(t.acceptedAt) : null;
+                const round = idx == null ? null : Math.floor(idx / leagueSize) + 1;
+                const pieces = assetCount(t);
+                dispatch({
+                    type: 'ALEX_EVENT_ADD',
+                    event: {
+                        type: 'rule',
+                        badge: '🔄',
+                        color: 'var(--k-3aa0ff, #3aa0ff)',
+                        title: 'TRADE' + (round ? ' · R' + round : '') + ' · ' + teamName(partner),
+                        text: (t.userInitiated ? 'You closed a deal with ' : 'The room moved — ')
+                            + teamName(partner)
+                            + (pieces ? ' (' + pieces + ' asset' + (pieces === 1 ? '' : 's') + ' on the move).' : '.'),
+                        relatedPickNo: idx == null ? null : idx + 1,
+                    },
+                });
+            });
+
+            // (b) Round-boundary evolution callout — fires once per round when the
+            // engine reclassifies the room.
+            try {
+                const evo = window.DraftCC.liveDecisionEngine?.liveTradeEvolutionSignal?.(state);
+                if (evo && evo.currentRound > lastTradeEvoRoundRef.current) {
+                    lastTradeEvoRoundRef.current = evo.currentRound;
+                    const verdict =
+                        evo.draftClass === 'heavy'
+                            ? `This is a trade-heavy room — ${evo.totalTrades} deal${evo.totalTrades === 1 ? '' : 's'} through ${evo.tradedRounds} round${evo.tradedRounds === 1 ? '' : 's'}, well above a normal pace. Capital is fluid; stay ready to pounce or pivot.`
+                            : evo.draftClass === 'quiet'
+                                ? `Unusually quiet room — only ${evo.totalTrades} deal${evo.totalTrades === 1 ? '' : 's'} so far. Owners are holding tight; don't expect picks to move. Draft your board.`
+                                : `Trade activity is tracking typical (${evo.totalTrades} through ${evo.tradedRounds}). Let value come to you.`;
+                    dispatch({
+                        type: 'ALEX_EVENT_ADD',
+                        event: {
+                            type: 'rule',
+                            badge: '🔄',
+                            color: 'var(--k-3aa0ff, #3aa0ff)',
+                            title: 'ROOM EVOLUTION · R' + evo.currentRound,
+                            text: verdict,
+                            relatedPickNo: null,
+                        },
+                    });
+                }
+            } catch (e) { if (window.wrLog) window.wrLog('alex.tradeEvo', e); }
+        }, [state.completedTrades, state.phase]);
 
         // ── P2E: Live trade-window readout ─────────────────────────────
         // Live drafts stay read-only, but Alex should still flag actionable
@@ -1209,7 +1291,7 @@
                 }
                 liveDraftStatus = activeState.liveDraftMeta?.status || '';
                 narrative = liveDraftStatus === 'pre_draft'
-                    ? '📡 LIVE SYNC · Waiting room open. War Room will mirror Sleeper as soon as picks begin.'
+                    ? '📡 LIVE SYNC · Waiting room open. Dynasty HQ will mirror Sleeper as soon as picks begin.'
                     : '📡 LIVE SYNC · Mirroring draft from Sleeper every 5s. Read-only — no picks are sent back.';
             }
 
@@ -1432,7 +1514,16 @@
         // Phase 3: open the trade proposer drawer for a given CPU roster
         const onPropose = React.useCallback((rosterId, seed) => {
             if (!rosterId || String(rosterId) === String(state.userRosterId)) return;
-            dispatch({ type: 'OPEN_PROPOSER', targetRosterId: rosterId, seed: seed || undefined });
+            const s = seed || {};
+            // Default the draft trade desk to FIND/move-up — the primary draft use is
+            // acquiring a better pick. When a specific asset is queued (e.g. "Queue
+            // trade" from the pick log seeds theirGive), keep the manual Build view so
+            // the seeded lane is visible. (FIND defaults to the 'acquire' intent.)
+            const hasAssetSeed = !!(s.myGive?.length || s.theirGive?.length || s.myGivePlayers?.length
+                || s.theirGivePlayers?.length || s.myGiveFuture?.length || s.theirGiveFuture?.length
+                || s.myGiveFaab || s.theirGiveFaab);
+            const finalSeed = { ...s, analyzerMode: s.analyzerMode || (hasAssetSeed ? 'build' : 'find') };
+            dispatch({ type: 'OPEN_PROPOSER', targetRosterId: rosterId, seed: finalSeed });
         }, [state.userRosterId]);
 
         // ── Render ───────────────────────────────────────────────────
@@ -4104,9 +4195,18 @@
     // ── Drafting / complete grid ─────────────────────────────────────
     function CommandCenterGrid({ state, dispatch, isUserTurn, currentSlot, onExit, viewport, onPropose }) {
         const L = DRAFT_CC_LAYOUT;
-        // Filter by rosterId so post-trade ownership is respected
-        const myPicks = state.picks.filter(p => p.rosterId === state.userRosterId || p.isUser);
-        const grade = window.DraftCC.state.gradeDraft(myPicks, state.originalPool);
+        // Filter by rosterId so post-trade ownership is respected. Memoized: gradeDraft
+        // builds a Map over the ~600-entry originalPool and ran on every re-render.
+        const myPicks = React.useMemo(
+            () => state.picks.filter(p => p.rosterId === state.userRosterId || p.isUser),
+            [state.picks, state.userRosterId]
+        );
+        const grade = React.useMemo(
+            () => window.DraftCC.state.gradeDraft(myPicks, state.originalPool, {
+                assessment: state.personas?.[state.userRosterId]?.assessment,
+            }),
+            [myPicks, state.originalPool, state.personas, state.userRosterId]
+        );
 
         const BigBoardPanel = window.DraftCC.BigBoardPanel;
         const OpponentIntelPanel = window.DraftCC.OpponentIntelPanel;

@@ -130,7 +130,7 @@ function pushIf(failures, condition, message) {
 function assertSkin(failures, label, snap, expected) {
   const skin = snap.skin || {};
   pushIf(failures, skin.type !== expected.type, `${label}: expected skin type ${expected.type}, got ${skin.type || 'none'}`);
-  pushIf(failures, skin.vocabulary?.appLabel !== 'Dynasty HQ War Room', `${label}: app brand changed to ${skin.vocabulary?.appLabel || 'none'}`);
+  pushIf(failures, skin.vocabulary?.appLabel !== 'Dynasty HQ', `${label}: app brand changed to ${skin.vocabulary?.appLabel || 'none'}`);
   pushIf(failures, !!expected.phase && skin.phase !== expected.phase, `${label}: expected phase ${expected.phase}, got ${skin.phase || 'none'}`);
 }
 

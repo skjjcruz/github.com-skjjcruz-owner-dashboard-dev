@@ -274,7 +274,7 @@
                     ? 'Format Value'
                     : 'Player Value';
         return {
-            appLabel: 'Dynasty HQ War Room',
+            appLabel: 'Dynasty HQ',
             teamLabel: seasonal ? 'Team' : 'Roster',
             assetLabel: type === 'dynasty' ? 'Asset' : 'Player',
             valueLabel,

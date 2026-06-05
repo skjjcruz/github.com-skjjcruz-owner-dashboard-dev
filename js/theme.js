@@ -62,7 +62,10 @@
 
     const LS_KEY = 'wr_dashboard_theme';
     const DYNAMIC_STYLE_ID = 'wr-theme-dynamic';
-    const SANDBOX_ONLY_THEMES = new Set(['light']);
+    // Light mode shipped to production (2026-06-04). Previously this was new Set(['light']),
+    // which hid light mode everywhere except sandbox hosts / ?dev. Kept as an empty set so
+    // future in-development themes can still be sandbox-gated by adding their id here.
+    const SANDBOX_ONLY_THEMES = new Set([]);
 
     function isSandboxThemeMode() {
         const host = String(window.location.hostname || '').toLowerCase();
@@ -82,7 +85,7 @@
     const THEMES = {
         default: {
             id: 'default',
-            name: 'War Room',
+            name: 'Dynasty HQ',
             preview: '🏴',
             fonts: {
                 display: 'Rajdhani, sans-serif',
@@ -392,6 +395,48 @@
 [data-wr-theme="light"] .wr-content-frame td,
 [data-wr-theme="light"] .wr-content-frame th {
     color: ${c.text} !important;
+}
+
+/* Analytics module: its structural panel/card/table CSS lives in index.html with
+   hardcoded white/gold rgba fills (not codemod vars), so it does NOT flip on its own
+   and renders washed-out (near-white on white) in light mode. Repaint the structural
+   surfaces here. The semantic signal-severity (.analytics-signal-*) and delta indicator
+   (.analytics-delta-fill/-benchmark) classes are intentionally left alone so their
+   color coding survives. */
+[data-wr-theme="light"] .analytics-panel,
+[data-wr-theme="light"] .analytics-kpi,
+[data-wr-theme="light"] .analytics-signal,
+[data-wr-theme="light"] .analytics-readout,
+[data-wr-theme="light"] .analytics-mini-table,
+[data-wr-theme="light"] .analytics-evidence-head,
+[data-wr-theme="light"] .analytics-embed-summary,
+[data-wr-theme="light"] .analytics-embed-summary > div,
+[data-wr-theme="light"] .analytics-pick-strip,
+[data-wr-theme="light"] .analytics-pick-leaders,
+[data-wr-theme="light"] .analytics-proof-card,
+[data-wr-theme="light"] .analytics-era-card,
+[data-wr-theme="light"] .analytics-lab-card,
+[data-wr-theme="light"] .analytics-command-panel,
+[data-wr-theme="light"] .analytics-report-lab,
+[data-wr-theme="light"] .analytics-report-preview,
+[data-wr-theme="light"] .analytics-report-templates,
+[data-wr-theme="light"] .analytics-head-meta,
+[data-wr-theme="light"] .analytics-data-row {
+    background: ${c.card} !important;
+    border-color: ${c.border} !important;
+    color: ${c.text} !important;
+    box-shadow: ${t.card.shadow} !important;
+}
+[data-wr-theme="light"] .analytics-room-chip,
+[data-wr-theme="light"] .analytics-filter-row,
+[data-wr-theme="light"] .analytics-definition,
+[data-wr-theme="light"] .analytics-delta-track {
+    background: ${c.cardHover} !important;
+    border-color: ${c.border} !important;
+    color: ${c.text} !important;
+}
+[data-wr-theme="light"] .analytics-shell {
+    background: ${c.bg} !important;
 }
 `;
         }

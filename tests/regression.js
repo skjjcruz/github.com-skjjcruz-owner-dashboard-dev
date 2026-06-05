@@ -194,7 +194,7 @@ test('league format skin loads early and is published to every module surface', 
   sourceHas(indexHtml, '<script src="js/league-skin.js?v=20260526redraftqa1"></script>', 'league skin script must load after core and before modules');
   sourceHas(leagueSkinSrc, 'App.LeagueSkin = api;', 'league skin must expose window.App.LeagueSkin');
   sourceHas(leagueSkinSrc, 'WR.LeagueSkin = api;', 'league skin must expose window.WR.LeagueSkin');
-  sourceHas(leagueSkinSrc, "appLabel: 'Dynasty HQ War Room'", 'league skin must preserve the Dynasty HQ brand');
+  sourceHas(leagueSkinSrc, "appLabel: 'Dynasty HQ'", 'league skin must preserve the Dynasty HQ brand');
   sourceHas(leagueSkinSrc, 'showDraftPrepWhenRosterEmpty', 'league skin must model pre-draft empty-roster mode');
   sourceHas(leagueSkinSrc, 'moduleId + \':pre_draft\'', 'league skin must expose module alternate surfaces');
   sourceHas(leagueSkinSrc, "'settings', 'legend'", 'league skin must include settings and legend module surfaces');

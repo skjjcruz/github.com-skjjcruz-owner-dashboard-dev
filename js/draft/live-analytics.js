@@ -53,8 +53,9 @@
         // Live grade
         const grade = React.useMemo(() => {
             if (!myPicks.length || !state.originalPool?.length) return { letter: '?', totalDHQ: 0, pct: 0 };
-            return window.DraftCC.state.gradeDraft(myPicks, state.originalPool);
-        }, [myPicks, state.originalPool]);
+            const assessment = state.personas?.[state.userRosterId]?.assessment;
+            return window.DraftCC.state.gradeDraft(myPicks, state.originalPool, { assessment });
+        }, [myPicks, state.originalPool, state.personas, state.userRosterId]);
 
         // Phase 7 deferred: Live health recompute via a real synthetic roster instead of a +3/pick heuristic.
         // Strategy:
@@ -143,8 +144,10 @@
                 const consensus = p.consensusRank;
                 if (!consensus) continue;
                 const delta = p.overall - consensus;
-                if (delta < -6) events.push({ ...p, type: 'steal', delta: Math.abs(delta) });
-                else if (delta > 6) events.push({ ...p, type: 'reach', delta });
+                // delta = overall - consensus: positive = player fell to us (steal).
+                // (Fixes a prior sign inversion that labeled steals as reaches.)
+                if (delta >= 7) events.push({ ...p, type: 'steal', delta });
+                else if (delta <= -7) events.push({ ...p, type: 'reach', delta: Math.abs(delta) });
             }
             return events;
         }, [state.picks]);
@@ -397,7 +400,7 @@
             grade.letter === '?' ? 'var(--silver)' :
             grade.letter.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' :
             grade.letter.startsWith('B') ? 'var(--k-d4af37, #d4af37)' :
-            grade.letter === 'C' ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+            grade.letter.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
 
         const [pulse, setPulse] = React.useState(false);
         const lastLetterRef = React.useRef(grade.letter);

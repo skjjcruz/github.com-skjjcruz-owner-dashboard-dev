@@ -866,18 +866,91 @@
         return rank && overall ? overall - rank : 0;
     }
 
-    function recapLetter(percentile, valuePct) {
+    // ── Shared continuous grading (#8) ───────────────────────────────────────
+    // scorePick() returns a raw 0..90 per-pick blend; the TEAM grade then applies
+    // an aggregate spread transform (aggregateGrade) so averaging across picks
+    // doesn't regress every team to a B. Tuned via simulation so a mean draft
+    // lands ~B-, elite ~A-, and a genuinely bad draft reaches D/F.
+    const REACH_STEAL_THRESHOLD = 7;      // unified: +7 steal / -7 reach
+    const NEUTRAL_PICK_SCORE = 51.6;      // on-value, baseline DHQ, neutral need
+    const GRADE_AGG_CENTER = 48;          // a neutral draft maps to ~C
+    const GRADE_AGG_SPREAD = 2.4;         // breaks central clustering
+
+    function roundSlack(round) {
+        const r = Number(round || 0) || 1;
+        return 6 + (r - 1) * 4; // R1≈6, R2≈10, R3≈14 ... (late rounds forgive reaches)
+    }
+    function slotBaselineDHQ(overall) {
+        // Expected DHQ for a pick slot — same bands command-center uses.
+        const n = Number(overall || 0) || 1;
+        if (n <= 4) return 7000;
+        if (n <= 16) return 4500;
+        if (n <= 48) return 2200;
+        return 1000;
+    }
+    // Roster-need contribution [0..100]. seenPos taper: the first pick at a
+    // position scores per its urgency, follow-ups fade. No assessment → ok-1st 50.
+    function pickNeedScore(pick, ctx, seenPos) {
+        const assessment = ctx?.assessment || {};
+        const needs = assessment.needs || [];
+        const posAssessment = assessment.posAssessment || {};
+        const pos = pickPos(pick);
+        if (!pos) return 50;
+        const counts = seenPos || {};
+        counts[pos] = (counts[pos] || 0) + 1;
+        const urgency = needs.find(n => String(n.pos).toUpperCase() === pos)?.urgency;
+        const pa = posAssessment[pos] || {};
+        const needed = Math.max(0, (pa.startingReq || pa.ideal || 2) - (pa.nflStarters || 0));
+        if (counts[pos] === 1 && urgency === 'deficit') return 95;
+        if (counts[pos] === 1 && urgency === 'thin') return 80;
+        if (counts[pos] === 1) return 50;          // first at an ok position
+        if (counts[pos] <= needed + 1) return 65;  // filling real depth
+        return 35;                                  // over-drafting
+    }
+    // Per-pick score, raw 0..90 blend. Missing consensusRank is NEUTRAL (62 value).
+    function scorePick(pick, ctx = {}) {
+        const overall = Number(pick?.overall || 0) || 1;
+        const rank = pickConsensusRank(pick);
+        let valueScore;
+        if (!rank) {
+            valueScore = 62;
+        } else {
+            const delta = overall - rank;            // + = fell to us (steal)
+            const slack = roundSlack(pick?.round);
+            valueScore = Math.max(0, Math.min(100, 62 + (delta / slack) * 24));
+        }
+        const needScore = pickNeedScore(pick, ctx, ctx._seenPos);
+        const dhq = pickDhq(pick);
+        const baseline = slotBaselineDHQ(overall);
+        const ratio = baseline ? dhq / baseline : 1;
+        const qualityScore = Math.max(0, Math.min(100, 2 + ratio * 52));
+        return valueScore * 0.50 + needScore * 0.25 + qualityScore * 0.15; // 0..90
+    }
+    // Spread a team's per-pick average around the neutral so good/bad drafts
+    // separate into a real A..F range instead of clustering at the center.
+    function aggregateGrade(avgPickScore) {
+        const v = Number(avgPickScore || 0);
+        return Math.max(0, Math.min(100, GRADE_AGG_CENTER + (v - NEUTRAL_PICK_SCORE) * GRADE_AGG_SPREAD));
+    }
+    function gradeLetter(score) {
+        const s = Number(score || 0);
+        return (
+            s >= 90 ? 'A+' : s >= 82 ? 'A' : s >= 74 ? 'A-' :
+            s >= 68 ? 'B+' : s >= 62 ? 'B' : s >= 56 ? 'B-' :
+            s >= 50 ? 'C+' : s >= 44 ? 'C' : s >= 38 ? 'C-' :
+            s >= 30 ? 'D' : 'F'
+        );
+    }
+
+    // Recap letter: spread-transformed per-pick average (85%) + intra-league
+    // percentile (15%). avgPickScore = mean of scorePick across the team's picks.
+    // NOTE: the live grade and the recap share scorePick, but the recap also folds
+    // in league percentile, so final letters can differ by up to ~1 step.
+    function recapLetter(percentile, avgPickScore) {
         const pct = Number(percentile || 0);
-        const value = Number(valuePct || 0);
-        const score = Math.round((pct * 0.65) + (value * 0.35));
-        const letter =
-            score >= 88 ? 'A+' :
-            score >= 78 ? 'A' :
-            score >= 68 ? 'B+' :
-            score >= 56 ? 'B' :
-            score >= 44 ? 'C+' :
-            score >= 32 ? 'C' : 'D';
-        return { letter, score };
+        const agg = aggregateGrade(avgPickScore);
+        const score = Math.round(agg * 0.85 + pct * 0.15);
+        return { letter: gradeLetter(score), score };
     }
 
     function emptyPositionSummary() {
@@ -1123,8 +1196,8 @@
             addPickToPositionSummary(row.positionSummary, pick);
             if (Number(pick.round || 0) <= 2) row.earlyPositions.push(pickPos(pick) || '?');
             const delta = pickValueDelta(pick);
-            if (delta >= 8) row.steals.push(pickSnapshot(pick));
-            if (delta <= -8) row.reaches.push(pickSnapshot(pick));
+            if (delta >= REACH_STEAL_THRESHOLD) row.steals.push(pickSnapshot(pick));
+            if (delta <= -REACH_STEAL_THRESHOLD) row.reaches.push(pickSnapshot(pick));
             if (!row.topPick || pickDhq(pick) > row.topPick.dhq) row.topPick = pickSnapshot(pick);
             if (delta > (row.bestValue?.valueDelta ?? -999)) row.bestValue = pickSnapshot(pick);
             if (delta < (row.biggestReach?.valueDelta ?? 999)) row.biggestReach = pickSnapshot(pick);
@@ -1156,11 +1229,17 @@
             const percentile = ranked.length > 1
                 ? Math.round(((ranked.length - rank) / (ranked.length - 1)) * 100)
                 : 100;
-            const valuePct = row.picks.length
-                ? Math.round((row.picks.filter(p => !p.consensusRank || p.consensusRank <= Number(p.overall || 0) * 1.3).length / row.picks.length) * 100)
+            // Average per-pick score via the shared scorer. Missing consensusRank
+            // is NEUTRAL inside scorePick (no false value hit — the old bug here
+            // counted a missing rank AS a hit, inflating grades). seenPos tapers
+            // multi-pick-per-position bonuses.
+            const scoreCtx = { assessment: state?.personas?.[rosterKey(row.rosterId)]?.assessment, _seenPos: {} };
+            const avgPickScore = row.picks.length
+                ? Math.round(row.picks.reduce((s, p) => s + scorePick(p, scoreCtx), 0) / row.picks.length)
                 : 0;
+            const valuePct = avgPickScore; // retained field name for downstream value sorts
             const primaryPos = orderedPositionSummary(row.positionSummary)[0]?.pos || '';
-            const grade = recapLetter(percentile, valuePct);
+            const grade = recapLetter(percentile, avgPickScore);
             row.rank = rank;
             row.percentile = percentile;
             row.valuePct = valuePct;
@@ -1973,10 +2052,10 @@
                     }
                     statusPatch.error = action.status?.error || (
                         statusConflictCount > 0
-                            ? 'Sleeper returned conflicting pick records. War Room paused before applying the wrong player.'
+                            ? 'Sleeper returned conflicting pick records. Dynasty HQ paused before applying the wrong player.'
                             : statusInvalidPickCount > 0
-                                ? 'Sleeper returned invalid pick data. War Room paused so you can reconcile manually.'
-                                : 'Sleeper pick order skipped ahead. War Room paused rather than applying picks to the wrong slots.'
+                                ? 'Sleeper returned invalid pick data. Dynasty HQ paused so you can reconcile manually.'
+                                : 'Sleeper pick order skipped ahead. Dynasty HQ paused rather than applying picks to the wrong slots.'
                     );
                 }
 
@@ -2266,22 +2345,24 @@
     }
 
     // ── Grade helper ─────────────────────────────────────────────────
-    function gradeDraft(myPicks, originalPool) {
-        if (!myPicks.length) return { letter: '?', totalDHQ: 0, pct: 0 };
+    // Live draft grade — shares scorePick/aggregateGrade/gradeLetter with the
+    // recap so the number on the clock tracks the post-draft recap. ctx optional;
+    // pass { assessment } (persona.assessment) to enable the roster-need term.
+    function gradeDraft(myPicks, originalPool, ctx = {}) {
+        if (!myPicks.length) return { letter: '?', totalDHQ: 0, pct: 0, score: 0 };
         const totalDHQ = myPicks.reduce((s, p) => s + (p.dhq || 0), 0);
-        const ranks = new Map(originalPool.map((p, i) => [p.pid, i + 1]));
-        let values = 0;
+        const ranks = new Map((originalPool || []).map((p, i) => [p.pid, i + 1]));
+        const scoreCtx = { assessment: ctx.assessment, _seenPos: {} };
+        let total = 0;
         for (const p of myPicks) {
-            const rank = ranks.get(p.pid) ?? p.overall;
-            if (rank <= p.overall * 1.3) values++;
+            // Backfill consensusRank from board position so a pick without a
+            // baked-in rank still gets a real value term when the board can supply one.
+            const fallbackRank = ranks.get(p.pid);
+            const enriched = (p.consensusRank || !fallbackRank) ? p : { ...p, consensusRank: fallbackRank };
+            total += scorePick(enriched, scoreCtx);
         }
-        const pct = values / myPicks.length;
-        const letter =
-            pct >= 0.85 ? 'A+' :
-            pct >= 0.7  ? 'A'  :
-            pct >= 0.55 ? 'B+' :
-            pct >= 0.4  ? 'B'  : 'C';
-        return { letter, totalDHQ, pct: Math.round(pct * 100) };
+        const score = Math.round(aggregateGrade(total / myPicks.length));
+        return { letter: gradeLetter(score), totalDHQ, pct: score, score };
     }
 
     function buildDraftRecap(state, opts = {}) {
@@ -2292,7 +2373,9 @@
             || (!p.rosterId && Number(p.slot) === Number(state?.userSlot))
             || p.isUser
         );
-        const grade = opts.grade || gradeDraft(myPicks, state?.originalPool || []);
+        const grade = opts.grade || gradeDraft(myPicks, state?.originalPool || [], {
+            assessment: state?.personas?.[rosterKey(userRosterId)]?.assessment,
+        });
         const leagueTotals = leagueTotalsFromPicks(picks);
         const totals = Object.entries(leagueTotals)
             .map(([rosterId, totalDHQ]) => ({ rosterId, totalDHQ }))
@@ -2336,7 +2419,7 @@
             userTeam,
         });
         return {
-            schemaVersion: 'draft-recap-v3',
+            schemaVersion: 'draft-recap-v4',
             id: opts.id || ('recap_' + Date.now()),
             leagueId: state?.leagueId || '',
             season: state?.season || new Date().getFullYear(),
@@ -2532,7 +2615,7 @@
 
     function formatDraftShareReport(recap) {
         const lines = [
-            '# War Room Draft Recap',
+            '# Dynasty HQ Draft Recap',
             '',
             `Grade: ${recap?.grade?.letter || '?'} | DHQ: ${Number(recap?.totalDHQ || 0).toLocaleString()} | League Rank: ${recap?.rank ? '#' + recap.rank : 'N/A'} | Percentile: ${Number(recap?.percentile || 0)}th`,
             `Format: ${recap?.variant || 'draft'} | Season: ${recap?.season || ''}`,
@@ -2660,6 +2743,12 @@
         loadFromLocal,
         clearLocal,
         gradeDraft,
+        scorePick,
+        gradeLetter,
+        recapLetter,
+        aggregateGrade,
+        slotBaselineDHQ,
+        REACH_STEAL_THRESHOLD,
         normalizePickRecord,
         buildPickedByIdx,
         leagueTotalsFromPicks,

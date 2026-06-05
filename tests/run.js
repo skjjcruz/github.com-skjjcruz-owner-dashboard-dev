@@ -233,7 +233,7 @@ test('redraft pre-draft empty rosters get the draft-prep skin', () => {
   ok(skin.state.isPreDraftRosterEmpty, 'pre-draft empty roster flag');
   eq(skin.features.showTaxi, false, 'redraft without taxi hides taxi');
   eq(skin.features.showIDP, false, 'redraft without IDP hides IDP');
-  eq(skin.vocabulary.appLabel, 'Dynasty HQ War Room', 'skin preserves app brand');
+  eq(skin.vocabulary.appLabel, 'Dynasty HQ', 'skin preserves app brand');
   eq(skin.vocabulary.valueLabel, 'Format Value', 'redraft value vocabulary');
   eq(skin.vocabulary.valueShortLabel, 'Value', 'redraft short value vocabulary');
   eq(skin.theme.id, 'war-room-default', 'redraft skin theme');

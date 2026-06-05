@@ -99,9 +99,11 @@ function AnalyticsPanel({
         { key: 'roster', label: 'Roster' },
         { key: 'draft', label: 'Draft' },
         { key: 'trades', label: 'Market Moves' },
-        { key: 'players', label: 'All Players', navLabel: 'Players' },
-        { key: 'picks', label: 'Draft Picks', navLabel: 'Picks' },
-        { key: 'reports', label: 'Custom Reports', navLabel: 'Reports' },
+        // 'assets' merges the former 'players' + 'picks' sub-tabs into one screen
+        // with an internal Players/Picks toggle (handled inside LeagueMapTab).
+        { key: 'assets', label: 'Players & Picks' },
+        // Reports tab strip now reads its full label ('Custom Reports') — navLabel dropped.
+        { key: 'reports', label: 'Custom Reports' },
     ];
     const activeSubTab = subTabs.find(t => t.key === analyticsTab) || subTabs[0];
     const analyticsViewTab = activeSubTab.key;
@@ -109,8 +111,7 @@ function AnalyticsPanel({
         roster: 'Winner-template gaps, room coverage, and roster construction evidence.',
         draft: 'Pick value, hit-rate patterns, and current-pick strategy.',
         trades: 'Trade efficiency, waiver activity, FAAB, and market pressure.',
-        players: 'Full player universe with analytics-grade filters and saved views.',
-        picks: 'Pick capital, ownership status, and traded/acquired paths.',
+        assets: 'Full player universe and draft-pick capital in one ledger — toggle Players / Picks.',
         reports: 'Custom report templates, saved views, and live preview.'
     };
     const tableRowStyle = (i) => ({ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', ...(i === 0 ? { fontWeight: 700, color: 'var(--gold)', fontSize: 'var(--text-body, 1rem)', textTransform: 'uppercase', letterSpacing: '0.05em' } : { color: 'var(--silver)' }) });
@@ -345,6 +346,40 @@ function AnalyticsPanel({
             const winnerHealthAvg = winnerHealthCount > 0 ? Math.round(winnerHealthTotal / winnerHealthCount) : 0;
             const healthDelta = healthScore - winnerHealthAvg;
 
+            // ── Benchmark provenance: every gap KPI rides on the winner set, so disclose how
+            //    it was chosen (real playoff brackets vs a current-standings fallback) and its size.
+            const winnerSource = d.winnerSource || d.source || 'standings';
+            const winnerN = winnerIds.size;
+            const benchHigh = winnerSource === 'brackets' && winnerN >= 3;
+            const benchConfidence = benchHigh ? 'High' : (winnerN < 2 ? 'Very Low' : 'Low');
+            const benchConfColor = benchHigh ? goodColor : (winnerN < 2 ? badColor : warnColor);
+
+            // ── Pick capital coverage (future picks vs the horizon ideal) — already computed by assessTeam.
+            const picks = assessment?.picksAssessment || null;
+            const pickNet = picks ? (picks.totalPicks - picks.idealTotal) : null;
+
+            // ── Aging-cliff at-risk set, computed ONCE and shared by the Win-Now Pressure chip and
+            //    the Aging Cliff Alert (both sides now use the same value-window-end threshold).
+            const CLIFF_DHQ = 2000, CLIFF_LEAD = 2;
+            const cliffValueEnd = (pos) => typeof window.App?.getValueWindowEnd === 'function'
+                ? window.App.getValueWindowEnd(pos)
+                : ((window.App?.peakWindows || {})[pos] || [23, 29])[1];
+            let rosterCliffTotalDHQ = 0, rosterCliffAtRiskDHQ = 0;
+            const rosterAtRiskPlayers = [];
+            const _pmCliff = window.App?.LI?.playerMeta || {};
+            (allRosters.find(ros => ros.roster_id === myRid)?.players || []).forEach(pid => {
+                const dq = playerScores[pid] || 0;
+                const mt = _pmCliff[pid] || {};
+                rosterCliffTotalDHQ += dq;
+                if (!mt.age || !mt.pos) return;
+                if (mt.age + CLIFF_LEAD > cliffValueEnd(mt.pos) && dq >= CLIFF_DHQ) {
+                    rosterCliffAtRiskDHQ += dq;
+                    rosterAtRiskPlayers.push({ name: playersData[pid]?.full_name || mt.name || ('Player ' + pid), age: mt.age, dhq: dq });
+                }
+            });
+            const rosterCliffPct = rosterCliffTotalDHQ > 0 ? Math.round(rosterCliffAtRiskDHQ / rosterCliffTotalDHQ * 100) : 0;
+            rosterAtRiskPlayers.sort((a, b) => b.dhq - a.dhq);
+
             // Compete window
             const compWindow = d.window || {};
             const compYears = compWindow.years || 0;
@@ -391,24 +426,8 @@ function AnalyticsPanel({
             // ── Position data for BarChart ──
             const posOrder = ['QB','RB','TE','WR','K','DEF','DL','LB','DB'];
             const allPos = [...new Set([...Object.keys(w.posInvestment || {}), ...Object.keys(m.posInvestment || {})])].filter(p => p !== 'UNK').sort((a,b) => { const ia = posOrder.indexOf(a); const ib = posOrder.indexOf(b); return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib); });
-            const posBarItems = allPos.map(pos => ({
-                label: window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos),
-                value: Math.round((m.posInvestment[pos] || 0) * 100),
-                color: 'var(--k-4ecdc4, #4ecdc4)',
-            }));
-            const posBarWinnerItems = allPos.map(pos => ({
-                label: window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos),
-                value: Math.round((w.posInvestment[pos] || 0) * 100),
-                color: CHART_COLORS?.gold || 'var(--k-d4af37, #d4af37)',
-            }));
-
-            // ── Radar data ──
-            const radarValues = {};
-            allPos.forEach(pos => {
-                const wPct = (w.posInvestment[pos] || 0) * 100;
-                const mPct = (m.posInvestment[pos] || 0) * 100;
-                radarValues[pos] = Math.min(100, Math.round(mPct / Math.max(wPct, 1) * 100));
-            });
+            // (Removed dead posBarItems/posBarWinnerItems/radarValues — no BarChart/Radar
+            //  is rendered in this block; investmentRows is the only consumer of posInvestment.)
 
             // ── Rankings: all teams sorted by health ──
             const teamRankings = [];
@@ -437,6 +456,10 @@ function AnalyticsPanel({
                 });
             });
             teamRankings.sort((a, b) => b.healthScore - a.healthScore);
+            // Health rank: convert an un-actionable absolute score into a buy/sell-relative-to-field signal.
+            const myRankIdx = teamRankings.findIndex(t => t.isMe);
+            const myRank = myRankIdx >= 0 ? myRankIdx + 1 : null;
+            const rankPct = (myRank && teamRankings.length > 1) ? Math.round((teamRankings.length - myRank) / (teamRankings.length - 1) * 100) : null;
 
             // ── Insight cards ──
             const insights = [];
@@ -449,38 +472,20 @@ function AnalyticsPanel({
                     text: 'Your roster is ' + Math.abs(ageDiff).toFixed(1) + ' years ' + (ageDiff > 0 ? 'older' : 'younger') + ' than champion average (' + w.avgAge.toFixed(1) + ' yrs).' + (timeDelta ? ' (projected for ' + timeYear + ')' : ''),
                 });
             }
-            if (m.avgBenchQuality < w.avgBenchQuality * 0.75) {
-                insights.push({
-                    color: warnColor,
-                    title: 'Bench Depth Concern',
-                    text: 'Bench quality (' + numFmt(m.avgBenchQuality) + ') is significantly below elite tier benchmark (' + numFmt(w.avgBenchQuality) + ').',
-                });
-            }
-            if (m.avgTotalDHQ < w.avgTotalDHQ * 0.85) {
-                insights.push({
-                    color: badColor,
-                    title: 'Total Value Gap',
-                    text: 'Your total DHQ (' + numFmt(m.avgTotalDHQ) + ') trails elite tier average (' + numFmt(w.avgTotalDHQ) + ') by ' + Math.round((1 - m.avgTotalDHQ / w.avgTotalDHQ) * 100) + '%.',
-                });
-            }
-            if (compYears >= 3) {
-                insights.push({
-                    color: goodColor,
-                    title: 'Strong Compete Window',
-                    text: compYears + ' years remaining in your competitive window. Maximize with targeted upgrades.',
-                });
-            }
+            // (Removed Bench Depth Concern, Total Value Gap, and Strong Compete Window insights —
+            //  they restated the Startable Surplus / Champion Value Gap / Win-Now Pressure KPIs.)
 
             const rosterNeedGaps = (needs || []).map(n => {
                 const data = assessment?.posAssessment?.[n.pos] || {};
-                const required = data.minQuality || data.startingReq || data.ideal || 1;
-                const have = data.nflStarters ?? data.actual ?? 0;
+                // Use the canonical starting requirement; do NOT fabricate a 0/1 deficit when meta is still loading.
+                const required = data.startingReq || data.minQuality || data.ideal || null;
+                const have = data.nflStarters ?? data.actual ?? null;
                 const priority = n.urgency === 'deficit' ? 'critical' : 'high';
                 return {
                     priority,
                     pos: n.pos,
                 action: (n.urgency === 'deficit' ? 'Add ' : 'Build ') + posLabel(n.pos) + (n.urgency === 'deficit' ? ' starter coverage' : ' depth'),
-                detail: posLabel(n.pos) + ' is a current roster ' + n.urgency + ': ' + have + '/' + required + ' starter-quality players by league settings.',
+                detail: posLabel(n.pos) + ' is a current roster ' + n.urgency + ((have != null && required != null) ? ': ' + have + '/' + required + ' starter-quality players by league settings.' : ' — see Coverage Matrix for counts.'),
                     source: 'roster-assessment',
                 };
             });
@@ -502,21 +507,47 @@ function AnalyticsPanel({
                 color: needsSet.has(pos) ? badColor : 'var(--k-4ecdc4, #4ecdc4)',
             }));
             // ── Roster command summary ──
-            const projMyAge = m.avgAge + (timeDelta || 0);
-            const projWAge = w.avgAge; // champion profile is historical, no projection needed
+            // Compare present ages on both sides; winners are historical, so time-shifting only
+            // your side (the old +timeDelta) biased the delta in time-machine mode.
+            const projMyAge = m.avgAge;
+            const projWAge = w.avgAge;
             const ageDiffDiag = projMyAge - projWAge;
             const eliteDiffDiag = mElite - wElite;
             const dhqGap = m.avgTotalDHQ - w.avgTotalDHQ;
-            const benchGap = m.avgBenchQuality - w.avgBenchQuality;
-            const rosterStrategy = ageDiffDiag > 1.5 && dhqGap < 0 ? 'sell aging veterans and acquire young elites'
-                : eliteDiffDiag < -1 ? 'buy young elite players to close the talent gap'
-                : dhqGap >= 0 && ageDiffDiag <= 0.5 ? 'hold course — your roster matches the elite tier template'
+
+            // Startable Surplus / Deficit — net value-gated (DHQ>=3000) starters vs league lineup needs.
+            let startableSurplus = 0;
+            ['QB','RB','WR','TE','K','DEF','DL','LB','DB'].forEach(pos => {
+                const have = Math.round(m.posStartable?.[pos] || 0);
+                const reqRaw = assessment?.posAssessment?.[pos] || {};
+                const req = reqRaw.startingReq || reqRaw.minQuality || 0;
+                if (!have && !req) return;
+                startableSurplus += (have - req);
+            });
+            // Roster Value Concentration (top-5 DHQ share) vs the champion template.
+            const concMe = Math.round((m.topPlayerConcentration || 0) * 100);
+            const concWin = Math.round((w.topPlayerConcentration || 0) * 100);
+            const concDelta = concMe - concWin;
+            // Win-Now Pressure — the cliff% x window interaction that drives sell timing.
+            const winNowScore = (rosterCliffPct >= 25 && compYears <= 2) ? 'CRITICAL' : (rosterCliffPct >= 25) ? 'MANAGED' : (rosterCliffPct >= 15 && compYears <= 1) ? 'ELEVATED' : 'LOW';
+            const winNowColor = winNowScore === 'CRITICAL' ? badColor : winNowScore === 'LOW' ? goodColor : warnColor;
+
+            // Operating thesis: drive off the robust tier/window/cliff signals; only lean on the
+            // noisy winner-template deltas when the champion sample is trustworthy (winnerN >= 2).
+            const rosterStrategy = (winnerN < 2)
+                ? (tier === 'REBUILDING' ? 'accumulate youth and picks — you are early in the build (champion benchmark unavailable)' : 'target your weakest starter rooms (champion benchmark unavailable for template comparison)')
+                : (tier === 'REBUILDING' || compYears <= 1) ? 'sell aging veterans for youth and picks — your window is closing'
+                : (rosterCliffPct >= 25 && compYears <= 2) ? 'win now: cash aging value before the cliff while your window is open'
+                : (ageDiffDiag > 1.5 && dhqGap < 0) ? 'sell aging veterans and acquire young elites'
+                : (eliteDiffDiag < -1) ? 'buy young elite players to close the talent gap'
+                : (dhqGap >= 0 && ageDiffDiag <= 0.5) ? 'hold course — your roster matches the elite tier template'
                 : 'target strategic upgrades at your weakest positions';
             const rosterProofItems = [
-                { label: 'Champion Value Gap', value: signedNum(dhqGap, ' DHQ'), detail: 'You vs elite tier total roster DHQ template.', tone: toneFromDelta(dhqGap), color: dhqGap >= 0 ? goodColor : badColor },
-                { label: 'Elite Asset Gap', value: signedNum(eliteDiffDiag), detail: 'Elite player count vs champion benchmark.', tone: toneFromDelta(eliteDiffDiag), color: eliteDiffDiag >= 0 ? goodColor : badColor },
-                { label: 'Bench Quality Gap', value: signedNum(Math.round(benchGap)), detail: 'Depth buffer compared with winning rosters.', tone: toneFromDelta(benchGap), color: benchGap >= 0 ? goodColor : badColor },
-                { label: 'Age Window Delta', value: signedNum(Number(ageDiffDiag.toFixed(1)), ' yrs'), detail: 'Negative means younger than the winner template.', tone: Math.abs(ageDiffDiag) <= 1 ? 'good' : ageDiffDiag > 0 ? 'warn' : 'good', color: Math.abs(ageDiffDiag) <= 1 ? goodColor : warnColor },
+                { label: 'Champion Value Gap', value: winnerN < 2 ? '—' : signedNum(dhqGap, ' DHQ'), detail: winnerN < 2 ? 'Champion sample too small (' + winnerN + ') to benchmark.' : 'You vs ' + winnerN + '-team ' + (winnerSource === 'brackets' ? 'champion' : 'top-standings') + ' template (avg ' + numFmt(w.avgTotalDHQ) + ' DHQ).', tone: winnerN < 2 ? 'warn' : toneFromDelta(dhqGap), color: winnerN < 2 ? warnColor : (dhqGap >= 0 ? goodColor : badColor) },
+                { label: 'Elite Asset Gap', value: winnerN < 2 ? '—' : signedNum(eliteDiffDiag), detail: winnerN < 2 ? 'Champion sample too small to benchmark elites.' : 'Your ' + mElite + ' elites vs ' + wElite + ' for the ' + winnerN + '-team template.', tone: winnerN < 2 ? 'warn' : toneFromDelta(eliteDiffDiag), color: winnerN < 2 ? warnColor : (eliteDiffDiag >= 0 ? goodColor : badColor) },
+                { label: 'Startable Surplus', value: signedNum(startableSurplus), detail: startableSurplus >= 0 ? 'Net value-gated (DHQ≥3000) starters above league requirements — your tradeable depth.' : 'You are short ' + Math.abs(startableSurplus) + ' startable bodies vs league lineup needs.', tone: startableSurplus >= 0 ? 'good' : 'bad', color: startableSurplus >= 0 ? goodColor : badColor },
+                { label: 'Age Window Delta', value: signedNum(Number(ageDiffDiag.toFixed(1)), ' yrs'), detail: 'Negative = younger than the ' + (winnerN || 0) + '-team template. Compared at present age (avg ' + w.avgAge.toFixed(1) + ' yrs); winners are historical so no time-shift is applied.', tone: Math.abs(ageDiffDiag) <= 1 ? 'good' : ageDiffDiag > 0 ? 'warn' : 'good', color: Math.abs(ageDiffDiag) <= 1 ? goodColor : warnColor },
+                { label: 'Top-5 Concentration', value: concMe + '%', detail: winnerN < 2 ? 'Share of roster DHQ in your top 5 assets.' : 'Top-5 share of roster DHQ vs ' + concWin + '% champion template (' + (concDelta > 8 ? 'top-heavy, win-now/fragile' : concDelta < -8 ? 'unusually balanced' : 'balanced') + ').', tone: Math.abs(concDelta) <= 8 ? 'good' : 'warn', color: Math.abs(concDelta) <= 8 ? goodColor : warnColor },
             ];
             const gapRows = (gapsList.length ? gapsList.slice(0, 6) : [{ action: 'No critical construction gap', detail: 'Roster template is not flagging a major room-level deficit.', priority: 'low' }])
                 .map(g => ({
@@ -526,6 +557,16 @@ function AnalyticsPanel({
                     value: (g.priority || g.severity || 'low').toUpperCase(),
                     color: sevColor(g.priority || g.severity || 'low'),
                 }));
+            // Pick Capital Coverage — do you even hold the draft currency to execute the thesis?
+            if (picks) {
+                gapRows.unshift({
+                    kicker: 'Draft Capital',
+                    label: (pickNet >= 0 ? 'Pick Surplus' : 'Pick Deficit') + ' (' + picks.totalPicks + '/' + picks.idealTotal + ')',
+                    detail: picks.roundsMissing ? picks.roundsMissing + ' draft round(s) with zero picks across your horizon — ammo to close the Elite Asset Gap is ' + (pickNet >= 0 ? 'available' : 'short') + '.' : 'You hold ' + picks.totalPicks + ' future picks vs an ideal of ' + picks.idealTotal + '.',
+                    value: (pickNet >= 0 ? '+' : '') + pickNet,
+                    color: pickNet >= 0 ? goodColor : (picks.status === 'deficit' ? badColor : warnColor),
+                });
+            }
 
             return (
             <React.Fragment>
@@ -534,9 +575,10 @@ function AnalyticsPanel({
                     thesis={'Analytics is now reading your roster as evidence: winner-template gaps, room-level coverage, age-window risk, and the positions where a move actually changes your title path. Suggested operating thesis: ' + rosterStrategy + '.'}
                     stats={[
                         { label: 'Evidence Set', value: allRosters.length + ' teams', sub: 'live league rosters' },
-                        { label: 'Champion Sample', value: (winnerIds.size || 0) + ' teams', sub: 'completed winners' },
-                        { label: 'Current Tier', value: tier || 'UNKNOWN', sub: healthScore + ' health', color: tier === 'REBUILDING' ? badColor : tier === 'CONTENDER' || tier === 'ELITE' ? goodColor : warnColor },
-                        { label: 'Window', value: compYears + ' yr', sub: compWindow.label || 'projection model' },
+                        { label: 'Champion Sample', value: winnerN + ' teams', sub: winnerSource === 'brackets' ? 'real bracket champions' : 'standings fallback' },
+                        { label: 'Benchmark Confidence', value: benchConfidence, sub: benchHigh ? 'brackets, n>=3' : (winnerN < 2 ? 'sample too small' : 'low-trust template'), color: benchConfColor },
+                        { label: 'Current Tier', value: tier || 'UNKNOWN', sub: myRank ? '#' + myRank + ' of ' + teamRankings.length + (rankPct != null ? ' · ' + rankPct + 'th pct' : '') : healthScore + ' health', color: tier === 'REBUILDING' ? badColor : tier === 'CONTENDER' || tier === 'ELITE' ? goodColor : warnColor },
+                        { label: 'Win-Now Pressure', value: winNowScore, sub: rosterCliffPct + '% at cliff · ' + compYears + 'yr window (model est.)', color: winNowColor },
                     ]}
                 />
 
@@ -546,7 +588,7 @@ function AnalyticsPanel({
                     <div className="analytics-lab-card">
                         <span>Champion Blueprint</span>
                         <strong>Position Investment Delta</strong>
-                        <p>Bars show your DHQ share by room. The gold marker is the champion-template share. This answers where your roster is structurally over- or under-weighted, not just whether a single KPI is high.</p>
+                        <p>Bars show your DHQ share by room vs the champion-template share. Shares are zero-sum — being light in one room often just means you are (correctly) heavy in another (e.g. QB in superflex), so read the Gap against your format, not in isolation.</p>
                         <AnalyticsDeltaRows rows={investmentRows} benchmarkLabel="Elite" />
                     </div>
                     <div className="analytics-lab-card">
@@ -617,7 +659,7 @@ function AnalyticsPanel({
                     const tierColor = (tier) => tier === 'Contender' ? goodColor : tier === 'Playoff Team' ? warnColor : badColor;
                     return (
                         <div style={{ ...aCardStyle, marginTop: '12px' }}>
-                            <div style={aHeaderStyle}><span>YOUR 5-YEAR OUTLOOK</span></div>
+                            <div style={aHeaderStyle}><span>YOUR 5-YEAR OUTLOOK</span><span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>Model estimate — ages today's roster, no future trades/draft</span></div>
                             {proj.map((p, i) => (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                                     <span style={{ color: 'var(--silver)', fontFamily: 'var(--font-body)', minWidth: '40px', fontSize: 'var(--text-body, 1rem)' }}>{p.year}</span>
@@ -639,30 +681,12 @@ function AnalyticsPanel({
                 {/* ── AGING CLIFF ALERT (moved from Projections) ── */}
                 {(() => {
                     const S2 = _SS;
-                    const LI2 = window.App?.LI || {};
-                    const ps2 = LI2.playerScores || {};
-                    const pm2 = LI2.playerMeta || {};
-                    const pw2 = window.App?.peakWindows || {};
-                    const myRid2 = S2?.myRosterId;
-                    const myRos2 = (S2?.rosters || []).find(r => r.roster_id === myRid2);
-                    const myPl2 = myRos2?.players || [];
-                    let tDHQ2 = 0, arDHQ2 = 0;
-                    const arPlayers2 = [];
-                    myPl2.forEach(pid => {
-                        const dq = ps2[pid] || 0;
-                        const mt = pm2[pid] || {};
-                        tDHQ2 += dq;
-                        if (!mt.age || !mt.pos) return;
-	                        const valueEnd = typeof window.App?.getValueWindowEnd === 'function'
-	                            ? window.App.getValueWindowEnd(mt.pos)
-	                            : ((window.App.peakWindows || {})[mt.pos] || [23, 29])[1];
-	                        if (mt.age + 2 > valueEnd && dq >= 2000) {
-                            arDHQ2 += dq;
-                            arPlayers2.push({ name: playersData[pid]?.full_name || S2?.players?.[pid]?.full_name || mt.name || ('Player ' + pid), age: mt.age, dhq: dq });
-                        }
-                    });
-                    const arPct2 = tDHQ2 > 0 ? Math.round(arDHQ2 / tDHQ2 * 100) : 0;
-                    arPlayers2.sort((a, b) => b.dhq - a.dhq);
+                    const ps2 = window.App?.LI?.playerScores || {};
+                    const pm2 = window.App?.LI?.playerMeta || {};
+                    // Reuse the shared at-risk set computed once at tab scope (same unified
+                    // value-window-end threshold the Win-Now Pressure chip uses).
+                    const arPct2 = rosterCliffPct;
+                    const arPlayers2 = rosterAtRiskPlayers;
                     if (!arPlayers2.length && arPct2 === 0) return null;
                     return (
                         <div style={{ ...aCardStyle, marginTop: '12px' }}>
@@ -682,8 +706,9 @@ function AnalyticsPanel({
                                                 const mv = pm2[pid] || {};
                                                 lgT += dv;
                                                 if (mv.age && mv.pos) {
-                                                    const pe = ((window.App?.peakWindows || {})[mv.pos] || [23,29])[1];
-                                                    if (mv.age + 2 > pe && dv >= 2000) lgA += dv;
+                                                    // Use the SAME value-window-end threshold as the 'you' side (was peak-window end — a sign-flipping mismatch).
+                                                    const pe = cliffValueEnd(mv.pos);
+                                                    if (mv.age + CLIFF_LEAD > pe && dv >= CLIFF_DHQ) lgA += dv;
                                                 }
                                             });
                                         });
@@ -747,18 +772,24 @@ function AnalyticsPanel({
             const avgHitAdv = hitRounds > 0 ? totalHitDiff / hitRounds : 0;
             winnerHitAvg = hitRounds > 0 ? winnerHitAvg / hitRounds : 0;
             leagueHitAvg = hitRounds > 0 ? leagueHitAvg / hitRounds : 0;
-            const grades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D'];
-            const gradeIdx = Math.min(grades.length - 1, Math.max(0, Math.round(4 - avgHitAdv * 20)));
-            const totalMyPicks = draftOutcomes.filter(dp => dp.roster_id === myRid).length;
+            // (Removed Draft Grade computation — it was the league-wide winner-vs-field spread,
+            //  identical for every team and never personal. Replaced by Draft ROI / R1-R2 Anchor.)
             // Compute top draft position for winners
+            // Template Lean: restrict to R1-R2 (R1 weighted double) — the old all-round sum let a
+            // repeated late-round position outrank a true early anchor despite the 'early-round' label.
             const winnerTopPos = {};
-            rounds.forEach(rd => {
+            rounds.filter(rd => rd <= 2).forEach(rd => {
                 Object.entries(dr.winnerDraftProfile[rd] || {}).forEach(([pos, pct]) => {
-                    winnerTopPos[pos] = (winnerTopPos[pos] || 0) + pct;
+                    winnerTopPos[pos] = (winnerTopPos[pos] || 0) + pct * (rd === 1 ? 2 : 1);
                 });
             });
             const topDraftTarget = Object.entries(winnerTopPos).sort((a,b) => b[1] - a[1])[0];
             const hasDraftOutcomeHistory = draftOutcomes.length > 0 && rounds.length > 0 && hitRounds > 0;
+            // Winner-benchmark provenance (mirrors the Roster tab): disclose sample size + source.
+            const winnerIds = new Set(d.winners || []);
+            const winnerSampleN = winnerIds.size;
+            const benchSource = d.winnerSource || d.source || 'standings';
+            const benchHigh = benchSource === 'brackets' && winnerSampleN >= 3;
 
             // KPI card style
             const dKpiCardStyle = {
@@ -786,15 +817,37 @@ function AnalyticsPanel({
 
             // ── Draft Strategy Summary ──
             const myHitRates = {};
+            const myHitCounts = {};
             rounds.forEach(rd => {
                 const myPicks = draftOutcomes.filter(dp => dp.round === rd && dp.roster_id === myRid);
                 if (!myPicks.length) return;
-                const hits = myPicks.filter(dp => dp.isHit).length;
-                myHitRates[rd] = myPicks.length > 0 ? hits / myPicks.length : 0;
+                myHitCounts[rd] = myPicks.length;
+                const hits = myPicks.filter(dp => dp.isHit || dp.isStarter).length;
+                myHitRates[rd] = hits / myPicks.length;
             });
             const myR1Hit = myHitRates[1] || 0;
             const winnerR1Hit = (dr.winnerHitRate[1] || {}).winners || 0;
-            const topDraftPos = topDraftTarget ? topDraftTarget[0] : 'RB/WR';
+            const topDraftPos = topDraftTarget ? topDraftTarget[0] : null; // null-honest; no 'RB/WR' mask
+            // Personal R1 + R1-R2 anchor conversion, with explicit denominators (suppressed when thin).
+            const myR1Picks = draftOutcomes.filter(dp => dp.round === 1 && dp.roster_id === myRid);
+            const myR1Count = myR1Picks.length;
+            const myR1Hits = myR1Picks.filter(dp => dp.isHit || dp.isStarter).length;
+            const winnerR1Count = draftOutcomes.filter(dp => dp.round === 1 && winnerIds.has(dp.roster_id)).length;
+            const myAnchorPicks = draftOutcomes.filter(dp => dp.roster_id === myRid && dp.round <= 2);
+            const myAnchorN = myAnchorPicks.length;
+            const myAnchorHits = myAnchorPicks.filter(dp => dp.isHit || dp.isStarter).length;
+            const myAnchorRate = myAnchorN ? myAnchorHits / myAnchorN : 0;
+            const winnerAnchorN = draftOutcomes.filter(dp => dp.round <= 2 && winnerIds.has(dp.roster_id)).length;
+            const winnerAnchorHits = draftOutcomes.filter(dp => dp.round <= 2 && winnerIds.has(dp.roster_id) && (dp.isHit || dp.isStarter)).length;
+            const winnerAnchorRate = winnerAnchorN ? winnerAnchorHits / winnerAnchorN : 0;
+            // Slot-adjusted personal draft skill: realized normValue vs league-avg normValue at that exact slot.
+            const _pickVals = window.App?.LI?.dhqPickValues || {};
+            const myRoiSamples = draftOutcomes.filter(dp => dp.roster_id === myRid && (dp.seasonsAvailable || 0) >= 1 && (_pickVals[dp.pick_no]?.avgNorm || 0) > 0).map(dp => ({ realized: dp.normValue || 0, expected: _pickVals[dp.pick_no].avgNorm }));
+            const myRoiN = myRoiSamples.length;
+            const _roiDiffSum = myRoiSamples.reduce((s, x) => s + (x.realized - x.expected), 0);
+            const _roiExpSum = myRoiSamples.reduce((s, x) => s + x.expected, 0);
+            const myRoiPct = (myRoiN && _roiExpSum > 0) ? Math.round(_roiDiffSum / _roiExpSum * 100) : null;
+            const reachIndex = myRoiN ? Math.round(_roiDiffSum / myRoiN) : null;
             const leagueSeason = parseInt(currentLeague?.season || activeYear, 10) || new Date().getFullYear();
             const draftRounds = Number(window.App?.LeagueSkin?.resolveDraftRounds?.({
                 league: currentLeague,
@@ -873,63 +926,29 @@ function AnalyticsPanel({
             const earlyPicks = currentPicks.filter(p => p.round <= 2).length;
             const topCurrentPicks = [...currentPicks].sort((a, b) => b.value - a.value || a.year - b.year || a.round - b.round).slice(0, 5);
             const leagueId = currentLeague?.id || currentLeague?.league_id || '';
-            const ownerHistory = (() => {
-                try {
-                    if (window.WrHistory?.getOwnerHistory) return window.WrHistory.getOwnerHistory(leagueId) || {};
-                    if (typeof window.buildOwnerHistory === 'function') return window.buildOwnerHistory(leagueId) || {};
-                } catch (_) {}
-                return {};
-            })();
-            const historyOwners = Object.values(ownerHistory || {});
-            const allSeasonRows = [];
-            const championRows = [];
-            historyOwners.forEach(owner => {
-                const champSeasons = new Set((owner.champSeasons || []).map(String));
-                (owner.seasonHistory || []).forEach(season => {
-                    const row = { ...season, ownerName: owner.ownerName || owner.teamName || ownerNameSafe(owner.rosterId), rosterId: owner.rosterId };
-                    allSeasonRows.push(row);
-                    const finish = String(season.finish || '').toLowerCase();
-                    if (champSeasons.has(String(season.season)) || finish === 'champion' || Number(season.place) === 1) championRows.push(row);
-                });
-            });
-            const finiteNumber = (value) => {
-                const n = Number(value);
-                return Number.isFinite(n) ? n : null;
-            };
-            const avgOf = (values) => {
-                const nums = values.map(finiteNumber).filter(v => v != null);
-                return nums.length ? nums.reduce((s, v) => s + v, 0) / nums.length : null;
-            };
-            const avgChampionWins = avgOf(championRows.map(s => s.wins));
-            const avgChampionLosses = avgOf(championRows.map(s => s.losses));
-            const avgChampionPF = avgOf(championRows.map(s => s.fpts));
-            const seasonCount = new Set(allSeasonRows.map(s => String(s.season || '')).filter(Boolean)).size;
-            const uniqueChampionOwners = new Set(championRows.map(s => s.ownerName || s.rosterId).filter(Boolean)).size;
             const movedPickCount = tradedPicks.filter(p => !sameId(p.owner_id, p.roster_id)).length;
-            const rosterSlots = (currentLeague?.roster_positions || []).map(pos => String(pos || '').toUpperCase());
-            const redraftBuildCue = rosterSlots.includes('K') || rosterSlots.includes('DEF') || rosterSlots.includes('DST') ? 'Late K/DST' : 'Core Skill';
-            const championRecordText = avgChampionWins != null
-                ? Math.round(avgChampionWins) + '-' + Math.round(avgChampionLosses || 0)
-                : 'History pending';
+            // Draft-only fallback when no per-pick outcome rows exist (no championship/history filler).
             const historicalProofItems = [
-                { label: 'History Loaded', value: seasonCount ? seasonCount + ' seasons' : '\u2014', detail: seasonCount ? 'League history is loaded even though draft outcomes are not.' : 'Historical season records are still loading.', tone: seasonCount ? 'good' : 'warn', color: seasonCount ? goodColor : warnColor },
-                { label: 'Title Record', value: championRecordText, detail: championRows.length ? 'Average champion regular-season record.' : 'Champion rows are not available yet.', tone: championRows.length ? 'good' : 'warn', color: championRows.length ? goodColor : warnColor },
-                { label: 'Champion PF', value: avgChampionPF != null ? Math.round(avgChampionPF).toLocaleString() : '\u2014', detail: championRows.length ? 'Average points-for by title teams.' : 'Needs season points-for history.', tone: championRows.length ? 'good' : 'warn', color: championRows.length ? goodColor : warnColor },
-                { label: 'Pick Trade Reality', value: movedPickCount.toLocaleString(), detail: movedPickCount ? 'Historical pick movement exists in the ledger.' : 'No historical pick trades found; mock trade offers should stay suppressed.', tone: movedPickCount ? 'warn' : 'good', color: movedPickCount ? warnColor : goodColor },
+                { label: 'Owned Picks', value: currentPicks.length || '\u2014', detail: currentPickValue.toLocaleString() + ' DHQ across visible years.', tone: 'good', color: goodColor },
+                { label: 'Early Capital', value: earlyPicks, detail: 'Picks in R1-R2 to anchor a build.', tone: earlyPicks >= 3 ? 'good' : 'warn', color: earlyPicks >= 3 ? goodColor : warnColor },
+                { label: 'Draft Outcomes', value: 'Pending', detail: 'No per-pick outcome rows yet; reads use slot value only.', tone: 'warn', color: warnColor },
             ];
             const draftProofItems = hasDraftOutcomeHistory ? [
-                { label: 'Hit Rate Edge', value: signedNum(Math.round(avgHitAdv * 100), ' pts'), detail: 'Elite tier average hit-rate advantage by round.', tone: toneFromDelta(avgHitAdv), color: avgHitAdv >= 0 ? goodColor : badColor },
-                { label: 'R1 Benchmark', value: pctFmt(winnerR1Hit), detail: 'Elite tier first-round hit rate in this league.', tone: 'good', color: goodColor },
-                { label: 'Your R1 History', value: pctFmt(myR1Hit), detail: totalMyPicks ? 'Your recorded first-round conversion.' : 'No first-round history loaded yet.', tone: myR1Hit >= winnerR1Hit ? 'good' : 'warn', color: myR1Hit >= winnerR1Hit ? goodColor : warnColor },
+                { label: 'League Skill Spread', value: signedNum(Math.round(avgHitAdv * 100), ' pts'), detail: 'Elite-vs-field hit-rate gap across ' + hitRounds + ' rounds (league-wide, not your team).', tone: toneFromDelta(avgHitAdv), color: avgHitAdv >= 0 ? goodColor : badColor },
+                { label: 'Elite R1 Benchmark', value: pctFmt(winnerR1Hit), detail: 'Title-tier R1 hit rate (n=' + winnerR1Count + ' winner R1 picks).', tone: winnerR1Count >= 3 ? 'good' : 'warn', color: winnerR1Count >= 3 ? goodColor : warnColor },
+                { label: 'Your R1 Conversion', value: myR1Count < 2 ? 'n=' + myR1Count : pctFmt(myR1Hit), detail: myR1Count < 2 ? 'Need 2+ recorded R1 picks; only ' + myR1Count + ' loaded.' : myR1Hits + '/' + myR1Count + ' R1 picks hit (elite ' + pctFmt(winnerR1Hit) + ').', tone: myR1Count < 2 ? 'warn' : (myR1Hit >= winnerR1Hit ? 'good' : 'warn'), color: myR1Count < 2 ? warnColor : (myR1Hit >= winnerR1Hit ? goodColor : warnColor) },
+                { label: 'R1-R2 Anchor Conversion', value: myAnchorN < 2 ? 'n=' + myAnchorN : pctFmt(myAnchorRate), detail: myAnchorN < 2 ? 'Need 2+ premium picks; only ' + myAnchorN + ' loaded.' : myAnchorHits + '/' + myAnchorN + ' premium picks hit (elite ' + pctFmt(winnerAnchorRate) + ', n=' + winnerAnchorN + ').', tone: myAnchorN < 2 ? 'warn' : (myAnchorRate >= winnerAnchorRate ? 'good' : 'warn'), color: myAnchorN < 2 ? warnColor : (myAnchorRate >= winnerAnchorRate ? goodColor : warnColor) },
+                { label: 'Value vs Slot', value: reachIndex == null ? '\u2014' : signedNum(reachIndex, ' pts'), detail: reachIndex == null ? 'Not enough graded picks to score reach.' : (reachIndex >= 0 ? 'Your picks beat their slot baseline on average.' : 'Your picks underperform their slot baseline (reach signal).'), tone: reachIndex == null ? 'warn' : toneFromDelta(reachIndex), color: reachIndex == null ? warnColor : (reachIndex >= 0 ? goodColor : badColor) },
                 { label: 'Current Capital', value: currentPickValue.toLocaleString(), detail: currentPicks.length + ' current picks, ' + earlyPicks + ' in R1-R2.', tone: earlyPicks >= 3 ? 'good' : 'warn', color: earlyPicks >= 3 ? goodColor : warnColor },
+                { label: 'Benchmark Confidence', value: benchHigh ? 'High' : 'Low', detail: (benchSource === 'brackets' ? 'Champions from real playoff brackets' : 'Champions inferred from standings (fallback)') + ', n=' + winnerSampleN + '.', tone: benchHigh ? 'good' : 'warn', color: benchHigh ? goodColor : warnColor },
             ] : historicalProofItems;
             const hitRows = rounds.filter(rd => dr.winnerHitRate[rd]).map(rd => ({
-                label: 'R' + rd,
+                label: 'R' + rd + ((myHitCounts[rd] || 0) < 2 ? ' (n=' + (myHitCounts[rd] || 0) + ')' : ''),
                 yours: Math.round(((myHitRates[rd] || 0) * 100)),
                 benchmark: Math.round(((dr.winnerHitRate[rd].winners || 0) * 100)),
                 suffix: ' pts',
                 format: v => Math.round(v) + '%',
-                color: (myHitRates[rd] || 0) >= (dr.winnerHitRate[rd].winners || 0) ? goodColor : warnColor,
+                color: (myHitCounts[rd] || 0) < 2 ? 'rgba(192,192,192,0.4)' : ((myHitRates[rd] || 0) >= (dr.winnerHitRate[rd].winners || 0) ? goodColor : warnColor),
             }));
             const curvePickCount = totalTeams * draftRounds;
             const curveSlots = [...new Set([1, 2, 3, 4, Math.ceil(totalTeams / 2), totalTeams, totalTeams + 1, totalTeams * 2, totalTeams * 3, Math.max(1, curvePickCount - Math.floor(curvePickCount * 0.12)), curvePickCount])].filter(p => p <= curvePickCount);
@@ -939,35 +958,44 @@ function AnalyticsPanel({
                 return pickValue(leagueSeason, rd, slot);
             });
             const curveMax = Math.max(...curveValues, 1);
-            const draftRows = topCurrentPicks.length ? topCurrentPicks.map(p => ({
+            // Owned current-season pick overall-numbers, to overlay your picks onto the value curve.
+            const myCurveOveralls = new Set(currentPicks.filter(p => p.year === leagueSeason).map(p => (p.round - 1) * totalTeams + p.slot));
+            // Positional Need x Capital \u2014 your thin rooms vs where winners spend early capital.
+            let needPosSet = new Set();
+            try { const _assess = window.App?.assessTeamFromGlobal?.(myRid) || window.App?.LI?.assessments?.[myRid]; const _pa = _assess?.posAssessment || {}; Object.entries(_pa).forEach(([pos, a]) => { if (a && (a.status === 'deficit' || a.status === 'thin' || (a.diff || 0) < 0)) needPosSet.add(pos); }); } catch (_) {}
+            const needMatch = topDraftPos && needPosSet.has(topDraftPos);
+            const draftRows = (topCurrentPicks.length ? topCurrentPicks.map(p => ({
                 kicker: p.own ? 'Owned Pick' : 'Acquired Pick',
                 label: p.label,
                 detail: p.own ? 'Original pick path' : 'From ' + (p.from || 'another roster'),
                 value: (p.value || 0).toLocaleString(),
                 color: p.round <= 2 ? 'var(--gold)' : 'var(--k-9b8afb, #9b8afb)',
-            })) : [{ kicker: 'Pick Path', label: 'No current picks loaded', detail: 'Draft pick source did not return current inventory.', value: '\u2014' }];
+            })) : [{ kicker: 'Pick Path', label: 'No current picks loaded', detail: 'Draft pick source did not return current inventory.', value: '\u2014' }])
+                .concat((earlyPicks > 0 && needPosSet.size) ? [{ kicker: 'Need x Capital', label: needMatch ? 'Draft-for-need fit' : 'Capital vs needs mismatch', detail: 'Roster needs: ' + [...needPosSet].map(posLabel).join(', ') + '. Winners spend early on ' + (topDraftPos ? posLabel(topDraftPos) : 'skill') + '.', value: earlyPicks + ' early picks', color: needMatch ? goodColor : warnColor }] : []);
+            // Slot-adjusted future-pick decay (value lost by holding) for the Capital At Risk stat.
+            const futurePicksMine = currentPicks.filter(p => p.year > leagueSeason);
+            const valueAtRisk = futurePicksMine.reduce((s, p) => { const yrsAhead = p.year - leagueSeason; const undiscounted = Math.round((p.value || 0) / Math.pow(0.88, yrsAhead)); return s + (undiscounted - (p.value || 0)); }, 0);
+            const futureShare = currentPickValue > 0 ? Math.round(futurePicksMine.reduce((s,p)=>s+(p.value||0),0) / currentPickValue * 100) : 0;
+            // Fallback (no draft outcomes): draft-relevant pick info only \u2014 no championship/history filler.
             const historicalRows = [
-                { kicker: 'Champion Threshold', label: championRecordText, detail: championRows.length ? 'Average title-team regular-season record in this league.' : 'Waiting for champion season rows.', value: avgChampionPF != null ? Math.round(avgChampionPF).toLocaleString() + ' PF' : '\u2014', color: goodColor },
-                { kicker: 'League Parity', label: uniqueChampionOwners ? uniqueChampionOwners + ' title teams' : 'No title map', detail: championRows.length ? uniqueChampionOwners + ' unique champions across ' + championRows.length + ' title seasons.' : 'History has not identified champions yet.', value: championRows.length || '\u2014', color: 'var(--gold)' },
-                { kicker: 'Draft Behavior', label: movedPickCount ? 'Pick trades exist' : 'Fixed-slot league', detail: movedPickCount ? 'Use ledger movement when modeling offers.' : 'No historical pick trades found, so mock offers should weight to zero.', value: movedPickCount.toLocaleString(), color: movedPickCount ? warnColor : goodColor },
-                { kicker: 'Roster Rule Cue', label: redraftBuildCue, detail: rosterSlots.includes('K') || rosterSlots.includes('DEF') || rosterSlots.includes('DST') ? 'Kicker and D/ST should be timing decisions, not early capital.' : 'No K/DST drag detected in roster slots.', value: draftRounds + ' rounds', color: 'var(--k-4ecdc4, #4ecdc4)' },
+                { kicker: 'Owned Picks', label: currentPicks.length + ' picks', detail: 'Across visible draft years.', value: currentPickValue.toLocaleString() + ' DHQ', color: 'var(--gold)' },
+                { kicker: 'Early Capital', label: earlyPicks + ' in R1-R2', detail: 'Premium capital to anchor a tier break.', value: topCurrentPicks[0]?.label || '\u2014', color: earlyPicks >= 3 ? goodColor : warnColor },
             ];
             const buildRows = [
-                { kicker: 'Current Inventory', label: currentPicks.length + ' owned picks', detail: skinFeatures.showFuturePicks === false ? 'Current-season redraft board only.' : 'Includes visible future-pick years.', value: currentPickValue.toLocaleString(), color: 'var(--gold)' },
-                { kicker: 'Round Shape', label: draftRounds + ' rounds x ' + totalTeams + ' teams', detail: 'Resolved from roster-slot skin rules, not raw Sleeper draft_rounds.', value: (totalTeams * draftRounds).toLocaleString() + ' picks', color: 'var(--k-9b8afb, #9b8afb)' },
-                { kicker: 'Early Capital', label: earlyPicks + ' picks in R1-R2', detail: 'Used for anchor-player and tier-break decisions.', value: topCurrentPicks[0]?.label || '\u2014', color: warnColor },
-                { kicker: 'AI Trade Weight', label: movedPickCount ? 'Historical rate' : '0% offer bias', detail: 'Mock draft trade behavior follows this league ledger.', value: movedPickCount ? movedPickCount + ' moved' : 'No trades', color: movedPickCount ? warnColor : goodColor },
+                { kicker: 'Early Capital', label: earlyPicks + ' picks in R1-R2', detail: earlyPicks >= 3 ? 'Enough premium capital to anchor a tier break.' : 'Light on premium capital; trade-up candidates.', value: topCurrentPicks[0]?.label || '\u2014', color: earlyPicks >= 3 ? goodColor : warnColor },
+                { kicker: 'Round Shape', label: draftRounds + ' rounds x ' + totalTeams + ' teams', detail: 'Resolved from roster-slot skin rules' + ((!currentLeague?.settings?.draft_rounds && draftRounds === 5) ? ' (fallback estimate).' : '.'), value: (totalTeams * draftRounds).toLocaleString() + ' picks', color: 'var(--k-9b8afb, #9b8afb)' },
             ];
             const draftStats = hasDraftOutcomeHistory ? [
-                { label: 'Draft Grade', value: grades[gradeIdx], sub: 'hit-rate evidence', color: gradeIdx <= 2 ? goodColor : gradeIdx <= 5 ? warnColor : badColor },
-                { label: 'Elite R1 Hit', value: pctFmt(winnerR1Hit), sub: 'winner sample' },
-                { label: 'Capital Loaded', value: currentPicks.length || '\u2014', sub: currentPickValue.toLocaleString() + ' DHQ' },
-                { label: 'Template Lean', value: topDraftPos, sub: 'early-round position signal' },
+                { label: 'Champion Sample', value: winnerSampleN + ' teams', sub: 'benchmark roster set' },
+                { label: 'Draft ROI', value: myRoiN < 3 ? 'n=' + myRoiN : signedNum(myRoiPct, '%'), sub: myRoiN < 3 ? 'need 3+ graded picks' : 'value captured vs slot EV', color: myRoiN < 3 ? warnColor : (myRoiPct >= 0 ? goodColor : badColor) },
+                { label: 'Elite R1 Hit', value: pctFmt(winnerR1Hit), sub: winnerR1Count + ' winner R1 picks' },
+                { label: 'Capital At Risk', value: skinFeatures.showFuturePicks === false ? '\u2014' : '-' + valueAtRisk.toLocaleString(), sub: skinFeatures.showFuturePicks === false ? 'redraft: no future picks' : futureShare + '% of capital is future', color: valueAtRisk > 0 ? warnColor : goodColor },
+                { label: 'Template Lean', value: topDraftPos ? posLabel(topDraftPos) : '\u2014', sub: topDraftPos ? 'winner R1-R2 anchor position' : 'no winner draft profile', color: topDraftPos ? undefined : warnColor },
             ] : [
-                { label: 'History Loaded', value: seasonCount || '\u2014', sub: 'seasons with records', color: seasonCount ? goodColor : warnColor },
-                { label: 'Capital Loaded', value: currentPicks.length || '\u2014', sub: currentPickValue.toLocaleString() + ' DHQ' },
-                { label: 'Pick Trades', value: movedPickCount, sub: movedPickCount ? 'ledger movement' : 'none in ledger', color: movedPickCount ? warnColor : goodColor },
-                { label: 'Build Cue', value: redraftBuildCue, sub: 'roster format' },
+                { label: 'Owned Picks', value: currentPicks.length || '\u2014', sub: currentPickValue.toLocaleString() + ' DHQ' },
+                { label: 'Early Capital', value: earlyPicks, sub: 'R1-R2 picks', color: earlyPicks >= 3 ? goodColor : warnColor },
+                { label: 'Capital At Risk', value: skinFeatures.showFuturePicks === false ? '\u2014' : '-' + valueAtRisk.toLocaleString(), sub: skinFeatures.showFuturePicks === false ? 'redraft' : futureShare + '% future', color: valueAtRisk > 0 ? warnColor : goodColor },
+                { label: 'Template Lean', value: topDraftPos ? posLabel(topDraftPos) : '\u2014', sub: topDraftPos ? 'winner R1-R2 anchor' : 'no draft profile', color: topDraftPos ? undefined : warnColor },
             ];
 
             return (
@@ -986,11 +1014,12 @@ function AnalyticsPanel({
                         <strong>Slot EV, Not Round Labels</strong>
                         <p>The shared pick-value file drives this curve. It shows why a specific slot should be treated differently than a generic future round.</p>
                         <div className="analytics-curve">
-                            {curveValues.map((v, i) => <i key={i} title={curveSlots[i] + ': ' + v} style={{ height: Math.max(5, Math.round(v / curveMax * 100)) + '%' }} />)}
+                            {curveValues.map((v, i) => { const owned = myCurveOveralls.has(curveSlots[i]); return <i key={i} title={(owned ? 'YOUR PICK ' : '') + 'P' + curveSlots[i] + ': ' + v} style={{ height: Math.max(5, Math.round(v / curveMax * 100)) + '%', background: owned ? 'var(--gold)' : undefined, outline: owned ? '1px solid var(--gold)' : undefined }} />; })}
                         </div>
                         <div className="analytics-pick-strip" style={{ marginTop: '8px' }}>
                             {curveSlots.slice(0, 7).map((p, i) => <span key={p}>P{p} <em>{curveValues[i].toLocaleString()}</em></span>)}
                         </div>
+                        {(() => { const earlies = [...currentPicks].filter(p => p.round <= 3).sort((a,b)=>a.round-b.round||a.slot-b.slot); if (earlies.length < 2) return null; const combo = earlies[earlies.length-1].value + earlies[earlies.length-2].value; const equiv = curveValues.reduce((best, v, i) => Math.abs(v - combo) < Math.abs(best.v - combo) ? { p: curveSlots[i], v } : best, { p: curveSlots[0], v: curveValues[0] }); return <p style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', marginTop: '6px' }}>Consolidation: your {earlies[earlies.length-2].label} + {earlies[earlies.length-1].label} = {combo.toLocaleString()} DHQ, roughly pick P{equiv.p}.</p>; })()}
                     </div>
                     <div className="analytics-lab-card">
                         <span>Current Capital</span>
@@ -1015,10 +1044,12 @@ function AnalyticsPanel({
                                 const wProf = dr.winnerDraftProfile[rd] || {};
                                 const myProf = myDraftProfile[rd] || {};
                                 const sorted = Object.entries(wProf).sort((a, b) => b[1] - a[1]);
+                                const wRdCount = draftOutcomes.filter(dp => dp.round === rd && winnerIds.has(dp.roster_id)).length;
+                                const myRdCount = draftOutcomes.filter(dp => dp.round === rd && dp.roster_id === myRid).length;
                                 return (
                                 <div key={rd} style={{ marginBottom: '10px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', minWidth: '65px' }}>Round {rd}</span>
+                                        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', minWidth: '65px' }}>Round {rd}<span style={{ marginLeft: '6px', fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.6 }}>n={wRdCount}</span></span>
                                         <div style={{ flex: 1, display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                             {sorted.map(([pos, pct]) => (
                                                 <span key={pos} style={{
@@ -1030,7 +1061,8 @@ function AnalyticsPanel({
                                         </div>
                                     </div>
                                     {Object.keys(myProf).length > 0 && (
-                                        <div style={{ marginLeft: '65px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                        <div style={{ marginLeft: '65px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                            <span style={{ fontSize: 'var(--text-micro)', color: 'var(--k-4ecdc4, #4ecdc4)', opacity: 0.7 }}>You n={myRdCount}</span>
                                             {Object.entries(myProf).sort((a, b) => b[1] - a[1]).map(([pos, pct]) => (
                                                 <span key={pos} style={{
                                                     fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', padding: '1px 6px',
@@ -1052,15 +1084,16 @@ function AnalyticsPanel({
                 ) : (
                     <div className="analytics-lab-grid">
                         <div className="analytics-lab-card">
-                            <span>Historical League Signals</span>
-                            <strong>League History Instead Of Empty Draft Outcomes</strong>
-                            <p>This league does not have real draft-outcome rows loaded, so the read shifts to title thresholds, parity, pick-trade reality, and roster-rule pressure.</p>
+                            <span>Pick Capital</span>
+                            <strong>Draft Board Without Outcome History</strong>
+                            <p>This league has no per-pick outcome rows loaded yet, so the read uses slot value and your current pick inventory rather than hit-rate history.</p>
                             <AnalyticsDataStack rows={historicalRows} />
+                            {!movedPickCount && <p style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.6, marginTop: '6px' }}>Fixed-slot league: no historical pick trades, so trade-up modeling is disabled.</p>}
                         </div>
                         <div className="analytics-lab-card">
-                            <span>Redraft Build Map</span>
+                            <span>Build Map</span>
                             <strong>How To Use The Current Draft Board</strong>
-                            <p>The redraft skin turns draft capital into current-season slots only. That keeps the board at 15 owned picks for this league and keeps future-year assets out of the model.</p>
+                            <p>Capital is the currency here: anchor your early picks, and use the round shape to plan trade-ups and consolidations.</p>
                             <AnalyticsDataStack rows={buildRows} />
                         </div>
                     </div>
@@ -1091,15 +1124,34 @@ function AnalyticsPanel({
                 const entries = Object.entries(prof.positionsBought || {}).sort((a, b) => b[1] - a[1]);
                 return entries.slice(0, 3).map(([p]) => p).join(', ') || '\u2014';
             };
-            const alerts = [];
-            if (mp.avgTradesPerSeason < lp.avgTradesPerSeason) alerts.push({ sev: 'medium', title: 'Low Trade Volume', msg: 'You trade below league average (' + mp.avgTradesPerSeason + ' vs ' + lp.avgTradesPerSeason + ' per season). Elite tier teams average ' + wp.avgTradesPerSeason + '.' });
-            if (mp.avgValueGained < 0) alerts.push({ sev: 'high', title: 'Losing Value', msg: 'You\'re losing ' + Math.abs(mp.avgValueGained) + ' DHQ per trade on average. Elite tier teams gain +' + wp.avgValueGained + '.' });
-            if (wp.partnerPreference && wp.partnerPreference !== 'Unknown' && wp.partnerPreference !== mp.partnerPreference) alerts.push({ sev: 'low', title: 'Trade Partner Strategy', msg: 'Elite tier teams target ' + cleanPreference(wp.partnerPreference) + ' teams. You trade with ' + cleanPreference(mp.partnerPreference) + ' teams.' });
+            // Winner-benchmark provenance + graded win-rate + FAAB bargain/runway (this tab benchmarks you vs wp.*).
+            const winnerN = d.winnerCount != null ? d.winnerCount : (d.winners || []).length;
+            const benchSource = d.winnerSource || d.source || 'standings';
+            const benchHigh = benchSource === 'brackets' && winnerN >= 3;
+            const benchConfColor = benchHigh ? goodColor : warnColor;
+            const mySampleN = (tr.myLast5 || []).length;
+            const winnerTradeN = wp.totalTrades || 0;
+            const myGraded = (mp.tradesWon || 0) + (mp.tradesLost || 0) + (mp.tradesFair || 0);
+            const myWinRate = myGraded > 0 ? Math.round((mp.tradesWon || 0) / myGraded * 100) : null;
+            const wGraded = (wp.tradesWon || 0) + (wp.tradesLost || 0) + (wp.tradesFair || 0);
+            const wWinRate = wGraded > 0 ? Math.round((wp.tradesWon || 0) / wGraded * 100) : null;
+            const bargainPos = Object.entries(wa.faabEffByPos || {}).map(([pos, e]) => {
+                const med = (wa.leagueFaabProfile?.[pos]?.median) || 0;
+                const avgBid = e.avgBid || 0;
+                return { pos, med, avgBid, dhqPerDollar: e.dhqPerDollar || 0, underMedian: med > 0 && avgBid < med };
+            }).filter(x => x.underMedian).sort((a, b) => b.dhqPerDollar - a.dhqPerDollar);
+            const topBargain = bargainPos[0];
+            const weeksElapsed = Number(currentLeague?.settings?.leg || currentLeague?.settings?.last_scored_leg || 0);
+            const burnPerWeek = (weeksElapsed > 0 && waiverUsed > 0) ? waiverUsed / weeksElapsed : null;
+            const runwayWeeks = (burnPerWeek && faabRemaining != null) ? Math.floor(faabRemaining / burnPerWeek) : null;
 
-            // Build position bought bar chart items
-            const allBoughtPos = [...new Set([...Object.keys(wp.positionsBought || {}), ...Object.keys(mp.positionsBought || {})])].filter(p => p !== 'UNK').sort();
-            const boughtBarWinner = allBoughtPos.map(pos => ({ label: posLabel(pos), value: (wp.positionsBought || {})[pos] || 0, color: CHART_COLORS?.gold || 'var(--k-d4af37, #d4af37)' }));
-            const boughtBarYou = allBoughtPos.map(pos => ({ label: posLabel(pos), value: (mp.positionsBought || {})[pos] || 0, color: 'var(--k-4ecdc4, #4ecdc4)' }));
+            const alerts = [];
+            if (mySampleN >= 2 && mp.avgTradesPerSeason < lp.avgTradesPerSeason) alerts.push({ sev: 'medium', title: 'Low Trade Volume', msg: 'You trade below league average (' + mp.avgTradesPerSeason + ' vs ' + lp.avgTradesPerSeason + ' per season). Elite tier teams average ' + wp.avgTradesPerSeason + '.' });
+            if (mySampleN >= 2 && mp.avgValueGained < 0) alerts.push({ sev: 'high', title: 'Losing Value', msg: 'You\'re losing ' + Math.abs(mp.avgValueGained) + ' DHQ per trade on average. Elite tier teams gain +' + wp.avgValueGained + '.' });
+            if (winnerTradeN >= 2 && wp.partnerPreference && wp.partnerPreference !== 'Unknown' && wp.partnerPreference !== mp.partnerPreference) alerts.push({ sev: 'low', title: 'Trade Partner Strategy', msg: 'Title teams most often trade against ' + cleanPreference(wp.partnerPreference) + '-type owners; you favor ' + cleanPreference(mp.partnerPreference) + '-type owners.' });
+
+            // (Removed dead boughtBar* bar-chart items — Trade Flow now renders the net
+            //  Buy/Sell posture via allFlowPos/tradeFlowRows; the old buy-only bars were unused.)
 
             // KPI card style
             const tKpiCardStyle = {
@@ -1115,24 +1167,27 @@ function AnalyticsPanel({
 
             const valueDeltaColor = mp.avgValueGained >= 0 ? goodColor : badColor;
             const marketProofItems = [
-                { label: 'Trade Frequency Edge', value: signedNum(Number((mp.avgTradesPerSeason - wp.avgTradesPerSeason).toFixed(1))), detail: 'Your trades per season vs elite-tier behavior.', tone: toneFromDelta(mp.avgTradesPerSeason - wp.avgTradesPerSeason), color: mp.avgTradesPerSeason >= wp.avgTradesPerSeason ? goodColor : warnColor },
+                { label: 'Trade Frequency Edge', value: signedNum(Number((mp.avgTradesPerSeason - wp.avgTradesPerSeason).toFixed(1))), detail: 'Your trades/season vs elite-tier behavior' + ((window.App?.LI?.leagueYears || []).length ? '.' : ' (season count assumed; league history thin).'), tone: toneFromDelta(mp.avgTradesPerSeason - wp.avgTradesPerSeason), color: mp.avgTradesPerSeason >= wp.avgTradesPerSeason ? goodColor : warnColor },
                 { label: 'Value Per Deal', value: signedNum(mp.avgValueGained, ' DHQ'), detail: 'Average DHQ gained/lost in completed trades.', tone: toneFromDelta(mp.avgValueGained), color: valueDeltaColor },
+                { label: 'Trade Win Rate', value: myWinRate == null ? '\u2014' : myWinRate + '%', detail: myWinRate == null ? 'No graded trades yet.' : (mp.tradesWon || 0) + 'W / ' + (mp.tradesFair || 0) + 'F / ' + (mp.tradesLost || 0) + 'L vs elite ' + (wWinRate == null ? 'n/a' : wWinRate + '%') + '.', tone: myWinRate == null ? 'warn' : ((wWinRate != null && myWinRate >= wWinRate) || myWinRate >= 50) ? 'good' : 'warn', color: myWinRate == null ? 'var(--silver)' : (myWinRate >= (wWinRate || 50)) ? goodColor : warnColor },
                 { label: 'FAAB Leverage', value: faabRemaining == null ? '\u2014' : '$' + faabRemaining.toLocaleString(), detail: waiverBudget ? Math.round(faabRemaining / Math.max(waiverBudget, 1) * 100) + '% of budget remaining.' : 'No FAAB budget configured.', tone: faabRemaining == null ? 'warn' : faabRemaining >= waiverBudget * 0.5 ? 'good' : 'warn', color: faabRemaining == null ? 'var(--silver)' : faabRemaining >= waiverBudget * 0.5 ? goodColor : warnColor },
-                { label: 'Best Waiver Yield', value: topEffPos ? posLabel(topEffPos[0]) : '\u2014', detail: topEffPos ? (topEffPos[1].dhqPerDollar || 0) + ' DHQ per FAAB dollar.' : 'Bid outcome sample is still thin.', tone: topEffPos ? 'good' : 'warn', color: topEffPos ? goodColor : warnColor },
+                { label: 'FAAB Bargain Spot', value: topBargain ? posLabel(topBargain.pos) : '\u2014', detail: topBargain ? 'Avg bid $' + Math.round(topBargain.avgBid) + ' below $' + Math.round(topBargain.med) + ' median, ' + topBargain.dhqPerDollar + ' DHQ/$.' : 'No position is priced below its median yet.', tone: topBargain ? 'good' : 'warn', color: topBargain ? goodColor : warnColor },
+                { label: 'Best Waiver Yield', value: (topEffPos && (topEffPos[1].count || 0) >= 2) ? posLabel(topEffPos[0]) : '\u2014', detail: topEffPos ? (topEffPos[1].dhqPerDollar || 0) + ' DHQ/FAAB-$ (hindsight, ' + (topEffPos[1].count || 0) + ' claims).' : 'Bid outcome sample is still thin.', tone: (topEffPos && (topEffPos[1].count || 0) >= 2) ? 'good' : 'warn', color: (topEffPos && (topEffPos[1].count || 0) >= 2) ? goodColor : warnColor },
             ];
-            const tradeFlowRows = allBoughtPos.map(pos => ({
+            // Net Buy/Sell Posture: positionsSold is already returned by the engine but was unused here.
+            const allFlowPos = [...new Set([...Object.keys(wp.positionsBought||{}), ...Object.keys(mp.positionsBought||{}), ...Object.keys(wp.positionsSold||{}), ...Object.keys(mp.positionsSold||{})])].filter(p => p !== 'UNK').sort();
+            const tradeFlowRows = allFlowPos.map(pos => ({
                 label: posLabel(pos),
-                yours: (mp.positionsBought || {})[pos] || 0,
-                benchmark: (wp.positionsBought || {})[pos] || 0,
+                yours: ((mp.positionsBought||{})[pos]||0) - ((mp.positionsSold||{})[pos]||0),
+                benchmark: ((wp.positionsBought||{})[pos]||0) - ((wp.positionsSold||{})[pos]||0),
                 suffix: '',
-                format: v => Math.round(v),
+                format: v => signedNum(Math.round(v)),
                 color: 'var(--k-7c6bf8, #7c6bf8)',
             }));
             const marketRows = [
-                { kicker: 'Partner Archetype', label: 'Elite teams trade with', detail: 'Preferred counterparty posture among title teams.', value: cleanPreference(wp.partnerPreference), color: 'var(--gold)' },
-                { kicker: 'Your Pattern', label: 'You trade with', detail: 'Your observed partner preference.', value: cleanPreference(mp.partnerPreference), color: 'var(--k-4ecdc4, #4ecdc4)' },
-                { kicker: 'Top Price Position', label: topFaabPos ? posLabel(topFaabPos[0]) : 'No FAAB history', detail: topFaabPos ? 'Average winning bid across waiver history.' : 'Transactions have not produced a market map yet.', value: topFaabPos ? '$' + Math.round(topFaabPos[1].avg || 0) : '\u2014', color: warnColor },
-                { kicker: 'Winner Timing', label: 'Market entry point', detail: 'When title teams usually create transaction value.', value: (wa.winnerTiming?.early || 0) >= 0.5 ? 'Early' : (wa.winnerTiming?.mid || 0) >= (wa.winnerTiming?.late || 0) ? 'Mid' : 'Late', color: goodColor },
+                { kicker: 'Partner Archetype', label: 'Elite teams trade with', detail: 'Preferred counterparty DNA among title teams.', value: cleanPreference(wp.partnerPreference), color: 'var(--gold)' },
+                { kicker: 'Your Pattern', label: 'You trade with', detail: 'Your observed partner-DNA preference.', value: cleanPreference(mp.partnerPreference), color: 'var(--k-4ecdc4, #4ecdc4)' },
+                { kicker: 'Winner Trade Timing', label: 'Trade entry point', detail: 'When title teams usually create value via trades (trade timing, not waiver claims).', value: (wa.winnerTiming?.early || 0) >= 0.5 ? 'Early' : (wa.winnerTiming?.mid || 0) >= (wa.winnerTiming?.late || 0) ? 'Mid' : 'Late', color: goodColor },
             ];
 
             // ── Trade Strategy Summary ──
@@ -1156,9 +1211,10 @@ function AnalyticsPanel({
                     thesis="Market analytics should explain owner behavior and price movement. This view separates trade liquidity, deal quality, waiver pricing, FAAB leverage, and position flow before sending you to Trade Center or Free Agency."
                     stats={[
                         { label: 'Trade Pattern', value: tradeActivity || 'No trades', sub: tradeEfficiency || 'sample pending', color: mp.avgValueGained >= 0 ? goodColor : badColor },
-                        { label: 'Elite Volume', value: wp.avgTradesPerSeason, sub: 'trades per season' },
+                        { label: 'Elite Volume', value: wp.avgTradesPerSeason, sub: 'trades/season \u00b7 n=' + winnerN },
                         { label: 'High Price Room', value: topFaabPos ? posLabel(topFaabPos[0]) : '\u2014', sub: topFaabPos ? '$' + Math.round(topFaabPos[1].avg || 0) + ' avg bid' : 'bid history thin' },
-                        { label: 'FAAB Left', value: faabRemaining == null ? '\u2014' : '$' + faabRemaining.toLocaleString(), sub: waiverBudget ? '$' + waiverBudget.toLocaleString() + ' budget' : 'no budget' },
+                        { label: 'FAAB Runway', value: runwayWeeks == null ? (faabRemaining == null ? '\u2014' : '$' + faabRemaining.toLocaleString()) : runwayWeeks + ' wk', sub: runwayWeeks == null ? 'pace est. pending' : '~$' + Math.round(burnPerWeek) + '/wk est.', color: runwayWeeks == null ? undefined : runwayWeeks <= 2 ? warnColor : goodColor },
+                        { label: 'Benchmark Confidence', value: benchHigh ? 'High' : 'Low', sub: (benchSource === 'brackets' ? 'bracket' : 'standings') + ', n=' + winnerN, color: benchConfColor },
                     ]}
                 />
 
@@ -1178,8 +1234,8 @@ function AnalyticsPanel({
                     </div>
                     <div className="analytics-lab-card">
                         <span>Market Clock</span>
-                        <strong>When Winners Act</strong>
-                        <p>Winner timing versus the league baseline. This is the calendar pressure behind buy/sell windows.</p>
+                        <strong>When Winners Trade</strong>
+                        <p>When title teams create value via TRADES vs the league baseline (trade timing, not waiver claims).</p>
                         <div className="analytics-mini-table">
                             {[
                                 ['Early', wa.winnerTiming?.early, wa.leagueTiming?.early],
@@ -1195,8 +1251,8 @@ function AnalyticsPanel({
                 <div className="analytics-lab-grid">
                     <div className="analytics-lab-card">
                         <span>Trade Flow</span>
-                        <strong>Positions Acquired Via Trade</strong>
-                        <p>Bars show the positions you buy. Gold markers show elite-tier acquisition frequency.</p>
+                        <strong>Net Buy/Sell Posture by Position</strong>
+                        <p>Positive = net buyer, negative = net seller (acquired minus sold). Gold marker = elite-tier posture.</p>
                         {tradeFlowRows.length ? <AnalyticsDeltaRows rows={tradeFlowRows} benchmarkLabel="Elite" /> : <div className="analytics-proof-card"><strong>No position trade flow yet</strong><em>Completed trade data has not yielded position movement.</em></div>}
                     </div>
                     <div className="analytics-lab-card">
@@ -1211,8 +1267,10 @@ function AnalyticsPanel({
                 {tr.myLast5 && tr.myLast5.length > 0 && (
                 <AnalyticsReadout title="Your Recent Trade Performance" detail="Last five completed deals">
                         {tr.myLast5.map((trade, i) => {
-                            const netDhq = trade.netDhq || 0;
-                            const result = netDhq > 200 ? 'Won' : netDhq < -200 ? 'Lost' : 'Fair';
+                            // Engine emits `net` (and now a `netDhq` alias); the old code read only netDhq and showed +0/Fair always.
+                            const netDhq = Number.isFinite(Number(trade.netDhq)) ? Number(trade.netDhq) : Number(trade.net || 0);
+                            const grade = trade.result || (netDhq > 200 ? 'won' : netDhq < -200 ? 'lost' : 'fair');
+                            const result = grade === 'won' ? 'Won' : grade === 'lost' ? 'Lost' : 'Fair';
                             const resultColor = result === 'Won' ? goodColor : result === 'Lost' ? badColor : warnColor;
                             return (
                                 <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1230,6 +1288,32 @@ function AnalyticsPanel({
                             );
                         })}
                 </AnalyticsReadout>
+                )}
+
+                {/* ── BIGGEST WIN / LOSS (all-time, most lopsided) ── */}
+                {(tr.myBiggestWin || tr.myBiggestLoss) && (
+                <div className="analytics-lab-grid">
+                    {tr.myBiggestWin && (
+                        <div className="analytics-lab-card">
+                            <span>Best Deal</span><strong>Biggest Win</strong>
+                            <p style={{ color: goodColor, fontWeight: 700 }}>{signedNum(tr.myBiggestWin.netDhq != null ? tr.myBiggestWin.netDhq : tr.myBiggestWin.net, ' DHQ')}</p>
+                            <div className="analytics-mini-table">
+                                <div><strong>Got</strong><span>{assetListText(tr.myBiggestWin.got)}</span></div>
+                                <div><strong>Gave</strong><span>{assetListText(tr.myBiggestWin.gave)}</span></div>
+                            </div>
+                        </div>
+                    )}
+                    {tr.myBiggestLoss && (
+                        <div className="analytics-lab-card">
+                            <span>Worst Deal</span><strong>Biggest Loss</strong>
+                            <p style={{ color: badColor, fontWeight: 700 }}>{signedNum(tr.myBiggestLoss.netDhq != null ? tr.myBiggestLoss.netDhq : tr.myBiggestLoss.net, ' DHQ')}</p>
+                            <div className="analytics-mini-table">
+                                <div><strong>Got</strong><span>{assetListText(tr.myBiggestLoss.got)}</span></div>
+                                <div><strong>Gave</strong><span>{assetListText(tr.myBiggestLoss.gave)}</span></div>
+                            </div>
+                        </div>
+                    )}
+                </div>
                 )}
 
                 {/* ── INSIGHT CARDS ROW ── */}
@@ -1256,7 +1340,7 @@ function AnalyticsPanel({
         {/* Phase 8: All Players / Draft Picks / Custom Reports — ex-League Map sub-views
             rendered inline via LeagueMapTab's embed mode. Local state lives in AnalyticsPanel
             so sort/filter/search persist as the user moves between sub-tabs. */}
-        {(analyticsViewTab === 'players' || analyticsViewTab === 'picks' || analyticsViewTab === 'reports') && React.createElement(window.AnalyticsLeagueEmbed || (() => null), {
+        {(analyticsViewTab === 'assets' || analyticsViewTab === 'reports') && React.createElement(window.AnalyticsLeagueEmbed || (() => null), {
             analyticsTab: analyticsViewTab, standings, currentLeague, playersData, statsData, sleeperUserId,
             myRoster, leagueSkin: resolvedLeagueSkin, activeYear, timeRecomputeTs, setActiveTab, getAcquisitionInfo, getOwnerName,
         })}

@@ -21,7 +21,7 @@
             );
         }
 
-        const tierLabel = targetTier === 'scout' ? 'Scout' : 'War Room';
+        const tierLabel = targetTier === 'scout' ? 'Scout' : 'Dynasty HQ';
 
         return React.createElement('div', { style: { background:'linear-gradient(135deg, var(--off-black), var(--charcoal))', border:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius:'var(--card-radius)', padding:'24px', textAlign:'center', maxWidth:'480px', margin:'24px auto' } },
             React.createElement('div', { style: { fontFamily:'Rajdhani, sans-serif', fontSize:'1.6rem', color:'var(--gold)', letterSpacing:'0.06em', marginBottom:'8px' } }, title || 'UPGRADE TO UNLOCK'),
@@ -407,7 +407,7 @@
                     React.createElement('div', { style: { fontSize: '2rem', marginBottom: '12px' } }, '\u26A0\uFE0F'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.4rem', color: 'var(--white)', marginBottom: '8px' } }, 'Something went wrong'),
                     React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.6, marginBottom: '16px' } },
-                        'War Room encountered an error. This usually fixes itself on reload.'),
+                        'Dynasty HQ encountered an error. This usually fixes itself on reload.'),
                     React.createElement('button', {
                         onClick: () => { this.setState({ hasError: false, error: null }); },
                         style: { padding: '10px 24px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '6px', fontFamily: 'var(--font-body)', fontSize: '1rem', cursor: 'pointer', marginRight: '8px' }

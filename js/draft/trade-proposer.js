@@ -64,9 +64,9 @@
         );
     }
 
-    // Mounts the main Trade Center Find-a-Trade auto-proposer inside the draft Trade
-    // Desk, fed by draft-context value/assessment adapters. The draft renders inside the
-    // main app, so TradeFinderTab's globals (AlexSettings, LeagueSkin, LI) are present.
+    // NOTE: the draft "Find a Trade" tab is a native reimplementation (DraftTradeFinder,
+    // below) built on sim.findFairPackages — it does NOT mount the main app's
+    // window.TradeFinderTab. Keep the two analyzers in sync when changing trade logic.
     // Asset option groups for a roster — picks of all years (current draft + future) in
     // ONE group, players in another. Shared shape with the Build dropdowns.
     function buildAssetGroups(state, rosterId) {
@@ -84,7 +84,8 @@
         const playerIds = (roster?.players || []).filter(pid => pid && !pickedPids.has(pid));
         const playerOpts = playerIds.map(pid => ({ pid, val: sim.playerValueFor ? sim.playerValueFor(pid) : 0 })).sort((a, b) => b.val - a.val).slice(0, 60).map(({ pid, val }) => { const pd = pdata[pid] || {}; const pos = pd.position || pd.fantasy_positions?.[0] || ''; const nm = pd.full_name || ((pd.first_name || '') + ' ' + (pd.last_name || '')).trim() || pid; return { key: 'plr:' + pid, type: 'player', label: nm + (pos ? ' · ' + pos : ''), sub: fmtDhq(val), asset: pid }; });
         return [
-            { label: 'Picks', options: [...pickOpts, ...futureOpts] },
+            { label: 'This draft', options: pickOpts },
+            { label: 'Future picks', options: futureOpts },
             { label: 'Players', options: playerOpts },
         ].filter(g => g.options.length);
     }
@@ -331,6 +332,7 @@
                     theirGivePlayers: [],
                     theirGiveFuture: [],
                     theirGiveFaab: 0,
+                    finderTargetKey: '',
                     status: 'building',
                     counterOffer: null,
                     lastEvaluation: null,
@@ -382,7 +384,8 @@
         // Picks of all years (current draft + future seasons) share one group, ordered
         // earliest-first; players are their own group.
         const buildGroups = (picks, pids, futures) => [
-            { label: 'Picks', options: [...pickOpts(picks), ...futureOpts(futures)] },
+            { label: 'This draft', options: pickOpts(picks) },
+            { label: 'Future picks', options: futureOpts(futures) },
             { label: 'Players', options: playerOpts(pids) },
         ].filter(g => g.options.length);
         const giveGroups = buildGroups(myRemainingPicks, myPlayerIds, myFuturePicks);
@@ -483,6 +486,8 @@
                     theirGive: c.theirGive || [],
                     myGivePlayers: c.myGivePlayers || [],
                     theirGivePlayers: c.theirGivePlayers || [],
+                    myGiveFuture: c.myGiveFuture || [],
+                    theirGiveFuture: c.theirGiveFuture || [],
                     myGiveFaab: c.myGiveFaab || 0,
                     theirGiveFaab: c.theirGiveFaab || 0,
                     status: 'building',
@@ -609,7 +614,7 @@
                             lineHeight: 1.35,
                         }}>
                             <strong style={{ color: 'rgba(155,138,251,1)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live Draft Mode</strong>
-                            {' '}Stages a package only. War Room does not write trades to Sleeper.
+                            {' '}Stages a package only. Dynasty HQ does not write trades to Sleeper.
                         </div>
                     )}
                     {isSending && (
@@ -702,12 +707,13 @@
                     {/* Analyzer mode toggle — Build vs Find (Trade Center parity) */}
                     <AnalyzerModeToggle mode={analyzerMode} onChange={setAnalyzerMode} disabled={isSending || isAccepted} />
 
+                    {/* Partner needs + tradable assets — always visible (Build AND Find) */}
+                    <OwnerIntelCard profile={partnerProfile} />
+
                     {analyzerMode === 'find' ? (
                         <DraftTradeFinder state={state} dispatch={dispatch} />
                     ) : (
                     <React.Fragment>
-                    <OwnerIntelCard profile={partnerProfile} />
-
                     <SuggestionRail
                         suggestions={packageSuggestions}
                         onLoad={loadProposal}
@@ -1019,13 +1025,17 @@
 
     function proposalAssets(proposal, side) {
         const picks = side === 'my' ? proposal.myGive : proposal.theirGive;
+        const futures = side === 'my' ? proposal.myGiveFuture : proposal.theirGiveFuture;
         const players = side === 'my' ? proposal.myGivePlayers : proposal.theirGivePlayers;
         const faab = side === 'my' ? proposal.myGiveFaab : proposal.theirGiveFaab;
         const items = [];
         (picks || []).slice(0, 3).forEach(p => items.push(formatPick(p)));
+        (futures || []).slice(0, 2).forEach(fp => items.push(fp.year + ' R' + fp.round));
         (players || []).slice(0, 2).forEach(pid => items.push(playerName(pid)));
         if (faab > 0) items.push('$' + faab + ' FAAB');
-        if ((picks || []).length + (players || []).length > items.length) items.push('+' + (((picks || []).length + (players || []).length) - items.length));
+        const shownAssets = Math.min((picks || []).length, 3) + Math.min((futures || []).length, 2) + Math.min((players || []).length, 2);
+        const totalAssets = (picks || []).length + (futures || []).length + (players || []).length;
+        if (totalAssets > shownAssets) items.push('+' + (totalAssets - shownAssets));
         return items.length ? items.join(', ') : 'No assets';
     }
 
@@ -1041,7 +1051,7 @@
             'Live draft trade offer to ' + partnerName,
             'I give: ' + giveText,
             'I get: ' + getText,
-            'War Room read: ' + likelihood + '% acceptance vs ' + line + '% Buyer Line, grade ' + grade + '.',
+            'Dynasty HQ read: ' + likelihood + '% acceptance vs ' + line + '% Buyer Line, grade ' + grade + '.',
             reason,
         ].join('\n');
         return {
@@ -1053,6 +1063,8 @@
                 theirGive: proposal?.theirGive || [],
                 myGivePlayers: proposal?.myGivePlayers || [],
                 theirGivePlayers: proposal?.theirGivePlayers || [],
+                myGiveFuture: proposal?.myGiveFuture || [],
+                theirGiveFuture: proposal?.theirGiveFuture || [],
                 myGiveFaab: proposal?.myGiveFaab || 0,
                 theirGiveFaab: proposal?.theirGiveFaab || 0,
             },

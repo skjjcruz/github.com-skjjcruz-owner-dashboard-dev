@@ -157,6 +157,37 @@ test('trade window becomes a live trade card', () => {
   ok(trade.detail.includes('Owner Two'), 'trade detail names partner');
 });
 
+test('liveTradeEvolutionSignal buckets trades by round and classifies the room', () => {
+  const fn = ctx.DraftCC.liveDecisionEngine.liveTradeEvolutionSignal;
+  ok(typeof fn === 'function', 'helper exported');
+
+  const quiet = fn({ ...baseState, leagueSize: 12, rounds: 5, currentIdx: 30, completedTrades: [], draftTuning: { tradeActivity: 50 } });
+  eq(quiet.totalTrades, 0, 'no trades counted');
+  eq(quiet.currentRound, 3, 'currentRound from currentIdx/leagueSize+1');
+  eq(quiet.draftClass, 'quiet', 'empty board past 2 rounds reads quiet');
+
+  const heavy = fn({
+    ...baseState, leagueSize: 12, rounds: 5, currentIdx: 14,
+    draftTuning: { tradeActivity: 50 },
+    completedTrades: [
+      { acceptedAt: 1, targetRosterId: 2 },
+      { acceptedAt: 3, fromRosterId: 4 },
+      { acceptedAt: 13, fromRosterId: 5 },
+    ],
+  });
+  eq(heavy.totalTrades, 3, 'all valid trades counted');
+  eq(heavy.byRound[1], 2, 'two trades bucketed into round 1 (idx 1,3)');
+  eq(heavy.byRound[2], 1, 'one trade bucketed into round 2 (idx 13)');
+  eq(heavy.draftClass, 'heavy', 'three early deals reads heavy');
+
+  const typical = fn({
+    ...baseState, leagueSize: 12, rounds: 5, currentIdx: 26,
+    draftTuning: { tradeActivity: 50 },
+    completedTrades: [{ acceptedAt: 5, fromRosterId: 2 }],
+  });
+  eq(typical.draftClass, 'typical', 'one deal over ~3 rounds reads typical');
+});
+
 console.log('\n');
 if (failures.length) {
   console.log(failures.join('\n'));

@@ -149,6 +149,30 @@
         return { w, l };
     }
 
+    // semiFinalistRosters — the (up to 4) season roster_ids that reached the semifinals:
+    // the two games that FEED the p===1 final (via t#_from.w), and both participants of each.
+    // Used to populate championships[].semiFinals so dynasty-score counts final-four berths.
+    function semiFinalistRosters(bracket) {
+        if (!Array.isArray(bracket) || !bracket.length) return [];
+        const byId = new Map(bracket.map(m => [m.m, m]));
+        let fin = bracket.find(m => m.p === 1);
+        if (!fin) {
+            const maxR = Math.max(...bracket.map(m => m.r || 0));
+            const finals = bracket.filter(m => (m.r || 0) === maxR);
+            if (finals.length === 1) fin = finals[0];
+        }
+        if (!fin) return [];
+        const out = [];
+        [fin.t1_from, fin.t2_from].forEach(fr => {
+            if (fr && fr.w != null && byId.has(fr.w)) {
+                const g = byId.get(fr.w);
+                if (g.w != null) out.push(g.w);
+                if (g.l != null) out.push(g.l);
+            }
+        });
+        return out;
+    }
+
     function rosterFinish(place, w, l, t) {
         if (place === 1) return 'Champion';
         if (place === 2) return 'Runner-Up';
@@ -211,6 +235,10 @@
             (s.rosters || []).forEach(r => { rosterByRid[r.roster_id] = r; });
 
             const placements = placementsFromBracket(s.bracket);
+            // Every team that appears in the winners (championship) bracket made the playoffs —
+            // including first-round losers who never reach a placement game.
+            const bracketTeams = new Set();
+            (s.bracket || []).forEach(g => { if (g && g.w != null) bracketTeams.add(g.w); if (g && g.l != null) bracketTeams.add(g.l); });
 
             // Championship record — capture both the current-roster mapping (for
             // achievements / "Dirty Mike has 2 titles") and the historical owner
@@ -229,6 +257,11 @@
                     championships[season] = {
                         champion: champCur ?? null,
                         runnerUp: runCur ?? null,
+                        // Final-four as CURRENT roster_ids (same space as champion/runnerUp), so
+                        // league-detail dynasty-score reads c.semiFinals consistently (was undefined).
+                        semiFinals: semiFinalistRosters(s.bracket)
+                            .map(rid => { const ro = rosterByRid[rid]; return ro && ro.owner_id ? currentRosterByOwner[ro.owner_id] : null; })
+                            .filter(x => x != null),
                         championName: champUser?.metadata?.team_name || champUser?.display_name || (champRid ? 'Team ' + champRid : null),
                         championAvatar: champUser?.avatar || null,
                         championOwnerId: champRoster?.owner_id || null,
@@ -291,9 +324,9 @@
                 oh.tenure += 1;
 
                 const place = placements[r.roster_id] || null;
-                if (place === 1) { oh.championships++; oh.champSeasons.push(String(season)); oh.playoffAppearances++; }
-                else if (place === 2) { oh.runnerUps++; oh.runnerUpSeasons.push(String(season)); oh.playoffAppearances++; }
-                else if (place && place <= 6) { oh.playoffAppearances++; }
+                if (place === 1) { oh.championships++; oh.champSeasons.push(String(season)); }
+                else if (place === 2) { oh.runnerUps++; oh.runnerUpSeasons.push(String(season)); }
+                if (bracketTeams.has(r.roster_id)) oh.playoffAppearances++;
 
                 const finish = rosterFinish(place, w, l, t);
                 oh.seasonHistory.push({ season: String(season), wins: w, losses: l, ties: t, fpts, fptsAg, place, finish, rosterId: r.roster_id });

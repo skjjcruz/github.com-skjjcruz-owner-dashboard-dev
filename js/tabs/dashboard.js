@@ -102,7 +102,7 @@ const WIDGET_MODULES = {
     'field-notes': {
         label: 'Field Notes',
         icon: '📋',
-        description: 'Intel logged from War Room Scout sessions',
+        description: 'Intel logged from Scout sessions',
         accent: () => T().color?.('info') || 'var(--k-00c8b4, #00c8b4)',
         metrics: [],
         sizes: ['slim', 'narrow', 'lg', 'tall'],

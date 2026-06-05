@@ -473,25 +473,214 @@ function ReportSubView({
 }
 
 // ══════════════════════════════════════════════════════════════════
-// All Players column registry — parity with My Roster's customizable
-// columns. Each entry declares label, width, and a cell renderer.
-// Deferred missed item: bring All Players list up to Roster-column parity.
+// All Players column registry — the single source of truth for the column picker
+// on the combined Players & Picks screen. This is a SUPERSET of every column the
+// Custom Report builder offers for the 'players' data source (getPlayerColumns):
+//   report 'name'->name, 'pos'->pos, 'team'->nflTeam, 'age'->age, 'dhq'->dhq,
+//   'ppg'->ppg, 'peakYrs'->peakYrs, 'owner'->owner, 'tier'->tier, 'acquired'->acq.
+// Plus two extras (yoe, peak bar). Every key here has a renderCell case below and a
+// width (the grid template + min-width math depend on it), so all are toggleable.
+// To add a new report column: add an entry here (with width) AND a renderCell case.
 // ══════════════════════════════════════════════════════════════════
 const ALL_PLAYERS_COLUMNS = [
-    { key: 'name',     label: 'Player',  width: '1fr',   toggleable: false },
-    { key: 'pos',      label: 'Pos',     width: '36px' },
-    { key: 'nflTeam',  label: 'NFL',     width: '44px' },
-    { key: 'age',      label: 'Age',     width: '32px' },
-    { key: 'yoe',      label: 'YOE',     width: '36px' },
-    { key: 'peak',     label: 'Peak',    width: '60px' },
-    { key: 'peakYrs',  label: 'Pk Yrs',  width: '42px' },
-    { key: 'dhq',      label: 'DHQ',     width: '54px', sortable: true, sortKey: 'dhq' },
-    { key: 'ppg',      label: 'PPG',     width: '42px', sortable: true, sortKey: 'ppg' },
-    { key: 'tier',     label: 'Tier',    width: '72px' },
-    { key: 'owner',    label: 'Owner',   width: '100px', sortable: true, sortKey: 'team' },
-    { key: 'acq',      label: 'Acq',     width: '72px' },
+    { key: 'name',     label: 'Player',   width: '1fr',   toggleable: false },
+    { key: 'pos',      label: 'Pos',      width: '36px' },
+    { key: 'nflTeam',  label: 'NFL Team', width: '60px' },
+    { key: 'age',      label: 'Age',      width: '32px' },
+    { key: 'yoe',      label: 'YOE',      width: '36px' },
+    { key: 'peak',     label: 'Peak',     width: '60px' },
+    { key: 'peakYrs',  label: 'Peak Yrs', width: '52px' },
+    { key: 'dhq',      label: 'DHQ',      width: '54px', sortable: true, sortKey: 'dhq' },
+    { key: 'ppg',      label: 'PPG',      width: '42px', sortable: true, sortKey: 'ppg' },
+    { key: 'tier',     label: 'Tier',     width: '72px' },
+    { key: 'owner',    label: 'Owner',    width: '100px', sortable: true, sortKey: 'team' },
+    { key: 'acq',      label: 'Acquired', width: '72px' },
 ];
-const ALL_PLAYERS_DEFAULT_VISIBLE = ['name', 'pos', 'age', 'peak', 'dhq', 'ppg', 'owner', 'acq'];
+// Default visible = the report-builder parity set, so the combined screen opens with
+// report-grade columns and users can toggle the extras (YOE, Peak bar) from the picker.
+const ALL_PLAYERS_DEFAULT_VISIBLE = ['name', 'pos', 'nflTeam', 'age', 'dhq', 'ppg', 'peakYrs', 'tier', 'owner', 'acq'];
+
+// ══════════════════════════════════════════════════════════════════
+// RosterPlayerDossier — the My-Roster-style inline player card, reused in
+// the Analytics All Players list. Edit D ("root out and replace the player
+// cards in analytics with the ones from my roster"): clicking an All Players
+// row now expands THIS dossier inline (matching the My Roster experience)
+// instead of opening the generic modal. Self-contained: it computes its own
+// dynasty read / peak / rank from globals so it works for any player —
+// rostered by anyone or in the draft pool — not just your own roster.
+// ══════════════════════════════════════════════════════════════════
+function RosterPlayerDossier({ x, playersData, statsData, currentLeague, normPos, onCollapse }) {
+    const App = window.App || {};
+    const p = x.p || {};
+    const pos = x.pos;
+    const pid = x.pid;
+    const dhq = x.dhq || 0;
+    const age = x.age || p.age || null;
+    const posColors = App.POS_COLORS || {};
+    const posLabel = (pp) => App.posLabel?.(pp) || (pp === 'DEF' ? 'D/ST' : pp);
+    const isElite = typeof App.isElitePlayer === 'function' ? App.isElitePlayer(pid) : dhq >= 7000;
+    const band = isElite ? 'Elite' : dhq >= 4000 ? 'Starter' : dhq >= 2000 ? 'Depth' : 'Stash';
+    const dhqCol = dhq >= 7000 ? 'var(--good)' : dhq >= 4000 ? 'var(--k-3498db, #3498db)' : dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))';
+    const dhqBg = dhq >= 7000 ? 'rgba(46,204,113,0.12)' : dhq >= 4000 ? 'rgba(52,152,219,0.12)' : 'var(--acc-fill2, rgba(212,175,55,0.1))';
+    const fmtHeight = (h) => {
+        if (!h) return '';
+        const n = parseInt(h, 10);
+        if (!isNaN(n) && String(h).indexOf("'") === -1 && n > 40 && n < 90) return Math.floor(n / 12) + "'" + (n % 12) + '"';
+        return String(h);
+    };
+    const stat = statsData?.[pid] || {};
+    const gp = stat.gp || 0;
+    const ppg = x.ppg || 0;
+    const posP75 = App.POS_PPG_P75 || {};
+
+    // Peak / age-curve read.
+    const nP = pos === 'DE' || pos === 'DT' ? 'DL' : (pos === 'CB' || pos === 'S' ? 'DB' : pos);
+    const curve = typeof App.getAgeCurve === 'function' ? App.getAgeCurve(nP) : { peak: (App.peakWindows || {})[nP] || [24, 29], decline: [30, 32] };
+    const peakWin = curve.peak || (App.peakWindows || {})[nP] || [24, 29];
+    const [pLo, pHi] = peakWin;
+    const declineHi = (curve.decline && curve.decline[1]) || (pHi + 3);
+    const peakPhase = !age ? '—' : age < pLo ? 'PRE' : age <= pHi ? 'PEAK' : 'POST';
+    const peakYrsLeft = age && age <= pHi ? Math.max(0, pHi - age) : 0;
+    const valueYrsLeft = age && age <= declineHi ? Math.max(0, declineHi - age) : 0;
+
+    // Position rank across every rostered player by DHQ (mirrors My Roster's RANK box).
+    const posRank = (() => {
+        try {
+            const scores = App.LI?.playerScores || {};
+            const norm = typeof normPos === 'function' ? normPos : (q) => q;
+            const all = (currentLeague?.rosters || [])
+                .flatMap(ros => (ros.players || []).filter(pid2 => (norm(playersData?.[pid2]?.position) || playersData?.[pid2]?.position) === pos))
+                .map(pid2 => ({ pid: pid2, dhq: scores[pid2] || 0 }))
+                .sort((a, b) => b.dhq - a.dhq);
+            const idx = all.findIndex(e => String(e.pid) === String(pid));
+            return idx >= 0 ? pos + (idx + 1) : null;
+        } catch { return null; }
+    })();
+
+    // Dynasty read — plain-language summary from band + peak phase.
+    const dynastyRead = (() => {
+        const lead = band + ' ' + posLabel(pos) + (age ? ', age ' + age : '') + '.';
+        const tail = peakPhase === 'PRE' ? ' Ascending — value should climb as the role solidifies.'
+            : peakPhase === 'PEAK' ? ' In his prime window — production and value are at their height.'
+            : peakPhase === 'POST' ? ' Past peak — weigh present value over a long-term hold.'
+            : ' Limited age data — judge on role and production.';
+        const own = x.isPool ? ' Currently in the draft pool (unrostered).' : x.isMe ? ' On your roster.' : x.teamName ? ' Rostered by ' + x.teamName + '.' : '';
+        return lead + tail + own;
+    })();
+
+    // Player tags — shared global store, same as My Roster.
+    const [, setTagTick] = React.useState(0); // bump to re-render after a tag toggle
+    const leagueId = currentLeague?.id || currentLeague?.league_id || '';
+    const activeTag = window._playerTags?.[pid];
+    const TAGS = [
+        { tag: 'trade', label: 'TRADE BLOCK', bg: 'rgba(240,165,0,0.15)', col: 'var(--warn)', border: 'rgba(240,165,0,0.3)' },
+        { tag: 'cut', label: 'CUT', bg: 'rgba(231,76,60,0.15)', col: 'var(--bad)', border: 'rgba(231,76,60,0.3)' },
+        { tag: 'untouchable', label: 'UNTOUCHABLE', bg: 'rgba(46,204,113,0.15)', col: 'var(--good)', border: 'rgba(46,204,113,0.3)' },
+        { tag: 'watch', label: 'WATCH', bg: 'rgba(52,152,219,0.15)', col: 'var(--k-3498db, #3498db)', border: 'rgba(52,152,219,0.3)' },
+    ];
+
+    const dhqPct = Math.min(100, Math.round((dhq / 10000) * 100));
+    const dhqFilled = Math.round(dhqPct / 10);
+    const dhqGaugeClass = dhq >= 7000 ? 'filled-green' : dhq >= 4000 ? 'filled' : 'filled-red';
+    const statBoxes = [
+        { label: 'DHQ', val: dhq > 0 ? dhq.toLocaleString() : '—', col: dhqCol, gauge: true },
+        { label: 'RANK', val: posRank || '—', col: 'var(--gold)' },
+        { label: 'PPG', val: ppg || '—', col: ppg >= (posP75[pos] || 10) ? 'var(--good)' : 'var(--text-primary)' },
+        { label: 'GP', val: gp || '—', col: gp >= 14 ? 'var(--good)' : gp >= 10 ? 'var(--silver)' : 'var(--bad)' },
+        { label: 'BAND', val: band, col: dhqCol },
+    ];
+    const ages = Array.from({ length: 17 }, (_, i) => i + 20);
+
+    return (
+        <div style={{ borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', background: 'linear-gradient(180deg, var(--surf-solid, rgba(18,18,24,0.99)), var(--surf-solid, rgba(6,6,10,0.99)))', padding: '12px 14px', animation: 'wrFadeIn 0.2s ease' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 0.95fr) minmax(0, 1.4fr) minmax(0, 0.8fr)', gap: '10px', marginBottom: '10px', alignItems: 'stretch' }}>
+                {/* Header: photo + bio */}
+                <div style={{ display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: '10px', alignItems: 'center', background: 'var(--ov-1, rgba(255,255,255,0.022))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px' }}>
+                    <div style={{ flexShrink: 0, position: 'relative' }}>
+                        <img src={'https://sleepercdn.com/content/nfl/players/' + pid + '.jpg'} alt="" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} style={{ width: '72px', height: '72px', borderRadius: '8px', objectFit: 'cover', objectPosition: 'top', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))' }} />
+                        <div style={{ display: 'none', width: '72px', height: '72px', borderRadius: '8px', background: 'var(--charcoal)', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', fontWeight: 700, color: 'var(--silver)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))' }}>{(p.first_name || '?')[0]}{(p.last_name || '?')[0]}</div>
+                        <div style={{ position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '1px 7px', borderRadius: '7px', background: (posColors[pos] || 'var(--k-666666, #666666)') + '22', color: posColors[pos] || 'var(--silver)', whiteSpace: 'nowrap' }}>{posLabel(pos)}</div>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.18rem', color: 'var(--white)', letterSpacing: '0.01em', lineHeight: 1.08 }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || 'Player'}</span>
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginTop: '4px', lineHeight: 1.4 }}>
+                            {p.team || 'FA'} {'·'} Age {age || '?'} {'·'} {p.years_exp || 0}yr exp
+                            {fmtHeight(p.height) ? ' · ' + fmtHeight(p.height) : ''}
+                            {p.weight ? ' · ' + p.weight + 'lbs' : ''}
+                            {p.college ? ' · ' + p.college : ''}
+                        </div>
+                        {p.injury_status && <div style={{ fontSize: '0.72rem', color: 'var(--bad)', fontWeight: 700, marginTop: '5px' }}>{p.injury_status}</div>}
+                    </div>
+                </div>
+                {/* Dynasty Read */}
+                <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
+                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.42 }}>{dynastyRead}</div>
+                </div>
+                {/* Decision Stack */}
+                <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
+                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '7px' }}>Decision Stack</div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px', background: dhqBg, color: dhqCol }}>{band} {'·'} {dhq.toLocaleString()} DHQ</span>
+                        <span style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: '999px', background: peakPhase === 'PRE' ? 'rgba(46,204,113,0.1)' : peakPhase === 'POST' ? 'rgba(231,76,60,0.1)' : 'var(--acc-fill2, rgba(212,175,55,0.08))', color: peakPhase === 'PRE' ? 'var(--good)' : peakPhase === 'POST' ? 'var(--bad)' : 'var(--gold)', fontWeight: 700 }}>{peakPhase}</span>
+                    </div>
+                    <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '0.72rem', color: 'var(--silver)' }}>
+                        <div><span style={{ opacity: 0.55 }}>Owner </span><strong style={{ color: 'var(--white)' }}>{x.isPool ? 'Draft Pool' : (x.teamName || '—')}</strong></div>
+                        <div><span style={{ opacity: 0.55 }}>Depth </span><strong style={{ color: 'var(--white)' }}>{p.depth_chart_order != null ? pos + (p.depth_chart_order + 1) : '—'}</strong></div>
+                        <div><span style={{ opacity: 0.55 }}>Peak </span><strong style={{ color: 'var(--white)' }}>{peakYrsLeft > 0 ? peakYrsLeft + ' yrs' : '—'}</strong></div>
+                        <div><span style={{ opacity: 0.55 }}>Value </span><strong style={{ color: 'var(--white)' }}>{valueYrsLeft > 0 ? valueYrsLeft + ' yrs' : '—'}</strong></div>
+                    </div>
+                </div>
+            </div>
+            {/* Stat boxes */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: '6px', marginBottom: '10px' }}>
+                {statBoxes.map((s, i) => (
+                    <div key={i} style={{ background: 'var(--ov-2, rgba(255,255,255,0.026))', border: '1px solid var(--ov-4, rgba(255,255,255,0.055))', borderRadius: '7px', padding: '7px 6px', textAlign: 'center' }}>
+                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1rem', fontWeight: 550, color: s.col }}>{s.val}</div>
+                        {s.gauge && <div className="wr-gauge" style={{ marginTop: '3px' }}>{Array.from({ length: 10 }, (_, gi) => <div key={gi} className={'wr-gauge-seg' + (gi < dhqFilled ? ' ' + dhqGaugeClass : '')}></div>)}</div>}
+                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{s.label}</div>
+                    </div>
+                ))}
+            </div>
+            {/* Age curve */}
+            <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Age Curve</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>{'Currently age ' + (age || '?') + ' · ' + peakPhase + ' · ' + (peakYrsLeft > 0 ? '~' + peakYrsLeft + ' peak yr left' : valueYrsLeft > 0 ? '~' + valueYrsLeft + ' value yr left' : 'Past value window')}</div>
+                </div>
+                <div style={{ display: 'flex', height: '22px', borderRadius: '5px', overflow: 'hidden', gap: '1px' }}>
+                    {ages.map(a => {
+                        const col = a < pLo - 3 ? 'rgba(96,165,250,0.3)' : a < pLo ? 'rgba(46,204,113,0.45)' : (a >= pLo && a <= pHi) ? 'rgba(46,204,113,0.75)' : a <= declineHi ? 'var(--acc-line3, rgba(212,175,55,0.45))' : 'rgba(231,76,60,0.35)';
+                        const isMe = a === (age || 0);
+                        return <div key={a} style={{ flex: 1, background: col, opacity: isMe ? 1 : 0.55, outline: isMe ? '2px solid var(--gold)' : 'none', outlineOffset: '-1px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: isMe ? 'var(--text-primary)' : 'transparent' }}>{isMe ? a : ''}</div>;
+                    })}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', marginTop: '3px' }}>
+                    <span>20</span><span>{'Peak ' + pLo + '–' + pHi + ' / Value thru ' + declineHi}</span><span>36</span>
+                </div>
+            </div>
+            {/* Career stats */}
+            {typeof window.InlineCareerStats === 'function' && React.createElement(window.InlineCareerStats, { pid, pos, player: p, scoringSettings: currentLeague?.scoring_settings, statsData })}
+            {/* Actions: tags + collapse */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                {TAGS.map(t => {
+                    const on = activeTag === t.tag;
+                    return <button key={t.tag} onClick={e => {
+                        e.stopPropagation();
+                        const tags = window._playerTags || {};
+                        if (tags[pid] === t.tag) delete tags[pid]; else tags[pid] = t.tag;
+                        window._playerTags = { ...tags };
+                        if (window.OD?.savePlayerTags) window.OD.savePlayerTags(leagueId, tags);
+                        setTagTick(v => v + 1);
+                    }} style={{ padding: '7px 12px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', background: on ? t.bg : 'transparent', color: on ? t.col : 'var(--silver)', border: '1px solid ' + (on ? t.border : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', fontWeight: on ? 700 : 400, letterSpacing: '0.03em' }}>{t.label}</button>;
+                })}
+                <button onClick={e => { e.stopPropagation(); onCollapse && onCollapse(); }} style={{ padding: '7px 16px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '6px', cursor: 'pointer' }}>COLLAPSE</button>
+            </div>
+        </div>
+    );
+}
 
 function LeagueMapTab({
   // Phase 8: when `embedSubView` is set, we render ONLY that sub-view content
@@ -574,6 +763,13 @@ function LeagueMapTab({
   // Rolling PPG window — shared with My Roster / FA so the setting is consistent.
   const [ppgWindow, setPpgWindow] = React.useState(() => { try { return localStorage.getItem('wr_ppg_window') || 'season'; } catch { return 'season'; } });
   React.useEffect(() => { try { localStorage.setItem('wr_ppg_window', ppgWindow); } catch {} }, [ppgWindow]);
+
+  // Combined "Players & Picks" screen — which half is showing. Persisted per browser so
+  // the toggle survives navigating away to another analytics sub-tab and back.
+  const [assetsView, setAssetsView] = React.useState(() => { try { return localStorage.getItem('wr_assets_view') || 'players'; } catch { return 'players'; } });
+  React.useEffect(() => { try { localStorage.setItem('wr_assets_view', assetsView); } catch {} }, [assetsView]);
+  // Inline player dossier (My-Roster-style card) expanded in the All Players list.
+  const [allPlayersExpandedPid, setAllPlayersExpandedPid] = React.useState(null);
   const [pickOwnerFilter, setPickOwnerFilter] = React.useState('all');
   const [pickStatusFilter, setPickStatusFilter] = React.useState('all');
   const [pickYearFilter, setPickYearFilter] = React.useState('all');
@@ -1095,6 +1291,11 @@ function LeagueMapTab({
         <button className={leagueSubView === 'picks' ? 'is-active' : ''} onClick={() => setLeagueSubView('picks')}>Draft Picks</button>
         <button className={leagueSubView === 'reports' ? 'is-active' : ''} onClick={() => setLeagueSubView('reports')}>Custom Reports</button>
       </div>}
+      {/* Combined Players & Picks screen (Analytics 'assets' sub-tab): internal segmented toggle. */}
+      {_activeSubView === 'assets' && <div className="wr-module-nav" style={{ marginBottom: '12px' }}>
+        <button className={assetsView === 'players' ? 'is-active' : ''} onClick={() => setAssetsView('players')}>All Players</button>
+        <button className={assetsView === 'picks' ? 'is-active' : ''} onClick={() => setAssetsView('picks')}>Draft Picks</button>
+      </div>}
       {_activeSubView === 'teams' && (<div>
       <div className="wr-module-toolbar">
         <span className="wr-module-toolbar-label">Sort</span>
@@ -1214,7 +1415,7 @@ function LeagueMapTab({
         })}
       </div>
       </div>)}
-	      {_activeSubView === 'players' && (() => {
+	      {(_activeSubView === 'players' || (_activeSubView === 'assets' && assetsView === 'players')) && (() => {
 	        const posColors = window.App.POS_COLORS;
 	        const allPlayers = [];
 	        const rosteredPlayerIds = new Set();
@@ -1231,7 +1432,12 @@ function LeagueMapTab({
 	                allPlayers.push({ pid, p, pos, dhq, ppg, age: p.age || null, teamName, rosterId: r.roster_id, isMe: r.roster_id === myRoster?.roster_id });
 	            });
 	        });
-	        const shouldShowDraftPool = !!(resolvedLeagueSkin?.state?.isSeasonal && (resolvedLeagueSkin?.state?.isPreDraft || resolvedLeagueSkin?.state?.isPreDraftRosterEmpty || allPlayers.length === 0));
+	        // Pre-draft pool: surface undrafted players (incl. rookies) before a draft.
+	        // Fire whenever the league is in its pre-draft phase REGARDLESS of skin family —
+	        // dynasty/long-term leagues have isSeasonal === false, so the old isSeasonal-gated
+	        // condition meant rookies never showed up pre-draft in dynasty leagues.
+	        const isPreDraftPhase = !!(resolvedLeagueSkin?.state?.isPreDraft || resolvedLeagueSkin?.state?.isPreDraftRosterEmpty);
+	        const shouldShowDraftPool = isPreDraftPhase || !!(resolvedLeagueSkin?.state?.isSeasonal && allPlayers.length === 0);
 	        if (shouldShowDraftPool) {
 	            const leaguePositions = typeof window.getLeaguePositions === 'function'
 	                ? window.getLeaguePositions({ league: currentLeague })
@@ -1244,7 +1450,9 @@ function LeagueMapTab({
 	                if (!p || rosteredPlayerIds.has(String(pid))) return;
 	                const pos = normPos(p.position) || p.position;
 	                if (!validPositions.has(pos)) return;
-	                if (p.active === false && pos !== 'DEF') return;
+	                // Keep incoming rookies (years_exp === 0) even if Sleeper still flags them
+                // inactive — they haven't debuted yet but must be visible in the pre-draft pool.
+                if (p.active === false && pos !== 'DEF' && p.years_exp !== 0) return;
 	                const dhq = window.App?.LI?.playerScores?.[pid] || 0;
 	                const st = statsData[pid] || {};
 	                const ppg = st.gp > 0 ? +(calcRawPts(st) / st.gp).toFixed(1) : 0;
@@ -1261,7 +1469,8 @@ function LeagueMapTab({
                 return name.includes(q) || team.includes(q);
             });
         }
-        if (lpFilter) filtered = filtered.filter(x => x.pos === lpFilter);
+        if (lpFilter === '__ROOKIE__') filtered = filtered.filter(x => x.p.years_exp === 0);
+        else if (lpFilter) filtered = filtered.filter(x => x.pos === lpFilter);
         filtered.sort((a, b) => {
             const { key, dir } = lpSort;
             if (key === 'dhq') return (a.dhq - b.dhq) * dir;
@@ -1319,6 +1528,14 @@ function LeagueMapTab({
                             borderRadius: '3px', cursor: 'pointer', minHeight: '44px'
                         }}>{pos ? (window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)) : 'All'}</button>
                     ))}
+                    {/* Rookies quick-filter — surfaces years_exp===0 players (e.g. the pre-draft rookie pool). */}
+                    <button onClick={() => setLpFilter(lpFilter === '__ROOKIE__' ? '' : '__ROOKIE__')} style={{
+                        padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', textTransform: 'uppercase',
+                        background: lpFilter === '__ROOKIE__' ? 'var(--gold)' : 'var(--ov-3, rgba(255,255,255,0.04))',
+                        color: lpFilter === '__ROOKIE__' ? 'var(--black)' : 'var(--silver)',
+                        border: '1px solid ' + (lpFilter === '__ROOKIE__' ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                        borderRadius: '3px', cursor: 'pointer', minHeight: '44px'
+                    }}>Rookies</button>
                     <span style={{ fontSize: '0.72rem', color: 'var(--silver)', alignSelf: 'center' }}>{filtered.length} players</span>
                     {/* Rolling PPG window selector */}
                     <span style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.65, fontFamily: 'var(--font-body)' }}>PPG:</span>
@@ -1496,15 +1713,20 @@ function LeagueMapTab({
                                         return <span key={c.key}></span>;
                                 }
                             };
+                            const isExpanded = String(allPlayersExpandedPid) === String(x.pid);
+                            const rowBg = isExpanded ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : x.isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent';
                             return (
-                            <div key={x.pid} onClick={() => { if (window._wrSelectPlayer) window._wrSelectPlayer(x.pid); }}
-                                style={{ display: 'grid', gridTemplateColumns: gridTpl, gap: '4px', padding: '5px 10px', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', cursor: 'pointer', fontSize: '0.72rem', alignItems: 'center', background: x.isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent', transition: 'background 0.1s' }}
+                            <React.Fragment key={x.pid}>
+                            <div onClick={() => setAllPlayersExpandedPid(prev => String(prev) === String(x.pid) ? null : x.pid)}
+                                style={{ display: 'grid', gridTemplateColumns: gridTpl, gap: '4px', padding: '5px 10px', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', cursor: 'pointer', fontSize: '0.72rem', alignItems: 'center', background: rowBg, transition: 'background 0.1s' }}
                                 onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'}
-                                onMouseLeave={e => e.currentTarget.style.background = x.isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent'}>
+                                onMouseLeave={e => e.currentTarget.style.background = rowBg}>
                                 <span style={{ fontSize: '0.72rem', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>{idx+1}</span>
                                 <div style={{ width: '22px', height: '22px', flexShrink: 0 }}><img src={'https://sleepercdn.com/content/nfl/players/thumb/'+x.pid+'.jpg'} onError={e=>e.target.style.display='none'} style={{ width:'22px',height:'22px',borderRadius:'50%',objectFit:'cover' }} /></div>
                                 {activeCols.map(renderCell)}
                             </div>
+                            {isExpanded && <RosterPlayerDossier x={x} playersData={playersData} statsData={statsData} currentLeague={currentLeague} normPos={normPos} onCollapse={() => setAllPlayersExpandedPid(null)} />}
+                            </React.Fragment>
                             );
                         })}
                     </div>
@@ -1514,7 +1736,7 @@ function LeagueMapTab({
             </div>
         );
       })()}
-	      {_activeSubView === 'picks' && (() => {
+	      {(_activeSubView === 'picks' || (_activeSubView === 'assets' && assetsView === 'picks')) && (() => {
 		        const tradedPicks = _sTradedPicks;
 		        const leagueSeason = parseInt(currentLeague.season || activeYear);
 		        const draftRounds = window.App?.LeagueSkin?.resolveDraftRounds?.({

@@ -520,8 +520,8 @@
           <div class="plan-name">Standard</div>
           <div class="plan-price">Free during test flight</div>
           <ul class="plan-features">
-            <li><span class="pf-check">✦</span> Dynasty HQ War Room</li>
-            <li><span class="pf-check">✦</span> Full War Room desktop suite</li>
+            <li><span class="pf-check">✦</span> Dynasty HQ</li>
+            <li><span class="pf-check">✦</span> Full Dynasty HQ desktop suite</li>
             <li><span class="pf-check">✦</span> AI — 20 queries / month included</li>
             <li><span class="pf-check">✦</span> BYO AI key (Claude, Genesis, ChatGPT, Grok)</li>
             <li><span class="pf-check">✦</span> No contract · cancel anytime</li>
@@ -533,7 +533,7 @@
             <div style="display:flex;gap:0.5rem;">
               <label id="spWarRoom" onclick="selectStandardProduct('war_room')" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:0.25rem;padding:0.5rem 0.4rem;border:2px solid rgba(212,175,55,0.35);border-radius:8px;cursor:pointer;transition:all 0.2s;background:rgba(212,175,55,0.08);">
                 <span style="font-size:1.1rem;">⚔️</span>
-                <span style="font-size:0.68rem;font-weight:600;color:var(--white);">War Room</span>
+                <span style="font-size:0.68rem;font-weight:600;color:var(--white);">Dynasty HQ</span>
                 <span style="font-size:0.58rem;color:var(--gold);">Live Now</span>
               </label>
               <label id="spDynastyHQ" onclick="selectStandardProduct('dynast_hq')" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:0.25rem;padding:0.5rem 0.4rem;border:2px solid rgba(192,192,192,0.15);border-radius:8px;cursor:not-allowed;opacity:0.45;">
@@ -552,7 +552,7 @@
           <div class="plan-name">Pro</div>
           <div class="plan-price">Free during test flight</div>
           <ul class="plan-features">
-            <li><span class="pf-check">✦</span> Everything in War Room</li>
+            <li><span class="pf-check">✦</span> Everything in Dynasty HQ</li>
             <li><span class="pf-check">✦</span> Global dashboard — all leagues at once</li>
             <li><span class="pf-check">✦</span> Cross-league AI recommendations</li>
             <li><span class="pf-check">✦</span> Player exposure tracking</li>
@@ -577,9 +577,9 @@
 
       <div class="payment-box">
         <div class="payment-icon" id="payIcon">⚔️</div>
-        <div class="payment-title" id="payTitle">Dynasty HQ War Room — Standard</div>
+        <div class="payment-title" id="payTitle">Dynasty HQ — Standard</div>
         <div class="payment-sub" id="paySub">
-          Full access to all War Room tools — Team Comparison, Behavioral Trade Calculator, Draft War Room, Free Agency Tracker, Calendar, Trophy Case, and Direct Messaging. AI included (20 queries/mo).
+          Full access to all Dynasty HQ tools — Team Comparison, Behavioral Trade Calculator, Draft Room, Free Agency Tracker, Calendar, Trophy Case, and Direct Messaging. AI included (20 queries/mo).
         </div>
         <div class="payment-price" id="payPrice">Free during test flight</div>
         <button class="cta-btn" id="stripeBtn" onclick="goToStripe()">Proceed to Secure Checkout →</button>
@@ -787,7 +787,7 @@
           </div>
           <div class="token-perk">
             <span class="token-perk-icon">📊</span>
-            <span><strong style="color:var(--white)">Historical Data</strong> — past drafts, trades, and standings to power your War Room analytics.</span>
+            <span><strong style="color:var(--white)">Historical Data</strong> — past drafts, trades, and standings to power your Dynasty HQ analytics.</span>
           </div>
           <div class="token-perk">
             <span class="token-perk-icon">🔒</span>
@@ -940,10 +940,10 @@
       document.getElementById('payIcon').textContent   = isPro ? '🏆' : '⚔️';
       document.getElementById('payTitle').textContent  = isPro
         ? 'Dynasty HQ Pro'
-        : 'Standard — Dynasty HQ War Room';
+        : 'Dynasty HQ — Standard';
       document.getElementById('paySub').textContent    = isPro
-        ? 'Scout and War Room unlocked. All tools. 200 AI queries/mo. BYO AI key supported. No contract.'
-        : 'All War Room tools unlocked. 20 AI queries/mo. BYO AI key supported. No contract.';
+        ? 'Scout and Dynasty HQ unlocked. All tools. 200 AI queries/mo. BYO AI key supported. No contract.'
+        : 'All Dynasty HQ tools unlocked. 20 AI queries/mo. BYO AI key supported. No contract.';
       document.getElementById('payPrice').textContent  = 'Free during test flight';
     }
 

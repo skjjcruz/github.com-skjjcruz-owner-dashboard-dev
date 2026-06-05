@@ -30,7 +30,7 @@
             grade.letter === '?' ? 'var(--k-95a5a6, #95a5a6)' :
             grade.letter.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' :
             grade.letter.startsWith('B') ? 'var(--k-d4af37, #d4af37)' :
-            grade.letter === 'C' ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+            grade.letter.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
 
         // Build a hidden DOM node (1080×1920 portrait)
         const card = document.createElement('div');
@@ -53,7 +53,7 @@
         const header = document.createElement('div');
         header.style.cssText = 'text-align:center;margin-bottom:60px';
         header.innerHTML = `
-            <div style="font-family:${FONT_DISPL};font-size:42px;font-weight:700;color:var(--k-d4af37, #d4af37);letter-spacing:0.12em;margin-bottom:8px">WAR ROOM</div>
+            <div style="font-family:${FONT_DISPL};font-size:42px;font-weight:700;color:var(--k-d4af37, #d4af37);letter-spacing:0.12em;margin-bottom:8px">DYNASTY HQ</div>
             <div style="font-size:22px;color:var(--k-95a5a6, #95a5a6);letter-spacing:0.08em;text-transform:uppercase">Draft Command Center · ${state.season || ''}</div>
             <div style="width:120px;height:2px;background:var(--k-d4af37, #d4af37);margin:20px auto 0"></div>
         `;
