@@ -1,3 +1,22 @@
+> ⚠️ **SUPERSEDED — read this first (updated on branch `claude/repo-integration-check-Sqccn`).**
+> The findings below are from 2026-04-04 and assumed the ReconAI path was
+> "CDN blocked" and emitted only a mentality string. That is **no longer
+> accurate**:
+> - `dhqContext()` now emits `[TEAM_MODE]` and `[QUALITY_RULES]` (DHQ<500 floor,
+>   HOLD-FAAB) via pure functions, and `[LEAGUE_FORMAT]` via
+>   `dhqBuildLeagueFormatBlock`.
+> - The FAAB / draft / trade pages already call the structured `ai-analyze`
+>   path with `_dhqContext`, so they receive War Room's full prompt.
+> - Chat/scout parity is delivered server-side behind the `AI_GENERIC_ENRICH`
+>   flag (`enrichGenericSystemPrompt`), with the one no-context caller fixed.
+>
+> The corrected `reconai-consistency-tests.js` now loads the real shared rule
+> functions and grades actual output: **War Room 35/35, ReconAI 0 likely
+> failing** (league-format/scarcity checks are runtime-only and reported as
+> such). Treat the analysis below as historical context, not current state.
+
+---
+
 # War Room AI vs ReconAI — Path Consistency Report
 
 **Date:** 2026-04-04
