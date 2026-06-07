@@ -2558,19 +2558,6 @@
                         setDragPid(null);
                         if (boardMode !== 'my') setBoardMode('my');
                     };
-                    const handleBoardMove = (pid, delta) => {
-                        setMyBoardOrder(prev => {
-                            const order = prev.length ? [...prev] : aiSeedOrder.slice();
-                            const fromIdx = order.indexOf(pid);
-                            if (fromIdx === -1) return order;
-                            const toIdx = Math.max(0, Math.min(order.length - 1, fromIdx + delta));
-                            if (fromIdx === toIdx) return order;
-                            const [moved] = order.splice(fromIdx, 1);
-                            order.splice(toIdx, 0, moved);
-                            return order;
-                        });
-                        if (boardMode !== 'my') setBoardMode('my');
-                    };
 
                     const buildOrderedPlayers = (order) => {
                         const cleanOrder = Array.isArray(order) && order.length ? order : draftPoolRows.map(r => r.pid);
@@ -2730,12 +2717,6 @@
                                         onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>
                                             <span>{idx + 1}</span>
-                                            {!isDhq && (
-                                                <span style={{ display: 'inline-grid', gap: 2 }}>
-                                                    <button type="button" title="Move up" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, -1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▲</button>
-                                                    <button type="button" title="Move down" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, 1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▼</button>
-                                                </span>
-                                            )}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, padding: '5px 7px' }}>
                                             <div style={{ width: 28, height: 28, flexShrink: 0 }}>
