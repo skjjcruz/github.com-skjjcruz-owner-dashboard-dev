@@ -2886,8 +2886,8 @@
                     {/* Logo — click to go home */}
                     <div className="wr-sidebar-brand" onClick={onBack} style={{ padding: '0 14px', marginBottom: sidebarCollapsed ? '10px' : '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} title="Back to Dynasty HQ home">
                       <img src={iconSrc} alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: '6px' }} onError={e => { e.target.style.display = 'none'; }} />
-                      <div className="wr-sidebar-wordmark" style={{ display: 'flex', alignItems: 'center' }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.08em', lineHeight: 1.1 }}>DYNASTY HQ</div>
+                      <div className="wr-sidebar-wordmark" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.08em', lineHeight: 1.1, whiteSpace: 'nowrap' }}>DYNASTY HQ</div>
                       </div>
                       {(() => {
                         const champs = window.App?.LI?.championships || {};
