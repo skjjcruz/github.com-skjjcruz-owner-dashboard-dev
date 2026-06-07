@@ -863,7 +863,7 @@
                 {/* ── Header ── */}
                 <header className="header">
                     <div className="header-brand">
-                        <img src={iconSrc} alt="Logo" style={{ width:'44px',height:'44px',borderRadius:'10px',boxShadow:'0 2px 12px var(--acc-line2, rgba(212,175,55,.3))' }} />
+                        <img src={iconSrc} alt="Dynasty HQ — back to sign-in" title="Back to sign-in" onClick={handleLogout} style={{ width:'44px',height:'44px',borderRadius:'10px',boxShadow:'0 2px 12px var(--acc-line2, rgba(212,175,55,.3))',cursor:'pointer' }} />
                         <div className="header-text">
                             <h1 className="owner-name" style={{ fontSize:'1.1rem',letterSpacing:'.06em' }}>DYNASTY HQ</h1>
                             <div className="header-subtitle">{String(displayName)}</div>
