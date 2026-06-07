@@ -549,12 +549,34 @@
         const { data } = await db.auth.getSession();
         if (!data?.session) return;
         const user = data.session.user;
+        const fallbackName = user.user_metadata?.full_name || user.user_metadata?.name || user.email;
         const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
         if (!existing?.token) {
-          localStorage.setItem(SESSION_KEY, JSON.stringify({
-            token: data.session.access_token,
-            user: { email: user.email, displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email },
-          }));
+          // Exchange the Supabase OAuth token for a Dynasty HQ app session so the
+          // user is registered in app_users and accepted by authenticated APIs.
+          let appSession = null;
+          try {
+            const res = await fetch(`${FW_API_BASE}/fw-oauth-sync`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${data.session.access_token}` },
+              body: JSON.stringify({ productSlug: 'war_room' }),
+            });
+            if (res.ok) appSession = await res.json();
+          } catch (syncErr) { console.warn('[WR] OAuth sync error:', syncErr); }
+
+          if (appSession?.token) {
+            localStorage.setItem(SESSION_KEY, JSON.stringify({
+              token: appSession.token,
+              user: { email: appSession.user?.email || user.email, displayName: appSession.user?.displayName || fallbackName },
+            }));
+          } else {
+            // Fallback: keep the raw Supabase token so sign-in still works even
+            // if the sync endpoint is unavailable.
+            localStorage.setItem(SESSION_KEY, JSON.stringify({
+              token: data.session.access_token,
+              user: { email: user.email, displayName: fallbackName },
+            }));
+          }
         }
         trackLandingEvent('oauth_succeeded', { provider: 'google' });
         window.location.href = nextAfterAuth();

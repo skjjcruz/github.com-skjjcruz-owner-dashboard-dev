@@ -106,6 +106,9 @@ jobs:
       - name: Deploy fw-signin function
         run: supabase functions deploy fw-signin --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
 
+      - name: Deploy fw-oauth-sync function
+        run: supabase functions deploy fw-oauth-sync --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+
       - name: Deploy fw-profile function
         run: supabase functions deploy fw-profile --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
 
