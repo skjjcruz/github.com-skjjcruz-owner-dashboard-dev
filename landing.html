@@ -374,6 +374,9 @@
     const SESSION_KEY = 'fw_session_v1';
     const SCOUT_URL = 'https://skjjcruz.github.io/ReconAI-sandbox-dev/';
     const LANDING_EDITOR_PREVIEW = new URLSearchParams(window.location.search).has('landingPreview');
+    // ?signout — arrive here from the DHQ logo to land on the sign-in page and
+    // stay put. Suppresses the auto-redirects below and clears the session.
+    const FORCE_SIGNOUT = new URLSearchParams(window.location.search).has('signout');
 
     // Supabase client — used only for lightweight landing analytics below.
     let _sbClient = null;
@@ -540,7 +543,7 @@
     // Handle Google redirect back: store session, then route to step 2.
     (async function handleOAuthCallback() {
       try {
-        if (LANDING_EDITOR_PREVIEW) return;
+        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT) return;
         const db = getSbClient();
         if (!db) return;
         const { data } = await db.auth.getSession();
@@ -576,9 +579,20 @@
 
     // If already signed in, skip ahead \u2014 to step 2 if Sleeper isn't bound yet,
     // else straight into the app.
+    // Forced sign-out (DHQ logo → ?signout): clear local + Supabase sessions and
+    // stay on this page. The redirect guards above already bail on FORCE_SIGNOUT.
+    (async function forceSignOut() {
+      if (!FORCE_SIGNOUT) return;
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
+      try { localStorage.removeItem(AUTH_KEY); } catch {}
+      try { const db = getSbClient(); if (db) await db.auth.signOut(); } catch {}
+      try { if (authMode === 'signup') toggleAuthMode(); } catch {}
+      try { history.replaceState(null, '', window.location.pathname); } catch {}
+    })();
+
     (function checkSession() {
       try {
-        if (LANDING_EDITOR_PREVIEW) return;
+        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT) return;
         const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
         if (session?.token) {
           trackLandingEvent('landing_existing_session_redirected');
