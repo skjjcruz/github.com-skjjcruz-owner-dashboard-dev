@@ -108,6 +108,7 @@
         const [boardSort, setBoardSort] = useState({ key: 'dhq', dir: -1 }); // sortable columns
         const [expandedDraftPid, setExpandedDraftPid] = useState(null);
         const [scoutDrawerPid, setScoutDrawerPid] = useState(null);
+        const [nflFitAI, setNflFitAI] = useState({}); // pid -> live web-search "Alex NFL Fit" read (premium)
         const [dragPid, setDragPid] = useState(null); // currently dragging pid
         const [draftStrategyEditing, setDraftStrategyEditing] = useState(false);
         const draftStrategyKey = 'wr_draft_strategy_' + leagueKey;
@@ -162,6 +163,25 @@
             openPickFocus({ detail: window._wrDraftPickFocus });
             return () => window.removeEventListener('wr:open-draft-pick-context', openPickFocus);
         }, []);
+
+        // On-demand "Alex NFL Fit" live read: when a board row is expanded, fetch a
+        // premium web-search-enriched fit blurb. fetchNFLFitNews dedupes/caches and
+        // returns null on the free tier, so the deterministic narrative stays the
+        // baseline. Only fires for the currently-expanded player to limit LLM cost.
+        useEffect(() => {
+            const pid = expandedDraftPid;
+            if (!pid || typeof window.App?.fetchNFLFitNews !== 'function') return;
+            const row = (draftPoolRows || []).find(x => String(x.pid) === String(pid));
+            if (!row) return;
+            const cs = row.csv || {};
+            let cancelled = false;
+            window.App.fetchNFLFitNews(pid, {
+                player: row.p, dhq: row.dhq, isRookie: isRookieDraft,
+                capital: { round: Number(cs.draftRound) || 0, pick: Number(cs.draftPick) || 0, nflTeam: cs.nflTeam || row.p?.team || '', isUDFA: !!cs.isUDFA },
+            }).then(text => { if (!cancelled && text) setNflFitAI(prev => (prev[pid] === text ? prev : { ...prev, [pid]: text })); })
+              .catch(() => {});
+            return () => { cancelled = true; };
+        }, [expandedDraftPid]);
 
         // Jump straight into Follow Live Draft when the league header "Draft Live"
         // chip is clicked. The chip lives in league-detail, so it sets a flag +
@@ -2538,6 +2558,19 @@
                         setDragPid(null);
                         if (boardMode !== 'my') setBoardMode('my');
                     };
+                    const handleBoardMove = (pid, delta) => {
+                        setMyBoardOrder(prev => {
+                            const order = prev.length ? [...prev] : aiSeedOrder.slice();
+                            const fromIdx = order.indexOf(pid);
+                            if (fromIdx === -1) return order;
+                            const toIdx = Math.max(0, Math.min(order.length - 1, fromIdx + delta));
+                            if (fromIdx === toIdx) return order;
+                            const [moved] = order.splice(fromIdx, 1);
+                            order.splice(toIdx, 0, moved);
+                            return order;
+                        });
+                        if (boardMode !== 'my') setBoardMode('my');
+                    };
 
                     const buildOrderedPlayers = (order) => {
                         const cleanOrder = Array.isArray(order) && order.length ? order : draftPoolRows.map(r => r.pid);
@@ -2641,34 +2674,27 @@
                                 const rankStr = (isRookieDraft && (cs.consensusRank || cs.rank)) ? '#' + Math.round(cs.consensusRank || cs.rank) : (valueRank ? '#' + valueRank : '-');
                                 const tierStr = (isRookieDraft && cs.tier) ? cs.tier : tierMeta.label;
                                 const compText = cs.nflComp || cs.comp || '';
-                                const teamFitInsight = team ? (() => {
-                                    if (isSeasonalDraft) {
-                                        const rankPhrase = valueRank ? '#' + valueRank + ' overall' : 'a scored board player';
-                                        if (pos === 'QB') return 'For redraft, I am reading ' + team + ' through weekly ceiling, rushing/volume outs, and matchup insulation. At ' + rankPhrase + ', the question is whether he gives you a points edge over the next QB tier.';
-                                        if (pos === 'RB') return 'For redraft, I am reading ' + team + ' through touch security, pass-game work, goal-line access, and injury fragility. At ' + rankPhrase + ', volume certainty matters more than long-term profile.';
-                                        if (pos === 'WR') return 'For redraft, I am reading ' + team + ' through target share, quarterback quality, route role, and spike-week ceiling. At ' + rankPhrase + ', the bet is weekly starter leverage, not future asset growth.';
-                                        if (pos === 'TE') return 'For redraft, I am reading ' + team + ' through route participation and red-zone access. At ' + rankPhrase + ', he has to separate from replacement-level tight ends quickly.';
-                                        if (pos === 'K') return 'For redraft, I am reading ' + team + ' through offense quality and schedule. Kicker value is a timing decision, not a board anchor.';
-                                        if (pos === 'DEF') return 'For redraft, I am reading ' + team + ' through pressure rate, turnover chances, and early schedule. D/ST value should stay matchup-aware.';
-                                        return 'For redraft, I am reading ' + team + ' through current-season role, weekly replacement gap, and schedule pressure.';
-                                    }
-                                    const capitalTier = draftRound === 1
-                                        ? 'a priority-plan rookie'
-                                        : draftRound && draftRound <= 3
-                                            ? 'an early-rotation bet'
-                                            : draftRound
-                                                ? 'a developmental swing'
-                                                : isTrueUdfa(cs)
-                                                    ? 'a camp-competition flyer'
-                                                    : 'a landing-spot bet';
-                                    if (pos === 'QB') return 'I read ' + team + ' as a runway question: he stacks up as ' + capitalTier + ', but his ' + valueShortLabel + ' only climbs fast if the depth chart gives him real starts or a clear succession path.';
-                                    if (pos === 'RB') return 'On ' + team + ', I am weighing touch path over raw traits. He stacks up as ' + capitalTier + '; the value jumps if pass-game work or goal-line access is actually available.';
-                                    if (pos === 'WR') return 'On ' + team + ', I care about target path and role clarity. He stacks up as ' + capitalTier + '; I want to know whether he is beating veterans for snaps or waiting on an injury.';
-                                    if (pos === 'TE') return 'On ' + team + ', I am checking patience versus payoff. He stacks up as ' + capitalTier + '; tight ends need route volume before the profile matters for our board.';
-                                    if (['DL', 'LB', 'DB', 'ED'].includes(pos)) return 'On ' + team + ', I am mapping role to scoring. He stacks up as ' + capitalTier + '; full-time snaps and stat-friendly alignment matter more than the helmet.';
-                                    if (pos === 'K') return 'On ' + team + ', I am treating this as a roster-stability read. He stacks up as ' + capitalTier + ', but I would not let kicker security outrank real roster value.';
-                                    return 'On ' + team + ', I am treating this as a role-and-capital check. He stacks up as ' + capitalTier + '; the question is whether the team gives him enough usage to make the ' + valueShortLabel + ' real.';
-                                })() : '';
+                                // "Alex NFL Fit" — real-situation read built from the signals the DHQ
+                                // engine already computes (depth-chart role, the specific teammates
+                                // blocking him + their PPG, status, trend) plus NFL draft capital /
+                                // landing spot. Premium users get a live web-search read layered on
+                                // via the nflFitAI effect (rendered below). Falls back to a terse line
+                                // when no signals are available (e.g. a CSV-only prospect with no role).
+                                // Compute the fit UNCONDITIONALLY and gate on the narrative (like the
+                                // player card does). Previously the whole block was gated on `team`, so
+                                // most rookie-draft prospects (no NFL team yet) got no fit read at all —
+                                // that's why "Alex NFL Fit" fired inconsistently. computeNFLFit returns a
+                                // narrative even with no landing spot (its "Unsettled" branch).
+                                const _nflFit = (typeof window.App.computeNFLFit === 'function')
+                                    ? window.App.computeNFLFit(r.pid, {
+                                        pos, player: r.p, dhq: r.dhq, isRookie: isRookieDraft,
+                                        capital: { round: draftRound, pick: draftPick, nflTeam: team, isUDFA: isTrueUdfa(cs) },
+                                    })
+                                    : null;
+                                const teamFitInsight = (_nflFit && _nflFit.narrative)
+                                    || (team
+                                        ? ('On ' + team + ", the role isn't settled yet — I'd trust the board value over the situation until it clears.")
+                                        : "The landing spot isn't set yet — I'd trust the board value until it clears.");
                                 const summaryBits = String(cs.summary || '')
                                     .split(/(?<=[.!?])\s+/)
                                     .map(s => s.trim())
@@ -2704,6 +2730,12 @@
                                         onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>
                                             <span>{idx + 1}</span>
+                                            {!isDhq && (
+                                                <span style={{ display: 'inline-grid', gap: 2 }}>
+                                                    <button type="button" title="Move up" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, -1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▲</button>
+                                                    <button type="button" title="Move down" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, 1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▼</button>
+                                                </span>
+                                            )}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, padding: '5px 7px' }}>
                                             <div style={{ width: 28, height: 28, flexShrink: 0 }}>
@@ -2769,8 +2801,8 @@
                                                     {compText && <div style={{ color: 'var(--white)', opacity: 0.82, fontSize: 'var(--text-micro, 0.6875rem)', marginTop: 7 }}>Comp: {compText}</div>}
                                                     {teamFitInsight && (
                                                         <div style={{ border: '1px solid rgba(46,204,113,0.18)', background: 'rgba(46,204,113,0.045)', borderRadius: 6, padding: '7px 8px', marginTop: 7 }}>
-                                                            <span style={{ display: 'block', color: 'var(--good)', fontSize: 'var(--text-micro)', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Alex NFL Fit</span>
-                                                            <div style={{ color: 'var(--silver)', fontSize: '0.7rem', lineHeight: 1.42 }}>{teamFitInsight}</div>
+                                                            <span style={{ display: 'block', color: 'var(--good)', fontSize: 'var(--text-micro)', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Alex NFL Fit{nflFitAI[r.pid] ? ' · Live' : ''}</span>
+                                                            <div style={{ color: 'var(--silver)', fontSize: '0.7rem', lineHeight: 1.42 }}>{nflFitAI[r.pid] || teamFitInsight}</div>
                                                         </div>
                                                     )}
                                                 </div>

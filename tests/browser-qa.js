@@ -314,6 +314,10 @@ async function main() {
       const missingPanels = wantPanels.filter(w => !panels.some(p => p.includes(w)));
       if (missingPanels.length) failures.push(`command-bridge: panels missing ${JSON.stringify(missingPanels)} (got ${JSON.stringify(panels)})`);
 
+      // Asset rows render asynchronously (after the player DB fetch + model build), so wait
+      // for them before the filter dance — otherwise the drilldown count races the render.
+      await empirePage.getByTestId('empire-asset-row').first().waitFor({ state: 'attached', timeout: 15000 }).catch(() => {});
+
       const postWindow = empirePage.getByRole('button', { name: 'Post-window', exact: true });
       if (await postWindow.count() > 0) {
         await postWindow.first().click();

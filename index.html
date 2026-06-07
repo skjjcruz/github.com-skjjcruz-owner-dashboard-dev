@@ -2118,35 +2118,38 @@ WRShared.loadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/settings.js?v=20260525redraftnav1"></script>
 <script type="text/babel" src="js/trade-calc.js?v=20260518dealhqdark1"></script>
 <script type="text/babel" src="js/free-agency.js?v=20260516click3"></script>
-<!-- 4b. Draft Command Center modules — must load before draft-room.js -->
-<script type="text/babel" src="js/draft/styles.js?v=20260427font1"></script>
-<script type="text/babel" src="js/draft/scouting.js?v=20260517baileymerge"></script>
-<script type="text/babel" src="js/draft/trade-helpers.js?v=20260415cd8"></script>
-<script type="text/babel" src="js/draft/context.js?v=20260517aiguard"></script>
-<script type="text/babel" src="js/draft/persona.js?v=20260415cd8"></script>
-<script type="text/babel" src="js/draft/cpu-engine.js?v=20260415cd8"></script>
-<script type="text/babel" src="js/draft/state.js?v=20260601draftux"></script>
-<script type="text/babel" src="js/draft/big-board.js?v=20260601layout"></script>
-<script type="text/babel" src="js/draft/draft-grid.js?v=20260418a"></script>
-<script type="text/babel" src="js/draft/opponent-intel.js?v=20260601layout"></script>
-<script type="text/babel" src="js/draft/alex-stream.js?v=20260601layout"></script>
-<script type="text/babel" src="js/draft/alex-call.js?v=20260601alexpresence"></script>
-<script type="text/babel" src="js/draft/alex-edge-glow.js?v=20260601alexpresence"></script>
-<script type="text/babel" src="js/draft/ask-window.js?v=20260601alexpresence"></script>
-<script type="text/babel" src="js/draft/live-analytics.js?v=20260601draftux"></script>
-<script type="text/babel" src="js/draft/exports.js?v=20260415cd8"></script>
-<script type="text/babel" src="js/draft/trade-simulator.js?v=20260601draftux"></script>
-<script type="text/babel" src="js/draft/trade-modal.js?v=20260601draftux"></script>
-<script type="text/babel" src="js/draft/trade-proposer.js?v=20260601draftux"></script>
+<!-- 4b. Draft Command Center modules (~1.26MB) — deferred at boot via data-wr-defer;
+     build-deploy/build-preview emit them type="text/wr-deferred" so they don't parse
+     at load. js/draft-loader.js injects them on first Draft-tab open. -->
+<script src="js/draft-loader.js?v=20260607draftlazy1"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/styles.js?v=20260427font1"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/scouting.js?v=20260517baileymerge"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/trade-helpers.js?v=20260415cd8"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/context.js?v=20260517aiguard"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/persona.js?v=20260415cd8"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/cpu-engine.js?v=20260415cd8"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/state.js?v=20260601draftux"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/big-board.js?v=20260601layout"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/draft-grid.js?v=20260418a"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/opponent-intel.js?v=20260601layout"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/alex-stream.js?v=20260601layout"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/alex-call.js?v=20260601alexpresence"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/alex-edge-glow.js?v=20260601alexpresence"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/ask-window.js?v=20260601alexpresence"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/live-analytics.js?v=20260601draftux"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/exports.js?v=20260415cd8"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/trade-simulator.js?v=20260601draftux"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/trade-modal.js?v=20260601draftux"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/trade-proposer.js?v=20260601draftux"></script>
 <!-- Phase 5 modules -->
-<script type="text/babel" src="js/draft/persistence.js?v=20260415cd8"></script>
-<script type="text/babel" src="js/draft/scenarios.js?v=20260415cd8"></script>
-<script type="text/babel" src="js/draft/ghost-replay.js?v=20260415cd8"></script>
-<script type="text/babel" src="js/draft/live-sync.js?v=20260516p6redo"></script>
-<script type="text/babel" src="js/draft/live-decision-engine.js?v=20260601draftux"></script>
-<script type="text/babel" src="js/draft/analyst-mock.js?v=20260531voice1"></script>
-<script type="text/babel" src="js/draft/command-center.js?v=20260601intelfix"></script>
-<script type="text/babel" src="js/draft-room.js?v=20260531voice4"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/persistence.js?v=20260415cd8"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/scenarios.js?v=20260415cd8"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/ghost-replay.js?v=20260415cd8"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/live-sync.js?v=20260516p6redo"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/live-decision-engine.js?v=20260601draftux"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/analyst-mock.js?v=20260531voice1"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/command-center.js?v=20260601intelfix"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft-room.js?v=20260531voice4"></script>
 <!-- 5. League detail tab components (extracted from league-detail.js) -->
 <!-- v2 widget modules (load before dashboard.js which consumes them) -->
 <script type="text/babel" src="js/widgets/roster-pulse.js?v=20260516liveclick1"></script>

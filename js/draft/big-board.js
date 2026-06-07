@@ -126,6 +126,16 @@
         const [boardLane, setBoardLane] = React.useState(defaultLane);
         const [dragPid, setDragPid] = React.useState(null);
         const [bucket, setBucket] = React.useState(() => bpBucket());
+        // Hide-drafted toggle (default OFF — matches the prior always-show behavior).
+        // Persisted as a single user preference across leagues/variants.
+        const [hideDrafted, setHideDrafted] = React.useState(() => {
+            try { return window.App?.WrStorage?.get('wr_bb_hide_drafted') === true; } catch (e) { return false; }
+        });
+        const toggleHideDrafted = () => setHideDrafted(v => {
+            const next = !v;
+            try { window.App?.WrStorage?.set('wr_bb_hide_drafted', next); } catch (e) {}
+            return next;
+        });
 
         React.useEffect(() => {
             if (boardContext?.activeLane && boardContext.activeLane !== boardLane) {
@@ -216,6 +226,28 @@
             return boardContext?.entries?.[pid] || {};
         }, [boardContext]);
 
+        // Memoize per-player projection + value-window so they don't re-run over the
+        // whole 200-300 pool on every pick/re-render. Keyed by pid+dhq+age; the cache
+        // resets whenever the underlying originalPool changes.
+        const projCacheRef = React.useRef({ pool: null, proj: new Map(), win: new Map() });
+        if (projCacheRef.current.pool !== state.originalPool) {
+            projCacheRef.current = { pool: state.originalPool, proj: new Map(), win: new Map() };
+        }
+        const cachedProjectionFor = (player) => {
+            const key = idOf(player) + ':' + (player?.dhq || player?.val || 0) + ':' + (ageOf(player) || 0);
+            const cache = projCacheRef.current.proj;
+            let v = cache.get(key);
+            if (!v) { v = projectionFor(player); cache.set(key, v); }
+            return v;
+        };
+        const cachedValueWindow = (player) => {
+            const key = idOf(player) + ':' + (ageOf(player) || 0) + ':' + (player?.pos || player?.position || '');
+            const cache = projCacheRef.current.win;
+            let v = cache.get(key);
+            if (!v) { v = valueWindow(player); cache.set(key, v); }
+            return v;
+        };
+
         const decoratedPool = React.useMemo(() => {
             // Keep undrafted players exactly as state.pool provides them, then re-add
             // any drafted players from the full original pool so they stay on the board
@@ -228,8 +260,8 @@
             return [...live, ...draftedExtra].map(player => {
                 const pid = idOf(player);
                 const entry = boardContext?.entries?.[pid] || {};
-                const projections = projectionFor(player);
-                const windowInfo = valueWindow(player);
+                const projections = cachedProjectionFor(player);
+                const windowInfo = cachedValueWindow(player);
                 const dhqRank = entry.dhqRank || dhqRanks[pid] || null;
                 const aiRank = entry.aiRank || aiRanks[pid] || null;
                 const myRank = entry.myRank || myRanks[pid] || null;
@@ -256,6 +288,7 @@
 
         const available = React.useMemo(() => {
             const filtered = decoratedPool.filter(p => {
+                if (hideDrafted && p._drafted) return false;
                 if (posFilter && normEdPos(p.pos) !== posFilter) return false;
                 if (search) {
                     const q = search.toLowerCase();
@@ -276,7 +309,7 @@
                 return dir * ((b.dhq || 0) - (a.dhq || 0));
             });
             return sorted.slice(0, 100);
-        }, [decoratedPool, posFilter, search, sortKey, sortDir]);
+        }, [decoratedPool, posFilter, search, sortKey, sortDir, hideDrafted]);
 
         const availablePositions = React.useMemo(() => {
             const set = new Set();
@@ -547,6 +580,22 @@
                             fontWeight: 600,
                         }}>{posLabel(pos)}</button>
                     ))}
+                    <button onClick={toggleHideDrafted} title="Hide players who have already been drafted" style={{
+                        padding: '2px 10px',
+                        minHeight: '40px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 'var(--text-micro, 0.6875rem)',
+                        borderRadius: '10px',
+                        border: '1px solid ' + (hideDrafted ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                        background: hideDrafted ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
+                        color: hideDrafted ? 'var(--gold)' : 'var(--silver)',
+                        cursor: 'pointer',
+                        fontFamily: FONT_UI,
+                        fontWeight: 600,
+                        marginLeft: 'auto',
+                    }}>{hideDrafted ? '✓ Hide drafted' : 'Hide drafted'}</button>
                 </div>
 
                 {activeLane === 'my' && (

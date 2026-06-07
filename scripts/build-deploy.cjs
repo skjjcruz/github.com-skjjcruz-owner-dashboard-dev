@@ -83,7 +83,11 @@ function processEntry(entry) {
     if (srcMatch) {
       compileExternal(srcMatch[1]);
       entryExternal++;
-      return `<script ${attrs}></script>`;
+      // data-wr-defer scripts are kept INERT (non-executing type) so the browser
+      // doesn't run them at boot; the draft loader injects executable copies on
+      // demand. The compiled overlay file + ?v= hashing (step 4) still apply.
+      const deferred = /\bdata-wr-defer\b/i.test(attrs);
+      return deferred ? `<script type="text/wr-deferred" ${attrs}></script>` : `<script ${attrs}></script>`;
     }
     // inline JSX block
     return `<script${attrs ? ' ' + attrs : ''}>${transform(body, entry + ' (inline)')}</script>`;
@@ -97,7 +101,7 @@ function processEntry(entry) {
 (function() {
   window.addEventListener('DOMContentLoaded', function() {
     if (typeof OwnerDashboard !== 'undefined') return;
-    document.getElementById('root').innerHTML = '<div style="color:#E74C3C;padding:40px;text-align:center;font-family:sans-serif"><h2>Module Load Error</h2><p>War Room modules failed to load. Try a hard refresh (Cmd+Shift+R) or check the console.</p></div>';
+    document.getElementById('root').innerHTML = '<div style="color:#E74C3C;padding:40px;text-align:center;font-family:sans-serif"><h2>Module Load Error</h2><p>Dynasty HQ modules failed to load. Try a hard refresh (Cmd+Shift+R) or check the console.</p></div>';
   });
 })();`,
   );

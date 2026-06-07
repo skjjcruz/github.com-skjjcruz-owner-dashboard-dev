@@ -5,6 +5,34 @@
     const LEAGUE_WR_KEYS  = window.App.WR_KEYS;
     const LeagueStorage = window.App.WrStorage;
 
+    // Lazy boundary for the Draft Command module (~1.26MB). The draft scripts are
+    // deferred at boot (see js/draft-loader.js); on first open we inject them, show a
+    // spinner, then render the real DraftTab. DraftTab is a bare global only defined
+    // after the load completes, so it is referenced only inside the loaded branch.
+    function DraftTabLazy(props) {
+        const [phase, setPhase] = React.useState(window.__wrDraftLoaded ? 'ready' : 'loading');
+        React.useEffect(() => {
+            if (phase === 'ready') return;
+            let alive = true;
+            const loader = window.wrLoadDraft ? window.wrLoadDraft() : Promise.resolve();
+            loader.then(() => { if (alive) setPhase('ready'); })
+                  .catch((e) => { if (window.wrLog) window.wrLog('draft.lazyLoad', e); if (alive) setPhase('error'); });
+            return () => { alive = false; };
+        }, []);
+        if (phase === 'error') {
+            return React.createElement('div', { style: { padding: '48px 24px', textAlign: 'center', color: 'var(--silver)' } },
+                'Draft module failed to load. ',
+                React.createElement('button', {
+                    onClick: () => window.location.reload(),
+                    style: { marginTop: '12px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 },
+                }, 'Reload'));
+        }
+        if (phase !== 'ready' || typeof DraftTab === 'undefined') {
+            return React.createElement('div', { style: { padding: '64px 24px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' } }, 'Loading Draft Command…');
+        }
+        return React.createElement(DraftTab, props);
+    }
+
     function escapeHtml(str) {
         return String(str)
             .replace(/&/g, '&amp;')
@@ -3351,7 +3379,7 @@
                     timeRecomputeTs={timeRecomputeTs}
                     viewMode={viewMode}
                     briefDraftInfo={briefDraftInfo}
-                /> : activeTab === 'draft' ? <DraftTab
+                /> : activeTab === 'draft' ? <DraftTabLazy
                     playersData={playersData}
                     statsData={statsData}
                     myRoster={myRoster}
