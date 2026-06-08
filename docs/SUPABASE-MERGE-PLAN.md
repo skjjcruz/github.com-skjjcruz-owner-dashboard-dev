@@ -142,6 +142,35 @@ should be resolved as part of the merge, not after:
 - This is a prerequisite for a clean "shared account across both apps" — you can't have a
   shared account if half the tables key off a Sleeper username that only Scout users have.
 
+### 1a. Assessment of migrations 020/021 (read-only, 2026-06-08)
+
+`ReconAI-sandbox-dev/supabase/migrations/020_account_identity_rekey.sql` and
+`021_verify_account_locks.sql` are **not pending drafts of the collapse** — they are the
+*parallel account-identity model that is already live on Scout*. They are absent from
+`list_migrations` only because (per their own headers) they were **applied by hand in the
+dashboard SQL editor**, which never writes to `supabase_migrations.schema_migrations`. `021`
+is an idempotent safety-net re-assert of `020`.
+
+Verified live on Scout (read-only):
+- **12 `*_account_own` policies** — the 11 single-owner tables in `020`'s list **plus**
+  the newly-added `mock_drafts` (this port correctly matched the convention).
+- Both helpers (`current_app_user_id`, `current_dhq_username`) present; RLS on every table →
+  **no security gap**.
+- Data is largely account-keyed already: `ai_analysis` = **213 account rows / 49 legacy-only**.
+
+Implications for Decision 2:
+- The collapse is **mostly already done at the data layer**, and the parallel model means
+  nothing breaks while the residual is finished. The legacy side keeps working untouched.
+- Remaining work = **backfill `user_id` on the residual legacy rows, then retire the legacy
+  username policies + `public.users`.** Small here (all test data).
+- **Hard caveat (`020`'s own note):** no `username → app_user` bridge is populated, and any
+  Sleeper-only legacy user with no email account cannot be mapped — a blind collapse would
+  orphan their rows. The collapse must therefore be preceded by a per-table audit of
+  `username IS NOT NULL AND user_id IS NULL` rows and a documented mapping (or an explicit
+  decision to drop unmappable legacy rows, acceptable for the current all-test dataset).
+- **Cleanup:** apply `020`/`021` via `apply_migration` (idempotent no-ops) so the migration
+  history becomes authoritative rather than "applied by hand." Queued for after the backup.
+
 ---
 
 ## 2. Merge plan (phased, all behind write-access enablement)
@@ -190,13 +219,25 @@ working sessions.
 - [ ] As part of Stripe removal (Decision 3): retire `fw-create-checkout` + `fw-stripe-webhook`
       and strip the Stripe-cancel block from `fw-delete-account`. Sequence this **after** Phase 5.
 
-### Phase 4 — Migrate War Room's users into Scout
-- [ ] Dedupe `app_users` by `email`. For collisions, Scout wins (it's the live record);
-      War Room test accounts that collide are dropped, not merged.
-- [ ] Migrate non-colliding War Room `app_users` (likely 0–3 real) and their `app_user_roles`
-      (2 `owner` rows → grant to the corresponding Scout `app_users`).
-- [ ] **No Stripe reconcile** (Decision 3). War Room's 2 subscription rows are test data; do not
-      carry over Stripe IDs. Any real entitlement is re-established via IAP (Phase 5).
+### Phase 4 — War Room user disposition (decided: WR is disposable)
+Read-only audit (2026-06-08) confirmed all 3 War Room `app_users` are founder/family test
+accounts: `steven.crusinberry@gmail.com` (owner) and `steven.crusinberry@c2football.com`
+(owner) **already exist in Scout**; `kimcrusinberry@gmail.com` (unverified test, 2026-06-07)
+is the only net-new account. No external/paying users exist in either project. Decision: treat
+War Room as disposable. Queued for after the backup:
+- [ ] Grant `owner` role to `steven.crusinberry@gmail.com` in Scout (War Room had it; Scout's
+      copy currently has no role). Scout already has `jacobcrusinberry@gmail.com` as `owner`.
+- [ ] Drop the `kimcrusinberry@gmail.com` test account (do not migrate). Recreatable via signup.
+- [ ] **No Stripe reconcile** (Decision 3); War Room's subscription rows are test data and are
+      not carried over. Real entitlements come from IAP (Phase 5).
+
+### Phase 4b — Decision-2 residual identity collapse (see §1a)
+- [ ] Per-table audit of `username IS NOT NULL AND user_id IS NULL` (residual legacy rows;
+      e.g. `ai_analysis` has 49). Map each to an `app_users.id` where possible.
+- [ ] Backfill `user_id` on mappable rows; for unmappable Sleeper-only rows, drop (acceptable —
+      all test data) or document why retained.
+- [ ] Only after residual is zero: retire the legacy `*_own` username policies and `public.users`.
+- [ ] Apply `020`/`021` via `apply_migration` (idempotent) to formalize migration history.
 
 ### Phase 5 — Products & the cross-app "bundle" entitlement (Apple IAP)
 - [ ] `products` already supports multiple slugs in one project. Define the product set in
