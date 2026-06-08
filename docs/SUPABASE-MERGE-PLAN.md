@@ -227,7 +227,10 @@ is the only net-new account. No external/paying users exist in either project. D
 War Room as disposable. Queued for after the backup:
 - [ ] Grant `owner` role to `steven.crusinberry@gmail.com` in Scout (War Room had it; Scout's
       copy currently has no role). Scout already has `jacobcrusinberry@gmail.com` as `owner`.
-- [ ] Drop the `kimcrusinberry@gmail.com` test account (do not migrate). Recreatable via signup.
+- [ ] **Keep `kimcrusinberry@gmail.com`** — migrate it into Scout: copy the `app_users` row
+      faithfully (email, `password_hash`, `display_name`, `email_verified`, timestamps) so the
+      existing login still works, and recreate its `war_room` subscription (`tier=free`,
+      `status=active`). New `app_users.id` is fine; nothing FKs to it cross-project.
 - [ ] **No Stripe reconcile** (Decision 3); War Room's subscription rows are test data and are
       not carried over. Real entitlements come from IAP (Phase 5).
 
