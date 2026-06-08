@@ -331,6 +331,10 @@
                                     }} style={{ width: '100%', minHeight: '44px', padding: '0.7rem', background: 'none', border: '1px solid var(--k-e74c3c, #e74c3c)', borderRadius: '6px', color: 'var(--k-e74c3c, #e74c3c)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                                         Delete Account
                                     </button>
+                                    <div style={{ marginTop: '0.85rem', display: 'flex', gap: '1rem', justifyContent: 'center', fontSize: 'var(--text-label, 0.75rem)' }}>
+                                        <a href="legal/privacy-policy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Privacy Policy</a>
+                                        <a href="legal/terms-of-service.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Terms of Service</a>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -606,6 +610,10 @@
                         <div style={sectionTitle}>ABOUT</div>
                         <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.65 }}>
                             Dynasty HQ v2.0 &middot; Powered by DHQ Engine
+                        </div>
+                        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '1rem', fontSize: 'var(--text-label, 0.75rem)' }}>
+                            <a href="legal/privacy-policy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Privacy Policy</a>
+                            <a href="legal/terms-of-service.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Terms of Service</a>
                         </div>
                     </div>
                     </>)}
