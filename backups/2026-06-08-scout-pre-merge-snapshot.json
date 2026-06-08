@@ -1,0 +1,26 @@
+{
+  "purpose": "Pre-merge restore point for the Scout project. Free-plan org has no dashboard backup feature, so this is a logical snapshot of the only data the merge wave deletes/mutates (ai_rate_limits is dropped after backfill; account/role/subscription state recorded for reference). Password hashes deliberately excluded.",
+  "snapshot_taken_at": "2026-06-08T21:49:00.015133+00:00",
+  "project": "sxshiqyxhhifvtfqawbq",
+  "ai_rate_limits": [
+    {"id": "66cc8465-40e2-4ca9-a07b-252c59bb6bb4", "username": "bigloco", "date": "2026-03-24", "request_count": 1, "tokens_used": 0, "created_at": "2026-03-24T02:43:04.870316+00:00", "updated_at": "2026-03-24T02:43:04.870316+00:00"},
+    {"id": "cc2cb5b2-6c6d-4d3f-b84e-f7140da19160", "username": "9d32edf7-b6cc-44d8-95dc-56e85851bad8", "date": "2026-04-05", "request_count": 2, "tokens_used": 0, "created_at": "2026-04-05T22:27:52.881617+00:00", "updated_at": "2026-04-05T22:28:36.213807+00:00"},
+    {"id": "342adfff-9657-4ebc-ab7d-d0ad7b6789a2", "username": "9d32edf7-b6cc-44d8-95dc-56e85851bad8", "date": "2026-04-06", "request_count": 5, "tokens_used": 0, "created_at": "2026-04-06T00:49:34.021805+00:00", "updated_at": "2026-04-06T14:18:35.311739+00:00"},
+    {"id": "e115adf5-b934-4184-bc9a-43660cf9c6d6", "username": "ec74ab42-1721-4ebd-bd87-78d387301629", "date": "2026-04-06", "request_count": 2, "tokens_used": 0, "created_at": "2026-04-06T22:39:14.378887+00:00", "updated_at": "2026-04-06T23:29:45.941543+00:00"}
+  ],
+  "manifest": {
+    "app_users_no_secrets": [
+      {"email": "steven.crusinberry@gmail.com", "email_verified": false, "created_at": "2026-03-17T23:41:24.529647+00:00"},
+      {"email": "jacobcrusinberry@gmail.com", "email_verified": false, "created_at": "2026-03-21T15:59:14.147288+00:00"},
+      {"email": "陽翔94@goodpostman.com", "email_verified": false, "created_at": "2026-03-21T22:25:05.808345+00:00"},
+      {"email": "crusinberryfam@att.net", "email_verified": false, "created_at": "2026-04-02T23:35:53.360435+00:00"},
+      {"email": "sam.coonrod@yahoo.com", "email_verified": false, "created_at": "2026-04-13T01:20:38.864634+00:00"},
+      {"email": "steven.crusinberry@c2football.com", "email_verified": false, "created_at": "2026-04-27T15:45:22.730924+00:00"}
+    ],
+    "app_user_roles": [
+      {"user_id": "9d32edf7-b6cc-44d8-95dc-56e85851bad8", "role": "owner"}
+    ],
+    "subscriptions_by_slug": {"war_room": 3, "dynast_hq": 3},
+    "row_counts": {"ai_rate_limits": 4, "ai_usage_daily": 8, "ai_usage_monthly": 4, "app_users": 6, "subscriptions": 6, "app_user_roles": 1}
+  }
+}

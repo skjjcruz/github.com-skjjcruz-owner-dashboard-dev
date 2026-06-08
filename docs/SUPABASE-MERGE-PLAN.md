@@ -180,11 +180,15 @@ Supabase write access until you're ready to start Phase 0, and disable it again 
 working sessions.
 
 ### Phase 0 — Freeze & backup (no schema change)
-- [ ] Snapshot both projects (Supabase dashboard → Database → Backups → on-demand, plus a
-      `pg_dump` of `public` for each held outside Supabase).
-- [ ] Record current edge-function versions and secrets (Stripe keys, AI provider keys, vault
-      entries from `20260517000000_ai_provider_vault_fallback`).
-- [ ] Put War Room into read-only / maintenance (it has no real traffic, so low cost).
+- [x] **Backup reality:** the org is on the Supabase **free plan** — no dashboard backups / PITR
+      exist, and the DB host isn't reachable from the work environment for `pg_dump`. Instead
+      took a **targeted logical snapshot** of exactly the data the wave deletes/mutates:
+      `backups/2026-06-08-scout-pre-merge-snapshot.json` (the dropped `ai_rate_limits` rows in
+      full + an account/role/subscription manifest; password hashes excluded). Adequate because
+      the only deletion on Scout is the 4-row legacy throttle.
+- [ ] Record current edge-function versions and secrets (AI provider keys, vault entries from
+      `20260517000000_ai_provider_vault_fallback`). (Stripe being removed — Decision 3.)
+- [x] War Room has no real traffic (founder test accounts only), so no maintenance freeze needed.
 
 ### Phase 1 — Schema reconciliation on Scout (additive only)
 - [x] **Add `mock_drafts` to Scout** (2026-06-08, migration `20260608000000_add_mock_drafts_table`).
@@ -199,13 +203,13 @@ working sessions.
       mutable `search_path` on several funcs, `draft_boards` permissive `Public write`,
       `increment_rate_limit` anon-executable SECURITY DEFINER). Cleanup candidates, not blockers.
 
-### Phase 2 — Collapse the AI-quota systems
-- [ ] Backfill the 4 `ai_rate_limits` rows into `ai_usage_daily` (map `username`→`identifier`
-      + resolve `user_id` via `users`→`app_users`; `tokens_used` carries over, cost columns
-      default 0).
-- [ ] Confirm `ai-analyze` (Scout v112) already reads/writes `ai_usage_daily/monthly` and no
-      longer depends on `ai_rate_limits`; if any path still references it, patch the function.
-- [ ] Drop `ai_rate_limits` (last, after the function is confirmed clean).
+### Phase 2 — Collapse the AI-quota systems  ✅ done 2026-06-08
+- [x] **Dropped legacy `ai_rate_limits` + `increment_rate_limit`** (migration
+      `20260608010000_drop_legacy_ai_rate_limits`). Verified read-only that ai-analyze (v112)
+      and all frontend code use only the cost-based `ai_usage_daily/monthly` path.
+- [x] **Backfill intentionally skipped** — the 4 rows were stale zero-token request counters
+      (Mar/Apr); preserved in `backups/2026-06-08-scout-pre-merge-snapshot.json` instead.
+- [x] Cleared advisor lints 0028/0029 (the SECURITY DEFINER incrementer) as a side effect.
 
 ### Phase 3 — Edge-function consolidation on Scout
 - [x] **`fw-delete-account` deployed to Scout** (2026-06-08, v1, `verify_jwt=false`). Verified
@@ -224,13 +228,12 @@ Read-only audit (2026-06-08) confirmed all 3 War Room `app_users` are founder/fa
 accounts: `steven.crusinberry@gmail.com` (owner) and `steven.crusinberry@c2football.com`
 (owner) **already exist in Scout**; `kimcrusinberry@gmail.com` (unverified test, 2026-06-07)
 is the only net-new account. No external/paying users exist in either project. Decision: treat
-War Room as disposable. Queued for after the backup:
-- [ ] Grant `owner` role to `steven.crusinberry@gmail.com` in Scout (War Room had it; Scout's
-      copy currently has no role). Scout already has `jacobcrusinberry@gmail.com` as `owner`.
-- [ ] **Keep `kimcrusinberry@gmail.com`** — migrate it into Scout: copy the `app_users` row
-      faithfully (email, `password_hash`, `display_name`, `email_verified`, timestamps) so the
-      existing login still works, and recreate its `war_room` subscription (`tier=free`,
-      `status=active`). New `app_users.id` is fine; nothing FKs to it cross-project.
+War Room as disposable.
+- [x] **Granted `owner` to `steven.crusinberry@gmail.com` in Scout** (2026-06-08). Scout also
+      still has `jacobcrusinberry@gmail.com` as `owner`.
+- [x] **Migrated `kimcrusinberry@gmail.com` into Scout** (2026-06-08) with its `war_room`
+      subscription. Note: it's a Google OAuth account (`password_hash = 'oauth:google'` sentinel,
+      not a real secret), so sign-in continues via Google; `fw-oauth-sync` keys on email.
 - [ ] **No Stripe reconcile** (Decision 3); War Room's subscription rows are test data and are
       not carried over. Real entitlements come from IAP (Phase 5).
 
@@ -275,8 +278,10 @@ War Room as disposable. Queued for after the backup:
 - [ ] Deploy repointed War Room frontend; smoke-test signup, signin, Google/Apple sign-in,
       checkout, AI analyze, and **account deletion** against Scout.
 - [ ] Watch Scout `security_events` + Sentry (both DSNs) for auth/RLS errors for 24–48h.
-- [ ] Once stable, **pause then delete** the War Room project (`hovnqztlbsgsywrbidbh`). Keep
-      its final backup for 90 days.
+- [ ] Once stable, **pause** the War Room project (`hovnqztlbsgsywrbidbh`) — reversible.
+      **Actual deletion is deferred to a separate explicit decision** (on the free plan there's
+      no backup to keep, and a logical snapshot of War Room's small dataset should be taken
+      first, mirroring Phase 0).
 
 ---
 
