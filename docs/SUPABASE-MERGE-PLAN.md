@@ -258,21 +258,19 @@ War Room as disposable.
       {this app's slug} OR `bundle`". This is the payoff of the merge — one row, one source of
       truth, no cross-project sync — now backed by Apple instead of Stripe.
 
-### Phase 6 — App config / endpoint repointing (the frontend cutover)
-- [ ] **`github.com-skjjcruz-owner-dashboard-dev/draft-war-room/supabase-config.js`**: change
-      `SUPABASE_URL` from `hovnqztlbsgsywrbidbh.supabase.co` → `sxshiqyxhhifvtfqawbq.supabase.co`
-      and swap the anon key to Scout's.
-- [ ] Sweep the War Room repo for the other 34 `hovnqztlbsgsywrbidbh` refs (`free-agency.html`,
-      `landing.html`, `admin.html`, `login.html`, `index.html`, `onboarding.html`,
+### Phase 6 — App config / endpoint repointing (the frontend cutover)  ✅ done 2026-06-08
+- [x] **Repointed the War Room repo to Scout** — `SUPABASE_URL`, anon key, and the CSP
+      `connect-src` headers across 12 files (`supabase-config.js`, `landing.html`,
+      `free-agency.html`, `admin.html`, `login.html`, `index.html`, `onboarding.html`,
       `draft-warroom.html`, `trade-calculator.html`, `reset-password.html`,
-      `connect-sleeper.html`, `gift.html`) and repoint each.
-- [ ] Clean up the 2 stray `sxshiqyxhhifvtfqawbq` refs in the War Room repo and the 1 stray
-      `hovnqztlbsgsywrbidbh` ref in the ReconAI repo so neither repo points at both.
-- [ ] `shared/app-config.js` (ReconAI repo) already targets Scout and already carries Sentry
-      DSNs for **both** `reconai` and `warroom` — confirm War Room's frontend loads this same
-      config so both apps share one `supabaseUrl`.
-- [ ] Verify CORS / allowed origins on Scout include War Room's web origin
-      (`c2-football.github.io` / the warroom Pages origin) and the Capacitor native origins.
+      `connect-sleeper.html`, `gift.html`). Verified: 0 remaining `hovnqztl…` refs, 0 remaining
+      old anon key, all 15 supabase URLs now Scout, Scout anon key in both config spots.
+- [x] CORS on Scout already covers the War Room origins — `_shared/security.ts`
+      `DEFAULT_ALLOWED_ORIGINS` includes `warroom.skjjcruz.com`, `c2-football.github.io`,
+      `skjjcruz.github.io` (plus localhost). No CORS change needed.
+- [ ] **Smoke-test required (can't run a browser from the work env):** sign in (password +
+      Google), load a page that reads data, run an AI analysis, and test account deletion in the
+      War Room app against Scout. Roll back = revert this commit if anything misbehaves.
 
 ### Phase 7 — Cutover, verify, retire
 - [ ] Deploy repointed War Room frontend; smoke-test signup, signin, Google/Apple sign-in,
