@@ -212,6 +212,38 @@ export async function clearRateLimit(admin: SupabaseClient, scope: string, ident
   } catch {}
 }
 
+/**
+ * Resolve the acting app user from either auth scheme:
+ *   1) a Dynasty HQ app JWT (email/password or fw-oauth-sync), or
+ *   2) a raw Supabase OAuth (Google) access token — validated via auth.getUser
+ *      and mapped to an app_users row by email.
+ * Lets admin endpoints work for Google sign-ins without a separate exchange.
+ */
+export async function resolveAppUserId(
+  admin: SupabaseClient,
+  req: Request,
+): Promise<{ userId: string; email: string | null } | null> {
+  const session = await requireActiveAppSession(admin, req);
+  if (session) return { userId: session.userId, email: session.email };
+
+  const token = bearerToken(req);
+  if (!token) return null;
+  try {
+    const { data, error } = await admin.auth.getUser(token);
+    const email = normalizeEmail(data?.user?.email);
+    if (error || !email) return null;
+    const { data: u } = await admin
+      .from('app_users')
+      .select('id, email')
+      .eq('email', email)
+      .maybeSingle();
+    if (!u) return null;
+    return { userId: u.id, email: u.email };
+  } catch {
+    return null;
+  }
+}
+
 export async function hasAdminRole(admin: SupabaseClient, userId: string | null | undefined): Promise<boolean> {
   if (!userId) return false;
   const { data } = await admin

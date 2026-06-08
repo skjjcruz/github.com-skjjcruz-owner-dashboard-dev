@@ -13,7 +13,7 @@ import {
   handleOptions,
   hasAdminRole,
   json,
-  requireActiveAppSession,
+  resolveAppUserId,
 } from '../_shared/security.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
   if (options) return options;
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-  const session = await requireActiveAppSession(admin, req);
+  const session = await resolveAppUserId(admin, req);
   const userId = session?.userId || null;
   if (!await hasAdminRole(admin, userId)) {
     await auditEvent(admin, req, 'admin_analytics_report', 'blocked', { userId }, { reason: 'missing_admin_role' });
