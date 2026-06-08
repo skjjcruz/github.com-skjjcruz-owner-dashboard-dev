@@ -13,6 +13,26 @@ retired. Rationale below — it comes down to data gravity.
 
 ---
 
+## Decisions locked (2026-06-08)
+
+| # | Decision | Choice |
+|---|---|---|
+| 1 | Surviving primary project | **Scout `sxshiqyxhhifvtfqawbq`, stay on us-west-2.** No relocation — avoids migrating 37.5K analytics rows + real users/subs. |
+| 2 | Legacy identity model (`users`/`sleeper_username` vs `app_users`) | **Collapse during the merge.** Standardize on `app_users.id`; fold `sleeper_username` into `app_users.platform_usernames`. (See §1.) |
+| 3 | Billing | **Remove Stripe entirely. Sell on the App Store via Apple In-App Purchase only, to start.** Entitlements become IAP-driven (built later — pricing/products still on hold). This rewrites Phases 4–5 below. |
+| 4 | `fw-delete-account` live gap | **Deployed to Scout now** as a standalone fix (2026-06-08), ahead of the merge. Closes the App-Store in-app-deletion blocker. |
+
+> **Stripe removal scope (new work, separate write-access task — not yet executed):**
+> retire the `fw-create-checkout` and `fw-stripe-webhook` edge functions; drop the
+> `stripe_customer_id` (`app_users`) and `stripe_subscription_id` / `stripe_price_id`
+> (`subscriptions`) columns once nothing reads them; strip the best-effort Stripe-cancel
+> block from `fw-delete-account`; and remove Stripe references from both frontends
+> (8 files in the War Room repo, 2 in the ReconAI repo). Do this as its own reviewed change,
+> **after** the `subscriptions` table is repurposed for IAP entitlements so no billing state
+> is lost. Until then the dormant Stripe code is harmless (no new checkouts will be created).
+
+---
+
 ## 0. What's actually out there (read-only inventory, 2026-06-08)
 
 ### Project → app → repo mapping
@@ -153,27 +173,35 @@ working sessions.
 - [ ] Drop `ai_rate_limits` (last, after the function is confirmed clean).
 
 ### Phase 3 — Edge-function consolidation on Scout
-- [ ] Deploy **`fw-delete-account`** to Scout (also closes the live App-Store gap).
+- [x] **`fw-delete-account` deployed to Scout** (2026-06-08, v1, `verify_jwt=false`). Verified
+      all 16 `app_users` child FKs are `ON DELETE CASCADE`, so deletion wipes child data.
 - [ ] Deploy **`fw-oauth-sync`** to Scout (Google/Apple sign-in for native app).
 - [ ] Keep Scout's `espn-proxy` / `yahoo-proxy` / `yahoo_tokens` (War Room lacks these).
 - [ ] Diff `ai-analyze` and the `fw-*` functions between projects; Scout's are newer, so War
-      Room contributes only the two functions above. Confirm no War-Room-only behavior is lost.
+      Room contributes only the OAuth-sync function above. Confirm no War-Room-only behavior is lost.
+- [ ] As part of Stripe removal (Decision 3): retire `fw-create-checkout` + `fw-stripe-webhook`
+      and strip the Stripe-cancel block from `fw-delete-account`. Sequence this **after** Phase 5.
 
-### Phase 4 — Migrate War Room's users & billing into Scout
+### Phase 4 — Migrate War Room's users into Scout
 - [ ] Dedupe `app_users` by `email`. For collisions, Scout wins (it's the live record);
       War Room test accounts that collide are dropped, not merged.
-- [ ] Migrate non-colliding War Room `app_users` (likely 0–3 real), their `subscriptions`,
-      and `app_user_roles` (2 `owner` rows → grant to the corresponding Scout `app_users`).
-- [ ] Re-point any migrated `subscriptions.stripe_customer_id` / `stripe_subscription_id` to
-      the single Stripe account that will back the merged app (verify in Stripe dashboard).
+- [ ] Migrate non-colliding War Room `app_users` (likely 0–3 real) and their `app_user_roles`
+      (2 `owner` rows → grant to the corresponding Scout `app_users`).
+- [ ] **No Stripe reconcile** (Decision 3). War Room's 2 subscription rows are test data; do not
+      carry over Stripe IDs. Any real entitlement is re-established via IAP (Phase 5).
 
-### Phase 5 — Products & the cross-app "bundle" subscription
+### Phase 5 — Products & the cross-app "bundle" entitlement (Apple IAP)
 - [ ] `products` already supports multiple slugs in one project. Define the product set in
       Scout: `scout`, `warroom`, and a `bundle` slug. **(Do not set prices/StoreKit product
-      IDs yet — pricing is on hold per project decision.)**
-- [ ] Entitlement model: a single `subscriptions` row with `product_slug='bundle'` grants both
-      apps. Each app's gate checks "has active sub for {this app's slug} OR `bundle`".
-- [ ] This is the payoff of the merge: one row, one source of truth, no cross-project sync.
+      IDs yet — pricing/products are on hold per project decision.)**
+- [ ] Repurpose `subscriptions` as the **IAP entitlement ledger**: replace the `stripe_*`
+      columns with Apple fields (e.g. `apple_original_transaction_id`,
+      `apple_product_id`, `expires_at`, `environment`). A server-side StoreKit/App Store Server
+      Notifications handler (built later) writes rows here. **Not in this merge — pricing on hold.**
+- [ ] Entitlement model is unchanged by the billing swap: a single `subscriptions` row with
+      `product_slug='bundle'` grants both apps; each app gates on "active entitlement for
+      {this app's slug} OR `bundle`". This is the payoff of the merge — one row, one source of
+      truth, no cross-project sync — now backed by Apple instead of Stripe.
 
 ### Phase 6 — App config / endpoint repointing (the frontend cutover)
 - [ ] **`github.com-skjjcruz-owner-dashboard-dev/draft-war-room/supabase-config.js`**: change
@@ -213,18 +241,18 @@ working sessions.
 
 ---
 
-## 4. Open decisions (need a human before write access is enabled)
+## 4. Open decisions
 
-1. **Region.** Scout is `us-west-2`; War Room is `us-east-2` (newer PG). Surviving on Scout
-   keeps `us-west-2`. Acceptable, or do you want the merged project in `us-east-2`? (Changing
-   region = a migration to a new project, materially larger scope — default recommendation is
-   **stay on Scout/us-west-2**.)
-2. **Stripe accounts.** Are Scout and War Room on the same Stripe account today, or two? This
-   determines how painful Phase 4's billing reconcile is.
-3. **Identity cleanup scope.** Do the legacy `users`/`sleeper_username` collapse (§1) as part
-   of this merge (recommended, cleaner) or defer it as a follow-up?
-4. **The two `owner` roles in War Room** — confirm these are founder/test accounts so we can
+Resolved 2026-06-08 (see "Decisions locked" up top): primary = Scout/us-west-2; identity
+collapse done in-merge; Stripe removed in favor of Apple IAP; `fw-delete-account` deployed.
+
+Still open:
+
+1. **The two `owner` roles in War Room** — confirm these are founder/test accounts so we can
    map them to existing Scout owners rather than treating them as new users.
+2. **Apple IAP entitlement schema** — deferred until pricing/products come off hold. When that
+   happens, finalize the `subscriptions` IAP columns (Phase 5) and the App Store Server
+   Notifications handler before any paid build ships.
 
 ---
 
