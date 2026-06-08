@@ -112,6 +112,9 @@ jobs:
       - name: Deploy fw-profile function
         run: supabase functions deploy fw-profile --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
 
+      - name: Deploy fw-delete-account function
+        run: supabase functions deploy fw-delete-account --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+
       - name: Deploy fw-create-checkout function
         run: supabase functions deploy fw-create-checkout --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
 
