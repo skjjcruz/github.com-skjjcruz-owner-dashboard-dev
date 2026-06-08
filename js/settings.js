@@ -312,6 +312,26 @@
                                 <button onClick={handleLogout} style={{ width: '100%', padding: '0.7rem', background: 'rgba(231,76,60,0.18)', border: '1px solid rgba(231,76,60,0.45)', borderRadius: '6px', color: 'var(--k-fca5a5, #fca5a5)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                                     Logout
                                 </button>
+                                <div style={{ marginTop: '0.85rem', paddingTop: '0.85rem', borderTop: '1px solid var(--ov-6, rgba(255,255,255,0.1))' }}>
+                                    <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.5rem', lineHeight: 1.5 }}>
+                                        Permanently delete your account and all of your data. This cannot be undone.
+                                    </div>
+                                    <button onClick={async () => {
+                                        if (!confirm('Delete your account permanently? This erases your profile, leagues, AI history, and cancels any subscription. This cannot be undone.')) return;
+                                        if (!confirm('Are you absolutely sure? There is no way to recover your account after this.')) return;
+                                        try {
+                                            await window.OD.deleteAccount();
+                                            try { localStorage.removeItem('fw_session_v1'); localStorage.removeItem('od_session_v1'); } catch (e) {}
+                                            try { if (window.OD.signOut) await window.OD.signOut(); } catch (e) {}
+                                            alert('Your account has been deleted.');
+                                            window.location.href = 'landing.html?signout=1';
+                                        } catch (e) {
+                                            alert('Could not delete your account: ' + (e && e.message ? e.message : 'please try again later.'));
+                                        }
+                                    }} style={{ width: '100%', minHeight: '44px', padding: '0.7rem', background: 'none', border: '1px solid var(--k-e74c3c, #e74c3c)', borderRadius: '6px', color: 'var(--k-e74c3c, #e74c3c)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
+                                        Delete Account
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
