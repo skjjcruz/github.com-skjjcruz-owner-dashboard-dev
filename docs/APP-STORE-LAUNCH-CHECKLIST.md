@@ -23,24 +23,22 @@ Right now the app sells subscriptions (Scout / War Room / Pro) using **Stripe**.
 subscriptions inside an iPhone app. Apple requires you to use **their own payment system
 ("In-App Purchase")** — and **Apple takes a 15–30% cut** (vs. Stripe's ~3%).
 
-You have three options:
-- **A. Use Apple In-App Purchase on iPhone** (keep Stripe on web/Android). Most apps do
-  this. Costs you Apple's cut, but it's the smoothest approval. *I can build this.*
-- **B. "Reader" approach** — don't sell anything inside the iPhone app at all; users
-  subscribe on your website, and the app just unlocks what they already bought. Avoids
-  Apple's cut, but Apple has strict rules about not even *mentioning* outside payment.
-- **C. Free app** — no paid tiers on iPhone at all. Simplest to approve, no revenue on iOS.
+**DECIDED:** Sell through the **App Store using Apple In-App Purchase (StoreKit)**, Apple
+only. No third-party billing layer (RevenueCat), not worrying about cross-platform sync for
+now.
 
-**👉 This is the one decision I need from you.** Everything else I can move on without you.
+**⏸ BLOCKED ON PRODUCTS:** The actual purchase wiring can't be built until we decide **what
+products we're selling and at what price** — In-App Purchase is literally "buy *product X* →
+unlock *feature Y* at *price Z*." Products/pricing are intentionally on hold (TBD), so the
+IAP build waits for that decision. Everything below that doesn't touch products is unblocked.
 
-### 2. 🟠 "Delete my account" button (required, missing today)
-Since 2022, Apple requires that any app where people make an account must let them **delete
-their account from inside the app**. Yours has sign-up but no delete-account option. This is
-a guaranteed rejection. *I can build this.*
+### 2. ✅ "Delete my account" button — DONE
+Apple requires any app with account creation to let users delete their account in-app. Built
+and shipped: a Delete Account button in Settings + the `fw-delete-account` back-end.
 
-### 3. 🟠 Privacy Policy + Terms pages (required, missing today)
-Apple requires a public **Privacy Policy** web link, and you need **Terms of Service**. You
-don't have either yet. *I've started both for you — see below.*
+### 3. ✅ Privacy Policy + Terms pages — DRAFTED
+Apple requires a public Privacy Policy link and Terms. Both drafted in `legal/` (fill in
+company details + a quick legal review before publishing).
 
 ---
 
