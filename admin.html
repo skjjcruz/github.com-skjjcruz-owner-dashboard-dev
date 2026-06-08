@@ -364,8 +364,8 @@
   <h1>Admin Panel</h1>
   <p>Dynasty HQ — User Management</p>
   <div class="field">
-    <label>Admin Secret</label>
-    <input type="password" id="secret-input" placeholder="Enter admin secret" autocomplete="current-password">
+    <label>Admin access</label>
+    <input type="password" id="secret-input" placeholder="Paste access token (only if needed)" autocomplete="current-password">
   </div>
   <button class="btn-gold" id="login-btn">Unlock</button>
   <div class="error-msg" id="gate-error"></div>
@@ -485,7 +485,27 @@
   let totalCount = 0;
 
   // ── Gate ────────────────────────────────────────────────────
-  if (adminSecret) showDashboard();
+  // Reuse the signed-in app session automatically (admin.html shares the same
+  // origin as the app, so localStorage 'fw_session_v1' is readable). No token
+  // pasting needed — the manual field stays as a fallback.
+  (async function autoUnlock() {
+    if (adminSecret) { showDashboard(); return; }
+    let token = '';
+    try { token = JSON.parse(localStorage.getItem('fw_session_v1') || 'null')?.token || ''; } catch {}
+    if (!token) return; // not signed in → show gate
+    try {
+      const res = await fetchUsers(token, 0, '');
+      if (res.ok) {
+        adminSecret = token;
+        sessionStorage.setItem('fw_admin_secret', token);
+        showDashboard(res);
+      } else if (res.status === 401) {
+        // Signed in, but this account isn't an owner/admin.
+        document.getElementById('gate-error').textContent =
+          'You’re signed in, but this account isn’t an owner yet.';
+      }
+    } catch { /* leave the gate visible */ }
+  })();
 
   document.getElementById('secret-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('login-btn').click();
