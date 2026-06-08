@@ -158,11 +158,17 @@ working sessions.
 - [ ] Put War Room into read-only / maintenance (it has no real traffic, so low cost).
 
 ### Phase 1 — Schema reconciliation on Scout (additive only)
-- [ ] Add `mock_drafts` to Scout (port War Room's DDL + RLS).
+- [x] **Add `mock_drafts` to Scout** (2026-06-08, migration `20260608000000_add_mock_drafts_table`).
+      War Room's copy was empty (0 rows) → schema parity only. Adapted to Scout's dual-identity
+      RLS (added `user_id`→`app_users` CASCADE, relaxed `sleeper_username` to nullable,
+      `_account_own` + `_own` + public-by-slug policies).
 - [ ] Reconcile `mock_draft_prospects.id` type; keep Scout's richer `draft_boards`.
 - [ ] Verify every War-Room-only column/constraint has a home in Scout. Net effect: Scout's
       schema becomes a true superset.
-- [ ] Re-run `get_advisors` (security + performance) on Scout after DDL.
+- [x] **Re-ran `get_advisors` (security) after DDL** — `mock_drafts` clean (has policies). All
+      remaining lints are pre-existing (ai_usage_* RLS-no-policy [service-role-only],
+      mutable `search_path` on several funcs, `draft_boards` permissive `Public write`,
+      `increment_rate_limit` anon-executable SECURITY DEFINER). Cleanup candidates, not blockers.
 
 ### Phase 2 — Collapse the AI-quota systems
 - [ ] Backfill the 4 `ai_rate_limits` rows into `ai_usage_daily` (map `username`→`identifier`
@@ -175,7 +181,9 @@ working sessions.
 ### Phase 3 — Edge-function consolidation on Scout
 - [x] **`fw-delete-account` deployed to Scout** (2026-06-08, v1, `verify_jwt=false`). Verified
       all 16 `app_users` child FKs are `ON DELETE CASCADE`, so deletion wipes child data.
-- [ ] Deploy **`fw-oauth-sync`** to Scout (Google/Apple sign-in for native app).
+- [x] **`fw-oauth-sync` deployed to Scout** (2026-06-08, v1, `verify_jwt=false`). Pre-verified
+      Scout's `products` slugs are `{bundle, dynast_hq, war_room}` — matches the function's valid
+      set, so the auto-provisioned free-subscription insert won't hit the `product_slug` FK.
 - [ ] Keep Scout's `espn-proxy` / `yahoo-proxy` / `yahoo_tokens` (War Room lacks these).
 - [ ] Diff `ai-analyze` and the `fw-*` functions between projects; Scout's are newer, so War
       Room contributes only the OAuth-sync function above. Confirm no War-Room-only behavior is lost.
