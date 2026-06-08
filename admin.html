@@ -500,9 +500,13 @@
         sessionStorage.setItem('fw_admin_secret', token);
         showDashboard(res);
       } else if (res.status === 401) {
-        // Signed in, but this account isn't an owner/admin.
-        document.getElementById('gate-error').textContent =
-          'You’re signed in, but this account isn’t an owner yet.';
+        // Signed in, but this account isn't an owner/admin. Surface the email
+        // so it's obvious which account needs the owner flag.
+        let email = '';
+        try { email = JSON.parse(localStorage.getItem('fw_session_v1') || 'null')?.user?.email || ''; } catch {}
+        document.getElementById('gate-error').textContent = email
+          ? `Signed in as ${email} — this account isn’t an owner yet.`
+          : 'You’re signed in, but this account isn’t an owner yet.';
       }
     } catch { /* leave the gate visible */ }
   })();
