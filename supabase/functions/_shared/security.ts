@@ -20,7 +20,10 @@ export function corsHeaders(req: Request): HeadersInit {
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
-  const allowed = configured.length ? configured : DEFAULT_ALLOWED_ORIGINS;
+  // Union the built-in defaults with any env-configured origins, so the known
+  // production origins (e.g. the GitHub Pages site) are always allowed even when
+  // APP_ALLOWED_ORIGINS is set to a narrower list.
+  const allowed = [...new Set([...DEFAULT_ALLOWED_ORIGINS, ...configured])];
   const allowOrigin = allowed.includes(origin) ? origin : allowed[0] || origin || '';
   return {
     'Access-Control-Allow-Origin': allowOrigin,
