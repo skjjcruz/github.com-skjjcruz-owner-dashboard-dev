@@ -58,7 +58,7 @@ jobs:
           quoted_versions = ', '.join(f"'{version}'" for version in expected)
           query = f'select version from supabase_migrations.schema_migrations where version in ({quoted_versions})'
           req = urllib.request.Request(
-              'https://api.supabase.com/v1/projects/hovnqztlbsgsywrbidbh/database/query',
+              'https://api.supabase.com/v1/projects/sxshiqyxhhifvtfqawbq/database/query',
               data=json.dumps({'query': query}).encode(),
               headers={
                   'Authorization': f'Bearer {token}',
@@ -92,46 +92,46 @@ jobs:
           PYEOF
 
       - name: Deploy get-session-token function
-        run: supabase functions deploy get-session-token --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy get-session-token --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy set-password function
-        run: supabase functions deploy set-password --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy set-password --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy ai-analyze function
-        run: supabase functions deploy ai-analyze --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy ai-analyze --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-signup function
-        run: supabase functions deploy fw-signup --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-signup --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-signin function
-        run: supabase functions deploy fw-signin --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-signin --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-oauth-sync function
-        run: supabase functions deploy fw-oauth-sync --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-oauth-sync --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-profile function
-        run: supabase functions deploy fw-profile --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-profile --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-delete-account function
-        run: supabase functions deploy fw-delete-account --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-delete-account --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-create-checkout function
-        run: supabase functions deploy fw-create-checkout --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-create-checkout --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-stripe-webhook function
-        run: supabase functions deploy fw-stripe-webhook --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-stripe-webhook --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-request-password-reset function
-        run: supabase functions deploy fw-request-password-reset --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-request-password-reset --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-confirm-password-reset function
-        run: supabase functions deploy fw-confirm-password-reset --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy fw-confirm-password-reset --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy admin-list-users function
-        run: supabase functions deploy admin-list-users --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy admin-list-users --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy admin-analytics-report function
-        run: supabase functions deploy admin-analytics-report --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy admin-analytics-report --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy mfl-proxy function
-        run: supabase functions deploy mfl-proxy --project-ref hovnqztlbsgsywrbidbh --use-api --no-verify-jwt
+        run: supabase functions deploy mfl-proxy --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
