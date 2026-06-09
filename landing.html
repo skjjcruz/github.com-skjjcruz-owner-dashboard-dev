@@ -362,6 +362,12 @@
       Continue with Google
     </button>
 
+    <!-- Apple -->
+    <button id="btnApple" class="auth-apple" onclick="handleApple()">
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="currentColor"><path d="M17.05 12.04c-.03-2.65 2.16-3.92 2.26-3.98-1.23-1.8-3.15-2.05-3.83-2.08-1.63-.16-3.18.96-4.01.96-.82 0-2.1-.94-3.46-.91-1.78.03-3.42 1.03-4.34 2.62-1.85 3.21-.47 7.95 1.33 10.55.88 1.27 1.93 2.7 3.3 2.65 1.32-.05 1.82-.85 3.42-.85 1.59 0 2.04.85 3.44.82 1.42-.02 2.32-1.3 3.19-2.58 1-1.47 1.42-2.89 1.44-2.97-.03-.01-2.76-1.06-2.79-4.2zM14.6 4.48c.73-.89 1.22-2.12 1.08-3.35-1.05.04-2.32.7-3.07 1.58-.67.78-1.26 2.03-1.1 3.23 1.17.09 2.36-.6 3.09-1.46z"/></svg>
+      Continue with Apple
+    </button>
+
     <div class="auth-or"><span>or</span></div>
 
     <!-- Email signup / signin -->
@@ -381,6 +387,8 @@
   <style>
     .auth-google{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f2328;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:6px}
     .auth-google:hover{box-shadow:0 4px 14px rgba(0,0,0,.25)}
+    .auth-apple{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px;border-radius:10px;border:1px solid #000;background:#000;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:6px}
+    .auth-apple:hover{box-shadow:0 4px 14px rgba(0,0,0,.4)}
     .auth-or{display:flex;align-items:center;text-align:center;color:var(--muted);font-size:12px;margin:14px 0;gap:10px}
     .auth-or::before,.auth-or::after{content:'';flex:1;height:1px;background:var(--border)}
     .auth-linkbtn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit}
@@ -518,6 +526,7 @@
       document.getElementById('sleeperHint').parentElement.style.display = signup ? '' : 'none';
       document.getElementById('btnJoin').textContent = signup ? 'Create account \u2192' : 'Sign in \u2192';
       document.getElementById('btnGoogle').lastChild.textContent = signup ? ' Continue with Google' : ' Sign in with Google';
+      document.getElementById('btnApple').lastChild.textContent = signup ? ' Continue with Apple' : ' Sign in with Apple';
       document.getElementById('toggleMode').textContent = signup ? 'Already have an account? Sign in' : 'Need an account? Sign up';
       document.getElementById('forgotBtn').style.display = signup ? 'none' : '';
     }
@@ -563,6 +572,14 @@
       if (!db) { showAlert('error', 'Sign-in is still loading \u2014 try again in a moment.'); return; }
       trackLandingEvent('oauth_started', { provider: 'google' });
       db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } });
+    }
+
+    // ── Apple OAuth (account only) ──────────────────────────────────────────
+    function handleApple() {
+      const db = getSbClient();
+      if (!db) { showAlert('error', 'Sign-in is still loading — try again in a moment.'); return; }
+      trackLandingEvent('oauth_started', { provider: 'apple' });
+      db.auth.signInWithOAuth({ provider: 'apple', options: { redirectTo: window.location.origin + window.location.pathname } });
     }
 
     // Handle Google redirect back: store session, then route to step 2.
