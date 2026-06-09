@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
   <title>Dynasty HQ — Connect Sleeper</title>
+  <!-- Pre-paint auth gate: decide before render so this step-2 page only shows
+       to a signed-in user who hasn't linked Sleeper yet. Everyone else (no
+       session, or already onboarded) is redirected without a flash. -->
+  <style id="preboot-hide">html{visibility:hidden!important}</style>
+  <noscript><style>html{visibility:visible!important}</style></noscript>
+  <script>
+    (function () {
+      function reveal(){ var s=document.getElementById('preboot-hide'); if(s&&s.parentNode){ s.parentNode.removeChild(s); } }
+      try {
+        var sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
+        if (!sess || !sess.token) { window.location.replace('landing.html'); return; }
+        var profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
+        var legacy  = JSON.parse(localStorage.getItem('od_auth_v1') || 'null');
+        var onboarded = (profile && profile.sleeperUsername) || (legacy && legacy.username);
+        if (onboarded) {
+          var pref = localStorage.getItem('fw_preferred_view');
+          window.location.replace(pref === 'scout' ? 'https://skjjcruz.github.io/ReconAI-sandbox-dev/' : 'index.html');
+          return;
+        }
+        reveal(); // signed in, Sleeper not linked -> show the connect form
+      } catch (e) { reveal(); }
+    })();
+  </script>
   <link rel="icon" href="icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
@@ -60,7 +83,8 @@
       const pref = localStorage.getItem('fw_preferred_view');
       if (pref === 'scout') return SCOUT_URL;
       if (pref === 'warroom') return WARROOM_URL;
-      return window.innerWidth < 768 ? SCOUT_URL : WARROOM_URL;
+      // Deterministic default: always the War Room league picker (no orientation flip).
+      return WARROOM_URL;
     }
 
     // Require an account session — this page is step 2 of signup.

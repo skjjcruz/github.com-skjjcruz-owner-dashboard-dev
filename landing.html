@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
   <title>Dynasty HQ — Dynasty Fantasy Intelligence</title>
+  <!-- Pre-paint auth gate: a signed-in user is redirected to their destination
+       BEFORE the marketing page renders, so it never flashes on screen. Runs
+       synchronously off localStorage; no network, no Supabase round-trip. -->
+  <style id="preboot-hide">html{visibility:hidden!important}</style>
+  <noscript><style>html{visibility:visible!important}</style></noscript>
+  <script>
+    (function () {
+      function reveal(){ var s=document.getElementById('preboot-hide'); if(s&&s.parentNode){ s.parentNode.removeChild(s); } }
+      try {
+        var q = new URLSearchParams(window.location.search);
+        // Editor preview and explicit sign-out stay on this page.
+        if (q.has('landingPreview') || q.has('signout')) { reveal(); return; }
+        var sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
+        if (!sess || !sess.token) { reveal(); return; } // not signed in -> show landing
+        var profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
+        var legacy  = JSON.parse(localStorage.getItem('od_auth_v1') || 'null');
+        var onboarded = (profile && profile.sleeperUsername) || (legacy && legacy.username);
+        if (!onboarded) { window.location.replace('connect-sleeper.html'); return; }
+        var pref = localStorage.getItem('fw_preferred_view');
+        window.location.replace(pref === 'scout' ? 'https://skjjcruz.github.io/ReconAI-sandbox-dev/' : 'index.html');
+      } catch (e) { reveal(); }
+    })();
+  </script>
   <link rel="icon" href="icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -459,8 +482,10 @@
       const pref = localStorage.getItem('fw_preferred_view');
       if (pref === 'scout') return SCOUT_URL;
       if (pref === 'warroom') return WARROOM_URL;
-      // Default: mobile -> Scout, desktop -> War Room
-      return window.innerWidth < 768 ? SCOUT_URL : WARROOM_URL;
+      // Deterministic default: always the War Room league picker. (Previously this
+      // keyed off window.innerWidth, which made iPads flip between Scout and War
+      // Room by orientation.) An explicit 'scout' preference still wins above.
+      return WARROOM_URL;
     }
 
     const CONNECT_URL = 'connect-sleeper.html';
