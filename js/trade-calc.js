@@ -4,6 +4,299 @@
     // ══════════════════════════════════════════════════════════════════════════
     // TRADE CALCULATOR TAB — migrated from trade-calculator.html
     // ══════════════════════════════════════════════════════════════════════════
+
+    // ── TcVerdictPanel — extracted from renderTradeAnalyzer (Step-1 refactor; no behavior change) ──
+    // Pure presentational: takes already-computed deal-evaluation values and renders the verdict
+    // headline, impact grid, posture/DNA chips, 8-factor psych-tax table, and likelihood bar.
+    // Reused by the redesigned single-surface Context Rail's Verdict state.
+    function TcVerdictPanel({ verdictColor, diffDisplay, verdictText, totalA, totalB, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta, FAAB_RATE, likelihoodColor, likelihood, netTaxTotal, manualBehaviorFit, otherOwnerId, theirPosture, otherDnaKey, otherDna, manualBehaviorProfile, psychTaxes, grudgeTax }) {
+        return (
+            <div className="tc-ta-verdict tc-ta-sticky-summary" id="wr-export-trade">
+                <div className="tc-section-hdr" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>TRADE ANALYSIS<button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-trade'), 'trade-analysis')} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', padding:'2px 8px', color:'var(--gold)', fontSize:'var(--text-micro, 0.6875rem)', cursor:'pointer', fontFamily: 'var(--font-body)', minHeight:'44px', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>Snapshot</button></div>
+                <div style={{ display:'flex', alignItems:'baseline', gap:'0.6rem', flexWrap:'wrap' }}>
+                    <span className="tc-verdict-diff" style={{ color: verdictColor }}>{diffDisplay}</span>
+                    <span style={{ fontFamily:'var(--font-title)', fontSize:'1.1rem', color: verdictColor }}>{verdictText}</span>
+                    <span style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.655 }}>(gave {totalA.toLocaleString()} / received {totalB.toLocaleString()})</span>
+                </div>
+                <div className="tc-ta-impact-grid">
+                    <div>
+                        <span>Roster Impact</span>
+                        <strong>{rosterImpactLabel}</strong>
+                        <em>{starterValueDelta >= 0 ? '+' : ''}{Math.round(starterValueDelta).toLocaleString()} player DHQ</em>
+                    </div>
+                    <div>
+                        <span>Pick Capital</span>
+                        <strong>{pickCapitalDelta >= 0 ? '+' : ''}{Math.round(pickCapitalDelta).toLocaleString()}</strong>
+                        <em>{pickQuantityDelta >= 0 ? '+' : ''}{pickQuantityDelta} picks</em>
+                    </div>
+                    <div>
+                        <span>FAAB</span>
+                        <strong>{faabDelta >= 0 ? '+' : ''}${faabDelta}</strong>
+                        <em>{Math.round(faabDelta * FAAB_RATE).toLocaleString()} DHQ equiv.</em>
+                    </div>
+                    <div>
+                        <span>Acceptance</span>
+                        <strong style={{ color: likelihoodColor }}>{likelihood}%</strong>
+                        <em>{netTaxTotal >= 0 ? '+' : ''}{netTaxTotal}% psych · {manualBehaviorFit ? `${manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}${manualBehaviorFit.acceptanceDelta}% behavior` : '0% behavior'}</em>
+                    </div>
+                </div>
+                {otherOwnerId && (
+                    <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
+                        <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65 }}>Their posture:</span>
+                        <span className="tc-posture-badge" style={{ color:theirPosture.color, borderColor:theirPosture.color, background:`${theirPosture.color}18` }}>{theirPosture.label}</span>
+                        {otherDnaKey !== 'NONE' && <span className="tc-chip tc-chip-dna">{otherDna.label}</span>}
+                        {(manualBehaviorProfile?.inferences || []).slice(0, 3).map(tag => <span key={tag} className="tc-chip">{tag.replace(/-/g, ' ')}</span>)}
+                    </div>
+                )}
+                <div>
+                    <div style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'0.35rem' }}>Psychological Tax Breakdown {React.createElement(Tip, null, 'Each owner\'s DNA type creates percentage-point acceptance modifiers beyond pure value. Taxes reduce likelihood, bonuses increase it. Factors: endowment effect, panic premium, status tax, loss aversion, rebuilding discount, need fulfillment, window alignment, and posture.')}</div>
+                    <div className="tc-tax-table">
+                        {psychTaxes.map((t,i) => (
+                            <div key={i} className={`tc-tax-table-row ${t.type === 'BONUS' ? 'tc-bonus' : 'tc-tax'}`}>
+                                <span className="tc-tax-name">{t.name}</span>
+                                <span className="tc-tax-desc">{t.desc}</span>
+                                <span className="tc-tax-val" style={{ color: t.impact > 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>{t.impact > 0 ? '+' : ''}{t.impact}%</span>
+                            </div>
+                        ))}
+                        {grudgeTax.total !== 0 && (
+                            <div className={`tc-tax-table-row ${grudgeTax.total < 0 ? 'tc-tax' : 'tc-bonus'}`}>
+                                <span className="tc-tax-name">Grudge Tax</span>
+                                <span className="tc-tax-desc">{grudgeTax.entries.length} logged interaction{grudgeTax.entries.length!==1?'s':''}</span>
+                                <span className="tc-tax-val" style={{ color: grudgeTax.total < 0 ? 'var(--loss-red)' : 'var(--win-green)' }}>{grudgeTax.total > 0 ? '+' : ''}{grudgeTax.total}%</span>
+                            </div>
+                        )}
+                        {manualBehaviorFit && (
+                            <div className={`tc-tax-table-row ${manualBehaviorFit.acceptanceDelta >= 0 ? 'tc-bonus' : 'tc-tax'}`}>
+                                <span className="tc-tax-name">Observed Behavior</span>
+                                <span className="tc-tax-desc">{manualBehaviorFit.framing || 'Trade history adjusted acceptance odds.'}</span>
+                                <span className="tc-tax-val" style={{ color: manualBehaviorFit.acceptanceDelta >= 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>{manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}{manualBehaviorFit.acceptanceDelta}%</span>
+                            </div>
+                        )}
+                        <div className="tc-tax-table-row tc-total">
+                            <span className="tc-tax-name">NET MODIFIER</span>
+                            <span className="tc-tax-desc">Folded into effective surplus</span>
+                            <span className="tc-tax-val" style={{ color: netTaxTotal > 0 ? 'var(--win-green)' : netTaxTotal < 0 ? 'var(--loss-red)' : 'var(--silver)' }}>{netTaxTotal > 0 ? '+' : ''}{netTaxTotal}%</span>
+                        </div>
+                    </div>
+                </div>
+                {otherDnaKey !== 'NONE' && otherDna.strategy && (
+                    <div style={{ fontSize:'0.76rem', color:otherDna.color, fontStyle:'italic', background:`${otherDna.color}0d`, border:`1px solid ${otherDna.color}25`, borderRadius:5, padding:'0.4rem 0.6rem' }}>Approach: {otherDna.strategy}</div>
+                )}
+                <div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.3rem' }}>
+                        <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.7, textTransform:'uppercase', letterSpacing:'0.06em' }}>Likelihood of Acceptance {React.createElement(Tip, null, 'Estimated chance the other owner accepts. Starts at 50%, then applies value difference plus psychological modifiers from DNA, posture, needs, window, and history.')}</span>
+                        <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.4rem', fontWeight:600, color: likelihoodColor }}>{likelihood}%</span>
+                    </div>
+                    <div className="tc-likelihood-bar-wrap"><div className="tc-likelihood-bar-fill" style={{ width:`${likelihood}%`, background: likelihoodColor }} /></div>
+                </div>
+            </div>
+        );
+    }
+
+    // ── TcDealCard — extracted from renderDealHQ (Step-1 refactor; no behavior change) ──
+    // One generated deal package: send/receive summary, decision strip (grade/accept/Δ), and an
+    // expandable why-drawer. Closures it used (sideSummary, loadDealIntoAnalyzer, saveDeal) are props.
+    function TcDealCard({ deal, idx, actionFloor, expandedDealId, setExpandedDealId, loadDealIntoAnalyzer, saveDeal, sideSummary }) {
+                const deltaColor = deal.userGain >= 0 ? 'var(--good)' : 'var(--bad)';
+                const likelihoodColor2 = deal.likelihood >= actionFloor ? 'var(--good)' : deal.likelihood >= Math.max(55, actionFloor - 15) ? 'var(--warn)' : 'var(--bad)';
+                const expanded = expandedDealId === deal.id;
+                const whyView = typeof window.App?.Intelligence?.buildWhyView === 'function'
+                    ? window.App.Intelligence.buildWhyView(deal.intelligence, { title: 'Why this trade', limit: 4 })
+                    : null;
+                const whyLines = whyView?.lines || (typeof window.App?.Intelligence?.recommendationWhyLines === 'function'
+                    ? window.App.Intelligence.recommendationWhyLines(deal.intelligence, 4)
+                    : []);
+                return <div key={deal.id} className={`tc-dhq-deal-card${idx === 0 ? ' tc-dhq-top-deal' : ''}`}>
+                    <div className="tc-dhq-deal-top">
+                        <div>
+                            <h3>{deal.partnerName}</h3>
+                        </div>
+                        <div className="tc-dhq-actions">
+                            <button onClick={() => loadDealIntoAnalyzer(deal)}>Analyzer</button>
+                            <button onClick={() => saveDeal(deal)}>Save</button>
+                        </div>
+                    </div>
+                    <div className="tc-dhq-deal-grid">
+                        {sideSummary('You Send', deal, 'give')}
+                        {sideSummary('You Get', deal, 'receive')}
+                    </div>
+                    <div className="tc-dhq-decision-strip">
+                        <div className="tc-dhq-decision">
+                            <span>Grade</span>
+                            <strong style={{ color:deal.gradeColor }}>{deal.grade}</strong>
+                        </div>
+                        <div className="tc-dhq-decision">
+                            <span>Accept %</span>
+                            <strong style={{ color:likelihoodColor2 }}>{deal.likelihood}%</strong>
+                        </div>
+                        <div className="tc-dhq-decision">
+                            <span>DHQ Delta</span>
+                            <strong style={{ color:deltaColor }}>{deal.userGain >= 0 ? '+' : ''}{Math.round(deal.userGain).toLocaleString()}</strong>
+                        </div>
+                    </div>
+                    <button className="tc-dhq-detail-toggle" onClick={() => setExpandedDealId(expanded ? null : deal.id)}>
+                        {expanded ? 'Hide details' : 'Details'}
+                    </button>
+                    {expanded && <div className="tc-dhq-detail-drawer">
+                        <div className="tc-dhq-stat-bar">
+                            <div className="tc-dhq-stat">
+                                <span>Fit</span>
+                                <strong>{deal.fit}%</strong>
+                            </div>
+                            <div className="tc-dhq-stat">
+                                <span>Lane</span>
+                                <strong style={{ color:deal.viability === 'Moonshot' ? 'var(--bad)' : deal.viability === 'Negotiable' ? 'var(--warn)' : 'var(--good)' }}>{deal.viability || deal.windowImpact.label.replace(/^Window\s*/i, '')}</strong>
+                            </div>
+                            <div className="tc-dhq-stat">
+                                <span>Window</span>
+                                <strong style={{ color:deal.windowImpact.color }}>{deal.windowImpact.label.replace(/^Window\s*/i, '')}</strong>
+                            </div>
+                        </div>
+                        <div className="tc-dhq-readout">
+                            <div><b>Accept:</b><span>{deal.whyAccept}</span></div>
+                            <div><b>You:</b><span>{deal.whyYou}</span></div>
+                            <div><b>Swing:</b><span>{deal.swing}</span></div>
+                            {deal.formatReadout && <div><b>Format:</b><span>{deal.formatReadout}</span></div>}
+                            {deal.behaviorReadout && <div><b>Behavior:</b><span>{deal.behaviorReadout}</span></div>}
+                        </div>
+                        {whyLines.length > 0 && <div className="tc-dhq-evidence">{whyLines.slice(0, 4).map(line => <span key={line}>{line}</span>)}</div>}
+                        {deal.caution.length > 0 && <div className="tc-dhq-cautions">{deal.caution.slice(0, 3).map(c => <span key={c}>{c}</span>)}</div>}
+                    </div>}
+                </div>;
+    }
+
+    // ── TcTradeSide — extracted from renderTradeAnalyzer (builder rework; no behavior change) ──
+    // One side of the manual builder: owner select, added players/picks with value bars, a roster
+    // picker, FAAB input, and a side total. ~29 deps (state, setters, helper closures, value fns)
+    // passed via a tradeSideDeps bag. The new persistent-builder layout will refine this contract.
+    function TcTradeSide({ side, color, label, tradeIds, tradePickIds, tradeFaab, getPlayerValue, pickValueForParts, FAAB_RATE, rosterPlayersFor, tradeOwner, picksByOwner, comparePicksByDraftOrder, setTradeOwner, setSearchText, ownerOptions, playersData, MAX_VALUE, removePlayer, posColor, normPos, PICK_COLORS, ownerNameForRosterId, allRosters, removePick, pickLabel, searchText, TC_POS_ORDER, addPlayer, makePickId, addPick, setTradeFaab }) {
+                const ids = tradeIds[side];
+                const pickIds = tradePickIds[side];
+                const faab = tradeFaab[side] || 0;
+                const tot = ids.reduce((s, id) => s + (getPlayerValue(id).value || 0), 0)
+                    + pickIds.reduce((s, pkId) => { const p = pkId.split('-'); return s + pickValueForParts(p[1], Number(p[2]), p[3]); }, 0)
+                    + Math.round(faab * FAAB_RATE);
+                const rosterPlayers = rosterPlayersFor(side);
+                const ownerId = tradeOwner[side] || null;
+                const ownerPicksList = ownerId ? (picksByOwner[ownerId] || []).slice().sort(comparePicksByDraftOrder) : [];
+
+                return (
+                    <div className={`tc-ta-side tc-side-${side.toLowerCase()}`}>
+                        <span style={{ fontFamily:'var(--font-title)', fontSize:'0.95rem', color, letterSpacing:'0.08em' }}>{label}</span>
+                        <select className="tc-ta-owner-select" value={tradeOwner[side] || ''} onChange={e => { setTradeOwner(prev => ({ ...prev, [side]: e.target.value || null })); setSearchText(prev => ({ ...prev, [side]: '' })); }}>
+                            {ownerOptions.map(o => <option key={o.id||'none'} value={o.id||''}>{o.label}</option>)}
+                        </select>
+
+                        {/* Added players */}
+                        {ids.map(pid => {
+                            const p = playersData[pid]; const v = getPlayerValue(pid);
+                            const pct = Math.round((v.value / MAX_VALUE) * 100);
+                            if (!p) return null;
+                            return (
+                                <div key={pid} className="tc-ta-player-row">
+                                    <button className="tc-ta-remove" onClick={() => removePlayer(side, pid)}>X</button>
+                                    <span className="tc-ta-pos-dot" style={{ background: posColor(normPos(p.position)) }} />
+                                    <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.first_name} {p.last_name}</span>
+                                    <div className="tc-ta-val-col" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
+                                        <div className="tc-ta-val-bar-wrap"><div className="tc-ta-val-bar-fill" style={{ width:`${pct}%`, background: color }} /></div>
+                                        <span style={{ fontSize:'0.7rem', fontWeight:700, color }}>{v.value > 0 ? v.value.toLocaleString() : '--'}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+
+                        {/* Added picks */}
+                        {pickIds.map(pkId => {
+                            const parts = pkId.split('-');
+                            const yr = parts[1], rd = Number(parts[2]), fromRid = parts[3];
+                            const val = pickValueForParts(yr, rd, fromRid);
+                            const pct = Math.round((val / MAX_VALUE) * 100);
+                            const pickColor = PICK_COLORS[rd] || 'var(--silver)';
+                            const via = ownerNameForRosterId(fromRid);
+                            const isOwn = !via || (ownerId && (() => { const r = allRosters.find(x => x.owner_id === ownerId); return r && String(r.roster_id) === String(fromRid); })());
+                            return (
+                                <div key={pkId} className="tc-ta-player-row">
+                                    <button className="tc-ta-remove" onClick={() => removePick(side, pkId)}>X</button>
+                                    <span className="tc-ta-pos-dot" style={{ background: pickColor }} />
+                                    <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600 }}>{pickLabel(yr, rd, fromRid)}{!isOwn && via && <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.6, marginLeft:'0.3rem' }}>via {via}</span>}</span>
+                                    <div className="tc-ta-val-col" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
+                                        <div className="tc-ta-val-bar-wrap"><div className="tc-ta-val-bar-fill" style={{ width:`${pct}%`, background: pickColor }} /></div>
+                                        <span style={{ fontSize:'0.7rem', fontWeight:700, color: pickColor }}>{val.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+
+                        {/* Roster picker */}
+                        {tradeOwner[side] && rosterPlayers !== null ? (
+                            <div>
+                                <input className="tc-ta-roster-filter" placeholder={`Filter ${rosterPlayers.length} players...`} value={searchText[side]} onChange={e => setSearchText(prev => ({ ...prev, [side]: e.target.value }))} />
+                                <div className="tc-ta-roster-list-tall">
+                                    {rosterPlayers.length === 0 ? <div className="tc-ta-roster-empty">No players match</div> : (() => {
+                                        const grouped = {};
+                                        rosterPlayers.forEach(r => { if (!grouped[r.pos]) grouped[r.pos] = []; grouped[r.pos].push(r); });
+                                        return Object.entries(grouped).sort((a,b) => (TC_POS_ORDER[a[0]]??9)-(TC_POS_ORDER[b[0]]??9)).map(([pos, posPlayers]) => (
+                                            <div key={pos}>
+                                                <div className="tc-ta-pos-group-hdr" style={{ color: posColor(pos) }}>{pos}</div>
+                                                {posPlayers.map(r => {
+                                                    const added = ids.includes(r.id);
+                                                    return (
+                                                        <div key={r.id} className={`tc-ta-roster-item${added?' tc-added':''}`} onClick={() => !added && addPlayer(side, r.id)}>
+                                                            <span className="tc-ta-pos-dot" style={{ background: posColor(r.pos) }} />
+                                                            <span style={{ flex:1, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.name}</span>
+                                                            <span className="tc-ta-player-meta">{r.team}</span>
+                                                            <span className="tc-ta-player-val">{r.value > 0 ? r.value.toLocaleString() : '--'}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ));
+                                    })()}
+                                    {ownerPicksList.length > 0 && (
+                                        <div style={{ marginTop:'0.5rem', borderTop:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', paddingTop:'0.4rem' }}>
+                                            <div className="tc-ta-pos-group-hdr" style={{ color:'var(--gold)' }}>DRAFT PICKS</div>
+                                            {ownerPicksList.map(({ year, round, fromRosterId }) => {
+                                                const pkId = makePickId(year, round, fromRosterId);
+                                                const added = pickIds.includes(pkId);
+                                                const val = pickValueForParts(year, round, fromRosterId);
+                                                const pickColor = PICK_COLORS[round] || 'var(--silver)';
+                                                const via = ownerNameForRosterId(fromRosterId);
+                                                const r2 = allRosters.find(x => x.owner_id === ownerId);
+                                                const isOwn2 = r2 && String(r2.roster_id) === String(fromRosterId);
+                                                return (
+                                                    <div key={pkId} className={`tc-ta-roster-item${added?' tc-added':''}`} onClick={() => !added && addPick(side, pkId)}>
+                                                        <span className="tc-ta-pos-dot" style={{ background: pickColor }} />
+                                                        <span style={{ flex:1, fontWeight:600 }}>{pickLabel(year, round, fromRosterId)}{!isOwn2 && via && <span style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.6, marginLeft:'0.3rem' }}>via {via}</span>}</span>
+                                                        <span className="tc-ta-player-val" style={{ color: pickColor }}>{val.toLocaleString()}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ) : <div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.6, textAlign:'center', padding:'0.5rem' }}>Select an owner above to view their roster</div>}
+
+                        {/* FAAB */}
+                        <div style={{ borderTop:'1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop:'0.4rem', marginTop:'0.2rem' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                                <span style={{ fontSize:'0.72rem', fontWeight:700, color:'var(--win-green)', letterSpacing:'0.05em' }}>FAAB $</span>
+                                <input type="number" min={0} value={faab || ''} onChange={e => setTradeFaab(prev => ({ ...prev, [side]: Math.max(0, Number(e.target.value)) }))} placeholder="0"
+                                    style={{ width:70, background:'rgba(0,0,0,0.3)', border:'1px solid rgba(46,204,113,0.35)', color:'var(--win-green)', padding:'0.2rem 0.4rem', borderRadius:4, fontSize:'0.75rem', fontWeight:700, minHeight:'44px' }} />
+                                {faab > 0 && <button className="tc-ta-remove" onClick={() => setTradeFaab(prev => ({ ...prev, [side]: 0 }))}>X</button>}
+                            </div>
+                            {faab > 0 && <div style={{ fontSize:'0.7rem', color:'var(--silver)', opacity:0.6, marginTop:'0.2rem' }}>= {Math.round(faab * FAAB_RATE).toLocaleString()} dynasty pts</div>}
+                        </div>
+
+                        {/* Total */}
+                        <div className="tc-ta-total-row" style={{ background:`${color}12`, border:`1px solid ${color}30` }}>
+                            <span className="tc-ta-total-label">Total Value</span>
+                            <span className="tc-ta-total-val" style={{ color }}>{tot > 0 ? tot.toLocaleString() : '--'}</span>
+                        </div>
+                    </div>
+                );
+    }
+
     function TradeCalcTab({ playersData, statsData, myRoster, standings, currentLeague, leagueSkin, sleeperUserId, timeRecomputeTs, viewMode, initialSubTab, onSubTabConsumed }) {
         // ── Constants ──
         const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
@@ -453,6 +746,8 @@
 
         // ── State ──
         const [tcTab, setTcTab] = useState(initialSubTab || 'dealhq');
+        const [adaptiveView, setAdaptiveView] = useState('hero'); // Adaptive War Room canvas view: 'hero' | 'workspace'
+        const [builderExpanded, setBuilderExpanded] = useState(false); // persistent builder panel open/closed
         const [dealMode, setDealMode] = useState('fillNeed');
         const [dealFocusPid, setDealFocusPid] = useState(null);
         const [selectedDealPartnerId, setSelectedDealPartnerId] = useState(null);
@@ -505,6 +800,8 @@
         const [tradeFaab, setTradeFaab] = useState({ A:0, B:0 });
         const [tradeOwner, setTradeOwner] = useState({ A:null, B:null });
         const [searchText, setSearchText] = useState({ A:'', B:'' });
+        // Alex's AI second opinion on the manual builder's deal: { loading, error, text, dealKey, feedback }
+        const [alexVerdict, setAlexVerdict] = useState(null);
         const lastTradeLogRef = useRef('');
         const tradeStartedRef = useRef(false);
         useEffect(() => {
@@ -1477,7 +1774,14 @@
             });
             setTradeFaab({ A: deal.giveFaab || 0, B: deal.receiveFaab || 0 });
             setSearchText({ A: '', B: '' });
-            setTcTab('analyzer');
+            if (typeof window !== 'undefined' && window._wrAdaptiveCanvas === true) {
+                // Adaptive canvas: edit the generated deal IN PLACE via the persistent builder,
+                // instead of jumping to a separate Builder surface.
+                setAdaptiveView('workspace');
+                setBuilderExpanded(true);
+            } else {
+                setTcTab('analyzer');
+            }
             window._wrAnalyzerMode = 'build';
         }
 
@@ -2524,75 +2828,6 @@
                 </div>;
             }
 
-            function dealCard(deal, idx) {
-                const deltaColor = deal.userGain >= 0 ? 'var(--good)' : 'var(--bad)';
-                const likelihoodColor2 = deal.likelihood >= actionFloor ? 'var(--good)' : deal.likelihood >= Math.max(55, actionFloor - 15) ? 'var(--warn)' : 'var(--bad)';
-                const expanded = expandedDealId === deal.id;
-                const whyView = typeof window.App?.Intelligence?.buildWhyView === 'function'
-                    ? window.App.Intelligence.buildWhyView(deal.intelligence, { title: 'Why this trade', limit: 4 })
-                    : null;
-                const whyLines = whyView?.lines || (typeof window.App?.Intelligence?.recommendationWhyLines === 'function'
-                    ? window.App.Intelligence.recommendationWhyLines(deal.intelligence, 4)
-                    : []);
-                return <div key={deal.id} className={`tc-dhq-deal-card${idx === 0 ? ' tc-dhq-top-deal' : ''}`}>
-                    <div className="tc-dhq-deal-top">
-                        <div>
-                            <h3>{deal.partnerName}</h3>
-                        </div>
-                        <div className="tc-dhq-actions">
-                            <button onClick={() => loadDealIntoAnalyzer(deal)}>Analyzer</button>
-                            <button onClick={() => saveDeal(deal)}>Save</button>
-                        </div>
-                    </div>
-                    <div className="tc-dhq-deal-grid">
-                        {sideSummary('You Send', deal, 'give')}
-                        {sideSummary('You Get', deal, 'receive')}
-                    </div>
-                    <div className="tc-dhq-decision-strip">
-                        <div className="tc-dhq-decision">
-                            <span>Grade</span>
-                            <strong style={{ color:deal.gradeColor }}>{deal.grade}</strong>
-                        </div>
-                        <div className="tc-dhq-decision">
-                            <span>Accept %</span>
-                            <strong style={{ color:likelihoodColor2 }}>{deal.likelihood}%</strong>
-                        </div>
-                        <div className="tc-dhq-decision">
-                            <span>DHQ Delta</span>
-                            <strong style={{ color:deltaColor }}>{deal.userGain >= 0 ? '+' : ''}{Math.round(deal.userGain).toLocaleString()}</strong>
-                        </div>
-                    </div>
-                    <button className="tc-dhq-detail-toggle" onClick={() => setExpandedDealId(expanded ? null : deal.id)}>
-                        {expanded ? 'Hide details' : 'Details'}
-                    </button>
-                    {expanded && <div className="tc-dhq-detail-drawer">
-                        <div className="tc-dhq-stat-bar">
-                            <div className="tc-dhq-stat">
-                                <span>Fit</span>
-                                <strong>{deal.fit}%</strong>
-                            </div>
-                            <div className="tc-dhq-stat">
-                                <span>Lane</span>
-                                <strong style={{ color:deal.viability === 'Moonshot' ? 'var(--bad)' : deal.viability === 'Negotiable' ? 'var(--warn)' : 'var(--good)' }}>{deal.viability || deal.windowImpact.label.replace(/^Window\s*/i, '')}</strong>
-                            </div>
-                            <div className="tc-dhq-stat">
-                                <span>Window</span>
-                                <strong style={{ color:deal.windowImpact.color }}>{deal.windowImpact.label.replace(/^Window\s*/i, '')}</strong>
-                            </div>
-                        </div>
-                        <div className="tc-dhq-readout">
-                            <div><b>Accept:</b><span>{deal.whyAccept}</span></div>
-                            <div><b>You:</b><span>{deal.whyYou}</span></div>
-                            <div><b>Swing:</b><span>{deal.swing}</span></div>
-                            {deal.formatReadout && <div><b>Format:</b><span>{deal.formatReadout}</span></div>}
-                            {deal.behaviorReadout && <div><b>Behavior:</b><span>{deal.behaviorReadout}</span></div>}
-                        </div>
-                        {whyLines.length > 0 && <div className="tc-dhq-evidence">{whyLines.slice(0, 4).map(line => <span key={line}>{line}</span>)}</div>}
-                        {deal.caution.length > 0 && <div className="tc-dhq-cautions">{deal.caution.slice(0, 3).map(c => <span key={c}>{c}</span>)}</div>}
-                    </div>}
-                </div>;
-            }
-
             return <div className="tc-dhq-shell wr-fade-in">
                 <div className="tc-dhq-metrics">
                     <div className="tc-dhq-metric-card"><span>Best Fit</span><strong>{bestPartner?.assessment.ownerName || '--'}</strong><em>{bestPartner ? `${bestPartner.score} fit score${bestPartnerWhy ? ` · ${bestPartnerWhy}` : ''}` : 'No target'}</em></div>
@@ -2778,7 +3013,7 @@
                         </div>
                         <div className="tc-dhq-deal-stage-body">
                             {visibleDeals.length
-                                ? visibleDeals.map(dealCard)
+                                ? visibleDeals.map((deal, idx) => <TcDealCard key={deal.id} deal={deal} idx={idx} actionFloor={actionFloor} expandedDealId={expandedDealId} setExpandedDealId={setExpandedDealId} loadDealIntoAnalyzer={loadDealIntoAnalyzer} saveDeal={saveDeal} sideSummary={sideSummary} />)
                                 : <div className="tc-dhq-empty">No actionable package clears {actionFloor}% acceptance. Use moonshots only if you want long-shot leverage ideas.</div>}
                         </div>
                         {(deals.length > visibleDeals.length || showAllDeals) && <button className="tc-dhq-show-more" onClick={() => setShowAllDeals(!showAllDeals)}>{showAllDeals ? 'Hide moonshots' : moonshotCount ? `Show ${moonshotCount} moonshot${moonshotCount === 1 ? '' : 's'}` : `Show ${deals.length - visibleDeals.length} more`}</button>}
@@ -2788,9 +3023,245 @@
         }
 
         // ── renderTradeAnalyzer ──
-        function renderTradeAnalyzer() {
-            if (!Object.keys(playersData).length) return <div style={{ color:'var(--silver)', textAlign:'center', padding:'2rem' }}>No player data loaded.</div>;
+        // ── renderAdaptiveLanding — Slice 1 of the tab-free Adaptive War Room canvas ──
+        // Behind the window._wrAdaptiveCanvas flag (default OFF). Computes the single best move
+        // (top partner via the SAME partnerBoard ranking as renderDealHQ + its best generated deal)
+        // and shows a calm Alex-voiced "best move" hero. CTAs reveal the existing surfaces via
+        // existing state. Returns null if there's no usable best move (caller falls through to tabs).
+        function renderAdaptiveLanding() {
+            if (!assessments.length || !myAssessment) return null;
 
+            // Mirror of renderDealHQ partnerBoard ranking — KEEP IN SYNC with renderDealHQ.
+            const myStrengths = myAssessment.strengths || [];
+            const myNeeds = myAssessment.needs || [];
+            const partnerBoard = assessments
+                .filter(a => a.rosterId !== myRosterId)
+                .map(a => {
+                    const dnaKey = ownerDna[a.ownerId] || 'NONE';
+                    const dna = DNA_TYPES[dnaKey] || DNA_TYPES.NONE;
+                    const posture = calcOwnerPosture(a, dnaKey);
+                    const compat = calcComplementarity(myAssessment, a);
+                    const theirNeeds = a.needs || [];
+                    const mutualNeedFit = theirNeeds.filter(n => myStrengths.includes(n.pos)).length;
+                    const theyHaveNeed = myNeeds.filter(n => (a.strengths || []).includes(n.pos)).length;
+                    const pickAssets = pickAssetsForOwner(a.ownerId);
+                    const pickCapital = pickAssets.reduce((s, p) => s + p.value, 0);
+                    const profile = window.App?.LI?.ownerProfiles?.[a.rosterId] || {};
+                    const behaviorProfile = ownerBehaviorByRosterId?.[String(a.rosterId)] || null;
+                    const behaviorTags = new Set(behaviorProfile?.inferences || []);
+                    const tradeVol = profile.trades || 0;
+                    const behaviorScore = behaviorProfile
+                        ? Math.round(((behaviorProfile.scores?.liquidity ?? 50) - 50) / 4)
+                            + (behaviorTags.has('active-trader') ? 8 : 0)
+                            + (behaviorTags.has('fair-dealer') ? 5 : 0)
+                            + (behaviorTags.has('low-liquidity') ? -12 : 0)
+                            + (behaviorTags.has('value-hunter') ? -5 : 0)
+                        : 0;
+                    const panicScore = Math.min(8, (a.panic || 0) * 2);
+                    const pickCapitalScore = Math.min(5, Math.round(pickCapital / 4200));
+                    const rawScore = compat * 0.62 + mutualNeedFit * 13 + theyHaveNeed * 10 + panicScore + pickCapitalScore + Math.min(7, tradeVol) + behaviorScore + (posture.key === 'LOCKED' ? -18 : 0);
+                    const fitCap = compat >= 80 ? 99 : compat >= 65 ? 94 : compat >= 50 ? 88 : compat >= 35 ? 78 : 68;
+                    const score = Math.round(clampNum(rawScore, 0, fitCap, 0));
+                    const tag = score >= 85 ? 'Attack' : score >= 68 ? 'Prime' : score >= 48 ? 'Possible' : a.panic >= 3 ? 'Monitor' : 'Long shot';
+                    const tagColor = tag === 'Attack' || tag === 'Prime' ? 'var(--good)' : tag === 'Possible' ? 'var(--warn)' : tag === 'Monitor' ? 'var(--k-bb8fce, #bb8fce)' : 'var(--silver)';
+                    const scoreReasons = [];
+                    if (mutualNeedFit > 0) scoreReasons.push(`your surplus matches ${mutualNeedFit} need${mutualNeedFit === 1 ? '' : 's'}`);
+                    if (compat >= 60) scoreReasons.push(`${compat}% roster fit`);
+                    if (behaviorTags.has('active-trader')) scoreReasons.push('active trader');
+                    return { assessment: a, dnaKey, dna, posture, compat, score, tag, tagColor, scoreReasons };
+                })
+                .sort((a, b) => b.score - a.score || b.compat - a.compat);
+
+            const bestPartner = partnerBoard[0];
+            if (!bestPartner) return null;
+
+            const _tuning = getDealHqTuning(window.WR?.AlexSettings?.get?.() || {});
+            const _floor = dealActionableAcceptanceFloor(_tuning);
+            const deals = generateDealsForPartner(bestPartner.assessment, dealMode, null) || [];
+            const bestDeal = deals.filter(d => d.likelihood >= _floor)[0] || deals[0] || null;
+            if (!bestDeal) return null;
+
+            const partnerName = bestPartner.assessment.ownerName;
+            const why = bestPartner.scoreReasons && bestPartner.scoreReasons[0];
+            // Alex coaching line — seeded AlexVoice variation, hard fallback if absent/throws.
+            let coachLine;
+            try {
+                const _av = window.AlexVoice;
+                if (_av && typeof _av.pick === 'function') {
+                    const seed = 'best-move|' + partnerName;
+                    const open = _av.pick(seed, [
+                        `${partnerName} is your strongest table right now`,
+                        `${partnerName} lines up best with your roster`,
+                        `Start with ${partnerName} — the fit is there`,
+                    ]);
+                    const close = _av.pick(seed + 'c', [
+                        `this package grades ${bestDeal.grade} and they take it about ${bestDeal.likelihood}% of the time.`,
+                        `the deal below grades ${bestDeal.grade} at roughly ${bestDeal.likelihood}% to accept.`,
+                        `it grades ${bestDeal.grade}, about ${bestDeal.likelihood}% to say yes.`,
+                    ]);
+                    coachLine = `${open}${why ? ` — ${why}` : ''}. Now ${close}`;
+                }
+            } catch (e) { coachLine = null; }
+            if (!coachLine) {
+                coachLine = `${partnerName} is your strongest table right now${why ? ` — ${why}` : ''}. This package grades ${bestDeal.grade} and they accept it about ${bestDeal.likelihood}% of the time.`;
+            }
+
+            const assetText = (players, picks) => {
+                const names = [
+                    ...(players || []).map(p => p.name).filter(Boolean),
+                    ...(picks || []).map(p => p.label).filter(Boolean),
+                ];
+                return names.length ? names.join(', ') : 'assets';
+            };
+            const sendText = assetText(bestDeal.givePlayers, bestDeal.givePicks);
+            const getText = assetText(bestDeal.receivePlayers, bestDeal.receivePicks);
+            const accept = bestDeal.likelihood || 0;
+            const gain = Math.round(bestDeal.userGain || 0);
+            const cardBox = { border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '12px' };
+
+            return (
+                <div className="tc-trade-root wr-fade-in" style={{ maxWidth: '880px', margin: '0 auto', padding: '6px 0' }}>
+                    <div style={{ display: 'flex', gap: '13px', alignItems: 'flex-start', marginBottom: '16px' }}>
+                        <div style={{ width: '38px', height: '38px', borderRadius: '9px', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-title)', fontWeight: 800, fontSize: '15px', background: 'rgba(212,175,55,0.12)', color: 'var(--gold)', flex: '0 0 auto' }}>A</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.6875rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 700, marginBottom: '5px' }}>Alex · Your Best Move</div>
+                            <p style={{ fontSize: '0.95rem', lineHeight: 1.55, color: 'var(--white)', margin: 0 }}>{coachLine}</p>
+                        </div>
+                    </div>
+
+                    <div style={{ border: '1px solid rgba(212,175,55,0.2)', borderRadius: '14px', background: 'linear-gradient(180deg, rgba(212,175,55,0.06), rgba(255,255,255,0.012))', overflow: 'hidden', boxShadow: '0 18px 48px rgba(0,0,0,0.34)', marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 16px', background: 'rgba(212,175,55,0.04)', borderBottom: '1px solid rgba(212,175,55,0.14)' }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--white)', fontFamily: 'var(--font-title)' }}>{partnerName}</div>
+                            <div style={{ fontSize: '0.7rem', color: bestPartner.tagColor, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{bestPartner.tag}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', marginLeft: 'auto' }}>{bestPartner.dna && bestPartner.dna.label} · {bestPartner.posture && bestPartner.posture.label}</div>
+                        </div>
+                        <div style={{ padding: '16px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                                <div style={{ ...cardBox, background: 'rgba(224,85,107,0.08)' }}>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--k-e0556b, #e0556b)', marginBottom: '5px' }}>You Send</div>
+                                    <div style={{ fontSize: '0.82rem', color: 'var(--white)', fontWeight: 600 }}>{sendText}</div>
+                                </div>
+                                <div style={{ ...cardBox, background: 'rgba(46,204,113,0.08)' }}>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--good)', marginBottom: '5px' }}>You Get</div>
+                                    <div style={{ fontSize: '0.82rem', color: 'var(--white)', fontWeight: 600 }}>{getText}</div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '8px' }}>
+                                <div style={{ ...cardBox, padding: '9px 12px' }}>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)' }}>Grade</div>
+                                    <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.05rem', marginTop: '2px', color: bestDeal.gradeColor }}>{bestDeal.grade}</div>
+                                </div>
+                                <div style={{ ...cardBox, padding: '9px 12px' }}>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)' }}>Accept %</div>
+                                    <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.05rem', marginTop: '2px', color: accept >= 70 ? 'var(--good)' : accept >= 50 ? 'var(--warn)' : 'var(--bad)' }}>{accept}%</div>
+                                </div>
+                                <div style={{ ...cardBox, padding: '9px 12px' }}>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)' }}>Δ Value</div>
+                                    <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.05rem', marginTop: '2px', color: gain >= 0 ? 'var(--good)' : 'var(--warn)' }}>{gain >= 0 ? '+' : ''}{gain.toLocaleString()}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="button"
+                        onClick={() => { setSelectedDealPartnerId(bestPartner.assessment.ownerId); setDealFocusPid(null); setTcTab('analyzer'); setAdaptiveView('workspace'); }}
+                        style={{ width: '100%', padding: '12px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', fontFamily: 'var(--font-title)', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        Review &amp; Tweak This Deal
+                    </button>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" onClick={() => { setSelectedDealPartnerId(bestPartner.assessment.ownerId); setTcTab('dealhq'); setAdaptiveView('workspace'); }}
+                            style={{ flex: 1, padding: '10px 12px', background: 'rgba(212,175,55,0.07)', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+                            Browse All Partners
+                        </button>
+                        <button type="button" onClick={() => { setSelectedDealPartnerId(null); setDealFocusPid(null); setTcTab('analyzer'); setAdaptiveView('workspace'); }}
+                            style={{ flex: 1, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', color: 'var(--silver)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+                            Build Your Own
+                        </button>
+                    </div>
+                    <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '0.6875rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-body)' }}>One canvas, no tabs — pick an action to open the full workspace.</div>
+                </div>
+            );
+        }
+
+        // ── renderAdaptiveWorkspace — Slice 2a of the tab-free Adaptive War Room canvas ──
+        // Flag-on workspace shell: replaces the old tab bar with a slim adaptive header (‹ Best Move
+        // back-link + a clean Deal HQ / Builder / Owner DNA nav) and reuses the existing surfaces as
+        // bodies. Returns to the hero via setAdaptiveView('hero') + clearing seeds.
+        function renderAdaptiveWorkspace() {
+            const active = tcTab === 'analyzer' ? 'analyzer' : (tcTab === 'profiles' || tcTab === 'dna') ? 'profiles' : 'dealhq';
+            const surfaces = [
+                { key: 'dealhq', label: 'Deal HQ' },
+                { key: 'analyzer', label: 'Builder' },
+                { key: 'profiles', label: 'Owner DNA' },
+            ];
+            let body;
+            if (active === 'analyzer') body = renderTradeAnalyzer();
+            else if (active === 'profiles') body = canAccess('owner-dna') ? renderOwnerDna() : React.createElement(UpgradeGate, { feature: 'owner-dna', title: 'UNLOCK OWNER DNA', description: 'Profile every manager\'s trading psychology. Know who\'s a Fleecer, who\'s Desperate, and exactly how to approach each trade conversation.', targetTier: 'warroom' });
+            else body = renderDealHQ();
+            const backToBestMove = () => { setAdaptiveView('hero'); setSelectedDealPartnerId(null); setDealFocusPid(null); if (typeof clearTradeContext === 'function') clearTradeContext(); };
+            // Persistent live verdict — the in-progress deal's verdict follows you across surfaces.
+            const _verdict = computeManualVerdict();
+            const _tsDeps = buildTradeSideDeps();
+            return (
+                <div className="tc-trade-root">
+                    <div className="wr-module-strip">
+                        <div className="wr-module-context" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <button type="button" onClick={backToBestMove} style={{ background: 'rgba(212,175,55,0.07)', border: '1px solid rgba(212,175,55,0.22)', borderRadius: '6px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.74rem', fontWeight: 700, padding: '5px 11px' }}>‹ Best Move</button>
+                            <strong>Trade Center</strong>
+                        </div>
+                        <div className="wr-module-actions">
+                            <div className="wr-module-nav">
+                                {surfaces.map(s => (
+                                    <button key={s.key} className={active === s.key ? 'is-active' : ''} onClick={() => setTcTab(s.key)}>{s.label}</button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    {tradeContext && (
+                        <div className="trade-context-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
+                            <div style={{ minWidth: 0 }}>
+                                <span style={{ display: 'block', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Trade Context</span>
+                                <strong style={{ display: 'block', color: 'var(--white)', fontSize: '0.9rem', fontFamily: 'var(--font-title)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Opened from transaction ticker</strong>
+                                <em style={{ display: 'block', color: 'var(--silver)', fontSize: '0.74rem', fontStyle: 'normal' }}>{formatTradeContextSummary(tradeContext) || 'Use this deal as context while evaluating partner fit and packages.'}</em>
+                            </div>
+                            <button type="button" onClick={clearTradeContext} style={{ background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
+                        </div>
+                    )}
+                    {active !== 'analyzer' && (
+                        <div style={{ marginBottom: '12px', border: '1px solid rgba(53,208,214,0.28)', borderRadius: '8px', background: 'rgba(53,208,214,0.05)', overflow: 'hidden' }}>
+                            <button type="button" onClick={() => setBuilderExpanded(v => !v)} title="Build or tweak a deal without leaving this view" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', textAlign: 'left', background: 'transparent', border: 'none', padding: '9px 13px', cursor: 'pointer' }}>
+                                <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#35d0d6' }}>{_verdict.hasTrade ? 'Live deal' : 'Deal builder'}</span>
+                                {_verdict.hasTrade ? (
+                                    <>
+                                        <strong style={{ fontFamily: 'var(--font-title)', fontSize: '0.95rem', color: _verdict.verdictColor }}>{_verdict.verdictText} {_verdict.diffDisplay}</strong>
+                                        <span style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>gave {_verdict.totalA.toLocaleString()} / got {_verdict.totalB.toLocaleString()}</span>
+                                        <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: _verdict.likelihoodColor }}>{_verdict.likelihood}% accept</span>
+                                    </>
+                                ) : (
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--silver)' }}>Build or tweak a trade without leaving this view.</span>
+                                )}
+                                <span style={{ marginLeft: _verdict.hasTrade ? '0' : 'auto', fontSize: '0.74rem', color: 'var(--gold)', fontWeight: 700 }}>{builderExpanded ? 'Collapse ▴' : (_verdict.hasTrade ? 'Edit ▾' : 'Open ▾')}</span>
+                            </button>
+                            {builderExpanded && (
+                                <div style={{ borderTop: '1px solid rgba(53,208,214,0.18)', padding: '12px', background: 'rgba(0,0,0,0.16)' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'start' }}>
+                                        {TcTradeSide({ side: 'A', color: 'var(--k-5dade2, #5dade2)', label: 'YOU SEND', ..._tsDeps })}
+                                        {TcTradeSide({ side: 'B', color: 'var(--k-e74c3c, #e74c3c)', label: 'YOU GET', ..._tsDeps })}
+                                    </div>
+                                    {_verdict.hasTrade && <div style={{ marginTop: '12px' }}>{React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}{renderAlexVerdict()}</div>}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {body}
+                </div>
+            );
+        }
+
+        // ── computeManualVerdict — the manual builder's deal evaluation, extracted from
+        // renderTradeAnalyzer so the redesigned persistent builder can reuse it (and so the verdict
+        // math lives in one place). Pure function of builder state; no behavior change.
+        function computeManualVerdict() {
             // Use the same ownership-aware value path as the pick list.
             const pickVal = (pkId) => { const p = pkId.split('-'); return pickValueForParts(p[1], Number(p[2]), p[3]); };
             const totalA = tradeIds.A.reduce((s, id) => s + (getPlayerValue(id).value || 0), 0)
@@ -2818,15 +3289,19 @@
                 : psychTaxes;
             const fairMargin = Math.round(Math.max(totalA, totalB) * 0.04);
 
-            // Use shared canonical acceptance calculation (same as Scout)
+            // Use shared canonical acceptance calculation (same as Scout / Deal HQ buildDeal).
+            // Step 2 (one evaluator): pass totalPieces so the complexity tax (−5% acceptance per asset
+            // beyond 4) matches buildDeal — manual and generated deals now score by identical math.
             const _calcLikelihood = window.App?.TradeEngine?.calcAcceptanceLikelihood;
+            const tradePieceCount = tradeIds.A.length + tradeIds.B.length + tradePickIds.A.length + tradePickIds.B.length;
             let likelihood = 50;
             if (hasTrade && (totalA > 0 || totalB > 0)) {
                 if (typeof _calcLikelihood === 'function') {
-                    likelihood = _calcLikelihood(totalA, totalB, otherDnaKey, acceptanceTaxes, myAssessment, theirAssessment);
+                    likelihood = _calcLikelihood(totalA, totalB, otherDnaKey, acceptanceTaxes, myAssessment, theirAssessment, { totalPieces: tradePieceCount });
                 } else {
                     const maxSide = Math.max(totalA, totalB, 1);
-                    const taxValueAdjust = (netTaxTotal / 200) * maxSide;
+                    const complexityTax = Math.max(0, tradePieceCount - 4) * 5;
+                    const taxValueAdjust = ((netTaxTotal - complexityTax) / 200) * maxSide;
                     const normalizedSurplus = (diff + taxValueAdjust) / maxSide;
                     likelihood = Math.round(Math.max(5, Math.min(95, 50 + Math.round(normalizedSurplus * 200))));
                 }
@@ -2856,7 +3331,129 @@
                 ? `+${receivedPositions.join('/') || 'none'} / -${sentPositions.join('/') || 'none'}`
                 : 'No players selected';
             const starterValueDelta = tradeIds.B.reduce((s, id) => s + (getPlayerValue(id).value || 0), 0) - tradeIds.A.reduce((s, id) => s + (getPlayerValue(id).value || 0), 0);
+            return { totalA, totalB, hasTrade, otherOwnerId, otherDnaKey, otherDna, theirPosture, psychTaxes, grudgeTax, netTaxTotal, likelihood, manualBehaviorProfile, manualBehaviorFit, likelihoodColor, verdictColor, verdictText, diffDisplay, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta };
+        }
 
+        // ── Alex second opinion on the builder deal ──────────────────────────
+        // Sends the deterministic verdict plus both teams' assessments and the
+        // full deal to the trade_verdict edge route (premium tier, uncached).
+
+        function buildTradeVerdictContext(v) {
+            const needsToStrings = (needs) => (needs || []).map(n => n.urgency === 'deficit' ? `${n.pos}*` : n.pos);
+            const pickParts = (pkId) => { const p = pkId.split('-'); return { year: p[1], round: Number(p[2]), value: pickValueForParts(p[1], Number(p[2]), p[3]) }; };
+            const dealSide = (side) => ({
+                players: tradeIds[side].map(playerAsset).filter(Boolean).map(a => ({ name: a.name, pos: a.pos, age: a.age, value: a.value })),
+                picks: tradePickIds[side].map(pickParts),
+                faab: tradeFaab[side] || 0,
+            });
+            const theirAssessment = assessments.find(a => a.ownerId === v.otherOwnerId) || null;
+            const psychNotes = [...v.psychTaxes.slice(0, 3).map(t => `${t.name} ${t.impact > 0 ? '+' : ''}${t.impact}%`),
+                ...(v.grudgeTax.total !== 0 ? [`Grudge ${v.grudgeTax.total > 0 ? '+' : ''}${v.grudgeTax.total}%`] : [])].join(', ');
+            return {
+                leagueName: currentLeague?.name || 'my league',
+                leagueId,
+                rosterPositions: currentLeague?.roster_positions || [],
+                roster_positions: currentLeague?.roster_positions || [],
+                scoringSettings: currentLeague?.scoring_settings || {},
+                scoring_settings: currentLeague?.scoring_settings || {},
+                myTeam: myAssessment ? {
+                    record: `${myAssessment.wins}-${myAssessment.losses}`,
+                    tier: myAssessment.tier,
+                    window: myAssessment.tradeWindow || myAssessment.window || '',
+                    healthScore: myAssessment.healthScore,
+                    needs: needsToStrings(myAssessment.needs),
+                    strengths: (myAssessment.strengths || []).slice(0, 5),
+                } : {},
+                partnerTeam: theirAssessment ? {
+                    owner: theirAssessment.ownerName,
+                    record: `${theirAssessment.wins}-${theirAssessment.losses}`,
+                    tier: theirAssessment.tier,
+                    window: theirAssessment.tradeWindow || theirAssessment.window || '',
+                    dna: v.otherDnaKey !== 'NONE' ? (v.otherDna.label || v.otherDnaKey) : 'Unknown',
+                    posture: v.theirPosture?.label || 'N/A',
+                    needs: needsToStrings(theirAssessment.needs),
+                } : {},
+                iSend: dealSide('A'),
+                iReceive: dealSide('B'),
+                verdict: {
+                    verdictText: v.verdictText,
+                    diffDisplay: v.diffDisplay,
+                    likelihood: `${v.likelihood}%`,
+                    psychNotes,
+                },
+            };
+        }
+
+        async function requestAlexVerdict(v, dealKey) {
+            setAlexVerdict({ loading: true, dealKey });
+            try {
+                const result = await window.OD.callAI({ type: 'trade_verdict', context: buildTradeVerdictContext(v) });
+                setAlexVerdict({ text: result.analysis, dealKey });
+                const partnerName = (assessments.find(a => a.ownerId === v.otherOwnerId) || {}).ownerName;
+                if (typeof window.OD?.saveAIAnalysis === 'function') {
+                    window.OD.saveAIAnalysis(leagueId, 'trade_verdict', partnerName ? `Trade Verdict vs ${partnerName}` : 'Trade Verdict', result.analysis).catch?.(() => {});
+                }
+            } catch (e) {
+                setAlexVerdict({ error: e.message || 'Second opinion failed. Try again in a moment.', dealKey });
+            }
+        }
+
+        function sendVerdictFeedback(action, dealKey) {
+            setAlexVerdict(prev => prev && prev.dealKey === dealKey ? { ...prev, feedback: action } : prev);
+            // Learning-loop capture — no-op until the AIFeedback helper ships.
+            window.WR?.AIFeedback?.send?.({ leagueId, surface: 'trade_verdict', recId: dealKey, action });
+        }
+
+        function renderAlexVerdict() {
+            const v = computeManualVerdict();
+            if (!v.hasTrade) return null;
+            if (!canAccess('trade-quick-check')) return null;
+            // Key the response to the deal's contents so editing the deal invalidates a stale verdict.
+            const dealKey = [tradeIds.A.join(','), tradeIds.B.join(','), tradePickIds.A.join(','), tradePickIds.B.join(','), tradeFaab.A, tradeFaab.B].join('|');
+            const current = alexVerdict && alexVerdict.dealKey === dealKey ? alexVerdict : null;
+            const verdictHtml = current?.text ? current.text
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/\*\*([^*\n]+)\*\*/g, '<strong style="color:var(--gold);font-weight:700">$1</strong>')
+                .replace(/^- (.+)$/gm, '<div style="padding-left:0.8rem;margin:0.12rem 0">• $1</div>')
+                .replace(/\n\n/g, '<div style="margin:0.45rem 0"></div>')
+                .replace(/\n/g, '<br>') : '';
+            return (
+                <div style={{ marginTop: '10px' }}>
+                    {!current && (
+                        <button type="button" onClick={() => requestAlexVerdict(v, dealKey)}
+                            style={{ width:'100%', background:'var(--acc-fill2, rgba(212,175,55,0.08))', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'6px', color:'var(--gold)', cursor:'pointer', fontFamily:'var(--font-body)', fontSize:'0.8rem', fontWeight:700, letterSpacing:'0.05em', padding:'9px 12px', minHeight:'44px' }}>
+                            ✨ Ask Alex for a second opinion
+                        </button>
+                    )}
+                    {current?.loading && <GMMessage compact>Reading the deal — checking mode fit, format premiums, and what {(v.theirPosture?.label || 'the other owner').toLowerCase()} energy means for your leverage…</GMMessage>}
+                    {current?.error && (
+                        <div style={{ fontSize:'0.78rem', color:'var(--loss-red)', padding:'6px 2px' }}>
+                            {current.error}{' '}
+                            <button type="button" onClick={() => requestAlexVerdict(v, dealKey)} style={{ background:'none', border:'none', color:'var(--gold)', cursor:'pointer', fontSize:'0.78rem', textDecoration:'underline', padding:0 }}>Retry</button>
+                        </div>
+                    )}
+                    {current?.text && (
+                        <GMMessage title="Second Opinion">
+                            <div dangerouslySetInnerHTML={{ __html: verdictHtml }} />
+                            <div style={{ display:'flex', alignItems:'center', gap:'8px', marginTop:'8px' }}>
+                                {current.feedback
+                                    ? <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.6 }}>{current.feedback === 'up' ? 'Glad it helped.' : 'Noted — Alex learns from this.'}</span>
+                                    : <>
+                                        <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.6 }}>Useful?</span>
+                                        <button type="button" onClick={() => sendVerdictFeedback('up', dealKey)} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', color:'var(--silver)', cursor:'pointer', fontSize:'0.78rem', padding:'2px 9px' }}>Agree</button>
+                                        <button type="button" onClick={() => sendVerdictFeedback('down', dealKey)} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', color:'var(--silver)', cursor:'pointer', fontSize:'0.78rem', padding:'2px 9px' }}>Disagree</button>
+                                    </>}
+                            </div>
+                        </GMMessage>
+                    )}
+                </div>
+            );
+        }
+
+        // buildTradeSideDeps — constructs the prop bag for TcTradeSide (builder-side helper closures +
+        // value fns). Lifted out of renderTradeAnalyzer (encapsulated, not globalized) so the redesigned
+        // persistent builder pane can render the builder too. Each helper only reads TradeCalcTab state.
+        function buildTradeSideDeps() {
             function rosterPlayersFor(side) {
                 const ownerId = tradeOwner[side]; if (!ownerId) return null;
                 const roster = allRosters.find(r => r.owner_id === ownerId); if (!roster) return null;
@@ -2878,133 +3475,15 @@
             function pickLabel(year, round, fromRid) { return formatPickLabel(year, round, fromRid); }
             const ownerOptions = [{ id: null, label: '-- None --' }, ...assessments.map(a => ({ id: a.ownerId, label: `${a.ownerName} (${a.teamName})` }))];
 
-            function TradeSide({ side, color, label }) {
-                const ids = tradeIds[side];
-                const pickIds = tradePickIds[side];
-                const faab = tradeFaab[side] || 0;
-                const tot = ids.reduce((s, id) => s + (getPlayerValue(id).value || 0), 0)
-                    + pickIds.reduce((s, pkId) => { const p = pkId.split('-'); return s + pickValueForParts(p[1], Number(p[2]), p[3]); }, 0)
-                    + Math.round(faab * FAAB_RATE);
-                const rosterPlayers = rosterPlayersFor(side);
-                const ownerId = tradeOwner[side] || null;
-                const ownerPicksList = ownerId ? (picksByOwner[ownerId] || []).slice().sort(comparePicksByDraftOrder) : [];
+            return { tradeIds, tradePickIds, tradeFaab, getPlayerValue, pickValueForParts, FAAB_RATE, rosterPlayersFor, tradeOwner, picksByOwner, comparePicksByDraftOrder, setTradeOwner, setSearchText, ownerOptions, playersData, MAX_VALUE, removePlayer, posColor, normPos, PICK_COLORS, ownerNameForRosterId, allRosters, removePick, pickLabel, searchText, TC_POS_ORDER, addPlayer, makePickId, addPick, setTradeFaab };
+        }
 
-                return (
-                    <div className={`tc-ta-side tc-side-${side.toLowerCase()}`}>
-                        <span style={{ fontFamily:'var(--font-title)', fontSize:'0.95rem', color, letterSpacing:'0.08em' }}>{label}</span>
-                        <select className="tc-ta-owner-select" value={tradeOwner[side] || ''} onChange={e => { setTradeOwner(prev => ({ ...prev, [side]: e.target.value || null })); setSearchText(prev => ({ ...prev, [side]: '' })); }}>
-                            {ownerOptions.map(o => <option key={o.id||'none'} value={o.id||''}>{o.label}</option>)}
-                        </select>
+        function renderTradeAnalyzer() {
+            if (!Object.keys(playersData).length) return <div style={{ color:'var(--silver)', textAlign:'center', padding:'2rem' }}>No player data loaded.</div>;
 
-                        {/* Added players */}
-                        {ids.map(pid => {
-                            const p = playersData[pid]; const v = getPlayerValue(pid);
-                            const pct = Math.round((v.value / MAX_VALUE) * 100);
-                            if (!p) return null;
-                            return (
-                                <div key={pid} className="tc-ta-player-row">
-                                    <button className="tc-ta-remove" onClick={() => removePlayer(side, pid)}>X</button>
-                                    <span className="tc-ta-pos-dot" style={{ background: posColor(normPos(p.position)) }} />
-                                    <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.first_name} {p.last_name}</span>
-                                    <div className="tc-ta-val-col" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
-                                        <div className="tc-ta-val-bar-wrap"><div className="tc-ta-val-bar-fill" style={{ width:`${pct}%`, background: color }} /></div>
-                                        <span style={{ fontSize:'0.7rem', fontWeight:700, color }}>{v.value > 0 ? v.value.toLocaleString() : '--'}</span>
-                                    </div>
-                                </div>
-                            );
-                        })}
+            const { totalA, totalB, hasTrade, otherOwnerId, otherDnaKey, otherDna, theirPosture, psychTaxes, grudgeTax, netTaxTotal, likelihood, manualBehaviorProfile, manualBehaviorFit, likelihoodColor, verdictColor, verdictText, diffDisplay, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta } = computeManualVerdict();
 
-                        {/* Added picks */}
-                        {pickIds.map(pkId => {
-                            const parts = pkId.split('-');
-                            const yr = parts[1], rd = Number(parts[2]), fromRid = parts[3];
-                            const val = pickValueForParts(yr, rd, fromRid);
-                            const pct = Math.round((val / MAX_VALUE) * 100);
-                            const pickColor = PICK_COLORS[rd] || 'var(--silver)';
-                            const via = ownerNameForRosterId(fromRid);
-                            const isOwn = !via || (ownerId && (() => { const r = allRosters.find(x => x.owner_id === ownerId); return r && String(r.roster_id) === String(fromRid); })());
-                            return (
-                                <div key={pkId} className="tc-ta-player-row">
-                                    <button className="tc-ta-remove" onClick={() => removePick(side, pkId)}>X</button>
-                                    <span className="tc-ta-pos-dot" style={{ background: pickColor }} />
-                                    <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600 }}>{pickLabel(yr, rd, fromRid)}{!isOwn && via && <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.6, marginLeft:'0.3rem' }}>via {via}</span>}</span>
-                                    <div className="tc-ta-val-col" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
-                                        <div className="tc-ta-val-bar-wrap"><div className="tc-ta-val-bar-fill" style={{ width:`${pct}%`, background: pickColor }} /></div>
-                                        <span style={{ fontSize:'0.7rem', fontWeight:700, color: pickColor }}>{val.toLocaleString()}</span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-
-                        {/* Roster picker */}
-                        {tradeOwner[side] && rosterPlayers !== null ? (
-                            <div>
-                                <input className="tc-ta-roster-filter" placeholder={`Filter ${rosterPlayers.length} players...`} value={searchText[side]} onChange={e => setSearchText(prev => ({ ...prev, [side]: e.target.value }))} />
-                                <div className="tc-ta-roster-list-tall">
-                                    {rosterPlayers.length === 0 ? <div className="tc-ta-roster-empty">No players match</div> : (() => {
-                                        const grouped = {};
-                                        rosterPlayers.forEach(r => { if (!grouped[r.pos]) grouped[r.pos] = []; grouped[r.pos].push(r); });
-                                        return Object.entries(grouped).sort((a,b) => (TC_POS_ORDER[a[0]]??9)-(TC_POS_ORDER[b[0]]??9)).map(([pos, posPlayers]) => (
-                                            <div key={pos}>
-                                                <div className="tc-ta-pos-group-hdr" style={{ color: posColor(pos) }}>{pos}</div>
-                                                {posPlayers.map(r => {
-                                                    const added = ids.includes(r.id);
-                                                    return (
-                                                        <div key={r.id} className={`tc-ta-roster-item${added?' tc-added':''}`} onClick={() => !added && addPlayer(side, r.id)}>
-                                                            <span className="tc-ta-pos-dot" style={{ background: posColor(r.pos) }} />
-                                                            <span style={{ flex:1, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.name}</span>
-                                                            <span className="tc-ta-player-meta">{r.team}</span>
-                                                            <span className="tc-ta-player-val">{r.value > 0 ? r.value.toLocaleString() : '--'}</span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        ));
-                                    })()}
-                                    {ownerPicksList.length > 0 && (
-                                        <div style={{ marginTop:'0.5rem', borderTop:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', paddingTop:'0.4rem' }}>
-                                            <div className="tc-ta-pos-group-hdr" style={{ color:'var(--gold)' }}>DRAFT PICKS</div>
-                                            {ownerPicksList.map(({ year, round, fromRosterId }) => {
-                                                const pkId = makePickId(year, round, fromRosterId);
-                                                const added = pickIds.includes(pkId);
-                                                const val = pickValueForParts(year, round, fromRosterId);
-                                                const pickColor = PICK_COLORS[round] || 'var(--silver)';
-                                                const via = ownerNameForRosterId(fromRosterId);
-                                                const r2 = allRosters.find(x => x.owner_id === ownerId);
-                                                const isOwn2 = r2 && String(r2.roster_id) === String(fromRosterId);
-                                                return (
-                                                    <div key={pkId} className={`tc-ta-roster-item${added?' tc-added':''}`} onClick={() => !added && addPick(side, pkId)}>
-                                                        <span className="tc-ta-pos-dot" style={{ background: pickColor }} />
-                                                        <span style={{ flex:1, fontWeight:600 }}>{pickLabel(year, round, fromRosterId)}{!isOwn2 && via && <span style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.6, marginLeft:'0.3rem' }}>via {via}</span>}</span>
-                                                        <span className="tc-ta-player-val" style={{ color: pickColor }}>{val.toLocaleString()}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ) : <div style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.6, textAlign:'center', padding:'0.5rem' }}>Select an owner above to view their roster</div>}
-
-                        {/* FAAB */}
-                        <div style={{ borderTop:'1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop:'0.4rem', marginTop:'0.2rem' }}>
-                            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                                <span style={{ fontSize:'0.72rem', fontWeight:700, color:'var(--win-green)', letterSpacing:'0.05em' }}>FAAB $</span>
-                                <input type="number" min={0} value={faab || ''} onChange={e => setTradeFaab(prev => ({ ...prev, [side]: Math.max(0, Number(e.target.value)) }))} placeholder="0"
-                                    style={{ width:70, background:'rgba(0,0,0,0.3)', border:'1px solid rgba(46,204,113,0.35)', color:'var(--win-green)', padding:'0.2rem 0.4rem', borderRadius:4, fontSize:'0.75rem', fontWeight:700, minHeight:'44px' }} />
-                                {faab > 0 && <button className="tc-ta-remove" onClick={() => setTradeFaab(prev => ({ ...prev, [side]: 0 }))}>X</button>}
-                            </div>
-                            {faab > 0 && <div style={{ fontSize:'0.7rem', color:'var(--silver)', opacity:0.6, marginTop:'0.2rem' }}>= {Math.round(faab * FAAB_RATE).toLocaleString()} dynasty pts</div>}
-                        </div>
-
-                        {/* Total */}
-                        <div className="tc-ta-total-row" style={{ background:`${color}12`, border:`1px solid ${color}30` }}>
-                            <span className="tc-ta-total-label">Total Value</span>
-                            <span className="tc-ta-total-val" style={{ color }}>{tot > 0 ? tot.toLocaleString() : '--'}</span>
-                        </div>
-                    </div>
-                );
-            }
+            const tradeSideDeps = buildTradeSideDeps();
 
             // Phase 5: Build vs Find mode — lets the user pick between manually building a trade
             // or auto-generating proposals. "Find" mode renders the TradeFinderTab inline.
@@ -3034,8 +3513,8 @@
                     </div>
 
                     <div className="tc-ta-3col">
-                        {TradeSide({ side:'A', color:'var(--k-5dade2, #5dade2)', label:'SIDE A -- YOUR GIVE' })}
-                        {TradeSide({ side:'B', color:'var(--k-e74c3c, #e74c3c)', label:'SIDE B -- YOU RECEIVE' })}
+                        {TcTradeSide({ side:'A', color:'var(--k-5dade2, #5dade2)', label:'SIDE A -- YOUR GIVE', ...tradeSideDeps })}
+                        {TcTradeSide({ side:'B', color:'var(--k-e74c3c, #e74c3c)', label:'SIDE B -- YOU RECEIVE', ...tradeSideDeps })}
 
                         {/* League Scouting Panel */}
                         <div className="tc-scout-panel">
@@ -3070,87 +3549,8 @@
                     </div>
 
                     {/* Verdict */}
-                    {hasTrade && (
-                        <div className="tc-ta-verdict tc-ta-sticky-summary" id="wr-export-trade">
-                            <div className="tc-section-hdr" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>TRADE ANALYSIS<button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-trade'), 'trade-analysis')} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', padding:'2px 8px', color:'var(--gold)', fontSize:'var(--text-micro, 0.6875rem)', cursor:'pointer', fontFamily: 'var(--font-body)', minHeight:'44px', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>Snapshot</button></div>
-                            <div style={{ display:'flex', alignItems:'baseline', gap:'0.6rem', flexWrap:'wrap' }}>
-                                <span className="tc-verdict-diff" style={{ color: verdictColor }}>{diffDisplay}</span>
-                                <span style={{ fontFamily:'var(--font-title)', fontSize:'1.1rem', color: verdictColor }}>{verdictText}</span>
-                                <span style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.655 }}>(gave {totalA.toLocaleString()} / received {totalB.toLocaleString()})</span>
-                            </div>
-                            <div className="tc-ta-impact-grid">
-                                <div>
-                                    <span>Roster Impact</span>
-                                    <strong>{rosterImpactLabel}</strong>
-                                    <em>{starterValueDelta >= 0 ? '+' : ''}{Math.round(starterValueDelta).toLocaleString()} player DHQ</em>
-                                </div>
-                                <div>
-                                    <span>Pick Capital</span>
-                                    <strong>{pickCapitalDelta >= 0 ? '+' : ''}{Math.round(pickCapitalDelta).toLocaleString()}</strong>
-                                    <em>{pickQuantityDelta >= 0 ? '+' : ''}{pickQuantityDelta} picks</em>
-                                </div>
-                                <div>
-                                    <span>FAAB</span>
-                                    <strong>{faabDelta >= 0 ? '+' : ''}${faabDelta}</strong>
-                                    <em>{Math.round(faabDelta * FAAB_RATE).toLocaleString()} DHQ equiv.</em>
-                                </div>
-                                <div>
-                                    <span>Acceptance</span>
-                                    <strong style={{ color: likelihoodColor }}>{likelihood}%</strong>
-                                    <em>{netTaxTotal >= 0 ? '+' : ''}{netTaxTotal}% psych · {manualBehaviorFit ? `${manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}${manualBehaviorFit.acceptanceDelta}% behavior` : '0% behavior'}</em>
-                                </div>
-                            </div>
-                            {otherOwnerId && (
-                                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
-                                    <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65 }}>Their posture:</span>
-                                    <span className="tc-posture-badge" style={{ color:theirPosture.color, borderColor:theirPosture.color, background:`${theirPosture.color}18` }}>{theirPosture.label}</span>
-                                    {otherDnaKey !== 'NONE' && <span className="tc-chip tc-chip-dna">{otherDna.label}</span>}
-                                    {(manualBehaviorProfile?.inferences || []).slice(0, 3).map(tag => <span key={tag} className="tc-chip">{tag.replace(/-/g, ' ')}</span>)}
-                                </div>
-                            )}
-                            <div>
-                                <div style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'0.35rem' }}>Psychological Tax Breakdown {React.createElement(Tip, null, 'Each owner\'s DNA type creates percentage-point acceptance modifiers beyond pure value. Taxes reduce likelihood, bonuses increase it. Factors: endowment effect, panic premium, status tax, loss aversion, rebuilding discount, need fulfillment, window alignment, and posture.')}</div>
-                                <div className="tc-tax-table">
-                                    {psychTaxes.map((t,i) => (
-                                        <div key={i} className={`tc-tax-table-row ${t.type === 'BONUS' ? 'tc-bonus' : 'tc-tax'}`}>
-                                            <span className="tc-tax-name">{t.name}</span>
-                                            <span className="tc-tax-desc">{t.desc}</span>
-                                            <span className="tc-tax-val" style={{ color: t.impact > 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>{t.impact > 0 ? '+' : ''}{t.impact}%</span>
-                                        </div>
-                                    ))}
-                                    {grudgeTax.total !== 0 && (
-                                        <div className={`tc-tax-table-row ${grudgeTax.total < 0 ? 'tc-tax' : 'tc-bonus'}`}>
-                                            <span className="tc-tax-name">Grudge Tax</span>
-                                            <span className="tc-tax-desc">{grudgeTax.entries.length} logged interaction{grudgeTax.entries.length!==1?'s':''}</span>
-                                            <span className="tc-tax-val" style={{ color: grudgeTax.total < 0 ? 'var(--loss-red)' : 'var(--win-green)' }}>{grudgeTax.total > 0 ? '+' : ''}{grudgeTax.total}%</span>
-                                        </div>
-                                    )}
-                                    {manualBehaviorFit && (
-                                        <div className={`tc-tax-table-row ${manualBehaviorFit.acceptanceDelta >= 0 ? 'tc-bonus' : 'tc-tax'}`}>
-                                            <span className="tc-tax-name">Observed Behavior</span>
-                                            <span className="tc-tax-desc">{manualBehaviorFit.framing || 'Trade history adjusted acceptance odds.'}</span>
-                                            <span className="tc-tax-val" style={{ color: manualBehaviorFit.acceptanceDelta >= 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>{manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}{manualBehaviorFit.acceptanceDelta}%</span>
-                                        </div>
-                                    )}
-                                    <div className="tc-tax-table-row tc-total">
-                                        <span className="tc-tax-name">NET MODIFIER</span>
-                                        <span className="tc-tax-desc">Folded into effective surplus</span>
-                                        <span className="tc-tax-val" style={{ color: netTaxTotal > 0 ? 'var(--win-green)' : netTaxTotal < 0 ? 'var(--loss-red)' : 'var(--silver)' }}>{netTaxTotal > 0 ? '+' : ''}{netTaxTotal}%</span>
-                                    </div>
-                                </div>
-                            </div>
-                            {otherDnaKey !== 'NONE' && otherDna.strategy && (
-                                <div style={{ fontSize:'0.76rem', color:otherDna.color, fontStyle:'italic', background:`${otherDna.color}0d`, border:`1px solid ${otherDna.color}25`, borderRadius:5, padding:'0.4rem 0.6rem' }}>Approach: {otherDna.strategy}</div>
-                            )}
-                            <div>
-                                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.3rem' }}>
-                                    <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.7, textTransform:'uppercase', letterSpacing:'0.06em' }}>Likelihood of Acceptance {React.createElement(Tip, null, 'Estimated chance the other owner accepts. Starts at 50%, then applies value difference plus psychological modifiers from DNA, posture, needs, window, and history.')}</span>
-                                    <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.4rem', fontWeight:600, color: likelihoodColor }}>{likelihood}%</span>
-                                </div>
-                                <div className="tc-likelihood-bar-wrap"><div className="tc-likelihood-bar-fill" style={{ width:`${likelihood}%`, background: likelihoodColor }} /></div>
-                            </div>
-                        </div>
-                    )}
+                    {hasTrade && <TcVerdictPanel {...{ verdictColor, diffDisplay, verdictText, totalA, totalB, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta, FAAB_RATE, likelihoodColor, likelihood, netTaxTotal, manualBehaviorFit, otherOwnerId, theirPosture, otherDnaKey, otherDna, manualBehaviorProfile, psychTaxes, grudgeTax }} />}
+                    {hasTrade && renderAlexVerdict()}
                     </>}
                 </div>
             );
@@ -3385,6 +3785,19 @@
             profiles: 'Owner posture, roster gaps, pick context, and trade history.',
             analyzer: 'Manual player, pick, and FAAB inspection.'
         };
+        // Adaptive War Room canvas — behind a default-OFF flag (window._wrAdaptiveCanvas).
+        // Flag ON => fully tab-free: the calm "best move" hero (landing view) + a tab-free workspace
+        // shell that reuses the existing surfaces. Flag OFF => the existing 3-tab return below,
+        // byte-identical (this branch never runs).
+        const _wrAdaptiveOn = (typeof window !== 'undefined' && window._wrAdaptiveCanvas === true);
+        if (_wrAdaptiveOn && canAccess('trade-finder')) {
+            // Hero is the landing view, only when not seeded by a deep-link (which jumps to workspace).
+            if (adaptiveView === 'hero' && !selectedDealPartnerId && !dealFocusPid && !tradeContext) {
+                const _adaptiveLanding = renderAdaptiveLanding();
+                if (_adaptiveLanding) return _adaptiveLanding;
+            }
+            return renderAdaptiveWorkspace();
+        }
         return (
             <div className="tc-trade-root">
                 <div className="wr-module-strip">

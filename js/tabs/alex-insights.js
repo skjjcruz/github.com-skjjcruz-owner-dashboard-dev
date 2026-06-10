@@ -503,8 +503,9 @@
     function clearCachedAiInsights(props) { try { localStorage.removeItem(getAiCacheKey(props)); } catch (_) {} }
 
     async function generateAiInsights({ myRoster, currentLeague, playersData }, kpis, heuristicTitles) {
+        const structuredFn = (window.OD?.callAI && window.WR?.AIContext) ? window.OD.callAI : null;
         const aiFn = typeof window.dhqAI === 'function' ? window.dhqAI : null;
-        if (!aiFn) return { error: 'dhqAI not loaded' };
+        if (!structuredFn && !aiFn) return { error: 'AI not loaded' };
 
         // Build compact context: KPIs + recent trades + roster snapshot.
         const LI = window.App?.LI || {};
@@ -521,7 +522,33 @@
                 return '- Traded ' + (mine || 'picks') + ' for ' + (theirs || 'picks');
             }).join('\n');
 
+        // Preferred path: the structured `insight` route. The edge function
+        // wraps it with league-format detection, team-mode rules, and quality
+        // gates, runs it on the fast tier, and server-caches it 24h (uncounted
+        // against the plan's request allowance).
+        if (structuredFn) {
+            try {
+                const assessment = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
+                const context = {
+                    ...window.WR.AIContext.buildStructuredBase(currentLeague, assessment, myRoster),
+                    kpis: {
+                        trades: (kpis.tradeCount || 0) + ' completed, net DHQ ' + (kpis.tradeNetDhq > 0 ? '+' : '') + Math.round((kpis.tradeNetDhq || 0) / 1000) + 'k',
+                        waivers: kpis.waiverHitPct != null ? (kpis.waiverHitPct + '% retention over ' + kpis.waiverTotal + ' adds') : 'n/a',
+                        draft: kpis.draftHitPct != null ? (kpis.draftHitPct + '% hit rate over ' + kpis.draftTotal + ' picks') : 'n/a',
+                    },
+                    topHolds: topHolds.map(p => ({ name: p.name || String(p.pid), pos: p.pos || '?', age: p.age, value: p.dhq })),
+                    recentTrades: recentTrades ? recentTrades.split('\n').map(s => ({ summary: s.replace(/^- /, '') })) : [],
+                    heuristicTitles: heuristicTitles || [],
+                };
+                const result = await structuredFn({ type: 'insight', context });
+                const parsed = Array.isArray(result?.insights) ? result.insights : extractJsonArray(result?.analysis);
+                if (parsed) return { insights: normalizeAiInsights(parsed) };
+            } catch (e) { window.wrLog?.('alexInsights.structured', e); }
+        }
+        if (!aiFn) return { error: 'AI not loaded' };
+
         const contextLines = [
+            (window.WR?.AIContext?.buildFormatPreamble?.(currentLeague) || ''),
             'LEAGUE: ' + (currentLeague?.name || 'Dynasty') + ', ' + (currentLeague?.rosters?.length || 12) + ' teams',
             'TRADES: ' + (kpis.tradeCount || 0) + ' completed, net DHQ ' + (kpis.tradeNetDhq > 0 ? '+' : '') + Math.round((kpis.tradeNetDhq || 0) / 1000) + 'k',
             'WAIVERS: ' + (kpis.waiverHitPct != null ? (kpis.waiverHitPct + '% retention over ' + kpis.waiverTotal + ' adds') : 'n/a'),
@@ -549,31 +576,39 @@
         ].join('\n');
 
         try {
-            // Use the existing `strategy-analysis` route — same provider
-            // (Gemini Flash), same tier, semantically a strategy read on
-            // the user's managerial patterns. Avoids a cross-repo routing
-            // change to add a bespoke `alex-insights` type.
+            // Fallback: the generic `strategy-analysis` route (Gemini Flash
+            // tier), enriched with the format/quality preamble above.
             const reply = await aiFn('strategy-analysis', prompt, contextLines);
             if (!reply || typeof reply !== 'string') return { error: 'empty reply' };
-            // Tolerate replies wrapped in ```json fences or surrounded by text.
-            const match = reply.match(/\[\s*\{[\s\S]*\}\s*\]/);
-            if (!match) return { error: 'no JSON array in reply' };
-            const parsed = JSON.parse(match[0]);
-            if (!Array.isArray(parsed)) return { error: 'reply is not an array' };
-            // Validate + normalize
-            const cleaned = parsed.filter(x => x && x.severity && x.title).map(x => ({
-                severity: String(x.severity).toLowerCase(),
-                confidence: Math.max(50, Math.min(95, parseInt(x.confidence) || 70)),
-                focus: x.focus || null,
-                title: String(x.title).slice(0, 120),
-                body: String(x.body || '').slice(0, 400),
-                ctaLabel: x.ctaLabel ? String(x.ctaLabel).slice(0, 40) : null,
-                isAi: true,
-            }));
-            return { insights: cleaned };
+            const parsed = extractJsonArray(reply);
+            if (!parsed) return { error: 'no JSON array in reply' };
+            return { insights: normalizeAiInsights(parsed) };
         } catch (e) {
             return { error: String(e.message || e) };
         }
+    }
+
+    // Tolerates replies wrapped in ```json fences or surrounded by prose.
+    function extractJsonArray(reply) {
+        if (!reply || typeof reply !== 'string') return null;
+        const match = reply.match(/\[\s*\{[\s\S]*\}\s*\]/);
+        if (!match) return null;
+        try {
+            const parsed = JSON.parse(match[0]);
+            return Array.isArray(parsed) ? parsed : null;
+        } catch (_) { return null; }
+    }
+
+    function normalizeAiInsights(parsed) {
+        return parsed.filter(x => x && x.severity && x.title).map(x => ({
+            severity: String(x.severity).toLowerCase(),
+            confidence: Math.max(50, Math.min(95, parseInt(x.confidence) || 70)),
+            focus: x.focus || null,
+            title: String(x.title).slice(0, 120),
+            body: String(x.body || '').slice(0, 400),
+            ctaLabel: x.ctaLabel ? String(x.ctaLabel).slice(0, 40) : null,
+            isAi: true,
+        }));
     }
 
     // ── Hero ──────────────────────────────────────────────────────
@@ -646,6 +681,19 @@
             saveCachedAiInsights(props, r.insights);
         };
         const doClear = () => { clearCachedAiInsights(props); setAiState({ insights: [], ts: 0 }); };
+
+        // Learning-loop feedback on AI insight cards (keyed by title).
+        const [insightFeedback, setInsightFeedback] = useState({});
+        const sendInsightFeedback = (ins, action) => {
+            setInsightFeedback(prev => ({ ...prev, [ins.title]: action }));
+            window.WR?.AIFeedback?.send?.({
+                leagueId: getLeagueId(props),
+                surface: 'insight',
+                recId: 'ai-insight:' + (ins.title || '').slice(0, 150),
+                action,
+                subject: { title: ins.title, focus: ins.focus || undefined, severity: ins.severity },
+            });
+        };
 
         const cacheAge = aiState?.ts ? Math.round((Date.now() - aiState.ts) / 60000) : null;
 
@@ -720,7 +768,16 @@
                 )
                 : h('div', { className: 'gm-office-insight-grid' },
                     merged.map((ins, i) => h('div', { key: i, style: { position: 'relative' } },
-                        h(InsightCard, ins),
+                        h(InsightCard, ins.isAi ? {
+                            ...ins,
+                            // Learning loop: thumbs feed the ai_feedback rollup that
+                            // tunes future prompts for this owner.
+                            feedback: {
+                                given: insightFeedback[ins.title],
+                                onUp: () => sendInsightFeedback(ins, 'up'),
+                                onDown: () => sendInsightFeedback(ins, 'down'),
+                            },
+                        } : ins),
                         ins.recommendationWhy?.length > 0 && h('div', {
                             style: {
                                 display: 'flex', flexWrap: 'wrap', gap: '5px',

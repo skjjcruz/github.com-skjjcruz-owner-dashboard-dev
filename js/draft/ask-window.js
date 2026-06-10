@@ -203,7 +203,8 @@
             }
             setPending(true);
             try {
-                const context = buildAskContext(stateRef.current);
+                const context = (window.WR?.AIContext?.buildFormatPreamble?.(window.S?.currentLeague) || '')
+                    + buildAskContext(stateRef.current);
                 const response = await window.dhqAI('draft-chat', askPrompt, context);
                 const text = typeof response === 'string'
                     ? response

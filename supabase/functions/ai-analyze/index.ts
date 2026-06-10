@@ -166,7 +166,7 @@ interface AIRoute {
     tier: AIWorkloadTier;
 }
 
-const AI_POLICY_VERSION = '2026-05-03.vendor-router.v1';
+const AI_POLICY_VERSION = '2026-06-10.insight-everywhere.v1';
 
 const AI_MODELS = {
     GEMINI_FAST: 'gemini-2.5-flash-lite',
@@ -409,6 +409,12 @@ const AI_ROUTES: Record<string, AIWorkloadTier> = {
     // Keep long structured generation on premium models for reliability.
     mock_draft: 'premium',
     rookies:    'premium',
+    // Explicit user-triggered deep dives.
+    trade_verdict: 'premium',
+    // Ambient insight surfaces: cheap-first, server-cached, request-uncounted.
+    team_diagnosis:   'standard',
+    dashboard_digest: 'fast',
+    insight:          'fast',
     // ReconAI / Scout generic chat routes.
     'trade-chat':        'premium',
     'trade-scout':       'premium',
@@ -646,7 +652,7 @@ function clampTextToChars(text: string, maxChars: number): { text: string; trunc
     return { text: value.slice(0, Math.max(0, maxChars - suffix.length)) + suffix, truncated: true };
 }
 
-const STRUCTURED_TYPES = new Set(['league', 'team', 'partners', 'fa_targets', 'rookies', 'fa_chat', 'mock_draft', 'chat']);
+const STRUCTURED_TYPES = new Set(['league', 'team', 'partners', 'fa_targets', 'rookies', 'fa_chat', 'mock_draft', 'chat', 'trade_verdict', 'team_diagnosis', 'dashboard_digest', 'insight']);
 
 interface GenericAIContext {
     callType: string;
@@ -950,6 +956,7 @@ async function reserveAIUsage(args: {
     aiSession: AISession;
     limits: AIPlanLimits;
     estimatedRequestCostUsd: number;
+    countRequest?: boolean;
 }): Promise<Record<string, any>> {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -969,6 +976,7 @@ async function reserveAIUsage(args: {
         p_estimated_request_cost_usd: args.estimatedRequestCostUsd,
         p_global_daily_cost_limit: envNumber('AI_GLOBAL_DAILY_COST_LIMIT_USD', 50),
         p_global_monthly_cost_limit: envNumber('AI_GLOBAL_MONTHLY_COST_LIMIT_USD', 1000),
+        p_count_request: args.countRequest !== false,
     });
     if (error) {
         console.error('[ai-analyze] reserve_ai_usage failed:', error);
@@ -992,6 +1000,224 @@ function aiLimitMessage(reason: string): string {
         default:
             return 'AI usage limit reached.';
     }
+}
+
+// ── Server-side AI response cache ────────────────────────────────────────────
+// Ambient insight surfaces are cached by a hash of their context so repeat
+// views (and other devices) cost nothing. Cache hits bypass usage reservation
+// entirely; fresh ambient calls reserve cost budgets but not request counts.
+
+// Types whose analysis payload is a strict JSON array contract.
+const JSON_ARRAY_TYPES = new Set(['dashboard_digest', 'insight']);
+
+// Strip markdown fences the model may add despite instructions, then parse.
+function parseJsonArray(text: string): any[] | undefined {
+    let clean = String(text || '').trim();
+    if (clean.startsWith('```')) {
+        clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+    }
+    try {
+        const parsed = JSON.parse(clean);
+        return Array.isArray(parsed) ? parsed : undefined;
+    } catch {
+        const match = clean.match(/\[[\s\S]*\]/);
+        if (match) {
+            try {
+                const parsed = JSON.parse(match[0]);
+                return Array.isArray(parsed) ? parsed : undefined;
+            } catch { /* fall through */ }
+        }
+    }
+    return undefined;
+}
+
+const CACHEABLE_TYPES: Record<string, number> = {
+    dashboard_digest: 24 * 60 * 60 * 1000,
+    insight:          24 * 60 * 60 * 1000,
+    // Diagnosis is keyed on the full roster context, so any roster move
+    // naturally produces a fresh entry; 12h covers record/score drift.
+    team_diagnosis:   12 * 60 * 60 * 1000,
+};
+
+// User-scoped cache types include the caller identity in the key; team
+// diagnosis is keyed purely on league/roster context (same roster state =>
+// same diagnosis, regardless of which league member asks).
+const USER_SCOPED_CACHE_TYPES = new Set(['dashboard_digest', 'insight']);
+
+function stableStringify(value: any): string {
+    if (value === null || typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+    const keys = Object.keys(value).sort();
+    return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+}
+
+const CACHE_KEY_IGNORED_FIELDS = new Set(['forceRefresh', 'system', 'sessionId', 'session_id', '_dhqContext']);
+
+async function computeCacheKey(type: string, context: any, aiSession: AISession, prefsVersion = ''): Promise<string> {
+    const parsed = parseContextPayload(context);
+    const pruned: Record<string, any> = {};
+    for (const [k, v] of Object.entries(parsed || {})) {
+        if (!CACHE_KEY_IGNORED_FIELDS.has(k)) pruned[k] = v;
+    }
+    const scope = USER_SCOPED_CACHE_TYPES.has(type) ? aiSession.identifier : 'shared';
+    const raw = `${AI_POLICY_VERSION}|${type}|${scope}|${prefsVersion}|${stableStringify(pruned)}`;
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ── User preference learning loop ────────────────────────────────────────────
+// Rolls the owner's recent feedback (ai_feedback table, via the ai-feedback
+// edge function) into a compact block appended to structured system prompts.
+// Fail-open: AI must work identically when no feedback exists.
+
+async function fetchPreferenceSummary(aiSession: AISession, leagueId: string | null): Promise<Record<string, any> | null> {
+    const supabase = cacheSupabaseClient();
+    if (!supabase) return null;
+    const data = await safeSupabaseData(supabase.rpc('get_ai_preference_summary', {
+        p_identifier: aiSession.identifier,
+        p_league_id: leagueId,
+    }));
+    if (!data || typeof data !== 'object' || !(data as any).total) return null;
+    return data as Record<string, any>;
+}
+
+// Coarse version stamp for the response-cache key: cached ambient insights
+// refresh when tendencies shift meaningfully, without churning on every
+// single thumb. Accept rate is decile-rounded; volume is bucketed by 5s.
+function prefsVersionFor(prefs: Record<string, any> | null): string {
+    if (!prefs || !prefs.total) return 'p0';
+    const decile = prefs.acceptRate != null ? Math.round(Number(prefs.acceptRate) * 10) : 'x';
+    return `p${decile}:${Math.min(9, Math.floor(Number(prefs.total) / 5))}`;
+}
+
+function describeSubject(subject: any): string {
+    if (!subject || typeof subject !== 'object') return '';
+    const parts = ['player', 'pos', 'age', 'moveType', 'title']
+        .map(k => subject[k])
+        .filter(v => v !== null && v !== undefined && v !== '');
+    return parts.join(' ').slice(0, 90);
+}
+
+function buildUserPreferenceBlock(prefs: Record<string, any> | null): string {
+    if (!prefs || !prefs.total) return '';
+    const lines: string[] = [];
+    lines.push(`\n═══ USER PREFERENCE PROFILE (learned from this owner's reactions to past AI advice) ═══`);
+    const accept = prefs.acceptRate != null ? Math.round(Number(prefs.acceptRate) * 100) : null;
+    lines.push(`Feedback on ${prefs.total} recommendations in the last 90 days${accept != null ? ` — ${accept}% positively received` : ''}.`);
+    const sc = prefs.surfaceCounts || {};
+    const downSurfaces = Object.entries(sc)
+        .filter(([, c]: [string, any]) => Number(c?.down || 0) > Number(c?.up || 0) + Number(c?.acted || 0))
+        .map(([s]) => s);
+    if (downSurfaces.length) {
+        lines.push(`They frequently reject ${downSurfaces.join(', ')} advice — only repeat a previously rejected framing when the evidence is overwhelming, and acknowledge the change.`);
+    }
+    const actedSurfaces = Object.entries(sc)
+        .filter(([, c]: [string, any]) => Number(c?.acted || 0) > 0)
+        .map(([s]) => s);
+    if (actedSurfaces.length) {
+        lines.push(`They have acted on ${actedSurfaces.join(', ')} recommendations before — these carry weight, so be precise.`);
+    }
+    const downs = (prefs.recentDownSubjects || []).map(describeSubject).filter(Boolean).slice(0, 3);
+    if (downs.length) lines.push(`Recently rejected: ${downs.join(' | ')}. Do not re-pitch these unless circumstances changed.`);
+    const acted = (prefs.recentActedSubjects || []).map(describeSubject).filter(Boolean).slice(0, 3);
+    if (acted.length) lines.push(`Recently acted on: ${acted.join(' | ')}. Similar profiles resonate with this owner.`);
+    lines.push(`These are tendencies, not rules — quality thresholds and team-mode rules above ALWAYS take precedence.`);
+    lines.push(`═══════════════════════════════════════════════════════════════════════════════════════\n`);
+    return lines.join('\n');
+}
+
+function cacheSupabaseClient(): any | null {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !serviceRoleKey) return null;
+    return createClient(supabaseUrl, serviceRoleKey);
+}
+
+async function readAIResponseCache(cacheKey: string): Promise<{ analysis: string; model: string | null; usage: any } | null> {
+    const supabase = cacheSupabaseClient();
+    if (!supabase) return null;
+    const row = await safeSupabaseData(
+        supabase.from('ai_response_cache')
+            .select('analysis, model, usage, hit_count, expires_at')
+            .eq('cache_key', cacheKey)
+            .gt('expires_at', new Date().toISOString())
+            .maybeSingle()
+    );
+    if (!row || typeof row.analysis !== 'string') return null;
+    await safeSupabaseWrite(
+        supabase.from('ai_response_cache')
+            .update({ hit_count: (Number(row.hit_count) || 0) + 1 })
+            .eq('cache_key', cacheKey)
+    );
+    return { analysis: row.analysis, model: row.model || null, usage: row.usage || null };
+}
+
+async function writeAIResponseCache(args: {
+    cacheKey: string;
+    type: string;
+    aiSession: AISession;
+    leagueId: string | null;
+    model: string;
+    analysis: string;
+    usage: Record<string, any>;
+    ttlMs: number;
+}): Promise<void> {
+    const supabase = cacheSupabaseClient();
+    if (!supabase) return;
+    await safeSupabaseWrite(supabase.from('ai_response_cache').upsert({
+        cache_key: args.cacheKey,
+        type: args.type,
+        identifier: USER_SCOPED_CACHE_TYPES.has(args.type) ? args.aiSession.identifier : null,
+        league_id: args.leagueId,
+        model: args.model,
+        analysis: args.analysis,
+        usage: args.usage,
+        hit_count: 0,
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + args.ttlMs).toISOString(),
+    }));
+    // Opportunistic cleanup keeps the table small without a scheduled job.
+    if (Math.random() < 0.05) {
+        await safeSupabaseWrite(
+            supabase.from('ai_response_cache').delete().lt('expires_at', new Date().toISOString())
+        );
+    }
+}
+
+async function recordAICacheHit(args: {
+    req: Request;
+    aiSession: AISession;
+    routeType: string;
+    originalType: string;
+    leagueId: string | null;
+    model: string | null;
+}) {
+    const supabase = cacheSupabaseClient();
+    if (!supabase) return;
+    const claims = decodeAuthPayload(args.req.headers.get('Authorization'));
+    const userId = args.aiSession.userId || (isUuid(claims?.sub) ? claims?.sub : null);
+    await safeSupabaseWrite(supabase.from('analytics_events').insert({
+        event_id: crypto.randomUUID(),
+        username: args.aiSession.username,
+        user_id: userId,
+        league_id: args.leagueId,
+        session_id: `edge_${args.aiSession.identifier}_${Date.now()}`,
+        platform: 'warroom',
+        module: 'ai',
+        widget: args.routeType,
+        event_name: 'ai_call_cached',
+        entity_type: 'ai_call',
+        entity_id: args.routeType,
+        metadata: {
+            originalType: args.originalType,
+            callType: args.routeType,
+            aiPolicyVersion: AI_POLICY_VERSION,
+            model: args.model,
+            estimatedCostUsd: 0,
+            cached: true,
+            plan: args.aiSession.plan,
+        },
+    }));
 }
 
 // ── League Format Detection ──────────────────────────────────────────────────
@@ -1137,6 +1363,71 @@ function buildTeamModeBlock(ctx: any): string {
     return lines.join('\n');
 }
 
+// ── Trade Partner Mode Awareness ─────────────────────────────────────────────
+// The other side of a trade values assets through their own competitive mode.
+// Rebuilders want picks and youth; contenders want proven starters now.
+
+function buildPartnerModeBlock(partner: any): string {
+    if (!partner) return '';
+    const tier = String(partner.tier || partner.teamTier || '').toUpperCase();
+    const window = String(partner.window || partner.teamWindow || partner.tradeWindow || '').toUpperCase();
+    if (!tier && !window) return '';
+
+    const lines: string[] = [];
+    lines.push(`\n═══ TRADE PARTNER MODE (what the OTHER side actually values) ═══`);
+    const label = partner.owner ? `${partner.owner} ` : '';
+    if (tier === 'REBUILDING' || window === 'REBUILDING') {
+        lines.push(`🔨 ${label}is REBUILDING. They value: draft picks (1sts/2nds above all), players aged ≤24 with upside, cap/FAAB flexibility.`);
+        lines.push(`  → They will NOT pay fair value for veterans aged 27+. Do not frame aging assets as the centerpiece of an offer to them.`);
+        lines.push(`  → Offers built around picks and youth get accepted; offers built around "proven producers" get rejected or lowballed.`);
+    } else if (tier === 'ELITE' || tier === 'CONTENDER' || window === 'CONTENDING') {
+        lines.push(`🏆 ${label}is CONTENDING. They value: proven starters who help THIS season, immediate positional upgrades.`);
+        lines.push(`  → They will pay a premium (including future picks) for win-now talent at a position of need.`);
+        lines.push(`  → They will NOT value speculative youth or distant picks at full price — those are your acquisition discounts, not selling points.`);
+    } else {
+        lines.push(`⚖️ ${label}is at a CROSSROADS. They are deciding between pushing and tearing down — offers that decisively help either path land better than balanced "depth" swaps.`);
+    }
+    lines.push(`═══════════════════════════════════════════════════════════════════════════════════════\n`);
+    return lines.join('\n');
+}
+
+// ── Dynamic Positional Scarcity ──────────────────────────────────────────────
+// When the client passes real league-wide supply counts, emit computed
+// scarcity indices instead of relying only on static format multipliers.
+// Degrades silently when the data is absent.
+
+function buildScarcityBlock(ctx: any): string {
+    const supply = ctx?.positionalSupply;
+    if (!supply || typeof supply !== 'object') return '';
+    const fmt = detectLeagueFormat(ctx);
+    const teamCount = Number(ctx.teamCount || ctx.numTeams || 12);
+
+    const demandByPos: Record<string, number> = {
+        QB: fmt.numQBSlots * teamCount,
+        RB: (fmt.numRBSlots + 1) * teamCount, // +1 approximates FLEX pressure
+        WR: (fmt.numWRSlots + 1) * teamCount,
+        TE: Math.max(fmt.numTESlots, 1) * teamCount,
+    };
+
+    const lines: string[] = [];
+    for (const pos of ['QB', 'RB', 'WR', 'TE']) {
+        const startable = Number(supply[pos]);
+        if (!Number.isFinite(startable) || startable <= 0) continue;
+        const demand = demandByPos[pos];
+        const ratio = startable / demand;
+        if (ratio < 0.85) {
+            lines.push(`🔴 ${pos}: only ${startable} startable league-wide vs ~${demand} starting slots — SEVERE scarcity. Holders of quality ${pos}s have major trade leverage; never sell below market.`);
+        } else if (ratio < 1.1) {
+            lines.push(`🟠 ${pos}: ${startable} startable vs ~${demand} slots — tight market. Expect to overpay slightly to acquire; depth here is a real asset.`);
+        } else {
+            lines.push(`🟢 ${pos}: ${startable} startable vs ~${demand} slots — adequate supply. Do not overpay; replacements exist on the wire or in cheap trades.`);
+        }
+    }
+    return lines.length
+        ? `\n═══ LIVE POSITIONAL SCARCITY (computed from this league's actual player pool) ═══\n${lines.join('\n')}\n═══════════════════════════════════════════════════════════════════════════════════════\n`
+        : '';
+}
+
 // ── Minimum Quality Thresholds ──────────────────────────────────────────────
 
 function buildQualityThresholdBlock(): string {
@@ -1206,12 +1497,13 @@ function buildSystemPrompt(ctx?: any): string {
     const leagueFmt = ctx ? detectLeagueFormat(ctx) : null;
     const fmtBlock = leagueFmt ? buildLeagueFormatBlock(leagueFmt) : '';
     const modeBlock = ctx ? buildTeamModeBlock(ctx) : '';
+    const scarcityBlock = ctx ? buildScarcityBlock(ctx) : '';
     const qualityBlock = buildQualityThresholdBlock();
 
     return `You are an elite dynasty fantasy football analyst with deep expertise in player values, team-building strategy, and trade negotiation psychology. You analyze leagues with the precision of a sports analytics team combined with the strategic instinct of a seasoned GM.
 
 You have access to live data: Sleeper rosters and standings, FantasyCalc dynasty player values, and behavioral profiles of each owner (their DNA/trading personality derived from actual trade history).
-${fmtBlock}${modeBlock}${qualityBlock}
+${fmtBlock}${modeBlock}${scarcityBlock}${qualityBlock}
 Your analysis must be:
 - Specific and data-driven — name owners, cite records, reference actual roster compositions
 - Actionable — concrete recommendations an owner can act on today
@@ -1360,6 +1652,12 @@ My Needs: ${(ctx.myTeam.needs || []).join(', ')}
 
 **ALL OWNERS (ranked by trade compatibility):**
 ${partnersStr}
+
+PARTNER MODE RULES (apply to every partner you recommend):
+- REBUILDING partners accept offers built on draft picks and players aged ≤24. They reject or lowball offers centered on veterans 27+.
+- CONTENDING partners pay premiums (including future picks) for proven starters at positions of need. They discount speculative youth and distant picks.
+- CROSSROADS partners respond to offers that decisively push them one direction — not balanced "depth" swaps.
+Frame every suggested offer in terms of what THAT partner's mode makes them want, not just what I need.
 
 Identify my top 3 trading partners and one sleeper pick:
 
@@ -1659,6 +1957,155 @@ Remember: Never recommend spending FAAB on replacement-level players. Quality ov
 **Question:** ${ctx.question}`;
 }
 
+// ── Trade verdict (AI second opinion on a graded deal) ───────────────────────
+
+function formatDealSide(side: any): string {
+    if (!side) return '  (nothing)';
+    const parts: string[] = [];
+    for (const p of side.players || []) {
+        parts.push(`  ${p.pos || '?'} ${p.name}${p.age ? ` | Age ${p.age}` : ''}${p.value != null ? ` | Value ${p.value}` : ''}`);
+    }
+    for (const pk of side.picks || []) {
+        parts.push(`  PICK ${pk.year || '?'} Round ${pk.round || '?'}${pk.value != null ? ` | Value ${pk.value}` : ''}`);
+    }
+    if (side.faab) parts.push(`  FAAB $${side.faab}`);
+    return parts.join('\n') || '  (nothing)';
+}
+
+function buildTradeVerdictPrompt(ctx: any): string {
+    const fmt = detectLeagueFormat(ctx);
+    const fmtBlock = buildLeagueFormatBlock(fmt);
+    const my = ctx.myTeam || {};
+    const partner = ctx.partnerTeam || {};
+    const myModeBlock = buildTeamModeBlock({ teamTier: my.tier, teamWindow: my.window || my.tradeWindow, healthScore: my.healthScore });
+    const partnerBlock = buildPartnerModeBlock(partner);
+    const v = ctx.verdict || {};
+
+    return `Give a second opinion on this dynasty trade in **${ctx.leagueName || 'my league'}**. My deterministic trade calculator already graded it — your job is an independent verdict that weighs context the math can't see (mode fit, market psychology, league format leverage). If you disagree with the calculator, SAY SO explicitly and explain why.
+${fmtBlock}${myModeBlock}${partnerBlock}
+**I SEND (leaves my roster):**
+${formatDealSide(ctx.iSend)}
+
+**I RECEIVE (joins my roster):**
+${formatDealSide(ctx.iReceive)}
+
+**MY TEAM:** ${my.record || '?'} | ${my.tier || '?'} | Health: ${my.healthScore ?? '?'}/100
+My Needs: ${(my.needs || []).join(', ') || 'none identified'} | My Strengths: ${(my.strengths || []).join(', ') || 'none identified'}
+**PARTNER (${partner.owner || 'other owner'}):** ${partner.record || '?'} | ${partner.tier || '?'} | DNA: ${partner.dna || 'Unknown'} | Posture: ${partner.posture || 'N/A'}
+Their Needs: ${(partner.needs || []).join(', ') || 'none identified'}
+
+**CALCULATOR VERDICT:** ${v.verdictText || 'n/a'} | Value diff: ${v.diffDisplay ?? 'n/a'} | Acceptance likelihood: ${v.likelihood ?? 'n/a'}${v.psychNotes ? ` | Behavioral notes: ${v.psychNotes}` : ''}
+
+VERDICT RULES (strictly enforce):
+1. Judge the deal through MY team mode first — a "fair value" trade that fights my rebuild/contend direction is a BAD trade for me.
+2. Apply league format premiums (superflex QB 1.8x, TEP TE 1.5x) to both sides before comparing.
+3. Factor the partner's mode: if this deal gives them exactly what their mode craves, I should extract more.
+4. Be honest about the calculator: agree, or disagree with a concrete reason. Never hedge with "it depends" as the final answer.
+
+Respond in under 500 words with exactly these sections:
+**VERDICT** — ACCEPT, REJECT, or COUNTER (one of the three, first word)
+**WHY** — 2-4 sentences, the decisive factors
+**MODE FIT** — How this deal serves or fights my competitive mode and the league format
+**WHAT I'D COUNTER WITH** — Only if COUNTER/REJECT: the specific adjusted package and why the partner's mode/DNA says yes`;
+}
+
+// ── Team diagnosis (League Detail strategic assessment) ──────────────────────
+
+function buildTeamDiagnosisPrompt(ctx: any): string {
+    const fmt = detectLeagueFormat(ctx);
+    const fmtBlock = buildLeagueFormatBlock(fmt);
+    const modeBlock = buildTeamModeBlock(ctx);
+
+    const rosterStr = (ctx.myRoster || []).map((p: any) =>
+        `  ${p.pos} ${p.name}${p.age ? ` | Age ${p.age}` : ''}${p.value != null ? ` | Value ${p.value}` : p.dhq != null ? ` | DHQ ${p.dhq}` : ''}${p.isStarter ? ' [STARTER]' : ''}`
+    ).join('\n');
+
+    let sfQBNote = '';
+    if (fmt.isSuperFlex) {
+        const startableQBs = (ctx.myRoster || []).filter((p: any) => p.pos === 'QB' && (Number(p.value ?? p.dhq) || 0) >= 2000).length;
+        if (startableQBs < fmt.numQBSlots) {
+            sfQBNote = `\n⚠️ SUPERFLEX QB CRISIS: only ${startableQBs} startable QB(s) for ${fmt.numQBSlots} QB-eligible slots. QB acquisition MUST be the #1 prescription regardless of other needs.\n`;
+        }
+    }
+
+    return `Diagnose **${ctx.myOwner || 'my'}** team in **${ctx.leagueName || 'this league'}**. Be direct and specific — this is a strategic check-up, not a pep talk.
+${fmtBlock}${modeBlock}${sfQBNote}
+**TEAM STATUS:** ${ctx.record || '?'} | ${ctx.teamTier || ctx.tier || '?'} tier | Health: ${ctx.healthScore ?? '?'}/100 | Window: ${ctx.teamWindow || ctx.tradeWindow || '?'}
+**STATED NEEDS:** ${(ctx.needs || []).join(', ') || 'none identified'}
+**STATED STRENGTHS:** ${(ctx.strengths || []).join(', ') || 'none identified'}
+**GM STRATEGY NOTES:** ${ctx.gmStrategy || ctx.mentality || 'none provided'}
+
+**ROSTER:**
+${rosterStr || 'No roster data'}
+
+Respond in under 350 words with exactly these sections:
+**DIAGNOSIS** — 2-3 sentences: what this team actually is right now
+**ROOT CAUSES** — The structural reasons (age curve, positional gaps, pick capital), not symptoms
+**PRESCRIPTION** — Exactly 3 concrete moves, each aligned with the team mode above. No generic "add depth" advice.
+**MODE CHECK** — One sentence: is the owner's current strategy consistent with what the roster says, or should they change course?`;
+}
+
+// ── Dashboard digest (cross-league top insights, strict JSON) ────────────────
+
+function buildDashboardDigestPrompt(ctx: any): string {
+    const leagues = (ctx.leagues || []).slice(0, 12).map((l: any) => {
+        const flags = [
+            l.formatFlags?.isSuperFlex ? 'SF' : '',
+            l.formatFlags?.isTEP ? 'TEP' : '',
+            l.formatFlags?.isIDP ? 'IDP' : '',
+            l.formatFlags?.scoringType || '',
+        ].filter(Boolean).join('/') || 'standard';
+        return `• ${l.leagueName} [id:${l.leagueId}] | ${l.record || '?'} | ${l.tier || '?'} | Health ${l.healthScore ?? '?'}/100 | Format: ${flags}${l.topNeeds?.length ? ` | Needs: ${l.topNeeds.join(', ')}` : ''}${l.faabRemaining != null ? ` | FAAB $${l.faabRemaining}` : ''}${l.zeroPickYears?.length ? ` | ⚠️ ZERO picks: ${l.zeroPickYears.join(', ')}` : ''}`;
+    }).join('\n');
+
+    return `You are scanning all of one owner's dynasty leagues to surface the 3 most decision-relevant insights across their entire portfolio. Pick the items where acting this week matters most — critical deficits, mode misalignment, zero-pick crises, format leverage they're not using.
+
+**MY LEAGUES:**
+${leagues || 'No league data'}
+
+RULES:
+- At most 3 insights TOTAL across all leagues — only the ones that matter most. Fewer is fine.
+- Each insight must be specific to one league and actionable this week. No generic advice ("monitor the waiver wire") and no praise-only items.
+- severity must be one of: "warning" (act now or lose value), "opportunity" (exploitable edge), "pattern" (cross-league habit worth knowing).
+- In superflex leagues, QB deficits outrank everything. Zero-pick years are always a warning.
+
+Output ONLY a valid JSON array, no markdown, no backticks, no prose:
+[{"leagueId":"...","severity":"warning","title":"max 8 words","body":"2-3 sentences, specific and actionable"}]`;
+}
+
+// ── GM insight (Alex Insights novel patterns, strict JSON) ───────────────────
+
+function buildInsightPrompt(ctx: any): string {
+    const kpis = ctx.kpis || {};
+    const holds = (ctx.topHolds || []).slice(0, 10).map((p: any) =>
+        `  ${p.pos || '?'} ${p.name}${p.age ? ` | Age ${p.age}` : ''}${p.value != null ? ` | Value ${p.value}` : ''}`
+    ).join('\n');
+    const trades = (ctx.recentTrades || []).slice(0, 8).map((t: any) =>
+        `  ${t.summary || JSON.stringify(t)}`
+    ).join('\n');
+    const known = (ctx.heuristicTitles || []).map((t: string) => `  • ${t}`).join('\n');
+
+    return `Analyze this dynasty GM's decision history in **${ctx.leagueName || 'their league'}** and surface exactly 2 NOVEL behavioral insights — patterns a deterministic stats engine would miss (timing tendencies, market behavior, psychological habits, format blind spots).
+
+**GM PERFORMANCE KPIs:** ${Object.entries(kpis).map(([k, v]) => `${k}: ${v}`).join(' | ') || 'none'}
+**TOP ROSTER HOLDS:**
+${holds || '  none'}
+**RECENT TRADES:**
+${trades || '  none'}
+
+**ALREADY-KNOWN INSIGHTS (do NOT repeat or rephrase any of these):**
+${known || '  none'}
+
+RULES:
+- Exactly 2 insights. Each must be genuinely distinct from the already-known list above.
+- Ground every claim in the data provided — never invent trades or players.
+- severity must be one of: "warning", "edge", "pattern", "opportunity".
+- confidence is an integer 50-95 reflecting how strongly the data supports the claim.
+
+Output ONLY a valid JSON array, no markdown, no backticks, no prose:
+[{"severity":"pattern","confidence":75,"title":"max 8 words","body":"2-3 sentences citing the specific data behind the pattern"}]`;
+}
+
 // ── Live NFL news (ESPN RSS, best-effort) ─────────────────────────────────────
 
 async function fetchLiveNFLNews(): Promise<string> {
@@ -1783,6 +2230,10 @@ Deno.serve(async (req) => {
             case 'fa_chat':    userPrompt = buildFAChatPrompt(context);           break;
             case 'mock_draft': userPrompt = buildMockDraftPrompt(context);        break;
             case 'chat':       userPrompt = buildChatPrompt(context, liveNews);   break;
+            case 'trade_verdict':    userPrompt = buildTradeVerdictPrompt(context);    break;
+            case 'team_diagnosis':   userPrompt = buildTeamDiagnosisPrompt(context);   break;
+            case 'dashboard_digest': userPrompt = buildDashboardDigestPrompt(context); break;
+            case 'insight':          userPrompt = buildInsightPrompt(context);         break;
             default:
                 if (genericContext) {
                     userPrompt = genericContext.userPrompt;
@@ -1803,6 +2254,56 @@ Deno.serve(async (req) => {
             useWebSearch = genericContext.useWebSearch;
         }
 
+        // ── Server-side cache for ambient insight types ───────────────────
+        // Cache hits cost nothing and consume no budget. forceRefresh skips
+        // the cache read (the regenerate path) and pays a counted request,
+        // so free regeneration spam is not possible.
+        const parsedContext = parseContextPayload(context);
+        const contextLeagueId = parsedContext?.leagueId || parsedContext?.currentLeagueId || null;
+        const cacheTtlMs = !genericContext ? (CACHEABLE_TYPES[type] || 0) : 0;
+        const forceRefresh = parsedContext?.forceRefresh === true;
+
+        // Learning loop: fetch the owner's preference summary once per
+        // structured request (fail-open) and fold it into the system prompt
+        // and the cache key.
+        const userPrefs = (!genericContext && STRUCTURED_TYPES.has(type) && type !== 'mock_draft')
+            ? await fetchPreferenceSummary(aiSession, contextLeagueId)
+            : null;
+
+        let cacheKey: string | null = null;
+        if (cacheTtlMs > 0) {
+            cacheKey = await computeCacheKey(type, context, aiSession, prefsVersionFor(userPrefs));
+            if (!forceRefresh) {
+                const cached = await readAIResponseCache(cacheKey);
+                if (cached) {
+                    await recordAICacheHit({
+                        req,
+                        aiSession,
+                        routeType,
+                        originalType: type,
+                        leagueId: contextLeagueId,
+                        model: cached.model,
+                    });
+                    const cachedInsights = JSON_ARRAY_TYPES.has(type) ? parseJsonArray(cached.analysis) : undefined;
+                    return new Response(
+                        JSON.stringify({
+                            analysis: cached.analysis,
+                            ...(cachedInsights ? { insights: cachedInsights } : {}),
+                            cached: true,
+                            model: cached.model,
+                            usage: {
+                                aiPolicyVersion: AI_POLICY_VERSION,
+                                cached: true,
+                                estimatedCostUsd: 0,
+                                plan: aiSession.plan,
+                            },
+                        }),
+                        { headers: { ...responseHeaders, 'Content-Type': 'application/json' } }
+                    );
+                }
+            }
+        }
+
         const isMockDraft = type === 'mock_draft' && !genericContext;
         const requestedMaxTokens = maxTokensOverride || (isMockDraft ? 16000 : 8192);
         const routeOutputCap = isMockDraft
@@ -1818,7 +2319,7 @@ Deno.serve(async (req) => {
         const maxTokens = Math.max(100, Math.min(requestedMaxTokens, routeOutputCap, globalOutputCap));
         let systemPrompt = genericContext?.system || (isMockDraft
             ? 'You are a dynasty fantasy football draft simulator. Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no prose before or after. Start your response with [ and end with ]. Never repeat a player. Track all prior picks carefully so each player is selected at most once.'
-            : buildSystemPrompt(context));
+            : buildSystemPrompt(context) + buildUserPreferenceBlock(userPrefs));
 
         // Hold generic chat/scout surfaces to the same league-format / team-mode /
         // quality discipline as the structured path. Off by default; enable via
@@ -1859,6 +2360,9 @@ Deno.serve(async (req) => {
             aiSession,
             limits: planLimits,
             estimatedRequestCostUsd,
+            // Ambient (cacheable) insights stay inside cost budgets but do not
+            // consume the plan's request allowance — except explicit refreshes.
+            countRequest: cacheTtlMs <= 0 || forceRefresh,
         });
         if (!usageReservation.allowed) {
             await recordAIUsageDenied({
@@ -1983,25 +2487,31 @@ Deno.serve(async (req) => {
                     { status: 422, headers: { ...responseHeaders, 'Content-Type': 'application/json' } }
                 );
             }
-            // Strip markdown code fences if the AI wrapped the response despite instructions
-            let cleanAnalysis = analysis.trim();
-            if (cleanAnalysis.startsWith('```')) {
-                cleanAnalysis = cleanAnalysis.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-            }
-            try {
-                picks = JSON.parse(cleanAnalysis);
-            } catch {
-                const match = cleanAnalysis.match(/\[[\s\S]*\]/);
-                if (match) {
-                    try { picks = JSON.parse(match[0]); } catch { /* leave undefined */ }
-                }
-            }
+            picks = parseJsonArray(analysis);
+        }
+
+        // JSON-contract insight types are parsed server-side so every client
+        // gets a ready-to-render array alongside the raw analysis text.
+        const insights = (!genericContext && JSON_ARRAY_TYPES.has(type)) ? parseJsonArray(analysis) : undefined;
+
+        if (cacheTtlMs > 0 && cacheKey && analysis && stopReason !== 'max_tokens') {
+            await writeAIResponseCache({
+                cacheKey,
+                type,
+                aiSession,
+                leagueId: contextLeagueId,
+                model: route.model,
+                analysis,
+                usage: { inputTokens, outputTokens, estimatedCostUsd },
+                ttlMs: cacheTtlMs,
+            });
         }
 
         return new Response(
             JSON.stringify({
                 analysis,
                 ...(picks ? { picks } : {}),
+                ...(insights ? { insights } : {}),
                 provider: route.provider,
                 model: route.model,
                 usage: {

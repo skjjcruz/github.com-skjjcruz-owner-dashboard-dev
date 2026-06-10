@@ -94,6 +94,106 @@ function buildTeamModeBlock(ctx) {
     return lines.join('\n');
 }
 
+function buildPartnerModeBlock(partner) {
+    if (!partner) return '';
+    const tier = String(partner.tier || partner.teamTier || '').toUpperCase();
+    const win = String(partner.window || partner.teamWindow || partner.tradeWindow || '').toUpperCase();
+    if (!tier && !win) return '';
+    const lines = [];
+    lines.push(`\n═══ TRADE PARTNER MODE (what the OTHER side actually values) ═══`);
+    const label = partner.owner ? `${partner.owner} ` : '';
+    if (tier === 'REBUILDING' || win === 'REBUILDING') {
+        lines.push(`🔨 ${label}is REBUILDING. They value: draft picks (1sts/2nds above all), players aged ≤24 with upside, cap/FAAB flexibility.`);
+        lines.push(`  → They will NOT pay fair value for veterans aged 27+. Do not frame aging assets as the centerpiece of an offer to them.`);
+        lines.push(`  → Offers built around picks and youth get accepted; offers built around "proven producers" get rejected or lowballed.`);
+    } else if (tier === 'ELITE' || tier === 'CONTENDER' || win === 'CONTENDING') {
+        lines.push(`🏆 ${label}is CONTENDING. They value: proven starters who help THIS season, immediate positional upgrades.`);
+        lines.push(`  → They will pay a premium (including future picks) for win-now talent at a position of need.`);
+        lines.push(`  → They will NOT value speculative youth or distant picks at full price — those are your acquisition discounts, not selling points.`);
+    } else {
+        lines.push(`⚖️ ${label}is at a CROSSROADS. They are deciding between pushing and tearing down — offers that decisively help either path land better than balanced "depth" swaps.`);
+    }
+    lines.push(`═══════════════════════════════════════════════════════════════════════════════════════\n`);
+    return lines.join('\n');
+}
+
+function formatDealSide(side) {
+    if (!side) return '  (nothing)';
+    const parts = [];
+    for (const p of side.players || []) {
+        parts.push(`  ${p.pos || '?'} ${p.name}${p.age ? ` | Age ${p.age}` : ''}${p.value != null ? ` | Value ${p.value}` : ''}`);
+    }
+    for (const pk of side.picks || []) {
+        parts.push(`  PICK ${pk.year || '?'} Round ${pk.round || '?'}${pk.value != null ? ` | Value ${pk.value}` : ''}`);
+    }
+    if (side.faab) parts.push(`  FAAB $${side.faab}`);
+    return parts.join('\n') || '  (nothing)';
+}
+
+function buildTradeVerdictPrompt(ctx) {
+    const fmt = detectLeagueFormat(ctx);
+    const fmtBlock = buildLeagueFormatBlock(fmt);
+    const my = ctx.myTeam || {};
+    const partner = ctx.partnerTeam || {};
+    const myModeBlock = buildTeamModeBlock({ teamTier: my.tier, teamWindow: my.window || my.tradeWindow, healthScore: my.healthScore });
+    const partnerBlock = buildPartnerModeBlock(partner);
+    const v = ctx.verdict || {};
+    return `Give a second opinion on this dynasty trade in **${ctx.leagueName || 'my league'}**. My deterministic trade calculator already graded it — your job is an independent verdict that weighs context the math can't see (mode fit, market psychology, league format leverage). If you disagree with the calculator, SAY SO explicitly and explain why.\n${fmtBlock}${myModeBlock}${partnerBlock}\n**I SEND (leaves my roster):**\n${formatDealSide(ctx.iSend)}\n\n**I RECEIVE (joins my roster):**\n${formatDealSide(ctx.iReceive)}\n\n**MY TEAM:** ${my.record || '?'} | ${my.tier || '?'} | Health: ${my.healthScore ?? '?'}/100\nMy Needs: ${(my.needs || []).join(', ') || 'none identified'} | My Strengths: ${(my.strengths || []).join(', ') || 'none identified'}\n**PARTNER (${partner.owner || 'other owner'}):** ${partner.record || '?'} | ${partner.tier || '?'} | DNA: ${partner.dna || 'Unknown'} | Posture: ${partner.posture || 'N/A'}\nTheir Needs: ${(partner.needs || []).join(', ') || 'none identified'}\n\n**CALCULATOR VERDICT:** ${v.verdictText || 'n/a'} | Value diff: ${v.diffDisplay ?? 'n/a'} | Acceptance likelihood: ${v.likelihood ?? 'n/a'}${v.psychNotes ? ` | Behavioral notes: ${v.psychNotes}` : ''}\n\nVERDICT RULES (strictly enforce):\n1. Judge the deal through MY team mode first — a "fair value" trade that fights my rebuild/contend direction is a BAD trade for me.\n2. Apply league format premiums (superflex QB 1.8x, TEP TE 1.5x) to both sides before comparing.\n3. Factor the partner's mode: if this deal gives them exactly what their mode craves, I should extract more.\n4. Be honest about the calculator: agree, or disagree with a concrete reason. Never hedge with "it depends" as the final answer.\n\nRespond in under 500 words with exactly these sections:\n**VERDICT** — ACCEPT, REJECT, or COUNTER (one of the three, first word)\n**WHY** — 2-4 sentences, the decisive factors\n**MODE FIT** — How this deal serves or fights my competitive mode and the league format\n**WHAT I'D COUNTER WITH** — Only if COUNTER/REJECT: the specific adjusted package and why the partner's mode/DNA says yes`;
+}
+
+function buildTeamDiagnosisPrompt(ctx) {
+    const fmt = detectLeagueFormat(ctx);
+    const fmtBlock = buildLeagueFormatBlock(fmt);
+    const modeBlock = buildTeamModeBlock(ctx);
+    const rosterStr = (ctx.myRoster || []).map(p =>
+        `  ${p.pos} ${p.name}${p.age ? ` | Age ${p.age}` : ''}${p.value != null ? ` | Value ${p.value}` : p.dhq != null ? ` | DHQ ${p.dhq}` : ''}${p.isStarter ? ' [STARTER]' : ''}`
+    ).join('\n');
+    let sfQBNote = '';
+    if (fmt.isSuperFlex) {
+        const startableQBs = (ctx.myRoster || []).filter(p => p.pos === 'QB' && (Number(p.value ?? p.dhq) || 0) >= 2000).length;
+        if (startableQBs < fmt.numQBSlots) {
+            sfQBNote = `\n⚠️ SUPERFLEX QB CRISIS: only ${startableQBs} startable QB(s) for ${fmt.numQBSlots} QB-eligible slots. QB acquisition MUST be the #1 prescription regardless of other needs.\n`;
+        }
+    }
+    return `Diagnose **${ctx.myOwner || 'my'}** team in **${ctx.leagueName || 'this league'}**. Be direct and specific — this is a strategic check-up, not a pep talk.\n${fmtBlock}${modeBlock}${sfQBNote}\n**TEAM STATUS:** ${ctx.record || '?'} | ${ctx.teamTier || ctx.tier || '?'} tier | Health: ${ctx.healthScore ?? '?'}/100 | Window: ${ctx.teamWindow || ctx.tradeWindow || '?'}\n**STATED NEEDS:** ${(ctx.needs || []).join(', ') || 'none identified'}\n**STATED STRENGTHS:** ${(ctx.strengths || []).join(', ') || 'none identified'}\n**GM STRATEGY NOTES:** ${ctx.gmStrategy || ctx.mentality || 'none provided'}\n\n**ROSTER:**\n${rosterStr || 'No roster data'}\n\nRespond in under 350 words with exactly these sections:\n**DIAGNOSIS** — 2-3 sentences: what this team actually is right now\n**ROOT CAUSES** — The structural reasons (age curve, positional gaps, pick capital), not symptoms\n**PRESCRIPTION** — Exactly 3 concrete moves, each aligned with the team mode above. No generic "add depth" advice.\n**MODE CHECK** — One sentence: is the owner's current strategy consistent with what the roster says, or should they change course?`;
+}
+
+function describeSubject(subject) {
+    if (!subject || typeof subject !== 'object') return '';
+    const parts = ['player', 'pos', 'age', 'moveType', 'title']
+        .map(k => subject[k])
+        .filter(v => v !== null && v !== undefined && v !== '');
+    return parts.join(' ').slice(0, 90);
+}
+
+function buildUserPreferenceBlock(prefs) {
+    if (!prefs || !prefs.total) return '';
+    const lines = [];
+    lines.push(`\n═══ USER PREFERENCE PROFILE (learned from this owner's reactions to past AI advice) ═══`);
+    const accept = prefs.acceptRate != null ? Math.round(Number(prefs.acceptRate) * 100) : null;
+    lines.push(`Feedback on ${prefs.total} recommendations in the last 90 days${accept != null ? ` — ${accept}% positively received` : ''}.`);
+    const sc = prefs.surfaceCounts || {};
+    const downSurfaces = Object.entries(sc)
+        .filter(([, c]) => Number(c?.down || 0) > Number(c?.up || 0) + Number(c?.acted || 0))
+        .map(([s]) => s);
+    if (downSurfaces.length) {
+        lines.push(`They frequently reject ${downSurfaces.join(', ')} advice — only repeat a previously rejected framing when the evidence is overwhelming, and acknowledge the change.`);
+    }
+    const actedSurfaces = Object.entries(sc)
+        .filter(([, c]) => Number(c?.acted || 0) > 0)
+        .map(([s]) => s);
+    if (actedSurfaces.length) {
+        lines.push(`They have acted on ${actedSurfaces.join(', ')} recommendations before — these carry weight, so be precise.`);
+    }
+    const downs = (prefs.recentDownSubjects || []).map(describeSubject).filter(Boolean).slice(0, 3);
+    if (downs.length) lines.push(`Recently rejected: ${downs.join(' | ')}. Do not re-pitch these unless circumstances changed.`);
+    const acted = (prefs.recentActedSubjects || []).map(describeSubject).filter(Boolean).slice(0, 3);
+    if (acted.length) lines.push(`Recently acted on: ${acted.join(' | ')}. Similar profiles resonate with this owner.`);
+    lines.push(`These are tendencies, not rules — quality thresholds and team-mode rules above ALWAYS take precedence.`);
+    lines.push(`═══════════════════════════════════════════════════════════════════════════════════════\n`);
+    return lines.join('\n');
+}
+
 function buildQualityThresholdBlock() {
     return `\n═══ MINIMUM QUALITY THRESHOLDS (apply to ALL FA/FAAB/waiver recommendations) ═══\n⛔ DO NOT recommend adding or bidding on players who meet ANY of these criteria:\n  • DHQ below 500 (replacement-level talent — not worth a roster spot in competitive leagues)\n  • PPG below 5.0 in their most recent season with 6+ games played\n  • Players with no NFL stats in the last 2 seasons (unless they are rookies)\n  • Veterans (age 27+) with declining trend who would not crack the starting lineup\n\n✅ ONLY recommend FAAB spending when the player would:\n  • Start or be the first backup at a position of need, OR\n  • Be a high-upside young player (age ≤25) worth a speculative hold, OR\n  • Replace an injured starter (emergency depth pickup)\n\n💰 FAAB DISCIPLINE:\n  • "Depth for depth's sake" is NEVER a valid reason to spend FAAB\n  • A $1 bid on a bad player is still a wasted roster spot\n  • If no quality targets exist at a position, say "HOLD YOUR FAAB" — do not invent targets\n  • Remaining FAAB is a weapon for mid-season breakouts and injuries — preserve it\n═══════════════════════════════════════════════════════════════════════════════════════\n`;
 }
@@ -484,6 +584,163 @@ const TESTS = [
     ],
 },
 
+// ─── TEST 13: Trade verdict — rebuilder receiving a 30-y/o WR ───
+{
+    id: 'T13',
+    name: 'Trade verdict — rebuilder offered aging WR for picks',
+    type: 'trade_verdict',
+    ctx: {
+        leagueName: 'The Gridiron',
+        rosterPositions: ['QB','RB','RB','WR','WR','TE','FLEX','BN','BN','BN','BN','IR'],
+        scoringSettings: { rec: 1.0 },
+        myTeam: { record: '2-8', tier: 'REBUILDING', window: 'REBUILDING', healthScore: 30, needs: ['WR', 'picks'], strengths: ['young QB'] },
+        partnerTeam: { owner: 'Mike', record: '8-2', tier: 'CONTENDER', window: 'CONTENDING', dna: 'Win Now', posture: 'BUYER', needs: ['RB depth'] },
+        iSend: { picks: [{ year: 2027, round: 1, value: 4500 }] },
+        iReceive: { players: [{ name: 'Keenan Allen', pos: 'WR', age: 30, value: 2800 }] },
+        verdict: { verdictText: 'Slightly unfavorable', diffDisplay: '-1700', likelihood: 'High' },
+    },
+    rubric: [
+        { rule: 'My REBUILD mode rules injected', check: 'trade', contains: 'REBUILD MODE' },
+        { rule: 'Rebuild rule: players over 28 are sell candidates', check: 'trade', contains: 'sell candidates, not buy targets' },
+        { rule: 'Partner CONTENDING mode block present', check: 'trade', contains: 'is CONTENDING' },
+        { rule: 'Deal sides include the aging WR with age', check: 'trade', contains: 'Keenan Allen | Age 30' },
+        { rule: 'Deterministic verdict passed through', check: 'trade', contains: 'Slightly unfavorable' },
+        { rule: 'Verdict must judge through MY mode first', check: 'trade', contains: 'Judge the deal through MY team mode first' },
+        { rule: 'Honesty rule about the calculator', check: 'trade', contains: 'disagree with the calculator, SAY SO' },
+        { rule: 'Strict verdict contract (ACCEPT/REJECT/COUNTER)', check: 'trade', contains: 'ACCEPT, REJECT, or COUNTER' },
+    ],
+},
+
+// ─── TEST 14: Trade verdict — superflex team sending away its QB2 ───
+{
+    id: 'T14',
+    name: 'Trade verdict — superflex QB2 leaving triggers format premium',
+    type: 'trade_verdict',
+    ctx: {
+        leagueName: 'SF Dynasty',
+        rosterPositions: ['QB','RB','RB','WR','WR','TE','FLEX','SUPER_FLEX','BN','BN','BN','BN','IR'],
+        scoringSettings: { rec: 1.0 },
+        myTeam: { record: '6-4', tier: 'CONTENDER', window: 'CONTENDING', healthScore: 72, needs: ['RB'], strengths: ['QB room'] },
+        partnerTeam: { owner: 'Dana', record: '3-7', tier: 'REBUILDING', window: 'REBUILDING', dna: 'Rebuilder', posture: 'SELLER', needs: ['QB', 'youth'] },
+        iSend: { players: [{ name: 'Jared Goff', pos: 'QB', age: 31, value: 4200 }] },
+        iReceive: { players: [{ name: 'Kenneth Walker', pos: 'RB', age: 24, value: 4400 }] },
+        verdict: { verdictText: 'Fair value', diffDisplay: '+200', likelihood: 'Medium' },
+    },
+    rubric: [
+        { rule: 'SUPERFLEX format detected', check: 'trade', contains: 'SUPERFLEX LEAGUE' },
+        { rule: 'QB 1.8x scarcity premium in format block', check: 'trade', contains: '1.8x' },
+        { rule: 'Format premium rule applied to both sides', check: 'trade', contains: 'superflex QB 1.8x' },
+        { rule: 'Partner REBUILDING block present', check: 'trade', contains: 'is REBUILDING' },
+        { rule: 'Partner rebuild framing: picks and youth', check: 'trade', contains: 'Offers built around picks and youth get accepted' },
+        { rule: 'QB leaving my roster visible in deal', check: 'trade', contains: 'QB Jared Goff' },
+    ],
+},
+
+// ─── TEST 15: Team diagnosis — crossroads team, no generic depth advice ───
+{
+    id: 'T15',
+    name: 'Team diagnosis — crossroads team gets decisive prescription',
+    type: 'team_diagnosis',
+    ctx: {
+        leagueName: 'Dynasty Kings',
+        myOwner: 'Jacob',
+        record: '5-5',
+        teamTier: 'CROSSROADS', teamWindow: 'TRANSITIONING', healthScore: 55,
+        rosterPositions: ['QB','RB','RB','WR','WR','TE','FLEX','BN','BN','BN','BN','IR'],
+        scoringSettings: { rec: 0.5 },
+        needs: ['RB'], strengths: ['WR core'],
+        gmStrategy: 'undecided',
+        myRoster: [
+            { name: 'Kirk Cousins', pos: 'QB', age: 36, value: 1800, isStarter: true },
+            { name: 'Aaron Jones', pos: 'RB', age: 30, value: 2200, isStarter: true },
+            { name: 'Marvin Harrison', pos: 'WR', age: 23, value: 7800, isStarter: true },
+        ],
+    },
+    rubric: [
+        { rule: 'CROSSROADS mode block injected', check: 'diag', contains: 'CROSSROADS' },
+        { rule: 'No half-commit rule present', check: 'diag', contains: 'DO NOT half-commit' },
+        { rule: 'Prescription forbids generic depth advice', check: 'diag', contains: 'No generic "add depth" advice' },
+        { rule: 'Exactly 3 concrete moves required', check: 'diag', contains: 'Exactly 3 concrete moves' },
+        { rule: 'Mode check section required', check: 'diag', contains: 'MODE CHECK' },
+        { rule: 'Aging sell candidates rule (27-29)', check: 'diag', contains: '27-29' },
+    ],
+},
+
+// ─── TEST 16: Team diagnosis — superflex QB crisis overrides ───
+{
+    id: 'T16',
+    name: 'Team diagnosis — superflex 1-QB roster triggers crisis prescription',
+    type: 'team_diagnosis',
+    ctx: {
+        leagueName: 'SF Dynasty',
+        myOwner: 'Jacob',
+        record: '4-6',
+        teamTier: 'REBUILDING', teamWindow: 'REBUILDING', healthScore: 35,
+        rosterPositions: ['QB','RB','RB','WR','WR','TE','FLEX','SUPER_FLEX','BN','BN','BN','BN','IR'],
+        scoringSettings: { rec: 1.0 },
+        myRoster: [
+            { name: 'Caleb Williams', pos: 'QB', age: 23, value: 6500, isStarter: true },
+            { name: 'Jonathon Brooks', pos: 'RB', age: 22, value: 2400, isStarter: true },
+            { name: 'Brian Thomas', pos: 'WR', age: 23, value: 6800, isStarter: true },
+        ],
+    },
+    rubric: [
+        { rule: 'SUPERFLEX QB CRISIS fires with 1 startable QB', check: 'diag', contains: 'SUPERFLEX QB CRISIS' },
+        { rule: 'QB acquisition is #1 prescription', check: 'diag', contains: '#1 prescription' },
+        { rule: 'REBUILD mode rules also present', check: 'diag', contains: 'REBUILD MODE' },
+        { rule: 'Diagnosis output contract present', check: 'diag', contains: '**DIAGNOSIS**' },
+    ],
+},
+
+// ─── TEST 17: Preference block — owner who rejects veteran-for-picks advice ───
+{
+    id: 'T17',
+    name: 'Preference block — rejected framings are not re-pitched',
+    type: 'preference_block',
+    ctx: {},
+    prefs: {
+        total: 12,
+        upCount: 2,
+        downCount: 6,
+        actedCount: 3,
+        dismissedCount: 1,
+        acceptRate: 0.45,
+        surfaceCounts: {
+            trade_verdict: { up: 1, down: 5, acted: 0 },
+            fa_targets: { up: 1, down: 1, acted: 3 },
+        },
+        recentDownSubjects: [
+            { player: 'Keenan Allen', pos: 'WR', age: 30, moveType: 'veteran_for_picks' },
+            { title: 'Sell your RB1 for future capital' },
+        ],
+        recentActedSubjects: [
+            { player: 'Jaylen Wright', pos: 'RB', age: 22, moveType: 'faab_target' },
+        ],
+    },
+    rubric: [
+        { rule: 'Block announces learned preferences', check: 'prefs', contains: 'USER PREFERENCE PROFILE' },
+        { rule: 'Accept rate surfaced', check: 'prefs', contains: '45% positively received' },
+        { rule: 'Rejected surface flagged (trade_verdict)', check: 'prefs', contains: 'frequently reject trade_verdict' },
+        { rule: 'Acted surface flagged (fa_targets)', check: 'prefs', contains: 'acted on fa_targets' },
+        { rule: 'Rejected subjects listed, not re-pitched', check: 'prefs', contains: 'Do not re-pitch' },
+        { rule: 'Rejected veteran example carried through', check: 'prefs', contains: 'Keenan Allen WR 30' },
+        { rule: 'Acted youth example carried through', check: 'prefs', contains: 'Jaylen Wright RB 22' },
+        { rule: 'Quality/mode rules still take precedence', check: 'prefs', contains: 'ALWAYS take precedence' },
+    ],
+},
+
+// ─── TEST 18: Preference block — no feedback history degrades to nothing ───
+{
+    id: 'T18',
+    name: 'Preference block — empty history emits no block',
+    type: 'preference_block',
+    ctx: {},
+    prefs: { total: 0 },
+    rubric: [
+        { rule: 'No block for empty history', check: 'prefs', notContains: 'USER PREFERENCE PROFILE' },
+    ],
+},
+
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -496,11 +753,18 @@ function runTest(test) {
     // Generate prompts
     const systemPrompt = buildSystemPrompt(test.ctx);
     const faPrompt = test.type === 'fa_targets' ? buildFATargetsPrompt(test.ctx) : null;
+    const tradePrompt = test.type === 'trade_verdict' ? buildTradeVerdictPrompt(test.ctx) : null;
+    const diagPrompt = test.type === 'team_diagnosis' ? buildTeamDiagnosisPrompt(test.ctx) : null;
+    const prefsBlock = test.type === 'preference_block' ? buildUserPreferenceBlock(test.prefs) : null;
 
     for (const r of test.rubric) {
-        const target = r.check === 'system' ? systemPrompt : faPrompt;
-        if (!target && r.check === 'fa') {
-            results.checks.push({ rule: r.rule, status: 'SKIP', reason: 'No FA prompt for this test type' });
+        const target = r.check === 'system' ? systemPrompt
+            : r.check === 'trade' ? tradePrompt
+            : r.check === 'diag' ? diagPrompt
+            : r.check === 'prefs' ? prefsBlock
+            : faPrompt;
+        if (target == null && r.check !== 'system') {
+            results.checks.push({ rule: r.rule, status: 'SKIP', reason: `No ${r.check} prompt for this test type` });
             continue;
         }
 

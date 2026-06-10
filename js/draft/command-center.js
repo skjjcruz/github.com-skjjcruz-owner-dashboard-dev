@@ -210,6 +210,12 @@
         // is populated even when window.S.drafts is empty (which is common —
         // the main app's Draft Room tab fetches it separately into draft-room.js).
         const [fetchedDrafts, setFetchedDrafts] = React.useState(null);
+        // Live-polled traded picks for THIS draft (Follow Live Draft). Kept separate
+        // from the league-wide window.S.tradedPicks so we don't clobber future-pick
+        // data; merged into draftMeta below. Updated only when the set actually
+        // changes (signature-gated in the live-sync onStatus handler).
+        const [liveDraftTradedPicks, setLiveDraftTradedPicks] = React.useState(null);
+        const liveTradedSigRef = React.useRef('');
         const leagueIdForFetch = currentLeague?.league_id || currentLeague?.id;
         React.useEffect(() => {
             if (!leagueIdForFetch) return;
@@ -230,7 +236,12 @@
             const users = window.S?.leagueUsers || currentLeague?.users || [];
             const myUid = window.S?.user?.user_id || '';
             const myRid = myRoster?.roster_id;
-            const tradedPicks = window.S?.tradedPicks || [];
+            // Live-polled draft traded picks win over the league-wide snapshot for
+            // this draft's rounds (.find below takes the first match); fall back to
+            // window.S.tradedPicks for everything else.
+            const liveTp = Array.isArray(liveDraftTradedPicks) ? liveDraftTradedPicks : [];
+            const baseTp = window.S?.tradedPicks || [];
+            const tradedPicks = liveTp.length ? [...liveTp, ...baseTp] : baseTp;
             const leagueSeason = String(currentLeague?.season || new Date().getFullYear());
             // Prefer mount-fetched drafts, then window.S cache, then currentLeague synthetic fallback
             const drafts = (fetchedDrafts && fetchedDrafts.length) ? fetchedDrafts : (window.S?.drafts || []);
@@ -377,7 +388,7 @@
                 draftVariant,
                 upcomingSettings,
             };
-        }, [myRoster, currentLeague, propRounds, fetchedDrafts]);
+        }, [myRoster, currentLeague, propRounds, fetchedDrafts, liveDraftTradedPicks]);
 
         // Reducer + initial state (load from localStorage if possible)
         const [state, dispatch] = React.useReducer(
@@ -458,6 +469,10 @@
 
         // Resume banner is only shown when we're still in setup phase but have a saved draft
         const [showResume, setShowResume] = React.useState(false);
+        // Memorialized live drafts: closing the recap reveals the completed board; this
+        // tracks whether the recap modal is dismissed (reopenable via "View Recap").
+        const [recapDismissed, setRecapDismissed] = React.useState(false);
+        React.useEffect(() => { if (state.phase !== 'complete') setRecapDismissed(false); }, [state.phase]);
 
         // Phase 5+: sync setup defaults when draftMeta updates post-mount (e.g.
         // after the async Sleeper drafts fetch resolves). Only applies during
@@ -764,7 +779,21 @@
             }, {
                 initialPickNo,
                 seenPickKeys,
-                onStatus: status => dispatch({ type: 'LIVE_SYNC_STATUS', payload: status }),
+                onStatus: status => {
+                    // Capture mid-draft pick trades. Only push to state when the set
+                    // actually changes, so we don't re-render every 5s poll.
+                    if (Array.isArray(status?.tradedPicks)) {
+                        const sig = status.tradedPicks
+                            .map(t => [t.season, t.round, t.roster_id, t.owner_id].join(':'))
+                            .sort()
+                            .join('|');
+                        if (sig !== liveTradedSigRef.current) {
+                            liveTradedSigRef.current = sig;
+                            setLiveDraftTradedPicks(status.tradedPicks);
+                        }
+                    }
+                    dispatch({ type: 'LIVE_SYNC_STATUS', payload: status });
+                },
             });
 
             return () => {
@@ -773,6 +802,31 @@
                 }
             };
         }, [state.mode, state.phase, state.sleeperDraftId, state.userRosterId]);
+
+        // ── Live-Sync ownership refresh ────────────────────────────────
+        // When the live poll surfaces new pick trades, draftMeta.pickOwnership
+        // recomputes (it depends on liveDraftTradedPicks). Push the fresh ownership
+        // into the reducer so the upcoming picks re-attribute to whoever owns them
+        // now. Already-made picks are left alone; the reducer no-ops when unchanged.
+        React.useEffect(() => {
+            if (state.mode !== 'live-sync' || state.phase !== 'drafting') return;
+            if (!draftMeta?.pickOwnership || !state.pickOrder?.length) return;
+            dispatch({ type: 'UPDATE_LIVE_OWNERSHIP', pickOwnership: draftMeta.pickOwnership });
+        }, [draftMeta, state.mode, state.phase, state.currentIdx]);
+
+        // Bridge live traded picks into the reducer so the recap's Trade Impact +
+        // Trade Volume can see them (Sleeper traded_picks: roster_id=original owner,
+        // owner_id=current, previous_owner_id=prior). Reducer no-ops when unchanged.
+        React.useEffect(() => {
+            if (state.mode !== 'live-sync') return;
+            const tp = Array.isArray(liveDraftTradedPicks) ? liveDraftTradedPicks : [];
+            const normalized = tp.map(t => ({
+                round: Number(t.round) || null,
+                rosterId: t.owner_id ?? t.roster_id ?? null,
+                fromRosterId: t.previous_owner_id ?? null,
+            }));
+            dispatch({ type: 'SET_TRADED_PICKS', tradedPicks: normalized });
+        }, [liveDraftTradedPicks, state.mode]);
 
         // ── Live-Sync variant auto-correction ──────────────────────────
         // When resuming a live-sync draft, the saved state's `variant` can be
@@ -997,8 +1051,8 @@
             // Sonnet AI event (budget-limited)
             // Triggers: R1 pick, user pick, reach beyond threshold
             // Throttle: at most once per 3 picks
-            const sonnetUsed = state.alex.alexSpend.sonnet || 0;
-            const budget = state.alex.alexSpend.budget || 12;
+            const sonnetUsed = state.alex?.alexSpend?.sonnet || 0;
+            const budget = state.alex?.alexSpend?.budget || 12;
             const shouldFireAI =
                 sonnetUsed < budget &&
                 (state.currentIdx - alexSonnetCooldownRef.current >= 3 || lastPick.isUser) &&
@@ -1019,6 +1073,7 @@
                     ? window.DraftCC.context.summarizeOwnerIntel(persona?.ownerIntel || state.draftContext?.ownerContext?.[String(lastPick.rosterId)])
                     : '';
                 const contextLines = [
+                    (window.WR?.AIContext?.buildFormatPreamble?.(window.S?.currentLeague) || '').trim(),
                     `Draft pick: ${lastPick.name} (${lastPick.pos}) at R${lastPick.round}.${String(lastPick.slot).padStart(2, '0')}, overall #${lastPick.overall}.`,
                     `By: ${persona?.teamName || 'Team ' + lastPick.teamIdx}, DNA: ${persona?.draftDna?.label || '—'}, Trade DNA: ${persona?.tradeDna?.label || '—'}, Posture: ${persona?.posture?.label || '—'}.`,
                     ownerIntelText ? `Owner intel: ${ownerIntelText}.` : '',
@@ -1474,10 +1529,31 @@
             if (window.DraftCC.liveSync?.isRunning?.()) {
                 window.DraftCC.liveSync.stop();
             }
+            // Live drafts are memorialized: closing the recap keeps the completed board
+            // + memorial intact (a reset only happens when a new draft is scheduled).
+            if (forcedMode === 'live-sync' && state.phase === 'complete') { setRecapDismissed(true); return; }
             stateFns.clearLocal(currentLeague?.league_id || currentLeague?.id, forcedMode);
             dispatch({ type: 'RESET' });
             setShowResume(false);
-        }, [currentLeague]);
+        }, [currentLeague, forcedMode, state.phase]);
+
+        // Memorialize a completed LIVE draft; reset it when a new draft is scheduled.
+        React.useEffect(() => {
+            if (forcedMode !== 'live-sync') return;
+            const PD = window.App?.PostDraft;
+            const leagueId = currentLeague?.league_id || currentLeague?.id || '';
+            if (!PD || !leagueId) return;
+            if (state.phase === 'complete' && state.sleeperDraftId && PD.saveMemorial) {
+                try { PD.saveMemorial(leagueId, { draftId: state.sleeperDraftId, season: state.season, variant: state.variant }); } catch (e) {}
+            }
+            const up = draftMeta?.upcomingSettings;
+            const mem = PD.getMemorial ? PD.getMemorial(leagueId) : null;
+            if (mem && mem.draftId && up && up.status === 'pre_draft' && String(up.draftId) !== String(mem.draftId)) {
+                try { PD.clearMemorial(leagueId); } catch (e) {}
+                stateFns.clearLocal(leagueId, forcedMode);
+                dispatch({ type: 'RESET' });
+            }
+        }, [forcedMode, state.phase, state.sleeperDraftId, draftMeta, currentLeague]);
 
         const onResumeYes = React.useCallback(() => {
             setShowResume(false);
@@ -1562,6 +1638,9 @@
                 onExit={onExit}
                 onPropose={onPropose}
                 viewport={viewport}
+                forcedMode={forcedMode}
+                recapDismissed={recapDismissed}
+                onShowRecap={() => setRecapDismissed(false)}
             />
         );
     }
@@ -4130,7 +4209,7 @@
             { label: 'League Evolution', value: runReport.value, detail: state.activeOffer ? 'Draft paused for negotiation' : runReport.detail, extra: runReport.bullets },
         ];
         return (
-            <div className="mock-draft-cockpit">
+            <div className="mock-draft-cockpit draft-cc-scope">
                 <section className="mock-draftcast-rail">
                     <div className="mock-cast-brand">
                         <div>DHQ</div>
@@ -4193,7 +4272,7 @@
     }
 
     // ── Drafting / complete grid ─────────────────────────────────────
-    function CommandCenterGrid({ state, dispatch, isUserTurn, currentSlot, onExit, viewport, onPropose }) {
+    function CommandCenterGrid({ state, dispatch, isUserTurn, currentSlot, onExit, viewport, onPropose, forcedMode, recapDismissed, onShowRecap }) {
         const L = DRAFT_CC_LAYOUT;
         // Filter by rosterId so post-trade ownership is respected. Memoized: gradeDraft
         // builds a Map over the ~600-entry originalPool and ran on every re-render.
@@ -4204,8 +4283,12 @@
         const grade = React.useMemo(
             () => window.DraftCC.state.gradeDraft(myPicks, state.originalPool, {
                 assessment: state.personas?.[state.userRosterId]?.assessment,
+                variant: state.variant,
+                leagueSize: state.leagueSize,
+                rounds: state.rounds,
+                budget: state.auctionBudget,
             }),
-            [myPicks, state.originalPool, state.personas, state.userRosterId]
+            [myPicks, state.originalPool, state.personas, state.userRosterId, state.variant, state.leagueSize, state.rounds, state.auctionBudget]
         );
 
         const BigBoardPanel = window.DraftCC.BigBoardPanel;
@@ -4293,14 +4376,33 @@
         const learningSaveKeyRef = React.useRef('');
         React.useEffect(() => {
             const helpers = window.DraftCC?.state || {};
-            if (state.phase !== 'complete' || !helpers.buildDraftRecap || !helpers.saveDraftLearning) return;
+            if (state.phase !== 'complete' || !helpers.buildDraftRecap) return;
             const saveKey = [state.id, state.picks?.length || 0, grade.totalDHQ || 0].join(':');
             if (learningSaveKeyRef.current === saveKey) return;
             try {
-                helpers.saveDraftLearning(helpers.buildDraftRecap(state, {
-                    grade,
-                    id: 'learning_' + (state.id || Date.now()),
-                }));
+                const recap = helpers.buildDraftRecap(state, { grade });
+                // Learning loop — tunes the next draft's defaults.
+                if (helpers.saveDraftLearning) {
+                    helpers.saveDraftLearning(helpers.buildDraftRecap(state, {
+                        grade,
+                        id: 'learning_' + (state.id || Date.now()),
+                    }));
+                }
+                // Archive auto-save (the 25-deep store listDraftRecaps reads) so a user
+                // who hits DRAFT AGAIN without clicking SAVE doesn't lose the recap.
+                if (helpers.archiveDraftRecap && recap?.leagueId) helpers.archiveDraftRecap(recap);
+                // Fan out the post-draft protocol: the grade review (this modal) and the
+                // dynasty UDFA craze (free-agency surface) both key off this one event.
+                // The craze reads recap.postDraftMoves.waiverTargets as its seed; the
+                // PostDraft module persists it cross-page (local + Supabase).
+                try {
+                    window.dispatchEvent(new CustomEvent('draft:closed', {
+                        detail: { recap, leagueId: state.leagueId, season: state.season, variant: state.variant },
+                    }));
+                } catch (_) {}
+                if (window.App?.PostDraft?.onDraftClosed) {
+                    try { window.App.PostDraft.onDraftClosed(recap); } catch (_) {}
+                }
                 learningSaveKeyRef.current = saveKey;
             } catch (e) {
                 if (window.wrLog) window.wrLog('cc.draftLearning', e);
@@ -4423,7 +4525,7 @@
         }
 
         return (
-            <div style={{ fontFamily: FONT_UI, paddingBottom: '12px' }}>
+            <div className="draft-cc-scope" style={{ fontFamily: FONT_UI, paddingBottom: '12px' }}>
                 {isLiveDraftHud ? (
                     <LiveCommandHeader
                         state={state}
@@ -4492,7 +4594,7 @@
                             </span>
                             {liveConfidenceCard && (
                                 <span title={liveConfidenceCard.label + ': ' + liveConfidenceCard.value + ' — ' + liveConfidenceCard.detail} style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, color: liveConfidenceCard.tone, fontWeight: 800, fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                    <span style={{ fontSize: '0.62rem' }}>{'●'}</span>{liveConfidenceCard.value}
+                                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)' }}>{'●'}</span>{liveConfidenceCard.value}
                                 </span>
                             )}
                         </div>
@@ -4923,7 +5025,7 @@
                 )}
 
                 {/* Phase 7: Post-draft recap — full-screen modal with grade + per-position + roster + export */}
-                {state.phase === 'complete' && (() => {
+                {state.phase === 'complete' && !recapDismissed && (() => {
                     const stateHelpers = window.DraftCC?.state || {};
                     const recap = stateHelpers.buildDraftRecap
                         ? stateHelpers.buildDraftRecap(state, { grade })
@@ -4944,14 +5046,37 @@
 
                     const gradeColor = grade.letter.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' : grade.letter.startsWith('B') ? 'var(--k-d4af37, #d4af37)' : grade.letter.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
                     const teamRecaps = recap?.teamRecaps || [];
-                    const actionPlan = recap?.actionPlan || [];
                     const leagueStorylines = recap?.leagueStorylines || [];
+                    // Post-draft power/tier per team: existing roster health (assessTeam)
+                    // blended with this draft's haul. Degrades gracefully if assessment
+                    // globals aren't loaded (badge simply omitted).
+                    const teamPower = (() => {
+                        let assessments = [];
+                        try { assessments = (typeof window.assessAllTeamsFromGlobal === 'function' ? window.assessAllTeamsFromGlobal() : []) || []; } catch (_) {}
+                        const byRid = {};
+                        assessments.forEach(a => { if (a && a.rosterId != null) byRid[String(a.rosterId)] = a; });
+                        const maxHaul = Math.max(1, ...teamRecaps.map(t => t.totalDHQ || 0));
+                        const out = {};
+                        teamRecaps.forEach(t => {
+                            const a = byRid[String(t.rosterId)] || {};
+                            const health = Number(a.healthScore) || 0;
+                            const haulPct = Math.round(((t.totalDHQ || 0) / maxHaul) * 100);
+                            out[String(t.rosterId)] = { power: Math.round(health * 0.6 + haulPct * 0.4), tier: a.tier || null, tierColor: a.tierColor || null };
+                        });
+                        return out;
+                    })();
                     const tradeImpact = recap?.tradeImpact || { count: 0, summary: 'No accepted draft trades on record.' };
                     const bestPick = recap?.bestPick || null;
                     const biggestReach = recap?.biggestReach || null;
-                    const missedTarget = recap?.missedTarget || null;
+                    const worstPick = recap?.worstPick || null;
                     const bestAlternative = recap?.bestAlternative || null;
-                    const postDraftMoves = recap?.postDraftMoves || {};
+                    const leagueExtremes = recap?.leagueExtremes || {};
+                    const tradeVolume = recap?.tradeVolume || { total: 0, byRound: {} };
+                    // Per-type efficiency (value vs expected pick).
+                    const efficiency = recap?.efficiency ?? null;
+                    const effPct = efficiency != null ? Math.round(efficiency * 100) : null;
+                    const gradeBasis = recap?.gradeBasis || 'vs expected pick value';
+                    const effColor = effPct == null ? 'var(--silver)' : effPct >= 100 ? 'var(--k-2ecc71, #2ecc71)' : effPct >= 85 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
                     const recapPositions = recap?.positionSummary?.length
                         ? recap.positionSummary
                         : orderedPositions.map(pos => ({ pos, ...posSummary[pos] }));
@@ -5012,11 +5137,14 @@
                                 <div style={{ padding: '28px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'linear-gradient(135deg, ' + gradeColor + '15, transparent 70%)' }}>
                                     <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }}>Draft Complete — Recap</div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-                                        <div style={{ fontFamily: FONT_DISPL, fontSize: '5.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1 }}>{grade.letter}</div>
+                                        <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                                            <div style={{ fontFamily: FONT_DISPL, fontSize: '5.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1 }}>{grade.letter}</div>
+                                            <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>Overall Grade</div>
+                                        </div>
                                         <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Overall Draft Grade</div>
-                                            <div style={{ fontSize: '0.96rem', color: 'var(--white)', marginTop: '6px', lineHeight: 1.5 }}>
-                                                Total DHQ: <strong style={{ color: gradeColor }}>{grade.totalDHQ.toLocaleString()}</strong> across {myPicks.length} pick{myPicks.length === 1 ? '' : 's'} · {grade.pct}% value capture
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.45 }}>Grade weighs board value, roster fit, and value vs your expected slots.</div>
+                                            <div style={{ fontSize: '0.96rem', color: 'var(--white)', marginTop: '8px', lineHeight: 1.5 }}>
+                                                Total DHQ: <strong style={{ color: gradeColor }}>{grade.totalDHQ.toLocaleString()}</strong> across {myPicks.length} pick{myPicks.length === 1 ? '' : 's'}
                                             </div>
                                             {totals.length >= 3 && (
                                                 <div style={{ fontSize: '0.82rem', color: 'var(--silver)', marginTop: '4px' }}>
@@ -5024,6 +5152,13 @@
                                                 </div>
                                             )}
                                         </div>
+                                        {effPct != null && (
+                                            <div style={{ textAlign: 'center', flexShrink: 0, padding: '12px 18px', borderRadius: '12px', background: wrAlpha(effColor, '12'), border: '1px solid ' + wrAlpha(effColor, '40'), minWidth: '128px' }}>
+                                                <div style={{ fontFamily: FONT_DISPL, fontSize: '2.6rem', fontWeight: 700, color: effColor, lineHeight: 1 }}>{effPct}%</div>
+                                                <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '4px' }}>{gradeBasis === 'vs $ spent' ? <>of expected value<br/>for your spend</> : <>of expected DHQ<br/>for your slots</>}</div>
+                                                <div style={{ fontSize: '0.6rem', color: effColor, opacity: 0.9, marginTop: '4px', fontWeight: 700 }}>{effPct >= 100 ? 'NAILED YOUR SLOTS' : effPct >= 85 ? 'SOLID FOR YOUR SLOTS' : 'LEFT VALUE ON BOARD'}</div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -5046,11 +5181,11 @@
                                             biggestReach?.pid ? () => openRecapPlayer(biggestReach.pid) : null
                                         )}
                                         {insightCard(
-                                            'Missed Target',
-                                            missedTarget ? `${missedTarget.name} #${missedTarget.overall}` : 'No tagged loss',
-                                            missedTarget ? missedTarget.message : 'Targets and Must tags survived or were not set.',
-                                            missedTarget ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)',
-                                            missedTarget?.pid ? () => openRecapPlayer(missedTarget.pid) : null
+                                            'Worst Pick',
+                                            worstPick ? `${worstPick.name} #${worstPick.overall}` : 'No picks',
+                                            worstPick ? `${worstPick.pos || '?'} · ${fmtDhq(worstPick.dhq)} DHQ${worstPick.efficiency != null ? ' · ' + Math.round(worstPick.efficiency * 100) + '% of expected' : ''}` : 'Make a pick to surface your lowest-value selection.',
+                                            worstPick ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)',
+                                            worstPick?.pid ? () => openRecapPlayer(worstPick.pid) : null
                                         )}
                                         {insightCard(
                                             'Best Alternative',
@@ -5066,58 +5201,6 @@
                                             tradeImpact.netDHQ >= 0 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-e74c3c, #e74c3c)',
                                             null
                                         )}
-                                    </div>
-                                </div>
-
-                                {/* Action plan */}
-                                <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Post-Draft Action Plan</div>
-                                    <div style={{ display: 'grid', gap: '8px' }}>
-                                        {(actionPlan.length ? actionPlan : [{ title: 'Save this recap', detail: 'Use it as the next mock draft input.', type: 'prep_loop' }]).map((item, i) => (
-                                            <div key={item.type || i} style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr)', gap: '10px', alignItems: 'start', padding: '10px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.045))', border: '1px solid var(--acc-fill2, rgba(212,175,55,0.10))', borderRadius: '8px' }}>
-                                                <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--acc-fill3, rgba(212,175,55,0.16))', color: 'var(--gold)', fontWeight: 900, fontSize: 'var(--text-micro, 0.6875rem)' }}>{i + 1}</div>
-                                                <div>
-                                                    <div style={{ color: 'var(--white)', fontWeight: 800, fontSize: '0.82rem' }}>{item.title}</div>
-                                                    <div style={{ color: 'var(--silver)', opacity: 0.78, fontSize: '0.74rem', lineHeight: 1.5, marginTop: '2px' }}>{item.detail}</div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* P4B next moves */}
-                                <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Next Moves</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-                                        <div style={{ padding: '11px 12px', borderRadius: 8, border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.025))' }}>
-                                            <div style={{ color: 'var(--k-2ecc71, #2ecc71)', fontWeight: 800, fontSize: '0.72rem', marginBottom: 6 }}>Waiver Watch</div>
-                                            {(postDraftMoves.waiverTargets || []).slice(0, 3).map(p => (
-                                                <button key={p.pid || p.name} type="button" onClick={() => p.pid && openRecapPlayer(p.pid)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 0', border: 'none', background: 'transparent', color: 'var(--white)', fontFamily: FONT_UI, cursor: p.pid ? 'pointer' : 'default' }}>
-                                                    <span style={{ fontWeight: 800 }}>{p.name}</span>
-                                                    <span style={{ color: 'var(--silver)', opacity: 0.72, fontSize: 'var(--text-micro, 0.6875rem)' }}> - {p.pos} - {fmtDhq(p.dhq)} DHQ</span>
-                                                </button>
-                                            ))}
-                                            {!(postDraftMoves.waiverTargets || []).length && <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: '0.7rem' }}>No immediate waiver watchlist from this recap.</div>}
-                                        </div>
-                                        <div style={{ padding: '11px 12px', borderRadius: 8, border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.025))' }}>
-                                            <div style={{ color: 'var(--k-3498db, #3498db)', fontWeight: 800, fontSize: '0.72rem', marginBottom: 6 }}>Trade Map</div>
-                                            {(postDraftMoves.tradeTargets || []).slice(0, 3).map((t, i) => (
-                                                <div key={(t.rosterId || t.teamName || i) + '-' + t.pos} style={{ color: 'var(--silver)', fontSize: 'var(--text-micro, 0.6875rem)', lineHeight: 1.45, padding: '4px 0' }}>
-                                                    <strong style={{ color: 'var(--white)' }}>{t.teamName}</strong> - {t.pos} surplus around {t.player?.name || 'new draft capital'}
-                                                </div>
-                                            ))}
-                                            {!(postDraftMoves.tradeTargets || []).length && <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: '0.7rem' }}>No clear surplus trade lane yet.</div>}
-                                        </div>
-                                        <div style={{ padding: '11px 12px', borderRadius: 8, border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.025))' }}>
-                                            <div style={{ color: 'var(--k-f0a500, #f0a500)', fontWeight: 800, fontSize: '0.72rem', marginBottom: 6 }}>Cut Review</div>
-                                            {(postDraftMoves.cutCandidates || []).slice(0, 3).map(p => (
-                                                <button key={p.pid || p.name} type="button" onClick={() => p.pid && openRecapPlayer(p.pid)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 0', border: 'none', background: 'transparent', color: 'var(--white)', fontFamily: FONT_UI, cursor: p.pid ? 'pointer' : 'default' }}>
-                                                    <span style={{ fontWeight: 800 }}>{p.name}</span>
-                                                    <span style={{ color: 'var(--silver)', opacity: 0.72, fontSize: 'var(--text-micro, 0.6875rem)' }}> - {p.pos || 'depth'} - {fmtDhq(p.dhq)} DHQ</span>
-                                                </button>
-                                            ))}
-                                            {!(postDraftMoves.cutCandidates || []).length && <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: '0.7rem' }}>No cut-pressure candidates available from loaded roster data.</div>}
-                                        </div>
                                     </div>
                                 </div>
 
@@ -5169,9 +5252,47 @@
                                     ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No picks made.</div>}
                                 </div>
 
-                                {/* League-wide recap */}
+                                {/* Around the league — extremes + draft-day trade volume */}
                                 <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>League Recap</div>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Around the League</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
+                                        {insightCard(
+                                            'League Best Pick',
+                                            leagueExtremes.bestPick ? `${leagueExtremes.bestPick.name} #${leagueExtremes.bestPick.overall}` : '—',
+                                            leagueExtremes.bestPick ? `${leagueExtremes.bestPick.teamName} · ${fmtDhq(leagueExtremes.bestPick.dhq)} DHQ` : 'No picks recorded.',
+                                            'var(--k-2ecc71, #2ecc71)',
+                                            leagueExtremes.bestPick?.pid ? () => openRecapPlayer(leagueExtremes.bestPick.pid) : null
+                                        )}
+                                        {insightCard(
+                                            'League Biggest Reach',
+                                            leagueExtremes.biggestReach ? `${leagueExtremes.biggestReach.name} #${leagueExtremes.biggestReach.overall}` : '—',
+                                            leagueExtremes.biggestReach ? `${leagueExtremes.biggestReach.teamName} · ${Math.abs(leagueExtremes.biggestReach.valueDelta || 0)} slots ahead of board` : 'None flagged.',
+                                            'var(--k-f0a500, #f0a500)',
+                                            leagueExtremes.biggestReach?.pid ? () => openRecapPlayer(leagueExtremes.biggestReach.pid) : null
+                                        )}
+                                        {insightCard(
+                                            'League Worst Pick',
+                                            leagueExtremes.worstPick ? `${leagueExtremes.worstPick.name} #${leagueExtremes.worstPick.overall}` : '—',
+                                            leagueExtremes.worstPick ? `${leagueExtremes.worstPick.teamName} · ${fmtDhq(leagueExtremes.worstPick.dhq)} DHQ` : 'No picks recorded.',
+                                            'var(--k-e74c3c, #e74c3c)',
+                                            leagueExtremes.worstPick?.pid ? () => openRecapPlayer(leagueExtremes.worstPick.pid) : null
+                                        )}
+                                    </div>
+                                    <div style={{ marginTop: '14px' }}>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Draft-Day Trades — {tradeVolume.total} total</div>
+                                        {tradeVolume.total > 0 ? (
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                {Object.keys(tradeVolume.byRound).sort((a, b) => Number(a) - Number(b)).map(r => (
+                                                    <span key={r} style={{ padding: '5px 10px', borderRadius: '6px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)' }}>{Number(r) > 0 ? 'R' + r : 'Other'}: <strong style={{ color: 'var(--white)' }}>{tradeVolume.byRound[r]}</strong></span>
+                                                ))}
+                                            </div>
+                                        ) : <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.6 }}>No pick trades during this draft.</div>}
+                                    </div>
+                                </div>
+
+                                {/* League-wide recap — where teams stand after the draft */}
+                                <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Where Teams Stand After the Draft</div>
                                     {leagueStorylines.length > 0 && (
                                         <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
                                             {leagueStorylines.slice(0, 4).map((line, i) => (
@@ -5205,7 +5326,10 @@
                                                             style={{ minWidth: 0, padding: 0, border: 'none', background: 'transparent', color: 'var(--white)', textAlign: 'left', cursor: 'pointer', fontFamily: FONT_UI }}
                                                             title="Pin this team in opponent intel"
                                                         >
-                                                            <div style={{ fontWeight: 800, fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{team.teamName}</div>
+                                                            <div style={{ fontWeight: 800, fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                {team.teamName}
+                                                                {teamPower[String(team.rosterId)]?.tier && <span style={{ marginLeft: '6px', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: teamPower[String(team.rosterId)].tierColor || 'var(--silver)' }}>{teamPower[String(team.rosterId)].tier}</span>}
+                                                            </div>
                                                             <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{team.buildLabel}</div>
                                                         </button>
                                                         <div style={{ color: gradeCol, fontFamily: FONT_DISPL, fontSize: '1rem', fontWeight: 900 }}>{team.grade}</div>
@@ -5226,22 +5350,6 @@
                                             })}
                                         </div>
                                     ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No league picks available for recap.</div>}
-                                </div>
-
-                                {/* Alex commentary */}
-                                <div style={{ padding: '22px 32px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                        <div style={{ width: '22px', height: '22px', borderRadius: '6px', background: 'linear-gradient(135deg, var(--k-d4af37, #d4af37), var(--k-b8941e, #b8941e))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--k-0a0a0a, #0a0a0a)' }}>AI</div>
-                                        <span style={{ fontFamily: FONT_DISPL, fontSize: '0.82rem', color: 'var(--gold)', letterSpacing: '0.06em' }}>Alex's Take</span>
-                                    </div>
-                                    <div style={{ padding: '10px 14px', background: 'var(--acc-fill1, rgba(212,175,55,0.05))', borderLeft: '3px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius: '0 6px 6px 0', fontSize: '0.84rem', color: 'var(--silver)', lineHeight: 1.55 }}>
-                                        {(() => {
-                                            const topPos = recapPositions[0]?.pos || 'skill positions';
-                                            const topPosCount = recapPositions[0]?.count || 0;
-                                            const letterPhrase = grade.letter.startsWith('A') ? "one of the best drafts in the league — you captured elite value" : grade.letter.startsWith('B') ? "a solid class with clear upside" : grade.letter.startsWith('C') ? "a middling haul, with room for growth" : "a tough draft — the value just wasn't there at your slots";
-                                            return "This was " + letterPhrase + ". You leaned heaviest at " + topPos + " (" + topPosCount + " picks) and banked " + grade.totalDHQ.toLocaleString() + " DHQ across " + myPicks.length + " selections. " + (myRank <= 3 ? "You're top-3 by draft DHQ — this class sets you up for a run." : myRank <= totals.length / 2 ? "You're in the upper half — now the work is in the development window." : "You'll need to work the waiver wire and trade market to close the gap.");
-                                        })()}
-                                    </div>
                                 </div>
 
                                 {/* Actions */}
@@ -5276,12 +5384,20 @@
                                             const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'draft-recap-' + Date.now() + '.md'; a.click(); URL.revokeObjectURL(url);
                                         } catch (e) { alert('Export failed: ' + e.message); }
                                     }} style={{ padding: '10px 22px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.15))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>EXPORT REPORT</button>
-                                    <button onClick={onExit} style={{ padding: '10px 22px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>DRAFT AGAIN</button>
+                                    <button onClick={onExit} style={{ padding: '10px 22px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>{forcedMode === 'live-sync' ? 'VIEW DRAFT BOARD →' : 'DRAFT AGAIN'}</button>
                                 </div>
                             </div>
                         </div>
                     );
                 })()}
+
+                {/* Memorialized live draft: recap dismissed → floating reopen button */}
+                {state.phase === 'complete' && recapDismissed && (
+                    <button type="button" onClick={onShowRecap} title="Reopen the draft recap"
+                        style={{ position: 'fixed', right: '20px', bottom: '20px', zIndex: 850, padding: '11px 18px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '999px', fontFamily: FONT_DISPL, fontWeight: 800, fontSize: '0.84rem', letterSpacing: '0.04em', cursor: 'pointer', boxShadow: '0 8px 28px rgba(0,0,0,0.5)' }}>
+                        📋 VIEW RECAP
+                    </button>
+                )}
             </div>
         );
     }
@@ -5327,7 +5443,7 @@
         });
         const readRow = { display: 'flex', gap: 7, alignItems: 'flex-start' };
         const readIcon = accent => ({ flexShrink: 0, width: 15, textAlign: 'center', fontSize: '0.78rem', marginTop: 1, color: accent });
-        const readLabel = accent => ({ fontSize: '0.66rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: accent });
+        const readLabel = accent => ({ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: accent });
         const readText = { color: 'var(--silver)', opacity: 0.85, fontSize: '0.72rem', lineHeight: 1.32 };
         // Keep each read to 2 lines so the card stays at DraftCast-strip height even
         // when Alex's copy runs long.
@@ -5352,10 +5468,10 @@
                         <div style={{ width: 40, height: 40, borderRadius: 7, display: 'grid', placeItems: 'center', background: GOLD, color: 'var(--black)', fontFamily: FONT_DISPL, fontWeight: 900, fontSize: '0.72rem', letterSpacing: '0.06em', flexShrink: 0 }}>DHQ</div>
                         <div style={{ minWidth: 0 }}>
                             <div style={{ color: GOLD, fontFamily: FONT_DISPL, fontWeight: 900, letterSpacing: '0.1em', textTransform: 'uppercase', fontSize: '0.8rem', lineHeight: 1 }}>DraftCast</div>
-                            <div style={{ color: 'var(--silver)', opacity: 0.72, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.09em', fontSize: '0.62rem', marginTop: 3 }}>{state.mode} · {state.variant}</div>
+                            <div style={{ color: 'var(--silver)', opacity: 0.72, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.09em', fontSize: 'var(--text-micro, 0.6875rem)', marginTop: 3 }}>{state.mode} · {state.variant}</div>
                         </div>
                         <div style={{ borderLeft: '3px solid ' + GOLD, paddingLeft: 12, marginLeft: 8, flex: 1, minWidth: 0, marginTop: -6 }}>
-                            <div style={{ color: state.activeOffer ? 'var(--k-f0a500, #f0a500)' : GOLD, fontSize: '0.62rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{onClockLabel}</div>
+                            <div style={{ color: state.activeOffer ? 'var(--k-f0a500, #f0a500)' : GOLD, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{onClockLabel}</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
                                 <div style={{ width: 38, height: 38, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: 'radial-gradient(circle at 30% 25%, #4a4368, #221d34 70%)', border: '1px solid rgba(155,138,251,0.55)', color: '#d6d0ff', fontFamily: FONT_DISPL, fontWeight: 900, fontSize: '1rem', overflow: 'hidden' }}>
                                     {teamAvatarUrl
@@ -5368,7 +5484,7 @@
                                         <span style={{ whiteSpace: 'nowrap' }}>{pickMeta}</span>
                                         {liveConfidenceCard && (
                                             <span title={liveConfidenceCard.label + ': ' + liveConfidenceCard.value + ' — ' + liveConfidenceCard.detail} style={{ color: liveConfidenceCard.tone, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
-                                                <span style={{ fontSize: '0.6rem' }}>{'●'}</span>{liveConfidenceCard.value}
+                                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)' }}>{'●'}</span>{liveConfidenceCard.value}
                                             </span>
                                         )}
                                     </div>
@@ -5380,10 +5496,10 @@
                     <div style={{ display: 'flex', gap: 7 }}>
                         {stageSummaryCards.map(card => (
                             <div key={card.label} style={{ flex: 1, minWidth: 0, border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))', background: 'var(--ov-1, rgba(255,255,255,0.024))', borderRadius: 6, padding: '6px 8px' }}>
-                                <div style={{ color: card.tone, fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800 }}>{card.label}</div>
+                                <div style={{ color: card.tone, fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 800 }}>{card.label}</div>
                                 <div style={{ color: 'var(--white)', fontWeight: 800, fontSize: '0.74rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.value}</div>
                                 {card.label !== 'Room run' && card.detail && (
-                                    <div style={{ color: 'var(--silver)', opacity: 0.6, fontSize: '0.6rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.detail}</div>
+                                    <div style={{ color: 'var(--silver)', opacity: 0.6, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.detail}</div>
                                 )}
                             </div>
                         ))}
@@ -5393,7 +5509,7 @@
                         <div style={{ flex: 1, minWidth: 0, height: 4, background: 'var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 2, overflow: 'hidden' }}>
                             <div style={{ height: '100%', width: Math.round((state.currentIdx / Math.max(1, state.pickOrder.length)) * 100) + '%', background: GOLD, transition: 'width 0.4s ease' }} />
                         </div>
-                        <span style={{ fontFamily: FONT_MONO, fontSize: '0.62rem', color: 'var(--silver)', flexShrink: 0 }}>{state.currentIdx} / {state.pickOrder.length}</span>
+                        <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', flexShrink: 0 }}>{state.currentIdx} / {state.pickOrder.length}</span>
                         <button onClick={() => dispatch({ type: 'SET_OVERRIDE', enabled: !state.overrideMode })} title={state.overrideMode ? 'Return to read-only Sleeper mirror' : 'Apply the next pick manually from the Big Board'} style={btn(state.overrideMode ? 'rgba(155,138,251,0.22)' : 'rgba(155,138,251,0.16)', '#d6d0ff', 'rgba(155,138,251,0.45)')}>
                             {state.overrideMode ? 'MANUAL ON' : '✎ Manual Pick'}
                         </button>
@@ -5477,7 +5593,7 @@
                             </span>
                         </div>
                         {tradeDeskTarget && (
-                            <button onClick={openTradeDesk} style={{ flexShrink: 0, padding: '4px 9px', borderRadius: 5, fontSize: '0.62rem', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid rgba(155,138,251,0.4)', background: 'rgba(155,138,251,0.16)', color: '#d6d0ff' }}>Open Trade Desk</button>
+                            <button onClick={openTradeDesk} style={{ flexShrink: 0, padding: '4px 9px', borderRadius: 5, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid rgba(155,138,251,0.4)', background: 'rgba(155,138,251,0.16)', color: '#d6d0ff' }}>Open Trade Desk</button>
                         )}
                     </div>
                 </div>
@@ -5996,7 +6112,7 @@
 
         if (state.phase === 'setup') {
             return (
-                <div style={{ padding: '16px', fontFamily: FONT_UI, textAlign: 'center' }}>
+                <div className="draft-cc-scope" style={{ padding: '16px', fontFamily: FONT_UI, textAlign: 'center' }}>
                     <div style={{
                         padding: '14px 18px',
                         background: 'rgba(240,165,0,0.08)',

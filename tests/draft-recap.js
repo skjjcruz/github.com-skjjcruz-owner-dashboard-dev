@@ -146,7 +146,9 @@ function buildState() {
 test('buildDraftRecap creates P4 strategic user and league outputs', () => {
   const state = buildState();
   const recap = ctx.DraftCC.state.buildDraftRecap(state);
-  eq(recap.schemaVersion, 'draft-recap-v4', 'schema');
+  eq(recap.schemaVersion, 'draft-recap-v5', 'schema');
+  ok(recap.gradeBasis && typeof recap.gradeBasis === 'string', 'grade basis label present');
+  ok(recap.picks.every(p => 'efficiency' in p), 'per-pick efficiency present');
   eq(recap.bestPick.name, 'Alpha QB', 'best pick');
   eq(recap.biggestReach.name, 'Gamma RB', 'reach');
   eq(recap.missedTarget.name, 'Delta WR', 'missed target');
@@ -200,6 +202,28 @@ test('formatDraftRecapText includes action plan and team grades', () => {
   ok(text.includes('League recap:'), 'league recap section');
   ok(text.includes('Team grades:'), 'team grades section');
   ok(text.includes('Alpha QB - QB'), 'pick line preserved');
+});
+
+test('recap v2: worstPick, leagueExtremes, tradeVolume, live trade impact', () => {
+  const state = buildState();
+  state.leagueSize = 12;
+  state.rounds = 3;
+  // A live traded pick the user (roster 1) acquired from roster 2.
+  state.tradedPicks = [{ round: 1, rosterId: 1, fromRosterId: 2 }];
+  const recap = ctx.DraftCC.state.buildDraftRecap(state);
+  // Worst pick = the user's lowest-DHQ selection (Gamma RB, 500).
+  eq(recap.worstPick?.name, 'Gamma RB', 'user worst pick');
+  // League-wide extremes across all teams.
+  eq(recap.leagueExtremes?.bestPick?.name, 'Alpha QB', 'league best pick');
+  eq(recap.leagueExtremes?.worstPick?.name, 'Gamma RB', 'league worst pick');
+  ok(recap.leagueExtremes?.biggestReach, 'league biggest reach present');
+  ok(recap.leagueExtremes?.bestPick?.teamName, 'extremes carry team name');
+  // Trade volume counts the sim trade + the live traded pick.
+  ok(recap.tradeVolume?.total >= 1, 'trade volume total');
+  ok(recap.tradeVolume?.byRound && typeof recap.tradeVolume.byRound === 'object', 'trade volume by round');
+  // The live traded pick the user acquired shows up in trade impact (was the bug).
+  ok(recap.tradeImpact?.rows?.some(r => r.isPick), 'live traded pick in trade impact');
+  ok(recap.tradeImpact?.count >= 1, 'trade impact populated');
 });
 
 test('scorePick / gradeLetter produce a sane per-pick spread incl D/F', () => {

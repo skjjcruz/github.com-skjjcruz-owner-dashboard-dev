@@ -117,6 +117,53 @@ In superflex leagues, if a team has fewer starting-caliber QBs than QB-eligible 
 | LB | 26-32 | Age 30+ | 29+ |
 | DB | 21-34 | Age 30+ | 29+ |
 
+### Rule 7: Trade Partner Mode Awareness
+
+The other side of every trade values assets through their own competitive mode. `buildPartnerModeBlock(partner)` injects this into `trade_verdict` prompts, and `buildPartnersPrompt` carries equivalent partner-mode rules:
+
+| Partner Mode | They Accept | They Reject/Lowball |
+|--------------|-------------|---------------------|
+| **REBUILDING** | Draft picks (1sts/2nds above all), players aged ≤24 | Offers centered on veterans 27+ |
+| **CONTENDING** | Proven starters at positions of need (will pay premium incl. picks) | Speculative youth, distant picks at full price |
+| **CROSSROADS** | Offers that decisively push them one direction | Balanced "depth" swaps |
+
+### Rule 8: Verdict Honesty vs the Deterministic Grade
+
+When the AI gives a second opinion on a calculator-graded trade (`trade_verdict`):
+- It must judge through the requesting owner's team mode FIRST — a "fair value" trade that fights the team's direction is a bad trade.
+- It must apply format premiums (QB 1.8x superflex, TE 1.5x TEP) to both sides before comparing.
+- If it disagrees with the deterministic grade, it must SAY SO explicitly with a concrete reason. "It depends" is never a valid final answer.
+- The verdict is constrained to exactly ACCEPT / REJECT / COUNTER.
+
+---
+
+## 2b. Analysis Types & Cost Policy
+
+| Type | Tier | Trigger | Cached | Counts against daily requests |
+|------|------|---------|--------|-------------------------------|
+| `trade_verdict` | premium | Explicit (button) | Never (deal-specific) | Yes |
+| `team_diagnosis` | standard | Ambient (League Detail) | 12h, shared per roster state | No (cost budgets only) |
+| `dashboard_digest` | fast | Ambient (dashboard load) | 24h, per user | No (cost budgets only) |
+| `insight` | fast | Ambient (Alex Insights) | 24h, per user | No (cost budgets only) |
+
+**Ambient request policy:** cacheable types are served from `ai_response_cache` (keyed by SHA-256 of `AI_POLICY_VERSION + type + scope + context`). Cache hits cost nothing and consume no budget. Fresh ambient calls reserve **cost** budgets (daily/monthly/global USD caps) but do not consume the plan's request allowance. `context.forceRefresh: true` bypasses the cache read and pays a normal counted request, so regenerate buttons cannot be spammed for free.
+
+**Dynamic scarcity:** when the client passes `positionalSupply` (startable players per position league-wide) plus `teamCount`, `buildScarcityBlock()` computes real supply/demand indices per position and injects 🔴/🟠/🟢 scarcity guidance into the system prompt. Degrades silently when absent.
+
+---
+
+## 2c. Learning Loop (User Preference Profile)
+
+The AI learns each owner's tendencies from their reactions to its advice:
+
+1. **Capture** — clients send thumbs up/down, acted-on, and dismissed signals to the `ai-feedback` edge function (via `window.WR.AIFeedback.send`). Surfaces: trade verdict agree/disagree, Alex Insights card thumbs, dashboard digest thumbs, and FA target adds that match the last AI recommendation (`acted`).
+2. **Store** — `ai_feedback` table (RLS, service-role only), deduped per `(identifier, rec_id, action)`.
+3. **Roll up** — `get_ai_preference_summary()` condenses the last 90 days into accept rate, per-surface counts, and the most recent rejected/acted subjects.
+4. **Inject** — `buildUserPreferenceBlock()` appends a ~10-line "USER PREFERENCE PROFILE" to every structured system prompt (mock drafts excluded): rejected framings are not re-pitched without overwhelming evidence; acted-on profiles get weight. The block explicitly states that quality thresholds and team-mode rules always take precedence.
+5. **Cache coherence** — the response-cache key includes a decile-rounded prefs version stamp, so cached ambient insights refresh when an owner's tendencies shift meaningfully without churning on every thumb.
+
+Fail-open at every step: with no feedback history, prompts are byte-identical to the pre-loop behavior.
+
 ---
 
 ## 3. How the System Works End-to-End
@@ -188,8 +235,8 @@ To verify the training program works correctly, test these scenarios:
 
 ## 5. Future Enhancements
 
-1. **Dynamic scarcity scoring** — Count league-wide starter-quality players at each position and compute real scarcity indices rather than static multipliers
-2. **Trade partner mode awareness** — When scouting opponents, note their mode and what they'd accept (rebuilders want picks, contenders want starters)
+1. ~~**Dynamic scarcity scoring**~~ — ✅ Implemented as `buildScarcityBlock()` (see Section 2b). Clients opt in by passing `positionalSupply` counts.
+2. ~~**Trade partner mode awareness**~~ — ✅ Implemented as `buildPartnerModeBlock()` + partner-mode rules in `buildPartnersPrompt` (see Rule 7).
 3. **Injury-triggered FAAB alerts** — If a starter is injured, temporarily lift FAAB restraint for that position only
 4. **Seasonal FAAB pacing** — Early season = patient, mid-season = targeted, late season (playoffs) = aggressive for contenders
 5. **BUY action in player cards** — Components.js currently has SELL/HOLD but no BUY logic. Add BUY recommendations for undervalued youth at positions of need.

@@ -31,6 +31,12 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
         return window.App?.normPos?.(pos) || String(pos).trim().toUpperCase();
     };
     const normalizePositions = (positions) => Array.from(new Set((positions || []).map(normalizePosition).filter(Boolean)));
+    const normalizeFaFilters = (f) => ({
+        minDhq: Number(f?.minDhq) || 0,
+        maxAge: Number(f?.maxAge) || 0,
+        requirePrimeYears: !!f?.requirePrimeYears,
+        excludePositions: normalizePositions(f?.excludePositions),
+    });
     const positionLabel = (pos) => {
         if (pos === 'PICKS') return 'Picks';
         return window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
@@ -48,6 +54,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             sellPositions: normalizePositions(saved.sellPositions),
             sellRules: saved.sellRules || [],
             untouchable: saved.untouchable || saved.untouchables || [],
+            faFilters: normalizeFaFilters(saved.faFilters),
         };
     };
 
@@ -83,6 +90,14 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     const toggleArr = (key, val) => setDraft(d => {
         const arr = d[key] || [];
         return { ...d, [key]: arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val] };
+    });
+
+    // Free-agency filter helpers (nested under draft.faFilters).
+    const setFa = (key, val) => setDraft(d => ({ ...d, faFilters: { ...(d.faFilters || {}), [key]: val } }));
+    const toggleFaPos = (pos) => setDraft(d => {
+        const cur = (d.faFilters || {}).excludePositions || [];
+        const next = cur.includes(pos) ? cur.filter(x => x !== pos) : [...cur, pos];
+        return { ...d, faFilters: { ...(d.faFilters || {}), excludePositions: next } };
     });
 
     // ── Save ──────────────────────────────────────────────────────────────────
@@ -326,6 +341,46 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                     fullWidth
                 />
             </div>}
+
+            {/* ── Free Agency Filters ── */}
+            <div style={styles.card}>
+                <SectionHeader title="Free Agency Filters" sub="Tune who shows up in your waiver / FA recommendations. The market explorer still shows everyone." />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+                    <div>
+                        <div style={styles.subLabel}>Minimum DHQ — hide anyone below</div>
+                        <PillGroup
+                            options={[{ value: 0, label: 'Off' }, { value: 500, label: '500' }, { value: 1000, label: '1,000' }, { value: 2000, label: '2,000' }, { value: 4000, label: '4,000' }]}
+                            value={draft.faFilters?.minDhq || 0}
+                            onChange={v => setFa('minDhq', v)}
+                        />
+                    </div>
+                    <div>
+                        <div style={styles.subLabel}>Max Age — hide older than</div>
+                        <PillGroup
+                            options={[{ value: 0, label: 'Any' }, { value: 24, label: '≤24' }, { value: 27, label: '≤27' }, { value: 30, label: '≤30' }]}
+                            value={draft.faFilters?.maxAge || 0}
+                            onChange={v => setFa('maxAge', v)}
+                        />
+                    </div>
+                </div>
+                <div style={{ marginTop: 16 }}>
+                    <div style={styles.subLabel}>Prime Window</div>
+                    <PillGroup
+                        options={[{ value: 'any', label: 'Any window' }, { value: 'prime', label: 'Prime years remaining only' }]}
+                        value={draft.faFilters?.requirePrimeYears ? 'prime' : 'any'}
+                        onChange={v => setFa('requirePrimeYears', v === 'prime')}
+                        fullWidth
+                    />
+                </div>
+                <div style={{ marginTop: 16 }}>
+                    <div style={styles.subLabel}>Exclude Positions — never recommend</div>
+                    <MultiSelect
+                        options={['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB']}
+                        value={draft.faFilters?.excludePositions}
+                        onChange={toggleFaPos}
+                    />
+                </div>
+            </div>
 
             {/* ── Priorities ── */}
             <div style={styles.card}>

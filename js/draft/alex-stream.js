@@ -53,9 +53,10 @@
             return () => window.removeEventListener('wr:scouting-generate', handler);
         }, [dispatch]);
 
-        const budget = state.alex.alexSpend.budget || 12;
-        const sonnetUsed = state.alex.alexSpend.sonnet || 0;
-        const flashUsed = state.alex.alexSpend.flash || 0;
+        const alexSpend = state.alex?.alexSpend || {};
+        const budget = alexSpend.budget || 12;
+        const sonnetUsed = alexSpend.sonnet || 0;
+        const flashUsed = alexSpend.flash || 0;
         const budgetPct = (sonnetUsed / budget) * 100;
         const budgetCol =
             sonnetUsed >= budget ? 'var(--k-e74c3c, #e74c3c)' :
@@ -95,10 +96,12 @@
             dispatch({ type: 'ALEX_SET_THINKING', thinking: true });
 
             try {
-                // Rich, board-aware context (shared with the Ask windows)
-                const contextLines = window.DraftCC.buildAskContext
-                    ? window.DraftCC.buildAskContext(state)
-                    : '';
+                // Rich, board-aware context (shared with the Ask windows),
+                // plus the format/quality preamble the generic AI path lacks.
+                const contextLines = (window.WR?.AIContext?.buildFormatPreamble?.(window.S?.currentLeague) || '')
+                    + (window.DraftCC.buildAskContext
+                        ? window.DraftCC.buildAskContext(state)
+                        : '');
 
                 // Pass the bare question as the message; dhqAI injects the
                 // context itself, so don't duplicate it into the message.
@@ -160,7 +163,7 @@
 
         const stream = React.useMemo(() => {
             const seen = new Set();
-            return (state.alex.stream || []).filter(item => {
+            return (state.alex?.stream || []).filter(item => {
                 const key = [
                     item.type || '',
                     String(item.title || '').toLowerCase(),
@@ -170,7 +173,7 @@
                 seen.add(key);
                 return true;
             });
-        }, [state.alex.stream]);
+        }, [state.alex?.stream]);
 
         return (
             <div style={containerCss}>
@@ -195,7 +198,7 @@
 
                 {/* Stream feed */}
                 <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', paddingRight: '3px', marginBottom: '6px' }}>
-                    {state.alex.thinking && (
+                    {state.alex?.thinking && (
                         <div style={{
                             padding: '5px 8px',
                             fontSize: 'var(--text-label, 0.75rem)',
@@ -207,7 +210,7 @@
                             Alex is thinking<AnimatedDots />
                         </div>
                     )}
-                    {stream.length === 0 && !state.alex.thinking && (
+                    {stream.length === 0 && !state.alex?.thinking && (
                         <div style={{
                             padding: '20px 10px',
                             textAlign: 'center',
