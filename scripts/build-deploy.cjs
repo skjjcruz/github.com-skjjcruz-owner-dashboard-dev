@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const Babel = require('@babel/standalone');
+const esbuild = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'dist-deploy');
@@ -38,12 +39,26 @@ function contentHash(str) {
 }
 
 function transform(code, filename) {
-  return Babel.transform(code, {
+  const compiled = Babel.transform(code, {
     filename,
     presets: [['react', { runtime: 'classic' }]],
     sourceType: 'script',
     sourceMaps: false,
     comments: false,
+  }).code;
+  // Minify whitespace + syntax to shrink the cold-load payload. Identifier
+  // renaming is intentionally DISABLED: these are classic (non-module) global
+  // scripts that reference each other's top-level names (OwnerDashboard, WR.*,
+  // etc.), so renaming would silently break cross-module global references.
+  // Whitespace/syntax minification is semantics-preserving, so it can't change
+  // behavior the existing test suites already validate on the unminified build.
+  return esbuild.transformSync(compiled, {
+    loader: 'js',
+    minifyWhitespace: true,
+    minifySyntax: true,
+    minifyIdentifiers: false,
+    legalComments: 'none',
+    target: 'es2019',
   }).code;
 }
 
