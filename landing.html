@@ -19,9 +19,12 @@
           var d = document.createElement('div');
           d.id = 'wr-signing-in';
           // visibility:visible overrides the hidden <html>, so this splash shows
-          // while the marketing page underneath stays hidden.
-          d.setAttribute('style', 'visibility:visible!important;position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0A0A0A;color:#D4AF37;font:600 15px/1.4 Inter,system-ui,sans-serif;letter-spacing:.02em');
-          d.textContent = 'Signing you in…';
+          // while the marketing page underneath stays hidden. Includes the same
+          // subdued DHQ watermark used in-app / on the Sleeper-connect page.
+          d.setAttribute('style', 'visibility:visible!important;position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#0A0A0A');
+          d.innerHTML =
+            '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:clamp(400px,60vw,1000px);height:clamp(400px,60vw,1000px);background:url(icon-192.png) center/contain no-repeat;opacity:.05;filter:brightness(1.2);pointer-events:none"></div>' +
+            '<div style="position:relative;color:#D4AF37;font:600 15px/1.4 Inter,system-ui,sans-serif;letter-spacing:.02em">Signing you in…</div>';
           (document.body || document.documentElement).appendChild(d);
         } catch (e) {}
       }
