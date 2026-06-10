@@ -37,6 +37,75 @@ jobs:
             deno check --node-modules-dir=auto "$fn"
           done
 
+      # Idempotent apply of allowlisted migrations through the Management API.
+      # Earlier migrations were applied by hand via the dashboard; entries
+      # listed here are executed (and recorded) automatically when missing.
+      # Only add migrations that are safe to re-run (if not exists / or
+      # replace), because the query endpoint does not guarantee atomicity
+      # across statements.
+      - name: Apply pending database migrations
+        run: |
+          python3 - <<'PYEOF'
+          import json, urllib.request, os, sys
+
+          token = os.environ.get('SUPABASE_ACCESS_TOKEN', '')
+          endpoint = 'https://api.supabase.com/v1/projects/sxshiqyxhhifvtfqawbq/database/query'
+
+          pending = {
+              '20260610000000': 'supabase/migrations/20260610000000_ai_response_cache.sql',
+              '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
+          }
+
+          def run_query(query):
+              req = urllib.request.Request(
+                  endpoint,
+                  data=json.dumps({'query': query}).encode(),
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json',
+                      'User-Agent': 'ReconAI-WarRoom-GitHub-Actions',
+                  },
+                  method='POST',
+              )
+              with urllib.request.urlopen(req) as r:
+                  body = r.read().decode()
+              return json.loads(body) if body else []
+
+          quoted = ', '.join(f"'{v}'" for v in pending)
+          try:
+              rows = run_query(
+                  f'select version from supabase_migrations.schema_migrations where version in ({quoted})'
+              )
+          except urllib.error.HTTPError as e:
+              print('Could not read schema_migrations:', e.code, e.read().decode()[:300], file=sys.stderr)
+              sys.exit(1)
+          recorded = {str(row.get('version')) for row in rows if isinstance(row, dict)}
+
+          for version in sorted(pending):
+              path = pending[version]
+              if version in recorded:
+                  print(f'{version} already applied, skipping')
+                  continue
+              if not os.path.exists(path):
+                  print('Migration file missing:', path, file=sys.stderr)
+                  sys.exit(1)
+              with open(path) as f:
+                  sql = f.read()
+              name = os.path.basename(path).replace('.sql', '')
+              print(f'Applying {version} ({path})...')
+              try:
+                  run_query(sql)
+                  run_query(
+                      "insert into supabase_migrations.schema_migrations (version, name) "
+                      f"values ('{version}', '{name}') on conflict (version) do nothing"
+                  )
+              except urllib.error.HTTPError as e:
+                  print(f'Failed applying {version}:', e.code, e.read().decode()[:500], file=sys.stderr)
+                  sys.exit(1)
+              print(f'{version} applied and recorded')
+          PYEOF
+
       - name: Verify database migrations are recorded
         run: |
           python3 - <<'PYEOF'
@@ -48,6 +117,8 @@ jobs:
               '20260503010000': 'supabase/migrations/20260503010000_tutorial_state.sql',
               '20260503020000': 'supabase/migrations/20260503020000_ai_margin_rollups.sql',
               '20260508000000': 'supabase/migrations/20260508000000_supabase_permission_hardening.sql',
+              '20260610000000': 'supabase/migrations/20260610000000_ai_response_cache.sql',
+              '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
           }
 
           for path in expected.values():
@@ -99,6 +170,9 @@ jobs:
 
       - name: Deploy ai-analyze function
         run: supabase functions deploy ai-analyze --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+
+      - name: Deploy ai-feedback function
+        run: supabase functions deploy ai-feedback --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-signup function
         run: supabase functions deploy fw-signup --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
