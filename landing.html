@@ -6,17 +6,47 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
   <title>Dynasty HQ — Dynasty Fantasy Intelligence</title>
   <!-- Pre-paint auth gate: a signed-in user is redirected to their destination
-       BEFORE the marketing page renders, so it never flashes on screen. Runs
-       synchronously off localStorage; no network, no Supabase round-trip. -->
+       BEFORE the marketing page renders, so it never flashes on screen. Also
+       covers the OAuth round-trip return with a neutral splash instead of the
+       marketing page. Runs synchronously off localStorage; no Supabase call. -->
   <style id="preboot-hide">html{visibility:hidden!important}</style>
   <noscript><style>html{visibility:visible!important}</style></noscript>
   <script>
     (function () {
       function reveal(){ var s=document.getElementById('preboot-hide'); if(s&&s.parentNode){ s.parentNode.removeChild(s); } }
+      function showSigningIn(){
+        try {
+          var d = document.createElement('div');
+          d.id = 'wr-signing-in';
+          // visibility:visible overrides the hidden <html>, so this splash shows
+          // while the marketing page underneath stays hidden.
+          d.setAttribute('style', 'visibility:visible!important;position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0A0A0A;color:#D4AF37;font:600 15px/1.4 Inter,system-ui,sans-serif;letter-spacing:.02em');
+          d.textContent = 'Signing you in…';
+          (document.body || document.documentElement).appendChild(d);
+        } catch (e) {}
+      }
       try {
         var q = new URLSearchParams(window.location.search);
         // Editor preview and explicit sign-out stay on this page.
         if (q.has('landingPreview') || q.has('signout')) { reveal(); return; }
+        // OAuth return: Supabase brings us back here with the session in the URL
+        // (hash #access_token=… for implicit, ?code=… for PKCE) BEFORE the page's
+        // callback handler has stored it. Show a neutral splash, not the marketing
+        // page; the handler stores the session and redirects to step 2 shortly.
+        var hash = window.location.hash || '';
+        var oauthReturn = hash.indexOf('access_token=') !== -1 || /[?&]code=/.test(window.location.search);
+        var oauthError  = hash.indexOf('error=') !== -1 || q.has('error');
+        if (oauthReturn && !oauthError) {
+          showSigningIn();
+          // Fallback: if the callback never redirects, drop the splash + reveal the
+          // page after a few seconds so no one is trapped on a blank screen.
+          setTimeout(function () {
+            var sp = document.getElementById('wr-signing-in');
+            if (sp && sp.parentNode) sp.parentNode.removeChild(sp);
+            reveal();
+          }, 8000);
+          return;
+        }
         var sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
         if (!sess || !sess.token) { reveal(); return; } // not signed in -> show landing
         var profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
