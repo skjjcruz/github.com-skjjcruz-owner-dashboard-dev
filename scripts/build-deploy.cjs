@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const Babel = require('@babel/standalone');
+const esbuild = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'dist-deploy');
@@ -38,12 +39,24 @@ function contentHash(str) {
 }
 
 function transform(code, filename) {
-  return Babel.transform(code, {
+  const compiled = Babel.transform(code, {
     filename,
     presets: [['react', { runtime: 'classic' }]],
     sourceType: 'script',
     sourceMaps: false,
     comments: false,
+  }).code;
+  // Full minify (incl. local-identifier renaming). This is SAFE for these classic
+  // global scripts: esbuild only renames function-scoped locals/params, and always
+  // preserves TOP-LEVEL names (var/let/const/function/class) in script mode because
+  // they may be referenced by other scripts or inline HTML. Verified empirically —
+  // OwnerDashboard, WR.*, component consts etc. survive; only locals shrink.
+  // Semantics are preserved, so the suites validating the unminified build hold.
+  return esbuild.transformSync(compiled, {
+    loader: 'js',
+    minify: true,
+    legalComments: 'none',
+    target: 'es2019',
   }).code;
 }
 
