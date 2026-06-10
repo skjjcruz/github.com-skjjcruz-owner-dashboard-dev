@@ -46,17 +46,15 @@ function transform(code, filename) {
     sourceMaps: false,
     comments: false,
   }).code;
-  // Minify whitespace + syntax to shrink the cold-load payload. Identifier
-  // renaming is intentionally DISABLED: these are classic (non-module) global
-  // scripts that reference each other's top-level names (OwnerDashboard, WR.*,
-  // etc.), so renaming would silently break cross-module global references.
-  // Whitespace/syntax minification is semantics-preserving, so it can't change
-  // behavior the existing test suites already validate on the unminified build.
+  // Full minify (incl. local-identifier renaming). This is SAFE for these classic
+  // global scripts: esbuild only renames function-scoped locals/params, and always
+  // preserves TOP-LEVEL names (var/let/const/function/class) in script mode because
+  // they may be referenced by other scripts or inline HTML. Verified empirically —
+  // OwnerDashboard, WR.*, component consts etc. survive; only locals shrink.
+  // Semantics are preserved, so the suites validating the unminified build hold.
   return esbuild.transformSync(compiled, {
     loader: 'js',
-    minifyWhitespace: true,
-    minifySyntax: true,
-    minifyIdentifiers: false,
+    minify: true,
     legalComments: 'none',
     target: 'es2019',
   }).code;
