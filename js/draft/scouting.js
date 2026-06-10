@@ -12,6 +12,7 @@
     let _ready = null;
     let _prospects = [];
     let _nameIndex = {};
+    let _dynastyRefreshedFor = null;
 
     function normName(name) {
         return String(name || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -85,7 +86,27 @@
         return _ready;
     }
 
+    // The snapshot above froze each prospect's ladder-dependent dynastyValue at
+    // load time, so if the engine's veteran ladder wasn't ready yet the board shows
+    // stale values. Re-pull the live dynastyValue from the engine — but only once
+    // per playerScores load (cheap now that the engine caches its position ladders),
+    // overlaying onto the shared snapshot objects so every later read is current.
+    function refreshDynastyValues() {
+        const scores = window.App?.LI?.playerScores;
+        if (!scores || _dynastyRefreshedFor === scores || typeof sharedGet !== 'function') return;
+        const live = sharedGet();
+        if (!live || !live.length) return;
+        const byKey = {};
+        live.forEach(lp => { byKey[normName(lp.name)] = lp.dynastyValue; });
+        _prospects.forEach(p => {
+            const v = byKey[normName(p.name)];
+            if (Number.isFinite(v)) p.dynastyValue = v;
+        });
+        _dynastyRefreshedFor = scores;
+    }
+
     function getProspects(pos) {
+        refreshDynastyValues();
         const wanted = pos ? String(pos).toUpperCase() : '';
         const list = _prospects.slice();
         if (!wanted) return list;
@@ -98,6 +119,7 @@
 
     function findProspect(name) {
         if (!name) return null;
+        refreshDynastyValues();
         const key = normName(name);
         if (_nameIndex[key]) return _nameIndex[key];
         for (const alias of aliasKeys(name)) {

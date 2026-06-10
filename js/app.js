@@ -715,6 +715,10 @@
                         </div>
                     )}
 
+                    {/* Alex's Desk — cross-league AI digest (ambient, cached, uncounted) */}
+                    {!loading && sleeperLeagues.length > 0 && window.WR?.DashboardDigestCard &&
+                        React.createElement(window.WR.DashboardDigestCard, { leagues: sleeperLeagues, sleeperUser, onSelectLeague: onSelect })}
+
                     <div className="hub-league-list">
                         {sleeperLeagues.map(l => {
                             const h = leagueHealth(l);

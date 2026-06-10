@@ -21,7 +21,7 @@
         }
 
         const myPicks = state.picks.filter(p => p.rosterId === state.userRosterId || p.isUser);
-        const grade = window.DraftCC.state.gradeDraft(myPicks, state.originalPool);
+        const grade = window.DraftCC.state.gradeDraft(myPicks, state.originalPool, { assessment: state.personas?.[state.userRosterId]?.assessment, variant: state.variant, leagueSize: state.leagueSize, rounds: state.rounds, budget: state.auctionBudget });
         const posColors = window.App?.POS_COLORS || {
             QB: 'var(--k-ff6b6b, #ff6b6b)', RB: 'var(--k-4ecdc4, #4ecdc4)', WR: 'var(--k-45b7d1, #45b7d1)', TE: 'var(--k-f7dc6f, #f7dc6f)',
             DL: 'var(--k-e67e22, #e67e22)', LB: 'var(--k-f0a500, #f0a500)', DB: 'var(--k-5dade2, #5dade2)', K: 'var(--k-bb8fce, #bb8fce)',

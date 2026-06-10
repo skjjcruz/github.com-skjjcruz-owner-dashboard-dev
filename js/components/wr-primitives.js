@@ -180,7 +180,9 @@
     // Severity-tagged behavioral insight. The flagship pattern from the
     // Sharp-Terminal mock — mirrored here so any surface (Home widget,
     // Alex Insights tab, drawer) can render one identically.
-    function InsightCard({ severity, confidence, title, body, ctaLabel, ctaOnClick, icon, compact }) {
+    // Optional `feedback` prop wires the AI learning loop:
+    //   { onUp, onDown, given } — given ('up'|'down') collapses the buttons.
+    function InsightCard({ severity, confidence, title, body, ctaLabel, ctaOnClick, icon, compact, feedback }) {
         const s = SEVERITY[(severity || 'pattern').toLowerCase()] || SEVERITY.pattern;
         const color = s.color;
         const bg = wrAlpha(color, '1a');
@@ -227,7 +229,16 @@
                         fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, cursor: 'pointer',
                         fontFamily: 'DM Sans, sans-serif',
                     }
-                }, ctaLabel, h('span', { style: { fontSize: '1rem', lineHeight: 0.8 } }, '\u203A'))
+                }, ctaLabel, h('span', { style: { fontSize: '1rem', lineHeight: 0.8 } }, '\u203A')),
+                feedback && h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' } },
+                    feedback.given
+                        ? h('span', { style: { fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.5 } }, 'Thanks \u2014 Alex learns from this.')
+                        : [
+                            h('span', { key: 'q', style: { fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.45 } }, 'Useful?'),
+                            h('button', { key: 'up', onClick: feedback.onUp, style: { background: 'none', border: 'none', color: 'var(--silver)', opacity: 0.5, cursor: 'pointer', fontSize: '0.78rem', padding: '0 4px' } }, '\uD83D\uDC4D'),
+                            h('button', { key: 'down', onClick: feedback.onDown, style: { background: 'none', border: 'none', color: 'var(--silver)', opacity: 0.5, cursor: 'pointer', fontSize: '0.78rem', padding: '0 4px' } }, '\uD83D\uDC4E'),
+                        ]
+                )
             )
         );
     }

@@ -2162,7 +2162,8 @@
             if (typeof dhqAI === 'function' || typeof window.dhqAI === 'function' || typeof window.callClaude === 'function') {
                 setHeroStory('Generating...');
                 try {
-                    const ctx = typeof dhqContext === 'function' ? dhqContext(true) : '';
+                    const fmtPreamble = window.WR?.AIContext?.buildFormatPreamble?.(currentLeague) || '';
+                    const ctx = fmtPreamble + (typeof dhqContext === 'function' ? dhqContext(true) : '');
                     const prompt = "Write a 3-4 sentence sports journalist narrative about the current state of this dynasty league. Focus on the biggest storyline this week — trades, injuries, power shifts, or playoff implications. Write in the style of The Athletic — dramatic, informed, specific. Use owner names and player names when possible.";
                     const aiFn = typeof dhqAI === 'function' ? dhqAI : window.dhqAI;
                     const reply = await aiFn('home-chat', prompt, ctx);
@@ -2220,7 +2221,7 @@
                 }
                 if (typeof dhqAI === 'function' && window.App?.LI_LOADED) {
                     try {
-                        const ctx = dhqContext(true);
+                        const ctx = (window.WR?.AIContext?.buildFormatPreamble?.(currentLeague) || '') + dhqContext(true);
                         const reply = await dhqAI('home-chat', 'Write one punchy 2-sentence sports headline and body about the most interesting dynasty angle in this league right now. Focus on a specific team or player. Format exactly: HEADLINE: [headline]\\nBODY: [body]', ctx);
                         if (reply) {
                             const headlineMatch = reply.match(/HEADLINE:\s*(.+)/i);
@@ -2332,10 +2333,45 @@
             setReconMessages(prev => [...prev, { role: 'assistant', content: '...' }]);
             (async () => {
               try {
-                const ctx = typeof dhqContext === 'function' ? dhqContext(false) : '';
-                const reply = typeof dhqAI === 'function'
-                  ? await dhqAI('strategy-analysis', 'Give me a 3-sentence personalized strategic assessment of my team based on my GM strategy settings. Be direct and specific.', ctx)
-                  : 'Strategy saved. Ask me anything about your team.';
+                // Prefer the structured team_diagnosis route: full league-format
+                // detection, team-mode rules, and quality gates (the generic
+                // strategy-analysis path is blind to all three).
+                const reply = await (async () => {
+                  if (window.OD?.callAI && window.WR?.AIContext) {
+                    try {
+                      const assessment = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
+                      const diagRoster = (myRoster?.players || []).map(pid => {
+                        const p = playersData[pid];
+                        if (!p) return null;
+                        return {
+                          name: p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim(),
+                          pos: window.App?.normPos?.(p.position) || p.position,
+                          age: p.age || null,
+                          value: window.App?.LI?.playerScores?.[pid] || 0,
+                          isStarter: (myRoster?.starters || []).includes(pid),
+                        };
+                      }).filter(Boolean).sort((a, b) => b.value - a.value);
+                      const context = {
+                        ...window.WR.AIContext.buildStructuredBase(currentLeague, assessment, myRoster),
+                        myOwner: window.S?.user?.display_name || window.S?.user?.username || '',
+                        record: myRoster?.settings ? `${myRoster.settings.wins}-${myRoster.settings.losses}` : '',
+                        needs: (assessment?.needs || []).map(n => n.urgency === 'deficit' ? `${n.pos}*` : n.pos),
+                        strengths: assessment?.strengths || [],
+                        gmStrategy: [gmStrategy?.mode, gmStrategy?.riskTolerance && `${gmStrategy.riskTolerance} risk`].filter(Boolean).join(', '),
+                        myRoster: diagRoster,
+                      };
+                      const result = await window.OD.callAI({ type: 'team_diagnosis', context });
+                      if (result?.analysis) return result.analysis;
+                    } catch (err) { window.wrLog?.('teamDiagnosis.structured', err); }
+                  }
+                  // Fallback: legacy generic path, enriched with the format preamble.
+                  if (typeof dhqAI === 'function') {
+                    const preamble = window.WR?.AIContext?.buildFormatPreamble?.(currentLeague) || '';
+                    const ctx = preamble + (typeof dhqContext === 'function' ? dhqContext(false) : '');
+                    return await dhqAI('strategy-analysis', 'Give me a 3-sentence personalized strategic assessment of my team based on my GM strategy settings. Be direct and specific.', ctx);
+                  }
+                  return 'Strategy saved. Ask me anything about your team.';
+                })();
                 setReconMessages(prev => {
                   const updated = [...prev];
                   updated[updated.length - 1] = { role: 'assistant', content: reply };
@@ -2386,6 +2422,12 @@
                 if (gm && gm.prompt) {
                     context = '--- GM MODE DIRECTIVE ---\n' + gm.prompt + '\n\n' + context;
                 }
+            } catch (e) { /* ignore */ }
+            // Format + quality preamble — the generic dhqAI path can't detect
+            // superflex/TEP/IDP or apply quality floors without this.
+            try {
+                const fmtPreamble = window.WR?.AIContext?.buildFormatPreamble?.(currentLeague);
+                if (fmtPreamble) context = fmtPreamble + '\n' + context;
             } catch (e) { /* ignore */ }
             const messages = [...reconMessages.slice(-4), userMsg].map((m, i, arr) => {
               if (m.role === 'user' && i === arr.length - 1) {

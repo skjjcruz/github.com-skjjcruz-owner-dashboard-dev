@@ -54,8 +54,8 @@
         const grade = React.useMemo(() => {
             if (!myPicks.length || !state.originalPool?.length) return { letter: '?', totalDHQ: 0, pct: 0 };
             const assessment = state.personas?.[state.userRosterId]?.assessment;
-            return window.DraftCC.state.gradeDraft(myPicks, state.originalPool, { assessment });
-        }, [myPicks, state.originalPool, state.personas, state.userRosterId]);
+            return window.DraftCC.state.gradeDraft(myPicks, state.originalPool, { assessment, variant: state.variant, leagueSize: state.leagueSize, rounds: state.rounds, budget: state.auctionBudget });
+        }, [myPicks, state.originalPool, state.personas, state.userRosterId, state.variant, state.leagueSize, state.rounds, state.auctionBudget]);
 
         // Phase 7 deferred: Live health recompute via a real synthetic roster instead of a +3/pick heuristic.
         // Strategy:

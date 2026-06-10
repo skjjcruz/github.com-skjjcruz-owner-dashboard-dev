@@ -8,6 +8,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(ROOT, 'supabase', 'functions', 'ai-analyze', 'index.ts'), 'utf8');
 const usageMigration = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '20260503000000_ai_usage_controls.sql'), 'utf8');
+const cacheMigration = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '20260610000000_ai_response_cache.sql'), 'utf8');
+const feedbackMigration = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '20260610010000_ai_feedback.sql'), 'utf8');
+const feedbackFunction = fs.readFileSync(path.join(ROOT, 'supabase', 'functions', 'ai-feedback', 'index.ts'), 'utf8');
 const marginMigration = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '20260503020000_ai_margin_rollups.sql'), 'utf8');
 const deployWorkflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'deploy-functions.yml'), 'utf8');
 const scaleScript = fs.readFileSync(path.join(ROOT, 'scripts', 'ai-scale-load-model.cjs'), 'utf8');
@@ -145,6 +148,86 @@ group('routing');
 test('frequent Alex surfaces route to fast/standard tiers', () => {
   ['fa_chat', 'fa_targets'].forEach(type => assertRouteTier(type, 'fast'));
   ['chat', 'league', 'team', 'partners'].forEach(type => assertRouteTier(type, 'standard'));
+});
+
+test('insight surfaces route cheap-first; explicit trade verdict is premium', () => {
+  assertRouteTier('trade_verdict', 'premium');
+  assertRouteTier('team_diagnosis', 'standard');
+  assertRouteTier('dashboard_digest', 'fast');
+  assertRouteTier('insight', 'fast');
+  ['trade_verdict', 'team_diagnosis', 'dashboard_digest', 'insight'].forEach(type => {
+    ok(new RegExp(`STRUCTURED_TYPES = new Set\\(\\[[^\\]]*'${type}'`).test(source),
+      `${type} should be a structured (non-generic) type`);
+  });
+});
+
+test('insight prompt builders are wired into the type switch', () => {
+  ['buildTradeVerdictPrompt', 'buildTeamDiagnosisPrompt', 'buildDashboardDigestPrompt', 'buildInsightPrompt', 'buildPartnerModeBlock', 'buildScarcityBlock'].forEach(fn => {
+    ok(source.includes(`function ${fn}(`), `missing ${fn}`);
+  });
+  ['trade_verdict', 'team_diagnosis', 'dashboard_digest', 'insight'].forEach(type => {
+    ok(new RegExp(`case '${type}':`).test(source), `${type} missing from type switch`);
+  });
+});
+
+group('response cache');
+
+test('ambient insight types are server-cached and bypass budgets on hits', () => {
+  ok(source.includes('const CACHEABLE_TYPES'), 'missing cacheable type map');
+  ['dashboard_digest', 'insight', 'team_diagnosis'].forEach(type => {
+    ok(new RegExp(`${type}:\\s*\\d`).test(source.slice(source.indexOf('const CACHEABLE_TYPES'))),
+      `${type} should have a cache TTL`);
+  });
+  ok(!/trade_verdict/.test(source.slice(source.indexOf('const CACHEABLE_TYPES'), source.indexOf('const USER_SCOPED_CACHE_TYPES'))),
+    'trade_verdict must never be cached (deal-specific)');
+  ok(source.includes("ai_call_cached"), 'cache hits should be recorded in analytics');
+  ok(source.includes('computeCacheKey'), 'missing cache key derivation');
+  ok(source.includes('forceRefresh'), 'explicit refresh should bypass cache reads');
+  ok(source.includes('countRequest: cacheTtlMs <= 0 || forceRefresh'),
+    'ambient calls must not consume request allowance; forced refreshes must');
+  ok(cacheMigration.includes('create table if not exists public.ai_response_cache'), 'missing cache table');
+  ok(cacheMigration.includes('alter table public.ai_response_cache enable row level security'), 'cache table should have RLS');
+  ok(cacheMigration.includes('revoke all on table public.ai_response_cache from anon, authenticated'), 'cache table should be service-role only');
+  ok(cacheMigration.includes('p_count_request boolean default true'), 'reserve_ai_usage should support uncounted ambient requests');
+  ok(cacheMigration.includes('revoke execute on function public.reserve_ai_usage'), 'new reserve_ai_usage should not be client-callable');
+});
+
+group('feedback learning loop');
+
+test('ai_feedback table and preference rollup are service-role only', () => {
+  ok(feedbackMigration.includes('create table if not exists public.ai_feedback'), 'missing ai_feedback table');
+  ok(feedbackMigration.includes('alter table public.ai_feedback enable row level security'), 'ai_feedback should have RLS');
+  ok(feedbackMigration.includes('revoke all on table public.ai_feedback from anon, authenticated'), 'ai_feedback should be service-role only');
+  ok(feedbackMigration.includes('create or replace function public.get_ai_preference_summary'), 'missing preference rollup function');
+  ok(feedbackMigration.includes('revoke execute on function public.get_ai_preference_summary'), 'rollup should not be client-callable');
+  ok(feedbackMigration.includes("unique (identifier, rec_id, action)"), 'feedback should dedupe per identifier/rec/action');
+});
+
+test('ai-feedback function authenticates and validates input', () => {
+  ok(feedbackFunction.includes("from '../_shared/security.ts'"), 'ai-feedback should use shared security helpers');
+  ok(feedbackFunction.includes('requireActiveAppSession'), 'ai-feedback should accept app sessions');
+  ok(feedbackFunction.includes('requireSleeperSession'), 'ai-feedback should accept sleeper sessions');
+  ok(feedbackFunction.includes('ALLOWED_SURFACES'), 'ai-feedback should validate surfaces');
+  ok(feedbackFunction.includes('ALLOWED_ACTIONS'), 'ai-feedback should validate actions');
+  ok(feedbackFunction.includes('checkRateLimit'), 'ai-feedback should rate-limit');
+});
+
+test('deploy workflow ships the new function and migrations', () => {
+  ok(deployWorkflow.includes('supabase functions deploy ai-feedback'), 'ai-feedback must be in the deploy list');
+  ok(deployWorkflow.includes('Apply pending database migrations'), 'deploy workflow should apply allowlisted migrations');
+  ['20260610000000', '20260610010000'].forEach(version => {
+    const occurrences = deployWorkflow.split(version).length - 1;
+    ok(occurrences >= 2, `${version} should be in both the apply allowlist and the verification list`);
+  });
+});
+
+test('preference summary is injected into structured prompts and cache keys', () => {
+  ok(source.includes('fetchPreferenceSummary'), 'missing preference summary fetch');
+  ok(source.includes('get_ai_preference_summary'), 'should call the rollup RPC');
+  ok(source.includes('buildUserPreferenceBlock(userPrefs)'), 'preference block should reach the system prompt');
+  ok(source.includes('prefsVersionFor(userPrefs)'), 'cache key should include the prefs version stamp');
+  ok(source.includes('quality thresholds and team-mode rules above ALWAYS take precedence'),
+    'preference block must not override quality/mode rules');
 });
 
 test('long structured generation routes to premium tier', () => {

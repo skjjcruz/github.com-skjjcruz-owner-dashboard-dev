@@ -142,10 +142,21 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     //
     // Delegates to shared/tier.js (window.getTier) for canonical paid/free detection,
     // then resolves War Room's granular level from the profile tier field.
+    // Accounts that always get full (commissioner) access in every environment, including
+    // live — keyed on the current Sleeper username (lowercased). The owner account lives here.
+    const FULL_ACCESS_USERNAMES = new Set(['bigloco']);
+
     // Falls back to local logic if shared/tier.js failed to load.
     function getUserTier() {
         // Sandbox deploy unlocks every feature, including commissioner-only ones.
         if (typeof window.isSandbox === 'function' && window.isSandbox()) return 'commissioner';
+
+        // Owner override: these accounts get full (commissioner) access in every
+        // environment, including live — keyed on the current Sleeper username.
+        try {
+            const _u = (window.OD?.getCurrentUsername?.() || '').toLowerCase();
+            if (FULL_ACCESS_USERNAMES.has(_u)) return 'commissioner';
+        } catch (e) { /* non-fatal */ }
 
         // shared/tier.js returns 'free' | 'trial' | 'paid'
         const sharedTier = typeof window.getTier === 'function' ? window.getTier() : null;

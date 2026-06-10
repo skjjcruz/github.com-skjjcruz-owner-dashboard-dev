@@ -121,6 +121,15 @@
             --row-relaxed: 40px;
         }
 
+    /* Draft-surface readability floor. The global --text-micro (line 79) is an
+       app-wide 11px dense-data floor; the draft War Room / Big Board / Command
+       Center pack data tightly and read too small. Raise the floor to 12px ONLY
+       inside the draft cockpit scope so the dense cells lift in lockstep without
+       touching the other tabs. Scope class is applied to the DraftTab root
+       (js/draft-room.js) and the Command Center cockpit roots (js/draft/command-center.js).
+       If a fixed-width Big Board column clips at 12px, drop this to 0.72rem. */
+    .draft-cc-scope { --text-micro: 0.75rem; }
+
     .fwpm-career-row{display:grid;align-items:center;padding:var(--space-xs) 0;border-bottom:1px solid rgba(255,255,255,.04);gap:var(--space-xs);font-size:var(--text-label)}
     .fwpm-career-row:last-child{border-bottom:none}
     .fwpm-career-hdr{font-size:var(--text-label);font-weight:700;color:var(--text-muted);text-transform:uppercase}
@@ -1418,7 +1427,7 @@
 	    .draft-hq-action-card button, .draft-rec-actions button, .draft-setup-start, .draft-setup-secondary button { border: 1px solid rgba(212,175,55,0.28); background: rgba(212,175,55,0.1); color: var(--gold); border-radius: 6px; font-family: var(--font-body); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 6px 10px; cursor: pointer; }
 	    .draft-hq-action-card button:hover, .draft-rec-actions button:hover, .draft-setup-secondary button:hover { border-color: rgba(212,175,55,0.55); background: rgba(212,175,55,0.16); }
 	    .draft-hq-action-card button:disabled { cursor: not-allowed; opacity: 0.45; border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--silver); }
-	    .draft-hq-grid { display: grid; grid-template-columns: minmax(520px, 1.25fr) minmax(340px, 0.86fr); gap: 12px; align-items: start; }
+	    .draft-hq-grid { display: grid; grid-template-columns: minmax(280px, 0.62fr) minmax(460px, 1.42fr); gap: 12px; align-items: start; }
 	    .draft-hq-panel { padding: 12px; }
 	    .draft-hq-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; border-bottom: 1px solid rgba(212,175,55,0.1); padding-bottom: 8px; margin-bottom: 10px; }
 	    .draft-hq-panel-head em { color: var(--silver); opacity: 0.62; font-size: 0.68rem; font-style: normal; text-align: right; }
@@ -1448,6 +1457,10 @@
 	    .draft-rec-score strong { display: block; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; }
 	    .draft-rec-score span { display: block; color: var(--silver); opacity: 0.62; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em; }
 	    .draft-rec-reason { grid-column: 3 / -1; white-space: normal; line-height: 1.35; }
+	    /* Recommended Draft legibility: bump the "why" line + subtitle to the scorecard's
+	       white-text size (they were 0.66rem). Let the subtitle wrap instead of truncating. */
+	    .draft-rec-reason { font-size: 0.82rem; line-height: 1.5; opacity: 0.96; }
+	    .draft-rec-main em { font-size: 0.78rem; white-space: normal; overflow: visible; text-overflow: clip; }
 	    .draft-rec-actions { grid-column: 3 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
 	    .draft-rec-actions button { padding: 4px 8px; font-size: 0.62rem; }
 	    .draft-user-mock-card { grid-template-columns: 46px 34px minmax(150px, 1fr) 70px; }
@@ -1456,9 +1469,20 @@
 	    .draft-run-list span { color: var(--silver); opacity: 0.74; font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	    .draft-run-list .draft-run-note-row { align-items: start; row-gap: 5px; }
 	    .draft-run-list .draft-run-note-row p { grid-column: 1 / -1; margin: 0; color: var(--white); opacity: 0.92; font-size: 0.66rem; line-height: 1.35; }
-	    .draft-target-header { display: grid; grid-template-columns: 42px minmax(88px, 0.46fr) minmax(160px, 0.72fr) minmax(220px, 1fr); gap: 8px; align-items: center; color: var(--silver); opacity: 0.58; font-size: 0.56rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 900; margin-bottom: 5px; padding: 0 8px; }
-	    .draft-run-list .draft-target-row { grid-template-columns: 42px minmax(88px, 0.46fr) minmax(160px, 0.72fr) minmax(220px, 1fr); }
-	    .draft-run-list .draft-target-row p { grid-column: auto; align-self: center; }
+	    .draft-target-header { display: grid; grid-template-columns: 44px minmax(88px, 0.42fr) minmax(155px, 0.62fr) minmax(230px, 1.3fr); gap: 10px; align-items: center; color: var(--silver); opacity: 0.72; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 900; margin-bottom: 6px; padding: 0 10px; }
+	    .draft-run-list .draft-target-row { grid-template-columns: 44px minmax(88px, 0.42fr) minmax(155px, 0.62fr) minmax(230px, 1.3fr); gap: 10px; padding: 9px 11px; row-gap: 6px; }
+	    /* Roster Targeting legibility: this section hardcodes sizes (not --text-micro), so
+	       bump font-size / line-height / opacity here and let cells wrap instead of ellipsis. */
+	    .draft-run-list .draft-target-row strong { font-size: 0.86rem; }
+	    .draft-run-list .draft-target-row span { font-size: 0.78rem; opacity: 0.88; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
+	    .draft-run-list .draft-target-row em { font-size: 0.82rem; opacity: 1; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.45; }
+	    .draft-run-list .draft-target-row p { grid-column: auto; align-self: center; font-size: 0.82rem; line-height: 1.5; opacity: 0.96; }
+	    /* Class Depth (plain run-note rows, no draft-target-row): match the scorecard's
+	       white-text legibility — same sizes as the Roster Targeting rows above. */
+	    .draft-run-list .draft-run-note-row:not(.draft-target-row) strong { font-size: 0.86rem; }
+	    .draft-run-list .draft-run-note-row:not(.draft-target-row) span { font-size: 0.78rem; opacity: 0.88; }
+	    .draft-run-list .draft-run-note-row:not(.draft-target-row) em { font-size: 0.82rem; opacity: 1; white-space: normal; overflow: visible; text-overflow: clip; }
+	    .draft-run-list .draft-run-note-row:not(.draft-target-row) p { font-size: 0.82rem; line-height: 1.5; opacity: 0.96; }
 	    .draft-empty { color: var(--silver); opacity: 0.6; border: 1px dashed rgba(212,175,55,0.18); border-radius: 8px; padding: 16px; text-align: center; font-size: 0.76rem; }
 
 	    .draft-alex-toolbar { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 10px; }
@@ -2139,6 +2163,10 @@ WRShared.loadMany(WR_SHARED_FILES);
 <script src="js/shared/league-history.js?v=20260426p20"></script>
 <!-- 2h. Weekly DHQ/health snapshot store — window.WrSnapshots — time-series for ▲/▼ deltas -->
 <script src="js/shared/snapshot-store.js?v=20260601a"></script>
+
+<script src="js/shared/wr-ai-context.js?v=20260610a"></script>
+<!-- Alex's Desk — cross-league AI digest card for the hub (window.WR.DashboardDigestCard) -->
+<script src="js/tabs/dashboard-digest.js?v=20260610a"></script>
 <!-- 2i. Per-league transaction cache — window.WrTxns — cross-league activity + DNA substrate -->
 <script src="js/shared/txn-store.js?v=20260601a"></script>
 <!-- 3. Shared utilities: player valuation constants + projection engine -->
@@ -2147,6 +2175,7 @@ WRShared.loadMany(WR_SHARED_FILES);
 <!-- 4. Feature modules (no internal dependencies between these) -->
 <script type="text/babel" src="js/settings.js?v=20260525redraftnav1"></script>
 <script type="text/babel" src="js/trade-calc.js?v=20260518dealhqdark1"></script>
+<script type="text/babel" src="js/post-draft.js?v=20260609postdraft1"></script>
 <script type="text/babel" src="js/free-agency.js?v=20260516click3"></script>
 <!-- 4b. Draft Command Center modules (~1.26MB) — deferred at boot via data-wr-defer;
      build-deploy/build-preview emit them type="text/wr-deferred" so they don't parse

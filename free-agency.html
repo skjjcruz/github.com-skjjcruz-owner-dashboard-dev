@@ -553,6 +553,7 @@
       'rookie-data.js',
     ]);
     </script>
+    <script src="js/shared/wr-ai-context.js?v=20260610a"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1058,6 +1059,19 @@
                     cost: c,
                     playerId: playerId || null
                 }]);
+                // Learning loop: if the last AI run recommended this player and the
+                // user just targeted them, record an 'acted' signal.
+                try {
+                    if (aiAnalysis && name.trim() && aiAnalysis.toLowerCase().includes(name.trim().toLowerCase())) {
+                        window.WR?.AIFeedback?.send?.({
+                            leagueId,
+                            surface: 'fa_targets',
+                            recId: 'fa-target:' + leagueId + ':' + name.trim().toLowerCase(),
+                            action: 'acted',
+                            subject: { player: name.trim(), pos: (pos || '?').toUpperCase(), moveType: 'faab_target' },
+                        });
+                    }
+                } catch (e) { /* feedback must never break the add flow */ }
             }
             function deleteTarget(id) { setTargets(prev => prev.filter(t => t.id !== id)); }
             function updateTargetCost(id, val) {
