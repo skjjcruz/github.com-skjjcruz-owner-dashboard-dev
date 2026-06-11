@@ -1044,12 +1044,24 @@ function validateDigestInsights(insights: any[] | undefined, context: any): any[
     const leagues: any[] = Array.isArray(parsed?.leagues) ? parsed.leagues : [];
     if (!leagues.length) return insights;
     const byId = new Map<string, any>(leagues.map((l: any) => [String(l.leagueId), l]));
+    const POS_TOKENS = ['QB', 'RB', 'WR', 'TE', 'DL', 'LB', 'DB', 'DEF', 'K'];
+    const ALARM_RE = /crisis|critical|deficit|urgent|immediate|emergency|weak|thin|hole|lacks?|short(?:age)?|demands|must\s+(?:add|acquire|secure|address)/i;
     return insights.filter((ins: any) => {
         const league = byId.get(String(ins?.leagueId ?? ''));
         if (!league) return false; // every insight must map to a provided league
         const text = `${ins?.title || ''} ${ins?.body || ''}`;
         if (/faab|waiver/i.test(text) && /surplus|leverage|war\s*chest|flush/i.test(text) && league.faab?.verdict !== 'surplus') return false;
         if (/picks?/i.test(text) && /\bzero\b|\bno\b/i.test(text) && !league.zeroPickYears?.length) return false;
+        // A positional alarm ("QB room critical", "RB deficit demands…") is only
+        // valid when the roster engine actually flagged that position as a need.
+        // Covers both contradiction of the engine AND hallucinated needs when
+        // roster data was unavailable (topNeeds absent entirely).
+        if (ALARM_RE.test(text)) {
+            const needsStr = (league.topNeeds || []).join(' ');
+            for (const pos of POS_TOKENS) {
+                if (new RegExp(`\\b${pos}s?\\b`).test(text) && !needsStr.includes(pos)) return false;
+            }
+        }
         return true;
     });
 }

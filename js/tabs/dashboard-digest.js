@@ -74,10 +74,11 @@
                 players = await window.App.fetchAllPlayers();
             }
             if (!players || !Object.keys(players).length) return null;
-            if (!_digestStats && typeof window.fetchSeasonStats === 'function') {
+            const fetchStats = window.App?.fetchSeasonStats || window.fetchSeasonStats;
+            if (!_digestStats && typeof fetchStats === 'function') {
                 const season = new Date().getFullYear();
-                let raw = await window.fetchSeasonStats(String(season)).catch(() => null);
-                if (!raw || !Object.keys(raw).length) raw = await window.fetchSeasonStats(String(season - 1)).catch(() => null);
+                let raw = await fetchStats(String(season)).catch(() => null);
+                if (!raw || !Object.keys(raw).length) raw = await fetchStats(String(season - 1)).catch(() => null);
                 _digestStats = normalizeSeasonStats(raw);
             }
             const stats = _digestStats || {};

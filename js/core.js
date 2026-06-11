@@ -609,6 +609,9 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     window.App.WrStorage = WrStorage;
     window.App.WrIDB = WrIDB;
     window.App.fetchAllPlayers = fetchAllPlayers;
+    // Explicit export — plain (non-babel) scripts like dashboard-digest.js
+    // can't rely on this file's top-level declarations reaching window.
+    window.App.fetchSeasonStats = fetchSeasonStats;
 
     window.App.getRosterDataState = function getRosterDataState(opts = {}) {
         const roster = opts.roster || opts.myRoster || (typeof window.myR === 'function' ? window.myR() : null);
