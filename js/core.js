@@ -778,3 +778,28 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // Provides: season, playerStats, tradedPicks, rosters, myRosterId, lastUpdated, selectPlayer
     // write-through: window.S remains intact for ReconAI CDN bridge compatibility.
     window.App.SeasonContext = React.createContext(null);
+
+    // ── Phone layout diagnostic overlay (?phonedebug=1) ──────────────────────
+    // Live readout of viewport + container widths so phone layout bugs can be
+    // diagnosed from a single screenshot instead of pixel archaeology. Gated
+    // behind an explicit query param; harmless to leave in production.
+    if (/[?&]phonedebug=1/.test(window.location.search)) {
+        try {
+            const dbg = document.createElement('div');
+            dbg.style.cssText = 'position:fixed;top:54px;left:4px;z-index:99999;background:rgba(0,0,0,0.92);color:#D4AF37;font:11px/1.5 monospace;padding:6px 8px;border:1px solid #D4AF37;border-radius:6px;pointer-events:none;max-width:96vw;white-space:pre;';
+            const attach = () => { if (document.body) document.body.appendChild(dbg); };
+            if (document.body) attach(); else window.addEventListener('DOMContentLoaded', attach);
+            const elW = sel => { const n = document.querySelector(sel); return n ? Math.round(n.getBoundingClientRect().width) : '—'; };
+            const update = () => {
+                const vv = window.visualViewport;
+                dbg.textContent = [
+                    'innerW ' + window.innerWidth + '  screenW ' + (window.screen ? window.screen.width : '—'),
+                    'docW ' + document.documentElement.clientWidth + '  bodyScrollW ' + (document.body ? document.body.scrollWidth : '—'),
+                    'vvW ' + (vv ? Math.round(vv.width) + ' @' + vv.scale.toFixed(2) : 'n/a') + '  dpr ' + window.devicePixelRatio,
+                    'main ' + elW('.wr-main-content') + '  frame ' + elW('.wr-content-frame'),
+                ].join('\n');
+            };
+            update();
+            setInterval(update, 1500);
+        } catch (_) { /* diagnostic only — never break the app */ }
+    }
