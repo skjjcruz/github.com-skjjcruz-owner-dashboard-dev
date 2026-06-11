@@ -2885,16 +2885,18 @@
                     .wr-main-content{margin-left:0 !important;width:100% !important;max-width:100vw;overflow-x:clip;overflow-y:visible;box-sizing:border-box;padding-top:var(--wr-dev-banner-height,0px)}
                 }
                 @media(max-width:767px){
-                    .wr-league-header-row{display:grid !important;grid-template-columns:minmax(0,1fr) auto;align-items:start !important;gap:6px 8px !important;padding-left:42px}
-                    .wr-league-header-row .header-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-body, 1rem) !important;line-height:1.2}
-                    .wr-league-switch{grid-column:2;grid-row:1}
-                    .wr-gm-mode-badge{grid-column:1 / 3;justify-self:start;max-width:100%;min-width:0}
-                    .wr-league-type-badge{grid-column:1 / 3;grid-row:3;justify-self:start;max-width:100%;min-width:0}
-                    .wr-league-phase-badge{grid-column:1 / 3;grid-row:4;justify-self:start;max-width:100%;min-width:0}
-                    .wr-draft-header-clock{grid-column:1 / 3;grid-row:5;justify-self:start;max-width:100%;min-width:0;overflow:hidden}
+                    /* Compact header: title+SWITCH on row 1, then ALL badges
+                       share one wrapping row instead of one row each (the old
+                       grid burned ~25% of the screen on stacked single chips). */
+                    .wr-league-header-row{display:flex !important;flex-wrap:wrap !important;align-items:center !important;gap:5px 6px !important;padding-left:42px}
+                    .wr-league-header-row .header-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-body, 1rem) !important;line-height:1.2}
+                    .wr-league-switch{flex-shrink:0}
+                    .wr-gm-mode-badge,.wr-league-type-badge,.wr-league-phase-badge{flex:0 1 auto;max-width:100%;min-width:0}
+                    .wr-draft-header-clock{flex-basis:100%;max-width:100%;min-width:0;overflow:hidden}
                     .wr-draft-header-clock>span{max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
                     .wr-draft-header-clock>strong{flex-shrink:0}
-                    .wr-time-bar{align-items:flex-start !important;padding:8px 10px !important;gap:6px !important}
+                    .header{padding-top:0.4rem !important;padding-bottom:0.4rem !important}
+                    .wr-time-bar{align-items:center !important;padding:6px 10px !important;gap:6px !important}
                     .wr-time-years{width:auto;max-width:100%;overflow:visible;flex-wrap:wrap !important;padding-bottom:2px}
                     .wr-time-spacer{display:none !important}
                     .wr-time-mode{margin-left:0;flex-shrink:0}
