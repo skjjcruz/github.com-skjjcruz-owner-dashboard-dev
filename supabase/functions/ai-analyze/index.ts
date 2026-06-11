@@ -1031,6 +1031,29 @@ function parseJsonArray(text: string): any[] | undefined {
     return undefined;
 }
 
+// Deterministic post-filter for digest insights. The fast-tier model has
+// been observed ignoring grounding rules outright (e.g. calling below-median
+// FAAB a "significant surplus" while citing the contradicting numbers), so
+// the contract is enforced in code, not just in the prompt: insights that
+// claim a FAAB surplus without a surplus verdict, or zero-pick problems in a
+// league with no listed zero-pick years, are dropped before they reach the
+// client. Biased quiet: a falsely dropped insight is cheaper than a false alarm.
+function validateDigestInsights(insights: any[] | undefined, context: any): any[] | undefined {
+    if (!insights) return insights;
+    const parsed = parseContextPayload(context);
+    const leagues: any[] = Array.isArray(parsed?.leagues) ? parsed.leagues : [];
+    if (!leagues.length) return insights;
+    const byId = new Map<string, any>(leagues.map((l: any) => [String(l.leagueId), l]));
+    return insights.filter((ins: any) => {
+        const league = byId.get(String(ins?.leagueId ?? ''));
+        if (!league) return false; // every insight must map to a provided league
+        const text = `${ins?.title || ''} ${ins?.body || ''}`;
+        if (/faab|waiver/i.test(text) && /surplus|leverage|war\s*chest|flush/i.test(text) && league.faab?.verdict !== 'surplus') return false;
+        if (/picks?/i.test(text) && /\bzero\b|\bno\b/i.test(text) && !league.zeroPickYears?.length) return false;
+        return true;
+    });
+}
+
 const CACHEABLE_TYPES: Record<string, number> = {
     dashboard_digest: 24 * 60 * 60 * 1000,
     insight:          24 * 60 * 60 * 1000,
@@ -2078,8 +2101,11 @@ function buildDashboardDigestPrompt(ctx: any): string {
         const qbRoom = l.qbRoom
             ? ` | QB room: ${l.qbRoom.startable}/${l.qbRoom.required} startable, ${l.qbRoom.rostered} rostered (${l.qbRoom.status})`
             : '';
+        const faabVerdict = l.faab?.verdict === 'surplus' ? 'SURPLUS — real leverage'
+            : l.faab?.verdict === 'par' ? 'AT PAR — no edge'
+            : 'SHORT — below league median, NOT a surplus';
         const faab = l.faab
-            ? ` | FAAB $${l.faab.mine} of $${l.faab.budget} (rank ${l.faab.rank}/${l.faab.teams}, league median $${l.faab.leagueMedian})`
+            ? ` | FAAB $${l.faab.mine} of $${l.faab.budget} (rank ${l.faab.rank}/${l.faab.teams}, league median $${l.faab.leagueMedian} — verdict: ${faabVerdict})`
             : (l.faabRemaining != null ? ` | FAAB $${l.faabRemaining}` : '');
         return `• ${l.leagueName} [id:${l.leagueId}] | ${l.record || '?'}${l.seasonPhase ? ` | ${l.seasonPhase}` : ''} | ${l.tier || '?'} | Health ${l.healthScore ?? '?'}/100 | Format: ${flags}${rosterBits}${qbRoom}${faab}${l.zeroPickYears?.length ? ` | ⚠️ ZERO picks: ${l.zeroPickYears.join(', ')}` : ''}`;
     }).join('\n');
@@ -2094,7 +2120,7 @@ RULES:
 - Each insight must be specific to one league and actionable now. No generic advice ("monitor the waiver wire") and no praise-only items.
 - severity must be one of: "warning" (the data shows concrete value being lost), "opportunity" (exploitable edge visible in the data), "pattern" (cross-league habit worth knowing).
 - GROUNDING: the Needs / Surplus / QB room values above come from the app's deterministic roster engine — the same numbers the owner sees on the Analytics and Trade Center pages. Never contradict them: only claim a positional deficit, crisis, or weakness at a position listed in that league's Needs, and never at one listed in Surplus. Where roster data is UNAVAILABLE, make no roster-composition claims — use only the record, format, FAAB, and pick facts shown.
-- FAAB: judge FAAB only by the budget, rank, and league median shown — never by the raw dollar amount alone. It is only a "surplus" or leverage if the team is clearly above the league median (top 3 ranks or ≥1.5x median); at or below median there is NO surplus. In the offseason, FAAB is not "losing value each week" — waivers are idle.
+- FAAB: use the FAAB verdict shown verbatim — do NOT recompute, reinterpret, or do arithmetic on the numbers. Only a SURPLUS verdict may ever be framed as leverage or a surplus; AT PAR and SHORT must never be described as a surplus, edge, or spending opportunity. In the offseason, FAAB is not "losing value each week" — waivers are idle.
 - DRAFT PICKS: pick-capital claims may ONLY cite a "⚠️ ZERO picks" fact shown above. If a league shows no such fact, make no pick claims — and never reference draft years that are not listed there.
 - MISSING DATA IS NEVER AN INSIGHT: if a league is PRE-DRAFT or its roster data is UNAVAILABLE, that absence is expected and fine — do not warn about it, and do not tell the owner to "assess" or "check" their team because of it.
 - In superflex leagues, a QB entry in Needs outranks everything; if the QB room reads ok or surplus, do NOT raise QB warnings.
@@ -2316,7 +2342,8 @@ Deno.serve(async (req) => {
                         leagueId: contextLeagueId,
                         model: cached.model,
                     });
-                    const cachedInsights = JSON_ARRAY_TYPES.has(type) ? parseJsonArray(cached.analysis) : undefined;
+                    let cachedInsights = JSON_ARRAY_TYPES.has(type) ? parseJsonArray(cached.analysis) : undefined;
+                    if (type === 'dashboard_digest') cachedInsights = validateDigestInsights(cachedInsights, context);
                     return new Response(
                         JSON.stringify({
                             analysis: cached.analysis,
@@ -2524,7 +2551,8 @@ Deno.serve(async (req) => {
 
         // JSON-contract insight types are parsed server-side so every client
         // gets a ready-to-render array alongside the raw analysis text.
-        const insights = (!genericContext && JSON_ARRAY_TYPES.has(type)) ? parseJsonArray(analysis) : undefined;
+        let insights = (!genericContext && JSON_ARRAY_TYPES.has(type)) ? parseJsonArray(analysis) : undefined;
+        if (type === 'dashboard_digest') insights = validateDigestInsights(insights, context);
 
         if (cacheTtlMs > 0 && cacheKey && analysis && stopReason !== 'max_tokens') {
             await writeAIResponseCache({

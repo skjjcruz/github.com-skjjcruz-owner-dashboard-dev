@@ -182,7 +182,8 @@
     // Alex Insights tab, drawer) can render one identically.
     // Optional `feedback` prop wires the AI learning loop:
     //   { onUp, onDown, given } — given ('up'|'down') collapses the buttons.
-    function InsightCard({ severity, confidence, title, body, ctaLabel, ctaOnClick, icon, compact, feedback }) {
+    // Optional `onDismiss` renders a small × in the top-right corner.
+    function InsightCard({ severity, confidence, title, body, ctaLabel, ctaOnClick, icon, compact, feedback, onDismiss }) {
         const s = SEVERITY[(severity || 'pattern').toLowerCase()] || SEVERITY.pattern;
         const color = s.color;
         const bg = wrAlpha(color, '1a');
@@ -201,6 +202,18 @@
             }
         },
             h('div', { style: { position: 'absolute', inset: 0, pointerEvents: 'none', background: 'linear-gradient(135deg, ' + bg + ' 0%, transparent 55%)', opacity: 0.5, borderRadius: '12px' } }),
+            onDismiss && h('button', {
+                onClick: onDismiss,
+                title: 'Dismiss',
+                'aria-label': 'Dismiss insight',
+                style: {
+                    position: 'absolute', top: '4px', right: '4px', zIndex: 2,
+                    width: '30px', height: '30px',
+                    background: 'none', border: 'none', borderRadius: '8px',
+                    color: 'var(--silver)', opacity: 0.45, cursor: 'pointer',
+                    fontSize: '1.05rem', lineHeight: 1, padding: 0,
+                },
+            }, '×'),
             h('div', {
                 style: {
                     width: iconSize + 'px', height: iconSize + 'px', borderRadius: '10px', flexShrink: 0,
