@@ -2095,6 +2095,20 @@
            rules already make it off-canvas with a tap-to-close
            overlay; 176px is too cramped for the full nav labels). */
         .wr-sidebar { width: 232px !important; }
+
+        /* ── Layout enforcement ─────────────────────────────────
+           The league shell normally gets full-width rules from a
+           <style> rendered inside the LeagueDetail component, and
+           the roster board sizes its grids from a JS viewport
+           reading. Both have failed on real phones (stale webview
+           width readings, restored-tab sessions). These static
+           rules are the ground truth: on a phone, the content area
+           and the roster grids are full-width, period. !important
+           beats the inline styles; ≤767px means iPad/desktop never
+           see any of this. */
+        .wr-main-content { margin-left: 0 !important; width: 100% !important; max-width: 100% !important; }
+        .wr-content-frame { width: 100% !important; max-width: 100% !important; }
+        .mt-board-grid, .mt-expand-grid { grid-template-columns: 1fr !important; }
     }
 </style>
 
@@ -2263,7 +2277,7 @@ WRShared.loadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/tabs/dashboard.js?v=20260516liveclick1"></script>
 <script type="text/babel" src="js/tabs/flash-brief.js?v=20260502pos1"></script>
 <script type="text/babel" src="js/tabs/league-map.js?v=20260525redraftnav1"></script>
-<script type="text/babel" src="js/tabs/my-team.js?v=20260611phonefix1"></script>
+<script type="text/babel" src="js/tabs/my-team.js?v=20260611phonefix2"></script>
 <!-- Compare: extracted from My Roster's former sub-view, now a top-level ROSTER-group tab. -->
 <script type="text/babel" src="js/tabs/compare.js?v=20260524compare1"></script>
 <script type="text/babel" src="js/tabs/analytics.js?v=20260525redraftnav1"></script>

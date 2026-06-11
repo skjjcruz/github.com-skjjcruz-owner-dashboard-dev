@@ -783,7 +783,7 @@ function MyTeamTab({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: rosterViewportWidth <= 820 ? '1fr' : 'minmax(280px, 0.9fr) minmax(360px, 1.4fr)', gap: '12px', alignItems: 'start' }}>
+          <div className="mt-board-grid" style={{ display: 'grid', gridTemplateColumns: rosterViewportWidth <= 820 ? '1fr' : 'minmax(280px, 0.9fr) minmax(360px, 1.4fr)', gap: '12px', alignItems: 'start' }}>
             <div style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '8px', padding: '10px', minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>Active Order</div>
@@ -932,7 +932,7 @@ function MyTeamTab({
               {isExpanded && (
                 <div style={{ borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', background: 'linear-gradient(180deg, var(--surf-solid, rgba(18,18,24,0.99)), var(--surf-solid, rgba(6,6,10,0.99)))', padding: '12px 14px', animation: 'wrFadeIn 0.2s ease' }}>
                   {/* Player dossier */}
-                  <div style={{ display: 'grid', gridTemplateColumns: rosterViewportWidth <= 560 ? '1fr' : rosterViewportWidth <= 834 ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(260px, 0.82fr) minmax(420px, 1.45fr) minmax(220px, 0.72fr)', gap: '10px', marginBottom: '10px', alignItems: 'stretch' }}>
+                  <div className="mt-expand-grid" style={{ display: 'grid', gridTemplateColumns: rosterViewportWidth <= 560 ? '1fr' : rosterViewportWidth <= 834 ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(260px, 0.82fr) minmax(420px, 1.45fr) minmax(220px, 0.72fr)', gap: '10px', marginBottom: '10px', alignItems: 'stretch' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: '10px', alignItems: 'center', background: 'var(--ov-1, rgba(255,255,255,0.022))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px' }}>
                       <div style={{ flexShrink: 0, position: 'relative' }}>
                         <img src={'https://sleepercdn.com/content/nfl/players/'+r.pid+'.jpg'} alt="" onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}} style={{ width: '72px', height: '72px', borderRadius: '8px', objectFit: 'cover', objectPosition: 'top', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))' }} />
