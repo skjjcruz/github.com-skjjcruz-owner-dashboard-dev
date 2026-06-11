@@ -2020,19 +2020,33 @@ function buildTeamDiagnosisPrompt(ctx: any): string {
         `  ${p.pos} ${p.name}${p.age ? ` | Age ${p.age}` : ''}${p.value != null ? ` | Value ${p.value}` : p.dhq != null ? ` | DHQ ${p.dhq}` : ''}${p.isStarter ? ' [STARTER]' : ''}`
     ).join('\n');
 
+    // The client sends needs/strengths from the deterministic roster engine
+    // (shared team-assess.js — the same numbers Analytics and Trade Center
+    // render). When that assessment is present it owns the QB verdict; the
+    // value>=2000 recount is only a fallback for assessment-less callers,
+    // so this surface can never call a crisis where the app shows a surplus.
+    const needsList = (ctx.needs || []).map((n: string) => String(n).replace(/\*$/, ''));
+    const strengthsList = (ctx.strengths || []).map((s: string) => String(s));
+    const hasAssessment = ctx.hasAssessment === true || needsList.length > 0 || strengthsList.length > 0;
     let sfQBNote = '';
     if (fmt.isSuperFlex) {
-        const startableQBs = (ctx.myRoster || []).filter((p: any) => p.pos === 'QB' && (Number(p.value ?? p.dhq) || 0) >= 2000).length;
-        if (startableQBs < fmt.numQBSlots) {
-            sfQBNote = `\n⚠️ SUPERFLEX QB CRISIS: only ${startableQBs} startable QB(s) for ${fmt.numQBSlots} QB-eligible slots. QB acquisition MUST be the #1 prescription regardless of other needs.\n`;
+        if (hasAssessment) {
+            if (needsList.includes('QB')) {
+                sfQBNote = `\n⚠️ SUPERFLEX QB CRISIS: the roster engine flags QB as a need in a ${fmt.numQBSlots}-QB-slot league. QB acquisition MUST be the #1 prescription regardless of other needs.\n`;
+            }
+        } else {
+            const startableQBs = (ctx.myRoster || []).filter((p: any) => p.pos === 'QB' && (Number(p.value ?? p.dhq) || 0) >= 2000).length;
+            if (startableQBs < fmt.numQBSlots) {
+                sfQBNote = `\n⚠️ SUPERFLEX QB CRISIS: only ${startableQBs} startable QB(s) for ${fmt.numQBSlots} QB-eligible slots. QB acquisition MUST be the #1 prescription regardless of other needs.\n`;
+            }
         }
     }
 
     return `Diagnose **${ctx.myOwner || 'my'}** team in **${ctx.leagueName || 'this league'}**. Be direct and specific — this is a strategic check-up, not a pep talk.
 ${fmtBlock}${modeBlock}${sfQBNote}
 **TEAM STATUS:** ${ctx.record || '?'} | ${ctx.teamTier || ctx.tier || '?'} tier | Health: ${ctx.healthScore ?? '?'}/100 | Window: ${ctx.teamWindow || ctx.tradeWindow || '?'}
-**STATED NEEDS:** ${(ctx.needs || []).join(', ') || 'none identified'}
-**STATED STRENGTHS:** ${(ctx.strengths || []).join(', ') || 'none identified'}
+**STATED NEEDS:** ${(ctx.needs || []).join(', ') || 'none identified'}${hasAssessment ? ' (* = critical deficit)' : ''}
+**STATED STRENGTHS:** ${(ctx.strengths || []).join(', ') || 'none identified'}${hasAssessment ? '\n**GROUNDING:** Needs/strengths above come from the app\'s deterministic roster engine — the same numbers shown on the Analytics and Trade Center pages. Do not contradict them: never call a stated strength a weakness or crisis, and never flag a positional hole that is not in the stated needs.' : ''}
 **GM STRATEGY NOTES:** ${ctx.gmStrategy || ctx.mentality || 'none provided'}
 
 **ROSTER:**
@@ -2055,7 +2069,14 @@ function buildDashboardDigestPrompt(ctx: any): string {
             l.formatFlags?.isIDP ? 'IDP' : '',
             l.formatFlags?.scoringType || '',
         ].filter(Boolean).join('/') || 'standard';
-        return `• ${l.leagueName} [id:${l.leagueId}] | ${l.record || '?'} | ${l.tier || '?'} | Health ${l.healthScore ?? '?'}/100 | Format: ${flags}${l.topNeeds?.length ? ` | Needs: ${l.topNeeds.join(', ')}` : ''}${l.faabRemaining != null ? ` | FAAB $${l.faabRemaining}` : ''}${l.zeroPickYears?.length ? ` | ⚠️ ZERO picks: ${l.zeroPickYears.join(', ')}` : ''}`;
+        const assessed = l.tier != null || l.topNeeds?.length || l.surpluses?.length;
+        const rosterBits = assessed
+            ? ` | Needs: ${l.topNeeds?.length ? l.topNeeds.join(', ') : 'none flagged'} | Surplus: ${l.surpluses?.length ? l.surpluses.join(', ') : 'none'}`
+            : ' | Roster data: UNAVAILABLE';
+        const qbRoom = l.qbRoom
+            ? ` | QB room: ${l.qbRoom.startable}/${l.qbRoom.required} startable, ${l.qbRoom.rostered} rostered (${l.qbRoom.status})`
+            : '';
+        return `• ${l.leagueName} [id:${l.leagueId}] | ${l.record || '?'} | ${l.tier || '?'} | Health ${l.healthScore ?? '?'}/100 | Format: ${flags}${rosterBits}${qbRoom}${l.faabRemaining != null ? ` | FAAB $${l.faabRemaining}` : ''}${l.zeroPickYears?.length ? ` | ⚠️ ZERO picks: ${l.zeroPickYears.join(', ')}` : ''}`;
     }).join('\n');
 
     return `You are scanning all of one owner's dynasty leagues to surface the 3 most decision-relevant insights across their entire portfolio. Pick the items where acting this week matters most — critical deficits, mode misalignment, zero-pick crises, format leverage they're not using.
@@ -2067,7 +2088,9 @@ RULES:
 - At most 3 insights TOTAL across all leagues — only the ones that matter most. Fewer is fine.
 - Each insight must be specific to one league and actionable this week. No generic advice ("monitor the waiver wire") and no praise-only items.
 - severity must be one of: "warning" (act now or lose value), "opportunity" (exploitable edge), "pattern" (cross-league habit worth knowing).
-- In superflex leagues, QB deficits outrank everything. Zero-pick years are always a warning.
+- GROUNDING: the Needs / Surplus / QB room values above come from the app's deterministic roster engine — the same numbers the owner sees on the Analytics and Trade Center pages. Never contradict them: only claim a positional deficit, crisis, or weakness at a position listed in that league's Needs, and never at one listed in Surplus. Where roster data is UNAVAILABLE, make no roster-composition claims — use only the record, format, FAAB, and pick facts shown.
+- In superflex leagues, a QB entry in Needs outranks everything; if the QB room reads ok or surplus, do NOT raise QB warnings.
+- Zero-pick years are always a warning.
 
 Output ONLY a valid JSON array, no markdown, no backticks, no prose:
 [{"leagueId":"...","severity":"warning","title":"max 8 words","body":"2-3 sentences, specific and actionable"}]`;
