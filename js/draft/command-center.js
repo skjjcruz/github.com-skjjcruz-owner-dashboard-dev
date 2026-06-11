@@ -4492,11 +4492,20 @@
         // 1440, so most laptops (1280-1439) were stuck in the 2-col collapse. Track the
         // live width: give the rich 3-col layout to anything >= 1200px, and below that a
         // compact 2-col layout whose panel heights adapt to the viewport (not fixed px).
-        const [winW, setWinW] = React.useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440));
+        // Same in-app-browser guard as my-team.js: a stale desktop-width
+        // innerWidth reading on phones must not pick the 2/3-col layouts.
+        // screen.width ≤ 500 limits the cap to phones; tablet/desktop untouched.
+        const capToPhoneScreen = (width) => {
+            const sw = (typeof window !== 'undefined' && window.screen && window.screen.width) || 0;
+            return sw > 0 && sw <= 500 ? Math.min(width, sw) : width;
+        };
+        const [winW, setWinW] = React.useState(() => (typeof window !== 'undefined' ? capToPhoneScreen(window.innerWidth) : 1440));
         React.useEffect(() => {
-            const onResize = () => setWinW(window.innerWidth);
+            const onResize = () => setWinW(capToPhoneScreen(window.innerWidth));
             window.addEventListener('resize', onResize);
-            return () => window.removeEventListener('resize', onResize);
+            window.addEventListener('orientationchange', onResize);
+            const settle = setTimeout(onResize, 350); // re-measure after in-app browser viewport settles
+            return () => { window.removeEventListener('resize', onResize); window.removeEventListener('orientationchange', onResize); clearTimeout(settle); };
         }, []);
         const isCompact = winW < 1200;
         // Condensed "Split HUD" header replaces the strip + Alex Live Read + trade

@@ -468,12 +468,23 @@ function MyTeamTab({
   const activePresetKey = Object.entries(COLUMN_PRESETS).find(([, cols]) => sameColumnSet(cols, visibleCols))?.[0] || 'custom';
   const activePresetMeta = COLUMN_PRESET_META[activePresetKey] || { label: 'Custom', tone: visibleCols.length + ' fields' };
   const isDeepData = activePresetKey === 'full';
-  const [rosterViewportWidth, setRosterViewportWidth] = React.useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
+  // In-app browsers can report a desktop-width layout viewport (~980px) on the
+  // first frame and never fire a resize once the viewport meta settles, leaving
+  // phones stuck rendering the tablet/desktop roster layout (a 2-col grid built
+  // for 820px+ squeezed into a 390px screen). screen.width is device truth —
+  // cap by it on phones only (≤500px), so tablet/desktop behavior is untouched.
+  const capToPhoneScreen = (width) => {
+    const sw = (typeof window !== 'undefined' && window.screen && window.screen.width) || 0;
+    return sw > 0 && sw <= 500 ? Math.min(width, sw) : width;
+  };
+  const [rosterViewportWidth, setRosterViewportWidth] = React.useState(() => typeof window !== 'undefined' ? capToPhoneScreen(window.innerWidth) : 1024);
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
-    const onResize = () => setRosterViewportWidth(window.innerWidth);
+    const onResize = () => setRosterViewportWidth(capToPhoneScreen(window.innerWidth));
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    const settle = setTimeout(onResize, 350); // re-measure after in-app browser viewport settles
+    return () => { window.removeEventListener('resize', onResize); window.removeEventListener('orientationchange', onResize); clearTimeout(settle); };
   }, []);
   const isNarrowRoster = rosterViewportWidth <= 560;
   const isTabletRoster = rosterViewportWidth > 560 && rosterViewportWidth <= 1023;
