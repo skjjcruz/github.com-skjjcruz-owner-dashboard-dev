@@ -228,7 +228,7 @@
                     {/* Position health — league-relative grades */}
                     <div style={{ marginBottom: '8px', flexShrink: 0 }}>
                         <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Position Health</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '4px' }}>
+                        <div className="fb-pos-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '4px' }}>
                             {posBreakdown.map((p, i) => (
                                 <div key={i} style={{
                                     background: 'var(--ov-1, rgba(255,255,255,0.02))',
@@ -419,7 +419,7 @@
         };
 
         return (
-            <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', overflow: 'hidden' }}>
+            <div className="rp-pos-cols" style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', overflow: 'hidden' }}>
                 {posOrder.map(pos => {
                     const players = posGroups[pos] || [];
                     if (!players.length) return (
