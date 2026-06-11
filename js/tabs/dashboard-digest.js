@@ -109,8 +109,15 @@
         }
         // Pick claims need traded-pick data; without it every team looks fully stocked.
         if (Array.isArray(league.tradedPicks) && assess.picksAssessment?.pickCountByYear) {
+            // A zero-pick year is only actionable while that draft is still
+            // ahead. Once the current season's draft has run, holding no picks
+            // for it is history — keep the current year only when the league
+            // status says the draft hasn't happened yet.
+            const draftAhead = ['pre_draft', 'drafting'].includes(String(league.status || ''));
+            const seasonYear = String(parseInt(league.season) || new Date().getFullYear());
             const zero = Object.entries(assess.picksAssessment.pickCountByYear)
-                .filter(([, c]) => c === 0).map(([y]) => y);
+                .filter(([y, c]) => c === 0 && (y !== seasonYear || draftAhead))
+                .map(([y]) => y);
             if (zero.length) out.zeroPickYears = zero;
         }
         return out;
@@ -140,9 +147,11 @@
             const myRoster = rosters.find(r => r.owner_id === sleeperUser?.user_id);
             const fmt = window.WR?.AIContext?.detectFormat?.(l) || {};
             const faab = faabContext(l, myRoster);
-            // 0% filled = the league hasn't drafted yet. Empty rosters would
-            // assess as all-deficit, so skip grounding and say so instead.
-            const preDraft = rosters.length > 0 && rosters.every(r => !(r.players || []).length);
+            // League hasn't drafted yet (status when available, empty rosters as
+            // fallback). Empty rosters would assess as all-deficit, so skip
+            // grounding and say so instead.
+            const preDraft = String(l.status || '') === 'pre_draft'
+                || (rosters.length > 0 && rosters.every(r => !(r.players || []).length));
             const gamesPlayed = rosters.some(r =>
                 (r.settings?.wins || 0) + (r.settings?.losses || 0) + (r.settings?.ties || 0) > 0);
             const assess = preDraft ? null : myAssessmentFor(l, myRoster, inputs);

@@ -2098,7 +2098,7 @@ RULES:
 - DRAFT PICKS: pick-capital claims may ONLY cite a "⚠️ ZERO picks" fact shown above. If a league shows no such fact, make no pick claims — and never reference draft years that are not listed there.
 - MISSING DATA IS NEVER AN INSIGHT: if a league is PRE-DRAFT or its roster data is UNAVAILABLE, that absence is expected and fine — do not warn about it, and do not tell the owner to "assess" or "check" their team because of it.
 - In superflex leagues, a QB entry in Needs outranks everything; if the QB room reads ok or surplus, do NOT raise QB warnings.
-- Zero-pick years (when listed) are always a warning.
+- Zero-pick years (when listed) are always a warning — they refer only to drafts that have not happened yet; completed drafts are never worth mentioning.
 - For offseason leagues (0-0 records), drop weekly-urgency framing entirely; only genuinely time-sensitive items qualify (listed zero-pick years ahead of a draft, format leverage backed by Needs/Surplus).
 
 Output ONLY a valid JSON array (an empty array [] is allowed), no markdown, no backticks, no prose:

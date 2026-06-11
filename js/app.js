@@ -364,6 +364,9 @@
                                 losses: myRoster?.settings?.losses || 0,
                                 ties: myRoster?.settings?.ties || 0,
                                 season: selectedYear,
+                                // 'pre_draft' | 'drafting' | 'in_season' | 'complete' — lets
+                                // hub surfaces tell an upcoming draft from a finished one.
+                                status: league.status || null,
                                 scoring_settings: league.scoring_settings || {},
                                 roster_positions: league.roster_positions || [],
                                 settings: league.settings || {},
