@@ -31,6 +31,23 @@
         return window.OD?.getCurrentUsername?.() || window.S?.user?.username || 'anon';
     }
 
+    // ── Per-insight dismissals ────────────────────────────────────
+    // recIds are stateHash-scoped, so a dismissal stops matching anything
+    // once the portfolio changes; the 7-day prune just keeps the map small.
+    const DISMISS_KEY = 'wr_dash_digest_dismissed_v1';
+    function loadDismissed() {
+        try {
+            const raw = JSON.parse(localStorage.getItem(DISMISS_KEY) || '{}');
+            const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const pruned = {};
+            for (const [k, ts] of Object.entries(raw)) { if (ts > cutoff) pruned[k] = ts; }
+            return pruned;
+        } catch (_) { return {}; }
+    }
+    function saveDismissed(map) {
+        try { localStorage.setItem(DISMISS_KEY, JSON.stringify(map)); } catch (_) {}
+    }
+
     // ── Deterministic grounding inputs ────────────────────────────
     // Sleeper season stats normalized to the { prevTotal, prevAvg }
     // shape team-assess.js reads. pts_ppr fallback chain is fine here:
@@ -137,7 +154,13 @@
         const sorted = [...remaining].sort((a, b) => a - b);
         const leagueMedian = sorted[Math.floor(sorted.length / 2)];
         const rank = 1 + remaining.filter(v => v > mine).length;
-        return { mine, budget, leagueMedian, rank, teams: remaining.length };
+        // The verdict is decided here, deterministically — the model proved it
+        // will botch the comparison if left to interpret the raw numbers.
+        let verdict;
+        if ((rank <= 3 && mine > leagueMedian) || (leagueMedian > 0 && mine >= 1.5 * leagueMedian)) verdict = 'surplus';
+        else if (mine >= leagueMedian) verdict = 'par';
+        else verdict = 'short';
+        return { mine, budget, leagueMedian, rank, teams: remaining.length, verdict };
     }
 
     async function buildSnapshots(leagues, sleeperUser) {
@@ -225,6 +248,7 @@
         const { key, stateHash } = React.useMemo(() => cacheKeyFor(snapshots || []), [snapshots]);
         const [state, setState] = React.useState({ status: 'idle', insights: null, error: null });
         const [feedbackGiven, setFeedbackGiven] = React.useState({});
+        const [dismissed, setDismissed] = React.useState(loadDismissed);
 
         const generate = React.useCallback(async (force) => {
             if (!snapshots || !snapshots.length) return;
@@ -267,6 +291,13 @@
             window.WR?.AIFeedback?.send?.({ leagueId: state.insights?.[idx]?.leagueId || null, surface: 'dashboard_digest', recId: `${stateHash}:${idx}`, action });
         };
 
+        const dismissInsight = (idx) => {
+            const recId = `${stateHash}:${idx}`;
+            setDismissed(prev => { const next = { ...prev, [recId]: Date.now() }; saveDismissed(next); return next; });
+            // Dismissal also feeds the learning loop — quieter over time.
+            window.WR?.AIFeedback?.send?.({ leagueId: state.insights?.[idx]?.leagueId || null, surface: 'dashboard_digest', recId, action: 'dismissed' });
+        };
+
         return h('div', { style: { marginBottom: '14px' } },
             h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
                 h('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase' } }, "✨ Alex's Desk — Top Insights"),
@@ -279,7 +310,10 @@
             (groundingPending || (state.status === 'loading' && !state.insights)) && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, 'Scanning your leagues for the moves that matter this week…'),
             state.status === 'error' && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, state.error),
             state.status === 'ready' && !(state.insights || []).length && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, 'No urgent moves across your leagues right now — Alex will flag it here when something actually matters.'),
-            state.status === 'ready' && (state.insights || []).map((ins, idx) => {
+            state.status === 'ready' && (state.insights || [])
+                .map((ins, idx) => ({ ins, idx }))
+                .filter(({ idx }) => !dismissed[`${stateHash}:${idx}`])
+                .map(({ ins, idx }) => {
                 const league = (leagues || []).find(l => String(l.id || l.league_id) === String(ins.leagueId));
                 return h('div', { key: idx, style: { marginBottom: '8px' } },
                     h(InsightCard, {
@@ -289,6 +323,7 @@
                         compact: true,
                         ctaLabel: league ? `Open ${league.name}` : null,
                         ctaOnClick: league ? () => onSelectLeague(league) : null,
+                        onDismiss: () => dismissInsight(idx),
                     }),
                     h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '2px' } },
                         feedbackGiven[idx]
