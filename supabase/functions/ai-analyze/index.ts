@@ -2069,30 +2069,39 @@ function buildDashboardDigestPrompt(ctx: any): string {
             l.formatFlags?.isIDP ? 'IDP' : '',
             l.formatFlags?.scoringType || '',
         ].filter(Boolean).join('/') || 'standard';
-        const assessed = l.tier != null || l.topNeeds?.length || l.surpluses?.length;
-        const rosterBits = assessed
-            ? ` | Needs: ${l.topNeeds?.length ? l.topNeeds.join(', ') : 'none flagged'} | Surplus: ${l.surpluses?.length ? l.surpluses.join(', ') : 'none'}`
-            : ' | Roster data: UNAVAILABLE';
+        const assessed = !l.preDraft && (l.tier != null || l.topNeeds?.length || l.surpluses?.length);
+        const rosterBits = l.preDraft
+            ? ' | PRE-DRAFT: league has not drafted yet, rosters do not exist'
+            : assessed
+                ? ` | Needs: ${l.topNeeds?.length ? l.topNeeds.join(', ') : 'none flagged'} | Surplus: ${l.surpluses?.length ? l.surpluses.join(', ') : 'none'}`
+                : ' | Roster data: UNAVAILABLE';
         const qbRoom = l.qbRoom
             ? ` | QB room: ${l.qbRoom.startable}/${l.qbRoom.required} startable, ${l.qbRoom.rostered} rostered (${l.qbRoom.status})`
             : '';
-        return `• ${l.leagueName} [id:${l.leagueId}] | ${l.record || '?'} | ${l.tier || '?'} | Health ${l.healthScore ?? '?'}/100 | Format: ${flags}${rosterBits}${qbRoom}${l.faabRemaining != null ? ` | FAAB $${l.faabRemaining}` : ''}${l.zeroPickYears?.length ? ` | ⚠️ ZERO picks: ${l.zeroPickYears.join(', ')}` : ''}`;
+        const faab = l.faab
+            ? ` | FAAB $${l.faab.mine} of $${l.faab.budget} (rank ${l.faab.rank}/${l.faab.teams}, league median $${l.faab.leagueMedian})`
+            : (l.faabRemaining != null ? ` | FAAB $${l.faabRemaining}` : '');
+        return `• ${l.leagueName} [id:${l.leagueId}] | ${l.record || '?'}${l.seasonPhase ? ` | ${l.seasonPhase}` : ''} | ${l.tier || '?'} | Health ${l.healthScore ?? '?'}/100 | Format: ${flags}${rosterBits}${qbRoom}${faab}${l.zeroPickYears?.length ? ` | ⚠️ ZERO picks: ${l.zeroPickYears.join(', ')}` : ''}`;
     }).join('\n');
 
-    return `You are scanning all of one owner's dynasty leagues to surface the 3 most decision-relevant insights across their entire portfolio. Pick the items where acting this week matters most — critical deficits, mode misalignment, zero-pick crises, format leverage they're not using.
+    return `You are scanning all of one owner's dynasty leagues to surface the most decision-relevant insights across their entire portfolio — the items where acting now matters most: critical deficits, mode misalignment, zero-pick crises, format leverage they're not using.
 
 **MY LEAGUES:**
 ${leagues || 'No league data'}
 
 RULES:
-- At most 3 insights TOTAL across all leagues — only the ones that matter most. Fewer is fine.
-- Each insight must be specific to one league and actionable this week. No generic advice ("monitor the waiver wire") and no praise-only items.
-- severity must be one of: "warning" (act now or lose value), "opportunity" (exploitable edge), "pattern" (cross-league habit worth knowing).
+- At most 3 insights TOTAL across all leagues, and ONLY ones backed by the data above. If nothing clears that bar, return fewer — or an empty array []. An empty array is a better product than a manufactured warning; never invent a crisis to fill space. Credibility is the product.
+- Each insight must be specific to one league and actionable now. No generic advice ("monitor the waiver wire") and no praise-only items.
+- severity must be one of: "warning" (the data shows concrete value being lost), "opportunity" (exploitable edge visible in the data), "pattern" (cross-league habit worth knowing).
 - GROUNDING: the Needs / Surplus / QB room values above come from the app's deterministic roster engine — the same numbers the owner sees on the Analytics and Trade Center pages. Never contradict them: only claim a positional deficit, crisis, or weakness at a position listed in that league's Needs, and never at one listed in Surplus. Where roster data is UNAVAILABLE, make no roster-composition claims — use only the record, format, FAAB, and pick facts shown.
+- FAAB: judge FAAB only by the budget, rank, and league median shown — never by the raw dollar amount alone. It is only a "surplus" or leverage if the team is clearly above the league median (top 3 ranks or ≥1.5x median); at or below median there is NO surplus. In the offseason, FAAB is not "losing value each week" — waivers are idle.
+- DRAFT PICKS: pick-capital claims may ONLY cite a "⚠️ ZERO picks" fact shown above. If a league shows no such fact, make no pick claims — and never reference draft years that are not listed there.
+- MISSING DATA IS NEVER AN INSIGHT: if a league is PRE-DRAFT or its roster data is UNAVAILABLE, that absence is expected and fine — do not warn about it, and do not tell the owner to "assess" or "check" their team because of it.
 - In superflex leagues, a QB entry in Needs outranks everything; if the QB room reads ok or surplus, do NOT raise QB warnings.
-- Zero-pick years are always a warning.
+- Zero-pick years (when listed) are always a warning.
+- For offseason leagues (0-0 records), drop weekly-urgency framing entirely; only genuinely time-sensitive items qualify (listed zero-pick years ahead of a draft, format leverage backed by Needs/Surplus).
 
-Output ONLY a valid JSON array, no markdown, no backticks, no prose:
+Output ONLY a valid JSON array (an empty array [] is allowed), no markdown, no backticks, no prose:
 [{"leagueId":"...","severity":"warning","title":"max 8 words","body":"2-3 sentences, specific and actionable"}]`;
 }
 

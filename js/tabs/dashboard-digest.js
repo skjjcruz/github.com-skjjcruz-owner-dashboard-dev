@@ -116,28 +116,50 @@
         return out;
     }
 
+    // FAAB grounded against the league: a raw dollar amount invites the model
+    // to editorialize ("massive surplus") — budget, rank, and median make it
+    // a checkable fact instead.
+    function faabContext(league, myRoster) {
+        const budget = Number(league.settings?.waiver_budget || 0);
+        if (!(budget > 0) || !myRoster?.settings) return null;
+        const remaining = (league.rosters || [])
+            .filter(r => r.settings)
+            .map(r => Math.max(0, budget - Number(r.settings.waiver_budget_used || 0)));
+        if (!remaining.length) return null;
+        const mine = Math.max(0, budget - Number(myRoster.settings.waiver_budget_used || 0));
+        const sorted = [...remaining].sort((a, b) => a - b);
+        const leagueMedian = sorted[Math.floor(sorted.length / 2)];
+        const rank = 1 + remaining.filter(v => v > mine).length;
+        return { mine, budget, leagueMedian, rank, teams: remaining.length };
+    }
+
     async function buildSnapshots(leagues, sleeperUser) {
         const inputs = await loadGroundingInputs();
         return (leagues || []).slice(0, 12).map(l => {
-            const myRoster = (l.rosters || []).find(r => r.owner_id === sleeperUser?.user_id);
+            const rosters = l.rosters || [];
+            const myRoster = rosters.find(r => r.owner_id === sleeperUser?.user_id);
             const fmt = window.WR?.AIContext?.detectFormat?.(l) || {};
-            const waiverBudget = Number(l.settings?.waiver_budget || 0);
-            const faabRemaining = waiverBudget > 0 && myRoster?.settings
-                ? Math.max(0, waiverBudget - Number(myRoster.settings.waiver_budget_used || 0))
-                : null;
-            const assess = myAssessmentFor(l, myRoster, inputs);
+            const faab = faabContext(l, myRoster);
+            // 0% filled = the league hasn't drafted yet. Empty rosters would
+            // assess as all-deficit, so skip grounding and say so instead.
+            const preDraft = rosters.length > 0 && rosters.every(r => !(r.players || []).length);
+            const gamesPlayed = rosters.some(r =>
+                (r.settings?.wins || 0) + (r.settings?.losses || 0) + (r.settings?.ties || 0) > 0);
+            const assess = preDraft ? null : myAssessmentFor(l, myRoster, inputs);
             return {
                 leagueId: l.id || l.league_id,
                 leagueName: l.name,
                 record: `${l.wins || 0}-${l.losses || 0}${l.ties > 0 ? '-' + l.ties : ''}`,
-                teamCount: (l.rosters || []).length,
+                teamCount: rosters.length,
                 formatFlags: {
                     isSuperFlex: !!fmt.isSuperFlex,
                     isTEP: !!fmt.isTEP,
                     isIDP: !!fmt.isIDP,
                     scoringType: fmt.scoringType || 'std',
                 },
-                ...(faabRemaining != null ? { faabRemaining } : {}),
+                seasonPhase: gamesPlayed ? 'in-season' : 'offseason',
+                ...(preDraft ? { preDraft: true } : {}),
+                ...(faab ? { faabRemaining: faab.mine, faab } : {}),
                 ...groundedFields(l, fmt, assess),
             };
         });
@@ -150,6 +172,8 @@
             s.leagueId, s.record, s.tier || '',
             (s.topNeeds || []).join('+'), (s.surpluses || []).join('+'),
             s.qbRoom ? `${s.qbRoom.startable}/${s.qbRoom.required}:${s.qbRoom.status}` : '',
+            s.faab ? `${s.faab.mine}r${s.faab.rank}` : '',
+            s.preDraft ? 'pre' : '', s.seasonPhase || '',
         ].join(':')).join('|'));
         return { key: `wr_dash_digest:${digestUser()}:${stateHash}`, stateHash };
     }
@@ -204,8 +228,10 @@
                     const match = result.analysis.match(/\[\s*\{[\s\S]*\}\s*\]/);
                     if (match) { try { insights = JSON.parse(match[0]); } catch (_) {} }
                 }
+                if (!Array.isArray(insights)) { setState({ status: 'error', insights: null, error: 'No insights returned. Try a refresh later.' }); return; }
+                // An empty array is a real verdict ("nothing needs attention"),
+                // not a failure — cache it so we don't keep re-asking all day.
                 const cleaned = normalizeInsights(insights);
-                if (!cleaned.length) { setState({ status: 'error', insights: null, error: 'No insights returned. Try a refresh later.' }); return; }
                 saveCachedDigest(key, cleaned);
                 setState({ status: 'ready', insights: cleaned, error: null });
             } catch (e) {
@@ -219,7 +245,7 @@
         React.useEffect(() => {
             if (!snapshots || !snapshots.length) return;
             const cached = loadCachedDigest(key);
-            if (cached && cached.length) { setState({ status: 'ready', insights: cached, error: null }); return; }
+            if (cached) { setState({ status: 'ready', insights: cached, error: null }); return; } // [] = cached all-clear
             generate(false); // ambient: server-cached + uncounted against request allowance
         }, [key, snapshots]);
 
@@ -243,6 +269,7 @@
             ),
             (groundingPending || (state.status === 'loading' && !state.insights)) && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, 'Scanning your leagues for the moves that matter this week…'),
             state.status === 'error' && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, state.error),
+            state.status === 'ready' && !(state.insights || []).length && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, 'No urgent moves across your leagues right now — Alex will flag it here when something actually matters.'),
             state.status === 'ready' && (state.insights || []).map((ins, idx) => {
                 const league = (leagues || []).find(l => String(l.id || l.league_id) === String(ins.leagueId));
                 return h('div', { key: idx, style: { marginBottom: '8px' } },
