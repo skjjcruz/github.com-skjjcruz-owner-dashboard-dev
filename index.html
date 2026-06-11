@@ -2058,6 +2058,44 @@
     .wr-delta-pos::before{content:'\\2713 ';font-size:0.7rem}
     .wr-delta-neg{color:var(--bad);font-weight:700}
     .wr-delta-neg::before{content:'\\0021 ';font-size:0.7rem}
+
+    /* ══════════════════════════════════════════════════════════════
+       PHONE-ONLY LAYER (≤767px) — Dynasty HQ readability
+       iPad portrait starts at 768px, so nothing in this block can
+       affect tablet or desktop rendering. Scout AI lives in the
+       ReconAI repo and is untouched by definition.
+
+       Strategy: almost all DHQ type — including React inline styles —
+       is rem-based, so scaling the rem root shrinks the entire type
+       ramp proportionally in one rule. The rest is density: reclaim
+       desktop gutters and let wide data rows scroll instead of crush.
+       The classed multi-column grids already stack at their existing
+       560-760px breakpoints, so they are not re-declared here.
+       Tap targets are left alone (buttons keep px-based 44px minimums,
+       unaffected by the rem scale).
+       ══════════════════════════════════════════════════════════════ */
+    @media (max-width: 767px) {
+        /* Global type scale: 16px → 13.5px root (~16% smaller). */
+        html { font-size: 13.5px; }
+        /* Keep long-form body copy from dipping below comfortable. */
+        body { font-size: 14px; }
+
+        /* Frame density: reclaim desktop-sized gutters. */
+        .wr-content-frame { padding: 8px 8px 32px; }
+        .header { padding: 0.5rem 0.75rem; }
+        .wr-module-strip { gap: 6px; margin-bottom: 8px; }
+        .analytics-lab-card, .tc-dhq-panel { padding: 10px; }
+        .analytics-command-panel { padding: 12px; gap: 10px; }
+        .hub-platform-grid { padding: 0.75rem 8px 1.5rem; }
+
+        /* Wide data rows: scroll, don't crush. */
+        .league-detail-scroll, .mock-board-scroll, .mock-log-scroll { overflow-x: auto; }
+
+        /* Sidebar drawer: comfortable width on phones (the ≤1023px
+           rules already make it off-canvas with a tap-to-close
+           overlay; 176px is too cramped for the full nav labels). */
+        .wr-sidebar { width: 232px !important; }
+    }
 </style>
 
 </head>
