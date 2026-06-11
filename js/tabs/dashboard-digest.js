@@ -8,6 +8,12 @@
 // server-side ai_response_cache behind it (uncounted against the
 // plan's request allowance). An explicit Refresh pays a normal counted
 // request via forceRefresh.
+//
+// Snapshots are grounded in the shared roster assessor (team-assess.js)
+// — the same engine behind Analytics and Trade Center — so the digest
+// can never claim a positional crisis the rest of the app calls a
+// surplus. When no assessment signal is available, snapshots carry no
+// roster fields and the server prompt forbids roster-level claims.
 // ══════════════════════════════════════════════════════════════════
 (function () {
     'use strict';
@@ -25,7 +31,93 @@
         return window.OD?.getCurrentUsername?.() || window.S?.user?.username || 'anon';
     }
 
-    function buildSnapshots(leagues, sleeperUser) {
+    // ── Deterministic grounding inputs ────────────────────────────
+    // Sleeper season stats normalized to the { prevTotal, prevAvg }
+    // shape team-assess.js reads. pts_ppr fallback chain is fine here:
+    // the assessor only ranks players within a position, so scoring
+    // nuances (TEP etc.) don't change startable/thin/surplus calls.
+    function normalizeSeasonStats(raw) {
+        const out = {};
+        for (const pid in (raw || {})) {
+            const s = raw[pid] || {};
+            const pts = Number(s.pts_ppr ?? s.pts_half_ppr ?? s.pts_std ?? 0);
+            if (!(pts > 0)) continue;
+            const gp = Number(s.gp || s.gms_active || 0);
+            out[pid] = { prevTotal: Math.round(pts * 10) / 10, prevAvg: gp > 0 ? Math.round((pts / gp) * 10) / 10 : 0 };
+        }
+        return out;
+    }
+
+    let _digestStats = null; // normalized once per session (underlying fetches are cached app-wide)
+
+    async function loadGroundingInputs() {
+        try {
+            let players = window.S?.players || null;
+            if (!players && typeof window.App?.fetchAllPlayers === 'function') {
+                players = await window.App.fetchAllPlayers();
+            }
+            if (!players || !Object.keys(players).length) return null;
+            if (!_digestStats && typeof window.fetchSeasonStats === 'function') {
+                const season = new Date().getFullYear();
+                let raw = await window.fetchSeasonStats(String(season)).catch(() => null);
+                if (!raw || !Object.keys(raw).length) raw = await window.fetchSeasonStats(String(season - 1)).catch(() => null);
+                _digestStats = normalizeSeasonStats(raw);
+            }
+            const stats = _digestStats || {};
+            const liScores = window.App?.LI?.playerScores;
+            const hasSignal = Object.keys(stats).length > 0 || (liScores && Object.keys(liScores).length > 0);
+            // Without production or DHQ signal the assessor would count zero
+            // startable players everywhere and flag every room a deficit —
+            // worse than sending no roster data at all.
+            if (!hasSignal) return null;
+            return { players, stats };
+        } catch (_) { return null; }
+    }
+
+    function myAssessmentFor(league, myRoster, inputs) {
+        try {
+            if (!myRoster) return null;
+            // Empire mode may have already assessed this league with the same engine.
+            const fromEmpire = (league.empireAssessments || [])
+                .find(a => String(a.rosterId) === String(myRoster.roster_id));
+            if (fromEmpire) return fromEmpire;
+            if (!inputs || typeof window.App?.assessAllTeams !== 'function') return null;
+            const all = window.App.assessAllTeams(
+                league.rosters || [], inputs.players, inputs.stats, league,
+                league.users || [], league.tradedPicks || []
+            );
+            return (all || []).find(a => String(a.rosterId) === String(myRoster.roster_id)) || null;
+        } catch (_) { return null; }
+    }
+
+    function groundedFields(league, fmt, assess) {
+        if (!assess) return {};
+        const out = {
+            tier: assess.tier || null,
+            healthScore: assess.healthScore ?? null,
+            topNeeds: (assess.needs || []).slice(0, 3).map(n => `${n.pos} (${n.urgency})`),
+            surpluses: (assess.strengths || []).slice(0, 4),
+        };
+        const qb = assess.posAssessment?.QB;
+        if (fmt.isSuperFlex && qb) {
+            out.qbRoom = {
+                startable: qb.nflStarters ?? 0,
+                required: qb.minQuality ?? qb.startingReq ?? 2,
+                rostered: qb.actual ?? 0,
+                status: qb.status || 'ok',
+            };
+        }
+        // Pick claims need traded-pick data; without it every team looks fully stocked.
+        if (Array.isArray(league.tradedPicks) && assess.picksAssessment?.pickCountByYear) {
+            const zero = Object.entries(assess.picksAssessment.pickCountByYear)
+                .filter(([, c]) => c === 0).map(([y]) => y);
+            if (zero.length) out.zeroPickYears = zero;
+        }
+        return out;
+    }
+
+    async function buildSnapshots(leagues, sleeperUser) {
+        const inputs = await loadGroundingInputs();
         return (leagues || []).slice(0, 12).map(l => {
             const myRoster = (l.rosters || []).find(r => r.owner_id === sleeperUser?.user_id);
             const fmt = window.WR?.AIContext?.detectFormat?.(l) || {};
@@ -33,6 +125,7 @@
             const faabRemaining = waiverBudget > 0 && myRoster?.settings
                 ? Math.max(0, waiverBudget - Number(myRoster.settings.waiver_budget_used || 0))
                 : null;
+            const assess = myAssessmentFor(l, myRoster, inputs);
             return {
                 leagueId: l.id || l.league_id,
                 leagueName: l.name,
@@ -45,12 +138,19 @@
                     scoringType: fmt.scoringType || 'std',
                 },
                 ...(faabRemaining != null ? { faabRemaining } : {}),
+                ...groundedFields(l, fmt, assess),
             };
         });
     }
 
     function cacheKeyFor(snapshots) {
-        const stateHash = hashString(snapshots.map(s => `${s.leagueId}:${s.record}`).join('|'));
+        // Roster-state fields are part of the hash so a trade or pickup that
+        // changes a room's status invalidates yesterday's cached insights.
+        const stateHash = hashString(snapshots.map(s => [
+            s.leagueId, s.record, s.tier || '',
+            (s.topNeeds || []).join('+'), (s.surpluses || []).join('+'),
+            s.qbRoom ? `${s.qbRoom.startable}/${s.qbRoom.required}:${s.qbRoom.status}` : '',
+        ].join(':')).join('|'));
         return { key: `wr_dash_digest:${digestUser()}:${stateHash}`, stateHash };
     }
 
@@ -79,12 +179,22 @@
         const React = window.React;
         const h = React.createElement;
         const InsightCard = window.WR.InsightCard;
-        const snapshots = React.useMemo(() => buildSnapshots(leagues, sleeperUser), [leagues, sleeperUser]);
-        const { key, stateHash } = React.useMemo(() => cacheKeyFor(snapshots), [snapshots]);
+        // null = grounding still loading; built async because the roster
+        // assessment may need the (cached) player DB + season stats.
+        const [snapshots, setSnapshots] = React.useState(null);
+        React.useEffect(() => {
+            let alive = true;
+            buildSnapshots(leagues, sleeperUser)
+                .then(s => { if (alive) setSnapshots(s); })
+                .catch(() => { if (alive) setSnapshots([]); });
+            return () => { alive = false; };
+        }, [leagues, sleeperUser]);
+        const { key, stateHash } = React.useMemo(() => cacheKeyFor(snapshots || []), [snapshots]);
         const [state, setState] = React.useState({ status: 'idle', insights: null, error: null });
         const [feedbackGiven, setFeedbackGiven] = React.useState({});
 
         const generate = React.useCallback(async (force) => {
+            if (!snapshots || !snapshots.length) return;
             setState(prev => ({ ...prev, status: 'loading', error: null }));
             try {
                 const context = { leagues: snapshots, stateHash, ...(force ? { forceRefresh: true } : {}) };
@@ -107,13 +217,15 @@
         }, [snapshots, stateHash, key]);
 
         React.useEffect(() => {
-            if (!snapshots.length) return;
+            if (!snapshots || !snapshots.length) return;
             const cached = loadCachedDigest(key);
             if (cached && cached.length) { setState({ status: 'ready', insights: cached, error: null }); return; }
             generate(false); // ambient: server-cached + uncounted against request allowance
-        }, [key]);
+        }, [key, snapshots]);
 
-        if (!snapshots.length || typeof window.OD?.callAI !== 'function' || !InsightCard) return null;
+        if (!(leagues || []).length || (snapshots && !snapshots.length) || typeof window.OD?.callAI !== 'function' || !InsightCard) return null;
+
+        const groundingPending = snapshots === null;
 
         const sendFeedback = (idx, action) => {
             setFeedbackGiven(prev => ({ ...prev, [idx]: action }));
@@ -124,12 +236,12 @@
             h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
                 h('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase' } }, "✨ Alex's Desk — Top Insights"),
                 h('button', {
-                    onClick: () => state.status !== 'loading' && generate(true),
+                    onClick: () => !groundingPending && state.status !== 'loading' && generate(true),
                     title: 'Regenerate (uses one AI request)',
-                    style: { background: 'none', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer', fontSize: 'var(--text-label, 0.75rem)', padding: '2px 9px', opacity: state.status === 'loading' ? 0.5 : 1 }
-                }, state.status === 'loading' ? '…' : 'Refresh')
+                    style: { background: 'none', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer', fontSize: 'var(--text-label, 0.75rem)', padding: '2px 9px', opacity: groundingPending || state.status === 'loading' ? 0.5 : 1 }
+                }, groundingPending || state.status === 'loading' ? '…' : 'Refresh')
             ),
-            state.status === 'loading' && !state.insights && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, 'Scanning your leagues for the moves that matter this week…'),
+            (groundingPending || (state.status === 'loading' && !state.insights)) && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, 'Scanning your leagues for the moves that matter this week…'),
             state.status === 'error' && h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, padding: '6px 2px' } }, state.error),
             state.status === 'ready' && (state.insights || []).map((ins, idx) => {
                 const league = (leagues || []).find(l => String(l.id || l.league_id) === String(ins.leagueId));

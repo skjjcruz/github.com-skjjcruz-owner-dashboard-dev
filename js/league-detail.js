@@ -2357,6 +2357,9 @@
                         record: myRoster?.settings ? `${myRoster.settings.wins}-${myRoster.settings.losses}` : '',
                         needs: (assessment?.needs || []).map(n => n.urgency === 'deficit' ? `${n.pos}*` : n.pos),
                         strengths: assessment?.strengths || [],
+                        // Distinguishes "assessed, zero needs" from "no assessment" so the
+                        // edge function knows whether the roster engine's verdict is present.
+                        hasAssessment: !!assessment,
                         gmStrategy: [gmStrategy?.mode, gmStrategy?.riskTolerance && `${gmStrategy.riskTolerance} risk`].filter(Boolean).join(', '),
                         myRoster: diagRoster,
                       };
