@@ -404,24 +404,50 @@ function DashboardPanel({
     const [pickerOpen, setPickerOpen] = React.useState(false);
     const [editingWidget, setEditingWidget] = React.useState(null); // { widgetId, widget }
     const [dragIdx, setDragIdx] = React.useState(null);
-    // Touch reorder (iPad/phone): HTML5 drag-and-drop needs a lucky long-press
-    // on touch Safari and fights page scrolling, so widgets get a dedicated ⠿
-    // handle driven by pointer events instead. The mouse path (draggable +
-    // dataTransfer) is untouched. Refs carry from/to across the document-level
-    // listeners; state mirrors them for the drop-target highlight.
+    // Touch reorder (iPad/phone): press-and-hold ANY part of a widget, it
+    // lifts, drag it to its new spot — the iOS-native gesture. Native HTML5
+    // drag is disabled on touch (its lift ghost reads as "copying" and barely
+    // works in touch Safari); the mouse path (draggable + dataTransfer) is
+    // untouched. Mechanics: a 330ms hold timer arms the drag — finger
+    // movement before it fires means the user is scrolling, so the timer is
+    // cancelled and the browser keeps the gesture. Once armed, touchmove is
+    // preventDefault()ed (listeners attached non-passive) so Safari stops
+    // scrolling, elementsFromPoint tracks the drop target, and touchend
+    // commits through the same setSelectedWidgets path as the mouse flow.
     const [touchHoverIdx, setTouchHoverIdx] = React.useState(null);
     const touchDragRef = React.useRef({ from: null, to: null });
-    const beginTouchDrag = React.useCallback((e, idx) => {
-        e.preventDefault();
-        e.stopPropagation();
-        try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (_) {}
-        touchDragRef.current = { from: idx, to: idx };
-        setDragIdx(idx);
-        setTouchHoverIdx(idx);
-        const scroller = document.querySelector('.league-detail-scroll') || document.scrollingElement;
+    const attachTouchReorder = React.useCallback((el, idx) => {
+        const HOLD_MS = 330;
+        const SLOP_PX = 12;
+        let holdTimer = null;
+        let active = false;
+        let startX = 0, startY = 0;
+
+        const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+        const onStart = (ev) => {
+            if (ev.touches.length !== 1) return;
+            const t = ev.touches[0];
+            startX = t.clientX; startY = t.clientY;
+            active = false;
+            clearHold();
+            holdTimer = setTimeout(() => {
+                active = true;
+                touchDragRef.current = { from: idx, to: idx };
+                setDragIdx(idx);
+                setTouchHoverIdx(idx);
+            }, HOLD_MS);
+        };
         const onMove = (ev) => {
-            const hit = document.elementsFromPoint(ev.clientX, ev.clientY)
-                .find(el => el.classList && el.classList.contains('wr-widget'));
+            const t = ev.touches[0];
+            if (!t) return;
+            if (!active) {
+                // Finger moved before the hold armed — it's a scroll, let it be.
+                if (Math.abs(t.clientX - startX) > SLOP_PX || Math.abs(t.clientY - startY) > SLOP_PX) clearHold();
+                return;
+            }
+            ev.preventDefault(); // drag owns the gesture now — no scrolling
+            const hit = document.elementsFromPoint(t.clientX, t.clientY)
+                .find(n => n.classList && n.classList.contains('wr-widget'));
             if (hit) {
                 const all = Array.prototype.slice.call(document.querySelectorAll('.wr-widget'));
                 const tIdx = all.indexOf(hit);
@@ -431,13 +457,14 @@ function DashboardPanel({
                 }
             }
             // Edge auto-scroll so long boards can be reordered end-to-end.
-            if (ev.clientY < 110) scroller?.scrollBy?.(0, -16);
-            else if (ev.clientY > window.innerHeight - 110) scroller?.scrollBy?.(0, 16);
+            const scroller = document.querySelector('.league-detail-scroll') || document.scrollingElement;
+            if (t.clientY < 110) scroller?.scrollBy?.(0, -14);
+            else if (t.clientY > window.innerHeight - 110) scroller?.scrollBy?.(0, 14);
         };
         const onEnd = () => {
-            document.removeEventListener('pointermove', onMove);
-            document.removeEventListener('pointerup', onEnd);
-            document.removeEventListener('pointercancel', onEnd);
+            clearHold();
+            if (!active) return;
+            active = false;
             const { from, to } = touchDragRef.current;
             touchDragRef.current = { from: null, to: null };
             setDragIdx(null);
@@ -450,9 +477,18 @@ function DashboardPanel({
                 return updated;
             });
         };
-        document.addEventListener('pointermove', onMove);
-        document.addEventListener('pointerup', onEnd);
-        document.addEventListener('pointercancel', onEnd);
+
+        el.addEventListener('touchstart', onStart, { passive: true });
+        el.addEventListener('touchmove', onMove, { passive: false });
+        el.addEventListener('touchend', onEnd);
+        el.addEventListener('touchcancel', onEnd);
+        return () => {
+            clearHold();
+            el.removeEventListener('touchstart', onStart);
+            el.removeEventListener('touchmove', onMove);
+            el.removeEventListener('touchend', onEnd);
+            el.removeEventListener('touchcancel', onEnd);
+        };
     }, [setSelectedWidgets]);
     const [starredWidgets, setStarredWidgets] = React.useState(() => window.WrStarWidget?.getAll() || []);
     const navigateWidget = React.useCallback((target) => {
@@ -960,16 +996,24 @@ function DashboardPanel({
     }
 
     // ══════════════════════════════════════════════════════════════
-    // WIDGET SHELL — wrapper with gear button + drag handle
+    // WIDGET SHELL — wrapper with gear button + reorder gestures
+    // (mouse: native drag; touch: press-and-hold anywhere, then drag)
     // ══════════════════════════════════════════════════════════════
     function WidgetShell({ widget, idx, children }) {
         const isTouch = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
         const [showGear, setShowGear] = React.useState(isTouch);
         const sizeSpan = { sm: 'span 1', slim: 'span 1', narrow: 'span 1', md: 'span 2', lg: 'span 2', tall: 'span 2', xl: 'span 4', xxl: 'span 4' };
         const rowSpan = { sm: 'span 1', slim: 'span 2', narrow: 'span 4', md: 'span 1', lg: 'span 2', tall: 'span 4', xl: 'span 2', xxl: 'span 4' };
+        const rootRef = React.useRef(null);
+        React.useEffect(() => {
+            if (!isTouch || !rootRef.current) return undefined;
+            return attachTouchReorder(rootRef.current, idx);
+        }, [idx, isTouch]);
+        const isLifted = isTouch && dragIdx === idx;
 
         return (
             <div
+                ref={rootRef}
                 className="wr-widget"
                 data-widget-id={widget.id || ''}
                 data-widget-key={widget.key || ''}
@@ -992,40 +1036,18 @@ function DashboardPanel({
                     gridColumn: sizeSpan[widget.size] || 'span 1',
                     gridRow: rowSpan[widget.size] || 'span 1',
                     position: 'relative',
-                    opacity: dragIdx === idx ? 0.4 : 1,
+                    opacity: dragIdx === idx ? (isTouch ? 0.75 : 0.4) : 1,
                     transition: theme.effects?.transition || 'opacity 0.15s',
                     minHeight: widget.size === 'sm' ? '160px' : undefined,
-                    // Touch-drag drop target highlight
+                    // Touch lift + drop-target feedback
+                    transform: isLifted ? 'scale(1.02)' : 'none',
+                    boxShadow: isLifted ? '0 10px 28px rgba(0,0,0,0.55), 0 0 0 1px var(--acc-line2, rgba(212,175,55,0.3))' : undefined,
+                    zIndex: isLifted ? 40 : undefined,
                     outline: dragIdx !== null && touchHoverIdx === idx && dragIdx !== idx ? '2px solid var(--gold)' : 'none',
                     outlineOffset: '-2px',
                 }}
             >
                 {children}
-
-                {/* Drag handle — touch devices only. touchAction:none keeps
-                    Safari from scrolling while the finger drives the reorder. */}
-                {showGear && isTouch && (
-                    <button
-                        onPointerDown={e => beginTouchDrag(e, idx)}
-                        title="Drag to reorder"
-                        aria-label="Drag to reorder widget"
-                        style={{
-                            position: 'absolute', top: '-11px', right: '77px',
-                            width: '44px', height: '44px', padding: 0,
-                            border: 'none', background: 'transparent',
-                            cursor: 'grab', touchAction: 'none',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            zIndex: 5,
-                        }}
-                    ><span style={{
-                            width: '22px', height: '22px', borderRadius: '50%',
-                            border: '1px solid var(--ov-6, rgba(255,255,255,0.15))',
-                            background: 'var(--surf-solid, rgba(10,10,10,0.85))', backdropFilter: 'blur(4px)',
-                            color: dragIdx === idx ? 'var(--gold)' : S,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            transition: 'all 0.12s', pointerEvents: 'none', fontSize: '0.7rem',
-                        }}>⠿</span></button>
-                )}
 
                 {/* Gear button */}
                 {showGear && (
@@ -1256,7 +1278,7 @@ function DashboardPanel({
                     <div style={{ flex: 1, lineHeight: 1.5 }}>
                         <strong style={{ color: G }}>This dashboard is yours to customize.</strong>
                         {window.matchMedia && window.matchMedia('(pointer: coarse)').matches
-                            ? <span>{' '}Tap ⚙ to resize a widget, ✕ to remove it, and drag the ⠿ handle to reorder. Tap <strong>+ Add Widget</strong> to build your layout.</span>
+                            ? <span>{' '}Tap ⚙ to resize a widget, ✕ to remove it. Press and hold any widget, then drag it to reorder. Tap <strong>+ Add Widget</strong> to build your layout.</span>
                             : <span>{' '}Hover any widget to resize or remove it. Drag to reorder. Click <strong>+ Add Widget</strong> to build your layout.</span>}
                     </div>
                     <button onClick={dismissHint} style={{
