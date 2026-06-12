@@ -418,9 +418,10 @@ function DashboardPanel({
     const touchDragRef = React.useRef({ from: null, to: null });
     const attachTouchReorder = React.useCallback((el, idx) => {
         const HOLD_MS = 330;
-        const SLOP_PX = 12;
+        const SLOP_PX = 8;
         let holdTimer = null;
         let active = false;
+        let surrendered = false; // gesture handed back to the browser (scroll)
         let startX = 0, startY = 0;
 
         const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
@@ -429,6 +430,7 @@ function DashboardPanel({
             const t = ev.touches[0];
             startX = t.clientX; startY = t.clientY;
             active = false;
+            surrendered = false;
             clearHold();
             holdTimer = setTimeout(() => {
                 active = true;
@@ -440,9 +442,20 @@ function DashboardPanel({
         const onMove = (ev) => {
             const t = ev.touches[0];
             if (!t) return;
+            if (surrendered) return; // browser owns this gesture (scrolling)
             if (!active) {
-                // Finger moved before the hold armed — it's a scroll, let it be.
-                if (Math.abs(t.clientX - startX) > SLOP_PX || Math.abs(t.clientY - startY) > SLOP_PX) clearHold();
+                if (Math.abs(t.clientX - startX) > SLOP_PX || Math.abs(t.clientY - startY) > SLOP_PX) {
+                    // Clear scroll intent before the hold armed — hand the
+                    // gesture back to the browser for the rest of this touch.
+                    clearHold();
+                    surrendered = true;
+                    return;
+                }
+                // Sub-threshold jitter while the hold arms. WebKit rule: if the
+                // FIRST touchmove of a gesture goes unprevented, later ones can
+                // never be prevented — so the drag could arm and still lose the
+                // gesture to scrolling. Prevent jitter moves to keep ownership.
+                ev.preventDefault();
                 return;
             }
             ev.preventDefault(); // drag owns the gesture now — no scrolling
