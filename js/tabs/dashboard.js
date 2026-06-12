@@ -404,119 +404,6 @@ function DashboardPanel({
     const [pickerOpen, setPickerOpen] = React.useState(false);
     const [editingWidget, setEditingWidget] = React.useState(null); // { widgetId, widget }
     const [dragIdx, setDragIdx] = React.useState(null);
-    // Touch reorder (iPad/phone): press-and-hold ANY part of a widget, it
-    // lifts, drag it to its new spot — the iOS-native gesture. Native HTML5
-    // drag is disabled on touch (its lift ghost reads as "copying" and barely
-    // works in touch Safari); the mouse path (draggable + dataTransfer) is
-    // untouched. Mechanics: a 330ms hold timer arms the drag — finger
-    // movement before it fires means the user is scrolling, so the timer is
-    // cancelled and the browser keeps the gesture. Once armed, touchmove is
-    // preventDefault()ed (listeners attached non-passive) so Safari stops
-    // scrolling, elementsFromPoint tracks the drop target, and touchend
-    // commits through the same setSelectedWidgets path as the mouse flow.
-    const [touchHoverIdx, setTouchHoverIdx] = React.useState(null);
-    const touchDragRef = React.useRef({ from: null, to: null });
-    const attachTouchReorder = React.useCallback((el, idx) => {
-        const HOLD_MS = 330;
-        const SLOP_PX = 8;
-        let holdTimer = null;
-        let active = false;
-        let surrendered = false; // gesture handed back to the browser (scroll)
-        let startX = 0, startY = 0;
-
-        const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
-        const onStart = (ev) => {
-            if (ev.touches.length !== 1) return;
-            const t = ev.touches[0];
-            startX = t.clientX; startY = t.clientY;
-            active = false;
-            surrendered = false;
-            clearHold();
-            holdTimer = setTimeout(() => {
-                active = true;
-                touchDragRef.current = { from: idx, to: idx };
-                setDragIdx(idx);
-                setTouchHoverIdx(idx);
-            }, HOLD_MS);
-        };
-        const onMove = (ev) => {
-            const t = ev.touches[0];
-            if (!t) return;
-            if (surrendered) return; // browser owns this gesture (scrolling)
-            if (!active) {
-                if (Math.abs(t.clientX - startX) > SLOP_PX || Math.abs(t.clientY - startY) > SLOP_PX) {
-                    // Clear scroll intent before the hold armed — hand the
-                    // gesture back to the browser for the rest of this touch.
-                    clearHold();
-                    surrendered = true;
-                    return;
-                }
-                // Sub-threshold jitter while the hold arms. WebKit rule: if the
-                // FIRST touchmove of a gesture goes unprevented, later ones can
-                // never be prevented — so the drag could arm and still lose the
-                // gesture to scrolling. Prevent jitter moves to keep ownership.
-                ev.preventDefault();
-                return;
-            }
-            ev.preventDefault(); // drag owns the gesture now — no scrolling
-            // The widget follows the finger: direct style mutation (not React
-            // state) so it tracks at 60fps without re-render churn. pointer-
-            // events:none lets elementsFromPoint see through the dragged
-            // widget to the drop target underneath (touch events keep firing
-            // at the original target regardless — implicit touch capture).
-            const dx = t.clientX - startX;
-            const dy = t.clientY - startY;
-            el.style.transform = `translate(${dx}px, ${dy}px) scale(1.03)`;
-            el.style.zIndex = '60';
-            el.style.pointerEvents = 'none';
-            const hit = document.elementsFromPoint(t.clientX, t.clientY)
-                .find(n => n.classList && n.classList.contains('wr-widget'));
-            if (hit && hit !== el) {
-                const all = Array.prototype.slice.call(document.querySelectorAll('.wr-widget'));
-                const tIdx = all.indexOf(hit);
-                if (tIdx >= 0 && tIdx !== touchDragRef.current.to) {
-                    touchDragRef.current.to = tIdx;
-                    setTouchHoverIdx(tIdx);
-                }
-            }
-            // Edge auto-scroll for long boards — tight zones so grabbing a
-            // widget low on the screen doesn't start phantom scrolling.
-            const scroller = document.querySelector('.league-detail-scroll') || document.scrollingElement;
-            if (t.clientY < 70) scroller?.scrollBy?.(0, -12);
-            else if (t.clientY > window.innerHeight - 70) scroller?.scrollBy?.(0, 12);
-        };
-        const onEnd = () => {
-            clearHold();
-            if (!active) return;
-            active = false;
-            el.style.transform = '';
-            el.style.zIndex = '';
-            el.style.pointerEvents = '';
-            const { from, to } = touchDragRef.current;
-            touchDragRef.current = { from: null, to: null };
-            setDragIdx(null);
-            setTouchHoverIdx(null);
-            if (from == null || to == null || from === to) return;
-            setSelectedWidgets(prev => {
-                const updated = [...(prev || [])];
-                const [moved] = updated.splice(from, 1);
-                updated.splice(to, 0, moved);
-                return updated;
-            });
-        };
-
-        el.addEventListener('touchstart', onStart, { passive: true });
-        el.addEventListener('touchmove', onMove, { passive: false });
-        el.addEventListener('touchend', onEnd);
-        el.addEventListener('touchcancel', onEnd);
-        return () => {
-            clearHold();
-            el.removeEventListener('touchstart', onStart);
-            el.removeEventListener('touchmove', onMove);
-            el.removeEventListener('touchend', onEnd);
-            el.removeEventListener('touchcancel', onEnd);
-        };
-    }, [setSelectedWidgets]);
     const [starredWidgets, setStarredWidgets] = React.useState(() => window.WrStarWidget?.getAll() || []);
     const navigateWidget = React.useCallback((target) => {
         const tab = resolveWidgetDestination(target);
@@ -1023,29 +910,21 @@ function DashboardPanel({
     }
 
     // ══════════════════════════════════════════════════════════════
-    // WIDGET SHELL — wrapper with gear button + reorder gestures
-    // (mouse: native drag; touch: press-and-hold anywhere, then drag)
+    // WIDGET SHELL — wrapper with gear button + drag handle
     // ══════════════════════════════════════════════════════════════
     function WidgetShell({ widget, idx, children }) {
         const isTouch = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
         const [showGear, setShowGear] = React.useState(isTouch);
         const sizeSpan = { sm: 'span 1', slim: 'span 1', narrow: 'span 1', md: 'span 2', lg: 'span 2', tall: 'span 2', xl: 'span 4', xxl: 'span 4' };
         const rowSpan = { sm: 'span 1', slim: 'span 2', narrow: 'span 4', md: 'span 1', lg: 'span 2', tall: 'span 4', xl: 'span 2', xxl: 'span 4' };
-        const rootRef = React.useRef(null);
-        React.useEffect(() => {
-            if (!isTouch || !rootRef.current) return undefined;
-            return attachTouchReorder(rootRef.current, idx);
-        }, [idx, isTouch]);
-        const isLifted = isTouch && dragIdx === idx;
 
         return (
             <div
-                ref={rootRef}
                 className="wr-widget"
                 data-widget-id={widget.id || ''}
                 data-widget-key={widget.key || ''}
                 data-widget-size={widget.size || ''}
-                draggable={!isTouch}
+                draggable
                 onDragStart={e => { setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)); }}
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => {
@@ -1063,16 +942,9 @@ function DashboardPanel({
                     gridColumn: sizeSpan[widget.size] || 'span 1',
                     gridRow: rowSpan[widget.size] || 'span 1',
                     position: 'relative',
-                    opacity: dragIdx === idx ? (isTouch ? 0.8 : 0.4) : 1,
+                    opacity: dragIdx === idx ? 0.4 : 1,
                     transition: theme.effects?.transition || 'opacity 0.15s',
                     minHeight: widget.size === 'sm' ? '160px' : undefined,
-                    // Touch lift + drop-target feedback. transform/zIndex are
-                    // deliberately NOT set here — during a touch drag they're
-                    // driven imperatively (finger-follow) and React re-renders
-                    // must not clobber them.
-                    boxShadow: isLifted ? '0 10px 28px rgba(0,0,0,0.55), 0 0 0 1px var(--acc-line2, rgba(212,175,55,0.3))' : undefined,
-                    outline: dragIdx !== null && touchHoverIdx === idx && dragIdx !== idx ? '2px solid var(--gold)' : 'none',
-                    outlineOffset: '-2px',
                 }}
             >
                 {children}
@@ -1305,9 +1177,7 @@ function DashboardPanel({
                     <span style={{ fontSize: '1.1rem' }}>✨</span>
                     <div style={{ flex: 1, lineHeight: 1.5 }}>
                         <strong style={{ color: G }}>This dashboard is yours to customize.</strong>
-                        {window.matchMedia && window.matchMedia('(pointer: coarse)').matches
-                            ? <span>{' '}Tap ⚙ to resize a widget, ✕ to remove it. Press and hold any widget, then drag it to reorder. Tap <strong>+ Add Widget</strong> to build your layout.</span>
-                            : <span>{' '}Hover any widget to resize or remove it. Drag to reorder. Click <strong>+ Add Widget</strong> to build your layout.</span>}
+                        {' '}Hover any widget to resize or remove it. Drag to reorder. Click <strong>+ Add Widget</strong> to build your layout.
                     </div>
                     <button onClick={dismissHint} style={{
                         padding: '5px 14px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: dmFont, fontWeight: 600,
