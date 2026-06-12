@@ -404,6 +404,56 @@ function DashboardPanel({
     const [pickerOpen, setPickerOpen] = React.useState(false);
     const [editingWidget, setEditingWidget] = React.useState(null); // { widgetId, widget }
     const [dragIdx, setDragIdx] = React.useState(null);
+    // Touch reorder (iPad/phone): HTML5 drag-and-drop needs a lucky long-press
+    // on touch Safari and fights page scrolling, so widgets get a dedicated ⠿
+    // handle driven by pointer events instead. The mouse path (draggable +
+    // dataTransfer) is untouched. Refs carry from/to across the document-level
+    // listeners; state mirrors them for the drop-target highlight.
+    const [touchHoverIdx, setTouchHoverIdx] = React.useState(null);
+    const touchDragRef = React.useRef({ from: null, to: null });
+    const beginTouchDrag = React.useCallback((e, idx) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch (_) {}
+        touchDragRef.current = { from: idx, to: idx };
+        setDragIdx(idx);
+        setTouchHoverIdx(idx);
+        const scroller = document.querySelector('.league-detail-scroll') || document.scrollingElement;
+        const onMove = (ev) => {
+            const hit = document.elementsFromPoint(ev.clientX, ev.clientY)
+                .find(el => el.classList && el.classList.contains('wr-widget'));
+            if (hit) {
+                const all = Array.prototype.slice.call(document.querySelectorAll('.wr-widget'));
+                const tIdx = all.indexOf(hit);
+                if (tIdx >= 0 && tIdx !== touchDragRef.current.to) {
+                    touchDragRef.current.to = tIdx;
+                    setTouchHoverIdx(tIdx);
+                }
+            }
+            // Edge auto-scroll so long boards can be reordered end-to-end.
+            if (ev.clientY < 110) scroller?.scrollBy?.(0, -16);
+            else if (ev.clientY > window.innerHeight - 110) scroller?.scrollBy?.(0, 16);
+        };
+        const onEnd = () => {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onEnd);
+            document.removeEventListener('pointercancel', onEnd);
+            const { from, to } = touchDragRef.current;
+            touchDragRef.current = { from: null, to: null };
+            setDragIdx(null);
+            setTouchHoverIdx(null);
+            if (from == null || to == null || from === to) return;
+            setSelectedWidgets(prev => {
+                const updated = [...(prev || [])];
+                const [moved] = updated.splice(from, 1);
+                updated.splice(to, 0, moved);
+                return updated;
+            });
+        };
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onEnd);
+        document.addEventListener('pointercancel', onEnd);
+    }, [setSelectedWidgets]);
     const [starredWidgets, setStarredWidgets] = React.useState(() => window.WrStarWidget?.getAll() || []);
     const navigateWidget = React.useCallback((target) => {
         const tab = resolveWidgetDestination(target);
@@ -924,7 +974,7 @@ function DashboardPanel({
                 data-widget-id={widget.id || ''}
                 data-widget-key={widget.key || ''}
                 data-widget-size={widget.size || ''}
-                draggable
+                draggable={!isTouch}
                 onDragStart={e => { setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)); }}
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => {
@@ -945,9 +995,37 @@ function DashboardPanel({
                     opacity: dragIdx === idx ? 0.4 : 1,
                     transition: theme.effects?.transition || 'opacity 0.15s',
                     minHeight: widget.size === 'sm' ? '160px' : undefined,
+                    // Touch-drag drop target highlight
+                    outline: dragIdx !== null && touchHoverIdx === idx && dragIdx !== idx ? '2px solid var(--gold)' : 'none',
+                    outlineOffset: '-2px',
                 }}
             >
                 {children}
+
+                {/* Drag handle — touch devices only. touchAction:none keeps
+                    Safari from scrolling while the finger drives the reorder. */}
+                {showGear && isTouch && (
+                    <button
+                        onPointerDown={e => beginTouchDrag(e, idx)}
+                        title="Drag to reorder"
+                        aria-label="Drag to reorder widget"
+                        style={{
+                            position: 'absolute', top: '-11px', right: '77px',
+                            width: '44px', height: '44px', padding: 0,
+                            border: 'none', background: 'transparent',
+                            cursor: 'grab', touchAction: 'none',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            zIndex: 5,
+                        }}
+                    ><span style={{
+                            width: '22px', height: '22px', borderRadius: '50%',
+                            border: '1px solid var(--ov-6, rgba(255,255,255,0.15))',
+                            background: 'var(--surf-solid, rgba(10,10,10,0.85))', backdropFilter: 'blur(4px)',
+                            color: dragIdx === idx ? 'var(--gold)' : S,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.12s', pointerEvents: 'none', fontSize: '0.7rem',
+                        }}>⠿</span></button>
+                )}
 
                 {/* Gear button */}
                 {showGear && (
@@ -1177,7 +1255,9 @@ function DashboardPanel({
                     <span style={{ fontSize: '1.1rem' }}>✨</span>
                     <div style={{ flex: 1, lineHeight: 1.5 }}>
                         <strong style={{ color: G }}>This dashboard is yours to customize.</strong>
-                        {' '}Hover any widget to resize or remove it. Drag to reorder. Click <strong>+ Add Widget</strong> to build your layout.
+                        {window.matchMedia && window.matchMedia('(pointer: coarse)').matches
+                            ? <span>{' '}Tap ⚙ to resize a widget, ✕ to remove it, and drag the ⠿ handle to reorder. Tap <strong>+ Add Widget</strong> to build your layout.</span>
+                            : <span>{' '}Hover any widget to resize or remove it. Drag to reorder. Click <strong>+ Add Widget</strong> to build your layout.</span>}
                     </div>
                     <button onClick={dismissHint} style={{
                         padding: '5px 14px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: dmFont, fontWeight: 600,
