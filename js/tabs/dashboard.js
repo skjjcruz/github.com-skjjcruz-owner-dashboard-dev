@@ -459,9 +459,19 @@ function DashboardPanel({
                 return;
             }
             ev.preventDefault(); // drag owns the gesture now — no scrolling
+            // The widget follows the finger: direct style mutation (not React
+            // state) so it tracks at 60fps without re-render churn. pointer-
+            // events:none lets elementsFromPoint see through the dragged
+            // widget to the drop target underneath (touch events keep firing
+            // at the original target regardless — implicit touch capture).
+            const dx = t.clientX - startX;
+            const dy = t.clientY - startY;
+            el.style.transform = `translate(${dx}px, ${dy}px) scale(1.03)`;
+            el.style.zIndex = '60';
+            el.style.pointerEvents = 'none';
             const hit = document.elementsFromPoint(t.clientX, t.clientY)
                 .find(n => n.classList && n.classList.contains('wr-widget'));
-            if (hit) {
+            if (hit && hit !== el) {
                 const all = Array.prototype.slice.call(document.querySelectorAll('.wr-widget'));
                 const tIdx = all.indexOf(hit);
                 if (tIdx >= 0 && tIdx !== touchDragRef.current.to) {
@@ -469,15 +479,19 @@ function DashboardPanel({
                     setTouchHoverIdx(tIdx);
                 }
             }
-            // Edge auto-scroll so long boards can be reordered end-to-end.
+            // Edge auto-scroll for long boards — tight zones so grabbing a
+            // widget low on the screen doesn't start phantom scrolling.
             const scroller = document.querySelector('.league-detail-scroll') || document.scrollingElement;
-            if (t.clientY < 110) scroller?.scrollBy?.(0, -14);
-            else if (t.clientY > window.innerHeight - 110) scroller?.scrollBy?.(0, 14);
+            if (t.clientY < 70) scroller?.scrollBy?.(0, -12);
+            else if (t.clientY > window.innerHeight - 70) scroller?.scrollBy?.(0, 12);
         };
         const onEnd = () => {
             clearHold();
             if (!active) return;
             active = false;
+            el.style.transform = '';
+            el.style.zIndex = '';
+            el.style.pointerEvents = '';
             const { from, to } = touchDragRef.current;
             touchDragRef.current = { from: null, to: null };
             setDragIdx(null);
@@ -1049,13 +1063,14 @@ function DashboardPanel({
                     gridColumn: sizeSpan[widget.size] || 'span 1',
                     gridRow: rowSpan[widget.size] || 'span 1',
                     position: 'relative',
-                    opacity: dragIdx === idx ? (isTouch ? 0.75 : 0.4) : 1,
+                    opacity: dragIdx === idx ? (isTouch ? 0.8 : 0.4) : 1,
                     transition: theme.effects?.transition || 'opacity 0.15s',
                     minHeight: widget.size === 'sm' ? '160px' : undefined,
-                    // Touch lift + drop-target feedback
-                    transform: isLifted ? 'scale(1.02)' : 'none',
+                    // Touch lift + drop-target feedback. transform/zIndex are
+                    // deliberately NOT set here — during a touch drag they're
+                    // driven imperatively (finger-follow) and React re-renders
+                    // must not clobber them.
                     boxShadow: isLifted ? '0 10px 28px rgba(0,0,0,0.55), 0 0 0 1px var(--acc-line2, rgba(212,175,55,0.3))' : undefined,
-                    zIndex: isLifted ? 40 : undefined,
                     outline: dragIdx !== null && touchHoverIdx === idx && dragIdx !== idx ? '2px solid var(--gold)' : 'none',
                     outlineOffset: '-2px',
                 }}
