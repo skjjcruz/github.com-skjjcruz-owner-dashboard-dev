@@ -24,14 +24,14 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # reconai-shared/ is gitignored, so the bundled browser modules must be
       # regenerated from the canonical ReconAI source at deploy time — otherwise
       # the Pages artifact ships a stale (or missing) copy of supabase-client.js
       # and the other shared modules.
       - name: Checkout ReconAI shared source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: skjjcruz/ReconAI-sandbox-dev
           path: reconai-src
