@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # Application / build dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    groups:
+      # Bundle low-risk dev tooling bumps into one PR to cut noise
+      dev-dependencies:
+        dependency-type: "development"
+
+  # Keep GitHub Actions pinned and patched
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"
