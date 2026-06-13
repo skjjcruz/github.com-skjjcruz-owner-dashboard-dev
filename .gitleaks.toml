@@ -21,6 +21,8 @@ regexes = [
   # Supabase anon key for the dev project ref hovnqztlbsgsywrbidbh — present in
   # older commits (the repo briefly targeted dev). Also public by design.
   '''WFz9TkCpjQpzJS_mb7b4G_58m71brqoGQC5jp2IVC1o''',
-  # localStorage cache-key prefix misdetected as a generic API key
+  # localStorage key-name constants misdetected as generic API keys (these are
+  # client-side storage keys, not credentials).
   '''wr_compare_h2h_v3_''',
+  '''fw_pending_sleeper_v1''',
 ]
