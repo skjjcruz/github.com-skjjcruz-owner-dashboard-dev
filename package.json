@@ -54,7 +54,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "@babel/standalone": "^7.29.7",
-    "@capacitor/android": "^8.2.0",
+    "@capacitor/android": "^8.4.0",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.4.0",
     "@capacitor/ios": "^8.2.0",
