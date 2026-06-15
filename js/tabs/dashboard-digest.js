@@ -269,9 +269,16 @@
                 saveCachedDigest(key, cleaned);
                 setState({ status: 'ready', insights: cleaned, error: null });
             } catch (e) {
-                const msg = /limit/i.test(String(e?.message))
+                const raw = String(e?.message || '');
+                // A rejected fetch surfaces as "Load failed" (WebKit) or
+                // "Failed to fetch" (Chrome) — show a human message instead of
+                // leaking the browser's network string into the card.
+                const isNetwork = /load failed|failed to fetch|networkerror|network request failed/i.test(raw);
+                const msg = /limit/i.test(raw)
                     ? 'Daily AI limit reached — fresh insights return tomorrow.'
-                    : (e?.message || 'Could not generate insights right now.');
+                    : isNetwork
+                        ? "Couldn't reach Alex right now — check your connection and try Refresh."
+                        : (e?.message || 'Could not generate insights right now.');
                 setState({ status: 'error', insights: null, error: msg });
             }
         }, [snapshots, stateHash, key]);

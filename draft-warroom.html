@@ -140,7 +140,12 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="js/shared/shared-loader.js?v=20260502b"></script>
     <script>
-    if (['localhost', '127.0.0.1'].includes(window.location.hostname || '')) {
+    // The /api/dev-ai-analyze proxy only exists in the local static dev server
+    // (scripts/serve-static.cjs). The Capacitor native app also serves from
+    // 'localhost' but ships no such proxy, so it must keep the real Supabase AI
+    // endpoint — otherwise every AI call fails with a network "Load failed".
+    const WR_IS_NATIVE_APP = !!(window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function' ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative));
+    if (!WR_IS_NATIVE_APP && ['localhost', '127.0.0.1'].includes(window.location.hostname || '')) {
       const existingConfig = window.DYNASTY_HQ_CONFIG || {};
       window.DYNASTY_HQ_CONFIG = {
         ...existingConfig,
