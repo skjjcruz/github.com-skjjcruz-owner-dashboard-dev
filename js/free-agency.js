@@ -25,11 +25,19 @@
         injury:     { label: 'Injury Status',           shortLabel: 'Inj',    width: '46px', sortKey: 'injury',  group: 'stats' },
         faab:       { label: 'Suggested FAAB Bid',      shortLabel: 'FAAB',   width: '60px', group: 'stats'   },
         fit:        { label: 'Roster Fit',              shortLabel: 'Fit',    width: '76px', group: 'stats'   },
+        // Rookie/prospect columns — sourced from the rookie-data prospect record
+        // (window.App.RookieFields), not the Sleeper object. Show '—' for vets.
+        rkSlot:     { label: 'NFL Draft Slot (rookie)', shortLabel: 'Draft',  width: '56px', sortKey: 'rkSlot', group: 'scout' },
+        rkTeam:     { label: 'Drafted NFL Team (rookie)',shortLabel: 'Drafted',width: '52px', sortKey: 'rkTeam', group: 'scout' },
+        rkRank:     { label: 'Rookie Consensus Rank',   shortLabel: 'Cons #', width: '50px', sortKey: 'rkRank', group: 'scout' },
+        rkTier:     { label: 'Rookie Tier',             shortLabel: 'Tier',   width: '70px', sortKey: 'rkTier', group: 'scout' },
+        rkProfile:  { label: 'Rookie Profile (Ht · Wt · 40)', shortLabel: 'Profile', width: '120px', group: 'scout' },
     };
     const FA_COLUMN_PRESETS = {
         default: ['pos','team','age','dhq','ppg','faab','fit'],
         scout:   ['pos','age','college','height','weight','depthChart'],
         bidding: ['pos','team','dhq','ppg','faab','fit','injury'],
+        rookie:  ['pos','college','rkSlot','rkTeam','rkRank','rkTier','rkProfile','dhq'],
         full:    Object.keys(FA_COLUMNS),
     };
     const ROOKIE_DRAFT_LOCK_STATUSES = new Set(['pre_draft', 'drafting']);
@@ -605,15 +613,27 @@
             return { has: (pid) => (count[String(pid)] || 0) >= copies };
         }, [currentLeague]);
 
+        // Positions this league actually rosters (gates D/ST, K, IDP out of the wire
+        // for formats that don't use them — e.g. no D/ST recs in an IDP-only league).
+        // Falls back to "no gate" if the helper is unavailable, to avoid over-filtering.
+        const leaguePosSet = useMemo(() => {
+            try {
+                return typeof window.getLeaguePositions === 'function'
+                    ? window.getLeaguePositions({ league: currentLeague, asSet: true })
+                    : null;
+            } catch (e) { return null; }
+        }, [currentLeague]);
+
         const availablePlayers = useMemo(() => {
             if (!rosterState.isUsable) return [];
             return Object.entries(playersData)
                 .filter(([pid, p]) => !rostered.has(pid) && p.team && p.status !== 'Inactive' && p.status !== 'Retired' && p.active !== false && !isDraftProspect(pid, p)
-                    && (p.full_name || p.first_name || p.last_name) && (window.App?.LI?.playerScores?.[pid] || 0) > 0)
+                    && (p.full_name || p.first_name || p.last_name) && (window.App?.LI?.playerScores?.[pid] || 0) > 0
+                    && (!leaguePosSet || leaguePosSet.has(normPos(p.position) || p.position)))
                 .map(([pid, p]) => ({ pid, p, dhq: window.App?.LI?.playerScores?.[pid] || 0, pos: normPos(p.position) || p.position }))
                 .sort((a, b) => b.dhq - a.dhq)
                 .slice(0, 300);
-        }, [rosterState.isUsable, playersData, rostered, timeRecomputeTs, isDraftProspect]);
+        }, [rosterState.isUsable, playersData, rostered, timeRecomputeTs, isDraftProspect, leaguePosSet]);
 
         // GM-Office FA filters scope the recommendation surfaces (priority adds +
         // action board). The market explorer (sortedPlayers) keeps the full pool.
@@ -638,18 +658,63 @@
         }, [currentLeague]);
         // Rookies filter — UDFAs fold into the FA pool post-draft; this isolates them.
         const [rookieOnly, setRookieOnly] = useState(false);
-        const rookieNameSet = useMemo(() => {
-            if (typeof window.getProspects !== 'function') return new Set();
-            return new Set((window.getProspects() || []).map(p => faNormName(p.name)).filter(Boolean));
+        // name → prospect record, so rookie rows can filter on the same pieces as the
+        // Draft Room big board (NFL team, college, draft slot). getProspects() is
+        // rank-sorted, so first-in wins on alias collisions (best-ranked prospect).
+        const rookieProspectMap = useMemo(() => {
+            if (typeof window.getProspects !== 'function') return new Map();
+            const m = new Map();
+            (window.getProspects() || []).forEach(p => {
+                const k = faNormName(p.name);
+                if (k && !m.has(k)) m.set(k, p);
+            });
+            return m;
         }, [timeRecomputeTs]);
+        const prospectFor = useCallback((p) => {
+            if (!p) return null;
+            const nm = faNormName(p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim());
+            const pr = rookieProspectMap.get(nm) || null;
+            // Position-guard the name join (mirrors RookieFields.lookup posGuard in
+            // My Roster / Trade Center) so a same-name veteran at a different position
+            // isn't mis-tagged as the rookie.
+            if (pr && p.position && (pr.mappedPos || pr.pos)) {
+                const a = normPos(p.position);
+                const b = normPos(pr.mappedPos || pr.pos);
+                if (a && b && a !== b) return null;
+            }
+            return pr;
+        }, [rookieProspectMap]);
         const isRookiePlayer = useCallback((pid, p) => {
             if (!p) return false;
-            const nm = faNormName(p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim());
-            if (rookieNameSet.has(nm)) return true;
+            if (prospectFor(p)) return true;
             const exp = Number(p.years_exp ?? p.yoe ?? 0);
             const hasStats = (statsData?.[pid]?.gp || 0) > 0 || ((prevStatsData || {})[pid]?.gp || 0) > 0;
             return exp === 0 && !hasStats;
-        }, [rookieNameSet, statsData, prevStatsData]);
+        }, [prospectFor, statsData, prevStatsData]);
+        // Big-board filter pieces, scoped to the rookie/UDFA view.
+        const [rookieTeamFilter, setRookieTeamFilter] = useState('');       // NFL team abbr
+        const [rookieCollegeFilter, setRookieCollegeFilter] = useState(''); // college team
+        const [rookieSlotFilter, setRookieSlotFilter] = useState('');       // '' | '1'..'7' | 'UDFA'
+        const rookieTeamOf = useCallback((x) => (prospectFor(x.p)?.nflTeam || x.p.team || ''), [prospectFor]);
+        const rookieCollegeOf = useCallback((x) => (prospectFor(x.p)?.college || x.p.college || ''), [prospectFor]);
+        // Slot semantics mirror the big board's isTrueUdfa: these players are already
+        // in the FA pool post-draft, so "no capital" means undrafted, not capital-TBD.
+        const rookieSlotMatch = useCallback((x, slot) => {
+            const cs = prospectFor(x.p) || {};
+            const hasCapital = Number(cs.draftRound) > 0 || Number(cs.draftPick) > 0;
+            if (slot === 'UDFA') return !hasCapital;
+            return String(cs.draftRound || '') === slot;
+        }, [prospectFor]);
+        const rookieFilterOptions = useMemo(() => {
+            if (!rookieOnly) return { teams: [], colleges: [] };
+            const teams = new Set(); const colleges = new Set();
+            availablePlayers.forEach(x => {
+                if (!isRookiePlayer(x.pid, x.p)) return;
+                const t = rookieTeamOf(x); if (t && t !== 'FA') teams.add(t);
+                const c = rookieCollegeOf(x); if (c) colleges.add(c);
+            });
+            return { teams: [...teams].sort(), colleges: [...colleges].sort() };
+        }, [rookieOnly, availablePlayers, isRookiePlayer, rookieTeamOf, rookieCollegeOf]);
 
         function faSortIndicator(key) { return faSort.key === key ? (faSort.dir === -1 ? ' \u25BC' : ' \u25B2') : ''; }
         function handleFaSort(key) { setFaSort(prev => prev.key === key ? { ...prev, dir: prev.dir * -1 } : { key, dir: -1 }); }
@@ -660,7 +725,12 @@
             const filtered = availablePlayers.filter(x => {
                 const pos = normPos(x.p.position) || x.p.position || '';
                 if (faFilter && pos !== faFilter) return false;
-                if (rookieOnly && !isRookiePlayer(x.pid, x.p)) return false;
+                if (rookieOnly) {
+                    if (!isRookiePlayer(x.pid, x.p)) return false;
+                    if (rookieTeamFilter && rookieTeamOf(x) !== rookieTeamFilter) return false;
+                    if (rookieCollegeFilter && rookieCollegeOf(x) !== rookieCollegeFilter) return false;
+                    if (rookieSlotFilter && !rookieSlotMatch(x, rookieSlotFilter)) return false;
+                }
                 if (!q) return true;
                 const name = (x.p.full_name || ((x.p.first_name || '') + ' ' + (x.p.last_name || '')).trim()).toLowerCase();
                 const team = (x.p.team || 'FA').toLowerCase();
@@ -697,9 +767,21 @@
                 }
                 if (k === 'exp') return dir * ((a.p.years_exp || 0) - (b.p.years_exp || 0));
                 if (k === 'injury') return dir * ((a.p.injury_status || '').localeCompare(b.p.injury_status || ''));
+                if (k === 'rkSlot' || k === 'rkRank' || k === 'rkTier' || k === 'rkTeam') {
+                    const ra = prospectFor(a.p); const rb = prospectFor(b.p);
+                    if (k === 'rkTeam') return dir * ((ra?.nflTeam || '').localeCompare(rb?.nflTeam || ''));
+                    if (k === 'rkSlot') {
+                        // Earlier capital sorts first; UDFA/undrafted last; non-rookies after that.
+                        const slot = r => !r ? 1e9 : (Number(r.draftRound) > 0 ? Number(r.draftRound) * 100 + (Number(r.draftPick) || 99) : 9000);
+                        return dir * (slot(ra) - slot(rb));
+                    }
+                    // rkRank / rkTier — lower consensus rank is better; non-rookies last.
+                    const rank = r => (r && (r.consensusRank ?? r.rank) != null) ? Number(r.consensusRank ?? r.rank) : 1e9;
+                    return dir * (rank(ra) - rank(rb));
+                }
                 return 0;
             }).slice(0, 50);
-        }, [availablePlayers, faFilter, faSearch, faSort, statsData, rookieOnly, isRookiePlayer]);
+        }, [availablePlayers, faFilter, faSearch, faSort, statsData, rookieOnly, isRookiePlayer, rookieTeamFilter, rookieCollegeFilter, rookieSlotFilter, rookieTeamOf, rookieCollegeOf, rookieSlotMatch, prospectFor]);
 
         const faHeaderStyle = { fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'pointer', userSelect: 'none' };
 
@@ -1360,16 +1442,44 @@
                     </div>
                     <span className="wr-module-toolbar-label">Type</span>
                     <div className="wr-module-nav">
-                    <button className={rookieOnly ? 'is-active' : ''} onClick={() => setRookieOnly(r => !r)} title="Show only rookies / UDFAs">Rookies</button>
+                    <button className={rookieOnly ? 'is-active' : ''} onClick={() => { const next = !rookieOnly; setRookieOnly(next); if (!next) { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); } }} title="Show only rookies / UDFAs">Rookies</button>
                     </div>
                 </div>
+
+                {/* Rookie/UDFA drill-down — same filter pieces as the Draft Room big board */}
+                {rookieOnly && (() => {
+                    const rkSelectStyle = (active) => ({ padding: '3px 6px', minHeight: '44px', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', outline: 'none', maxWidth: '170px' });
+                    return (
+                        <div className="fa-market-toolbar wr-module-toolbar">
+                            <span className="wr-module-toolbar-label">Team</span>
+                            <select value={rookieTeamFilter} onChange={e => setRookieTeamFilter(e.target.value)} style={rkSelectStyle(!!rookieTeamFilter)}>
+                                <option value="">All teams</option>
+                                {rookieFilterOptions.teams.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <span className="wr-module-toolbar-label">College</span>
+                            <select value={rookieCollegeFilter} onChange={e => setRookieCollegeFilter(e.target.value)} style={rkSelectStyle(!!rookieCollegeFilter)}>
+                                <option value="">All colleges</option>
+                                {rookieFilterOptions.colleges.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <span className="wr-module-toolbar-label">Slot</span>
+                            <div className="wr-module-nav">
+                                {[{ k: '', label: 'All' }, { k: '1', label: 'R1' }, { k: '2', label: 'R2' }, { k: '3', label: 'R3' }, { k: '4', label: 'R4' }, { k: '5', label: 'R5' }, { k: '6', label: 'R6' }, { k: '7', label: 'R7' }, { k: 'UDFA', label: 'UDFA' }].map(opt => (
+                                    <button key={opt.k || 'all'} className={rookieSlotFilter === opt.k ? 'is-active' : ''} onClick={() => setRookieSlotFilter(rookieSlotFilter === opt.k ? '' : opt.k)} title={opt.k === 'UDFA' ? 'Undrafted free agents' : opt.k ? 'NFL draft round ' + opt.k : 'Any draft slot'}>{opt.label}</button>
+                                ))}
+                            </div>
+                            {(rookieTeamFilter || rookieCollegeFilter || rookieSlotFilter) && (
+                                <button type="button" onClick={() => { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); }} style={{ marginLeft: 'auto', padding: '3px 10px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '10px', cursor: 'pointer' }}>Clear</button>
+                            )}
+                        </div>
+                    );
+                })()}
 
                 {/* Phase 6 deferred: presets + column picker + SavedViewBar */}
                 <div className="fa-market-toolbar wr-module-toolbar">
                     <span className="wr-module-toolbar-label">View</span>
                     <div className="wr-module-nav">
                     {Object.entries(FA_COLUMN_PRESETS).map(([key, cols]) => (
-                        <button key={key} className={faColPreset === key ? 'is-active' : ''} onClick={() => { setVisibleFaCols(cols); setFaColPreset(key); }}>{key}</button>
+                        <button key={key} className={faColPreset === key ? 'is-active' : ''} onClick={() => { setVisibleFaCols(cols); setFaColPreset(key); setRookieOnly(key === 'rookie'); if (key !== 'rookie') { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); } }}>{key}</button>
                     ))}
                     <button className={showFaColPicker ? 'is-active' : ''} onClick={() => setShowFaColPicker(!showFaColPicker)}>Columns</button>
                     </div>
@@ -1488,6 +1598,9 @@
 		                                const peakLabel = peakYrs >= 4 ? 'Rising' : peakYrs >= 1 ? 'Prime' : valueYrs >= 1 ? 'Vet' : 'Post';
 		                                const peakCol = peakYrs >= 4 ? 'var(--good)' : peakYrs >= 1 ? 'var(--gold)' : valueYrs >= 1 ? 'var(--warn)' : 'var(--bad)';
                                 const fit = fitRead(pos);
+                                // Rookie/prospect fields for this row (null for vets) — resolved once.
+                                const rf = window.App?.RookieFields?.fields?.(prospectFor(p)) || null;
+                                const rkDash = <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))' }}>{'—'}</span>;
                                 const renderCell = (k) => {
                                     switch (k) {
                                         case 'pos':        return <span style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: posColors[pos] || 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</span>;
@@ -1504,6 +1617,11 @@
                                         case 'injury':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: p.injury_status ? 'var(--bad)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.injury_status || '—'}</span>;
                                         case 'faab':       return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 700 }}>{faab ? '$' + faab.lo + '-' + faab.hi : '\u2014'}</span>;
                                         case 'fit':        return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: fit.color, fontWeight: 700 }}>{fit.short}</span>;
+                                        case 'rkSlot':     return rf ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: rf.isUDFA ? 'var(--silver)' : rf.draftRound === 1 ? 'var(--good)' : rf.draftRound && rf.draftRound <= 3 ? 'var(--gold)' : 'var(--silver)' }}>{rf.draftSlot || '—'}</span> : rkDash;
+                                        case 'rkTeam':     return rf ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontWeight: 600 }}>{rf.nflTeam || '—'}</span> : rkDash;
+                                        case 'rkRank':     return rf && rf.consensusRank != null ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>{rf.consensusRank}</span> : rkDash;
+                                        case 'rkTier':     return rf && rf.tierLabel ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)' }}>{rf.tierLabel}</span> : rkDash;
+                                        case 'rkProfile':  return rf && rf.profile ? <span title={rf.profile} style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rf.profile}</span> : rkDash;
                                         default:           return <span>—</span>;
                                     }
                                 };

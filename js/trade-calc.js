@@ -779,6 +779,20 @@
         const [expandedDealId, setExpandedDealId] = useState(null);
         const [assetBrowserPos, setAssetBrowserPos] = useState('ALL');
         const [assetBrowserSort, setAssetBrowserSort] = useState('dhq');
+        const [assetBrowserRookieOnly, setAssetBrowserRookieOnly] = useState(false);
+        // Rookie/prospect join — name→prospect index rebuilt when the rookie CSV lands
+        // (timeRecomputeTs). getProspects/findProspect are defined eagerly at boot
+        // (rookie-data.js) but return empty until the CSV cache loads, so the index can
+        // be empty on first paint; RookieFields degrades gracefully and the empty-state
+        // copy distinguishes "still loading" (index empty) from "no rookies match".
+        const tcRookieFields = window.App?.RookieFields;
+        const tcRookieIndex = useMemo(() => tcRookieFields ? tcRookieFields.buildIndex() : new Map(), [timeRecomputeTs]);
+        const tcRookieInfoFor = useCallback((pid) => {
+            if (!tcRookieFields || !pid) return null;
+            const player = playersData[pid];
+            if (!player) return null;
+            return tcRookieFields.fields(tcRookieFields.lookup(tcRookieIndex, player, { posGuard: true }));
+        }, [tcRookieFields, tcRookieIndex, playersData]);
         const [tradeContext, setTradeContext] = useState(() => window._wrTradeContext || null);
         const savedQueueRef = useRef(null);
         const generatedPackagesRef = useRef(null);
@@ -2946,6 +2960,7 @@
             const browserPositions = ['ALL', ...Object.keys(TC_POS_ORDER).filter(pos => assetBrowserRows.some(row => row.pos === pos))];
             const visibleAssetRows = assetBrowserRows
                 .filter(row => assetBrowserPos === 'ALL' || row.pos === assetBrowserPos)
+                .filter(row => !assetBrowserRookieOnly || !!tcRookieInfoFor(row.pid))
                 .sort((a, b) => {
                     if (assetBrowserSort === 'age') return (a.age || 99) - (b.age || 99) || b.value - a.value;
                     if (assetBrowserSort === 'owner') return a.ownerLabel.localeCompare(b.ownerLabel) || b.value - a.value;
@@ -3116,6 +3131,7 @@
                                                 </select>
                                             </label>
                                             <button type="button" className={!dealFocusPid ? 'is-active' : ''} onClick={() => { setDealFocusPid(null); setShowAllDeals(false); }}>Auto</button>
+                                            {tcRookieFields && <button type="button" className={assetBrowserRookieOnly ? 'is-active' : ''} title="Show only rookies — college, draft slot, and tier appear under each name" onClick={() => setAssetBrowserRookieOnly(v => !v)}>Rookies</button>}
                                         </div>
                                     </div>
                                     <div className="tc-dhq-asset-table" role="table" aria-label="Deal HQ asset browser">
@@ -3130,7 +3146,13 @@
                                         </div>
                                         {visibleAssetRows.length ? visibleAssetRows.map(row => (
                                             <button key={`${row.rosterId}-${row.pid}`} type="button" role="row" className={`tc-dhq-asset-row${String(dealFocusPid) === String(row.pid) ? ' is-active' : ''}`} onClick={() => selectAssetFocus(row)}>
-                                                <span title={row.name}>{row.name}</span>
+                                                <span title={row.name}>{row.name}{(() => {
+                                                    const rf = tcRookieInfoFor(row.pid);
+                                                    if (!rf) return null;
+                                                    const bits = [rf.college, rf.draftSlot || (rf.isUDFA ? 'UDFA' : ''), rf.tierLabel].filter(Boolean);
+                                                    if (!bits.length) return null;
+                                                    return <em style={{ display:'block', fontStyle:'normal', fontSize:'0.64rem', color:'var(--gold)', opacity:0.85, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{bits.join(' · ')}</em>;
+                                                })()}</span>
                                                 <span style={{ color:posColor(row.pos) }}>{row.pos}</span>
                                                 <span>{row.value.toLocaleString()}</span>
                                                 <span>{row.age || '--'}</span>
@@ -3138,7 +3160,7 @@
                                                 <span>{row.lastPoints ? row.lastPoints.toLocaleString() : '--'}</span>
                                                 <span>{row.primeYears != null ? row.primeYears : '--'}</span>
                                             </button>
-                                        )) : <div className="tc-dhq-empty">No assets match this position filter.</div>}
+                                        )) : <div className="tc-dhq-empty">{assetBrowserRookieOnly ? (tcRookieIndex.size === 0 ? 'Rookie data still loading…' : 'No tradeable rookies match this filter (rookies with no trade value yet are hidden).') : 'No assets match this position filter.'}</div>}
                                     </div>
                                 </div>
                             )}
