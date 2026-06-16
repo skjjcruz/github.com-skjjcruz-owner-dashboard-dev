@@ -209,5 +209,7 @@ jobs:
       - name: Deploy admin-analytics-report function
         run: supabase functions deploy admin-analytics-report --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
-      - name: Deploy mfl-proxy function
-        run: supabase functions deploy mfl-proxy --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+      # NOTE: mfl-proxy is deliberately NOT deployed here. Both apps share the
+      # sxshiqyxhhifvtfqawbq project, so mfl-proxy has a single owning repo —
+      # ReconAI (see SHARED-CODE.md "Backend Ownership"). Deploying it from both
+      # repos let the last push win and silently flip the relay's auth behavior.
