@@ -568,6 +568,26 @@ function RosterPlayerDossier({ x, playersData, statsData, currentLeague, normPos
         return lead + tail + own;
     })();
 
+    // Dynasty Read — paid-tier web-search news synthesis (template-first; the
+    // shared weekly cache makes most opens an instant cache hit). Swaps in over
+    // the template only once it resolves; failures/empty keep the template.
+    const [aiRead, setAiRead] = React.useState(null);
+    React.useEffect(() => {
+        if (!pid || typeof window.fetchDynastyRead !== 'function') return;
+        let alive = true;
+        const nfl = window.S?.nflState || {};
+        const ctx = {
+            pid,
+            name: p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
+            team: p.team || '', pos, age,
+            season: nfl.season || '', week: nfl.display_week || nfl.week || 0,
+        };
+        window.fetchDynastyRead(ctx, { fallback: '' }).then((txt) => {
+            if (alive && txt && txt !== dynastyRead) setAiRead(txt);
+        });
+        return () => { alive = false; };
+    }, [pid]);
+
     // Player tags — shared global store, same as My Roster.
     const [, setTagTick] = React.useState(0); // bump to re-render after a tag toggle
     const leagueId = currentLeague?.id || currentLeague?.league_id || '';
@@ -617,7 +637,7 @@ function RosterPlayerDossier({ x, playersData, statsData, currentLeague, normPos
                 {/* Dynasty Read */}
                 <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.42 }}>{dynastyRead}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.42 }}>{aiRead || dynastyRead}</div>
                 </div>
                 {/* Decision Stack */}
                 <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>

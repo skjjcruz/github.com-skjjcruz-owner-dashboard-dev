@@ -166,7 +166,7 @@ interface AIRoute {
     tier: AIWorkloadTier;
 }
 
-const AI_POLICY_VERSION = '2026-06-10.insight-everywhere.v1';
+const AI_POLICY_VERSION = '2026-06-14.dynasty-read.v1';
 
 const AI_MODELS = {
     GEMINI_FAST: 'gemini-2.5-flash-lite',
@@ -315,6 +315,19 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
     },
 };
 
+// Web search is normally restricted to the top plans (allowWebSearch). The
+// dynasty_read type is the one exception: its result is shared and cached weekly,
+// so the search cost is paid once per player per week across ALL users. We
+// therefore extend web search to the War Room tier for this single type only —
+// no other type's web-search policy changes.
+const WEB_SEARCH_ALLOWED_TYPES = new Set(['dynasty_read']);
+function planAllowsWebSearch(plan: AIPlanName, type: string): boolean {
+    if (WEB_SEARCH_ALLOWED_TYPES.has(type) && (plan === 'warroom' || plan === 'pro' || plan === 'commissioner')) {
+        return true;
+    }
+    return !!AI_LIMITS[plan]?.allowWebSearch;
+}
+
 function envFlag(name: string, defaultValue = false): boolean {
     const raw = Deno.env.get(name);
     if (raw == null || raw === '') return defaultValue;
@@ -411,6 +424,8 @@ const AI_ROUTES: Record<string, AIWorkloadTier> = {
     rookies:    'premium',
     // Explicit user-triggered deep dives.
     trade_verdict: 'premium',
+    // Web-search-backed player news synthesis (shared weekly cache).
+    dynasty_read:  'premium',
     // Ambient insight surfaces: cheap-first, server-cached, request-uncounted.
     team_diagnosis:   'standard',
     dashboard_digest: 'fast',
@@ -541,6 +556,7 @@ async function callAIProvider(args: {
     inputTokens: number;
     outputTokens: number;
     cachedInputTokens: number;
+    webSearchCount?: number;
 }> {
     const { route, systemPrompt, userPrompt, maxTokens, useWebSearch } = args;
 
@@ -626,22 +642,59 @@ async function callAIProvider(args: {
         messages: [{ role: 'user', content: userPrompt }],
     };
     if (useWebSearch) {
-        anthropicRequest.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+        // GA web search (dynamic filtering) — no beta header required, and it triggers
+        // more reliably on current models than the legacy web_search_20250305 +
+        // 'web-search-2025-03-05' beta combo. max_uses caps searches per read so a
+        // low-coverage ("bad") player can't trigger a runaway, expensive search loop —
+        // the model concludes with what it has, and the prompt makes that a depth/stash
+        // read rather than a blank.
+        anthropicRequest.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
     }
-    const message = await anthropic.messages.create(
-        anthropicRequest,
-        useWebSearch ? { headers: { 'anthropic-beta': 'web-search-2025-03-05' } } : undefined,
-    );
-    const usage = (message as any).usage || {};
+
+    const textFromContent = (content: any[]) => (content || [])
+        .filter(part => part.type === 'text')
+        .map(part => part.text || '')
+        .join('');
+    const searchesIn = (content: any[]) => (content || [])
+        .filter(part => part.type === 'server_tool_use').length;
+
+    // Server-side web search runs an internal tool loop. If it hits the per-response
+    // iteration cap before the model writes its answer, the response returns with
+    // stop_reason 'pause_turn' and NO final text — common for low-profile players the
+    // model searches hard for, and was surfacing as a BLANK read → template. Re-send
+    // the assistant turn to resume until it finishes (end_turn) or a small cap (with
+    // max_uses bounding searches, pauses are now rare).
+    let message = await anthropic.messages.create(anthropicRequest);
+    let analysis = textFromContent(message.content as any[]);
+    let webSearchCount = searchesIn(message.content as any[]);
+    let inputTokens = (message as any).usage?.input_tokens || 0;
+    let outputTokens = (message as any).usage?.output_tokens || 0;
+    let cachedInputTokens = (message as any).usage?.cache_read_input_tokens || 0;
+    let pauses = 0;
+    while ((message as any).stop_reason === 'pause_turn' && pauses < 2) {
+        anthropicRequest.messages = [...anthropicRequest.messages, { role: 'assistant', content: message.content }];
+        message = await anthropic.messages.create(anthropicRequest);
+        pauses++;
+        const turnText = textFromContent(message.content as any[]);
+        if (turnText) analysis = analysis ? `${analysis} ${turnText}` : turnText;
+        webSearchCount += searchesIn(message.content as any[]);
+        inputTokens += (message as any).usage?.input_tokens || 0;
+        outputTokens += (message as any).usage?.output_tokens || 0;
+        cachedInputTokens += (message as any).usage?.cache_read_input_tokens || 0;
+    }
+
+    if (useWebSearch) {
+        // Diagnostic (edge logs): searches=0 → answered from training (newsless);
+        // text=0 → blank read; high searches → low-coverage player (cached longer).
+        console.log(`[web_search] model=${route.model} searches=${webSearchCount} pauses=${pauses} stop=${(message as any).stop_reason || ''} text=${analysis.length}`);
+    }
     return {
-        analysis: ((message.content || []) as any[])
-            .filter(part => part.type === 'text')
-            .map(part => part.text || '')
-            .join(''),
+        analysis,
         stopReason: (message as any).stop_reason || '',
-        inputTokens: usage.input_tokens || 0,
-        outputTokens: usage.output_tokens || 0,
-        cachedInputTokens: usage.cache_read_input_tokens || 0,
+        inputTokens,
+        outputTokens,
+        cachedInputTokens,
+        webSearchCount,
     };
 }
 
@@ -652,7 +705,7 @@ function clampTextToChars(text: string, maxChars: number): { text: string; trunc
     return { text: value.slice(0, Math.max(0, maxChars - suffix.length)) + suffix, truncated: true };
 }
 
-const STRUCTURED_TYPES = new Set(['league', 'team', 'partners', 'fa_targets', 'rookies', 'fa_chat', 'mock_draft', 'chat', 'trade_verdict', 'team_diagnosis', 'dashboard_digest', 'insight']);
+const STRUCTURED_TYPES = new Set(['league', 'team', 'partners', 'fa_targets', 'rookies', 'fa_chat', 'mock_draft', 'chat', 'trade_verdict', 'team_diagnosis', 'dashboard_digest', 'insight', 'dynasty_read']);
 
 interface GenericAIContext {
     callType: string;
@@ -1072,6 +1125,9 @@ const CACHEABLE_TYPES: Record<string, number> = {
     // Diagnosis is keyed on the full roster context, so any roster move
     // naturally produces a fresh entry; 12h covers record/score drift.
     team_diagnosis:   12 * 60 * 60 * 1000,
+    // Dynasty Read: web-search news synthesis, keyed on player+season+week and
+    // NOT user-scoped, so one synthesis is shared across every user for the week.
+    dynasty_read:     7 * 24 * 60 * 60 * 1000,
 };
 
 // User-scoped cache types include the caller identity in the key; team
@@ -2176,6 +2232,94 @@ Output ONLY a valid JSON array, no markdown, no backticks, no prose:
 [{"severity":"pattern","confidence":75,"title":"max 8 words","body":"2-3 sentences citing the specific data behind the pattern"}]`;
 }
 
+// Dynasty Read — web-search-backed news synthesis for a single player. Context is
+// intentionally minimal and stable (pid/name/team/pos/age/season/week) so the
+// shared weekly cache key is identical for every user viewing this player. The
+// read is league-agnostic on purpose: the DHQ value, position rank and roster
+// call live elsewhere on the card; this panel is the "what's actually happening
+// with him" layer that a stats engine can't produce.
+// Pull the read out of the <read></read> tags the model is told to wrap it in,
+// discarding any web-search narration/preamble around it. Falls back to stripping
+// a leading meta paragraph or pre-separator scratchpad if the tags are missing.
+function extractTaggedRead(text: string): string {
+    const raw = String(text || '').trim();
+    const m = raw.match(/<read>([\s\S]*?)<\/read>/i);
+    if (m && m[1].trim()) return m[1].trim();
+    let t = raw.replace(/<\/?read>/gi, '').trim();
+    const sep = t.split(/\n\s*-{3,}\s*\n/);
+    if (sep.length > 1) t = sep[sep.length - 1].trim();
+    const paras = t.split(/\n\s*\n/);
+    if (paras.length > 1 && /^(i have |i'?ve |let me |here(?:'s| is| are)|okay|alright|sure|based on|after (?:my |the )?search)/i.test(paras[0].trim())) {
+        t = paras.slice(1).join('\n\n').trim();
+    }
+    return t.trim();
+}
+
+// League-format clause for the Dynasty Read. Honors format flags ONLY when the
+// caller passes them; otherwise the read stays league-agnostic so the shared
+// weekly cache key remains identical across users.
+function dynastyReadFormatClause(ctx: any): string {
+    if (!ctx) return '';
+    const sf      = ctx.superflex === true || ctx.isSuperFlex === true;
+    const tep     = ctx.tep === true || ctx.tePremium === true || ctx.isTEP === true;
+    const idp     = ctx.idp === true || ctx.isIDP === true;
+    const scoring = ctx.scoringType || ctx.scoring || '';
+
+    const bits: string[] = [];
+    if (scoring === 'ppr') bits.push('full PPR');
+    else if (scoring === 'half_ppr' || scoring === 'half') bits.push('half PPR');
+    else if (scoring === 'std' || scoring === 'standard') bits.push('standard / non-PPR');
+    if (sf)  bits.push('superflex (2 QB-eligible slots)');
+    if (tep) bits.push('TE-premium');
+    if (idp) bits.push('IDP');
+
+    if (!bits.length) {
+        return `\nThis is a league-agnostic dynasty read: focus on the role, usage, health and trajectory signals that move a player's value in any format.\n`;
+    }
+    return `\nThe GM's league is ${bits.join(', ')}. Read this player THROUGH that lens — the same news means different things by format: QB value swings hardest in superflex; high-target receivers and pass-catching backs gain in PPR; every-down and receiving tight ends gain in TE-premium; defenders carry real, tradeable value in IDP. Weight the outlook to what this format rewards.\n`;
+}
+
+// System prompt for the Dynasty Read. Deliberately NOT buildSystemPrompt(): that
+// one is the full league-analyst persona (bold headers, 1200 words, cite owners /
+// records) and fights this surface's tight single-player brief.
+function buildDynastyReadSystemPrompt(ctx: any): string {
+    const fmt = dynastyReadFormatClause(ctx);
+    return `You are a sharp NFL analyst writing the dynasty read on ONE player for the GM who ALREADY ROSTERS him. Your job: translate what is ACTUALLY happening with this player in the real world right now into what it means for his dynasty value. You have web search — use it, and build the read entirely on what you find.
+
+Weave three things into plain prose, in this order (do not label them):
+1. SITUATION — the most important real, current development from recent reporting: depth-chart role and snap/target/touch trend, health and its timeline, contract or roster status, a coaching/scheme change, or a teammate's move that opens or closes a path. Anchor it to something concrete and recent — not a career résumé.
+2. IMPACT — what that situation does to his usage and value right now.
+3. LONG-TERM OUTLOOK — the dynasty trajectory over the next 1-3 seasons: arrow up, flat, or down, and the specific reason driving it.
+${fmt}
+HARD RULES:
+- Ground the read in real, recent developments you actually found. Do NOT fall back on a generic age/role platitude that could be said about any player at his position — that is the exact failure mode to avoid.
+- If genuinely nothing is breaking, the honest read is STILL concrete: his current depth-chart role, scheme fit, and the most recent move around him, and what those imply. Never write vague "trajectory" filler.
+- LOW-PROFILE PLAYERS (deep bench, practice squad, just-drafted, UDFA, little coverage): never go blank or generic. Give his actual depth-chart spot and who is ahead of him, his draft pedigree and realistic path to snaps, and a blunt dynasty verdict — deep stash, taxi-only, or waiver-level — plus the single change (an injury ahead of him, a scheme fit, a standout camp/preseason report) that would put him on the radar.
+- The GM ALREADY OWNS him — write the forward outlook and a hold-or-move read, NOT whether to acquire him or what to pay. Never say "don't pay up" or give buy-price advice.
+- Wrap the final read — and nothing else — in <read></read> tags. Only the text inside those tags is shown to the GM, so put no preamble, fact list, separators, labels, or meta-commentary inside them (you may reason before the opening tag if you must). Example: <read>His role firmed up when…</read>
+- Confident and direct, like an analyst who has done the homework. Cut "could / may / might" hedging.
+- 3-5 sentences of PLAIN PROSE that run together as one short paragraph. Absolutely NO markdown, NO "#"/"##" headings, NO section titles ("Quick Take", "Situation", "Verdict", etc.), NO bullets, NO tables, NO labels, NO sign-off — just the sentences.`;
+}
+
+function buildDynastyReadPrompt(ctx: any): string {
+    const name = ctx?.name || 'this player';
+    const pos = ctx?.pos || '';
+    const team = ctx?.team || 'FA';
+    const age = ctx?.age ? `, age ${ctx.age}` : '';
+    const wk = (ctx?.week === 0 || ctx?.week === '0' || ctx?.week == null) ? 'the offseason' : `week ${ctx.week}`;
+    const season = ctx?.season || '';
+    return `Use web search to pull the LATEST reporting on ${name} (${pos}, ${team}${age}) as of ${wk} ${season} — prioritize the last ~10 days plus this offseason's moves. Sources: ESPN, PFF, The Athletic, and trusted team beat reporters.
+
+Build the read on what you actually find about his real situation:
+- Depth-chart role and recent usage trend (snaps, targets, touches, routes).
+- Injury status / designation and the expected timeline.
+- Coaching, scheme, or personnel changes around him (new OC, an added competitor, a teammate's injury opening a path).
+- Contract / roster status and any trade buzz.
+Then say what it means: the impact on his value now, and the dynasty outlook over the next 1-3 seasons.
+
+Lead with the single most decision-relevant real development. Do NOT restate fantasy points, DHQ value, or position rank — the card already shows those. Do NOT pad with generic age-curve commentary; if news is thin, give the most recent concrete situational fact and what it implies.`;
+}
+
 // ── Live NFL news (ESPN RSS, best-effort) ─────────────────────────────────────
 
 async function fetchLiveNFLNews(): Promise<string> {
@@ -2304,6 +2448,7 @@ Deno.serve(async (req) => {
             case 'team_diagnosis':   userPrompt = buildTeamDiagnosisPrompt(context);   break;
             case 'dashboard_digest': userPrompt = buildDashboardDigestPrompt(context); break;
             case 'insight':          userPrompt = buildInsightPrompt(context);         break;
+            case 'dynasty_read':     userPrompt = buildDynastyReadPrompt(parseContextPayload(context)); break;
             default:
                 if (genericContext) {
                     userPrompt = genericContext.userPrompt;
@@ -2324,6 +2469,11 @@ Deno.serve(async (req) => {
             useWebSearch = genericContext.useWebSearch;
         }
 
+        // Dynasty Read is server-authoritative on web search: the synthesis is
+        // worthless without fresh reporting, and the shared weekly cache amortizes
+        // the cost to one search per player per week. Entitlement is enforced below.
+        if (type === 'dynasty_read') useWebSearch = true;
+
         // ── Server-side cache for ambient insight types ───────────────────
         // Cache hits cost nothing and consume no budget. forceRefresh skips
         // the cache read (the regenerate path) and pays a counted request,
@@ -2336,7 +2486,9 @@ Deno.serve(async (req) => {
         // Learning loop: fetch the owner's preference summary once per
         // structured request (fail-open) and fold it into the system prompt
         // and the cache key.
-        const userPrefs = (!genericContext && STRUCTURED_TYPES.has(type) && type !== 'mock_draft')
+        // dynasty_read is intentionally user-independent (shared cache key + shared
+        // prompt), so it must NOT fold in the caller's preference summary.
+        const userPrefs = (!genericContext && STRUCTURED_TYPES.has(type) && type !== 'mock_draft' && type !== 'dynasty_read')
             ? await fetchPreferenceSummary(aiSession, contextLeagueId)
             : null;
 
@@ -2376,10 +2528,18 @@ Deno.serve(async (req) => {
         }
 
         const isMockDraft = type === 'mock_draft' && !genericContext;
+        const isDynastyRead = type === 'dynasty_read' && !genericContext;
         const requestedMaxTokens = maxTokensOverride || (isMockDraft ? 16000 : 8192);
         const routeOutputCap = isMockDraft
             ? planLimits.mockDraftMaxOutputTokens
-            : planLimits.maxOutputTokens;
+            // Web search emits tool-query blocks that count as output tokens. On a
+            // low plan cap (e.g. War Room's 2200) a player the model searches hard
+            // for — typically a low-profile one with thin coverage — can exhaust the
+            // budget before writing the final read, returning empty → template. Give
+            // dynasty_read headroom; still bounded by the global cap below.
+            : isDynastyRead
+                ? Math.max(planLimits.maxOutputTokens, 4000)
+                : planLimits.maxOutputTokens;
         if (routeOutputCap <= 0) {
             return new Response(
                 JSON.stringify({ error: 'This AI feature is not included on your current plan.' }),
@@ -2390,7 +2550,9 @@ Deno.serve(async (req) => {
         const maxTokens = Math.max(100, Math.min(requestedMaxTokens, routeOutputCap, globalOutputCap));
         let systemPrompt = genericContext?.system || (isMockDraft
             ? 'You are a dynasty fantasy football draft simulator. Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no prose before or after. Start your response with [ and end with ]. Never repeat a player. Track all prior picks carefully so each player is selected at most once.'
-            : buildSystemPrompt(context) + buildUserPreferenceBlock(userPrefs));
+            : type === 'dynasty_read'
+                ? buildDynastyReadSystemPrompt(parsedContext)
+                : buildSystemPrompt(context) + buildUserPreferenceBlock(userPrefs));
 
         // Hold generic chat/scout surfaces to the same league-format / team-mode /
         // quality discipline as the structured path. Off by default; enable via
@@ -2406,9 +2568,28 @@ Deno.serve(async (req) => {
         const downgradedRoute = downgradeRouteForEntitlement(route, planLimits);
         route = downgradedRoute.route;
         let webSearchDisabled = false;
-        if (useWebSearch && (!planLimits.allowWebSearch || !envFlag('AI_ALLOW_WEB_SEARCH', false))) {
+        // dynasty_read IS a web-search feature — the synthesis is worthless without
+        // fresh reporting, and its cost is already bounded by the shared weekly cache
+        // (~1 search/player/week/format-bucket). It therefore does NOT depend on the
+        // generic AI_ALLOW_WEB_SEARCH launch flag; plan entitlement (planAllowsWebSearch)
+        // and the master AI kill switch / AI_ENABLED above still govern it.
+        const webSearchFlagOn = envFlag('AI_ALLOW_WEB_SEARCH', false) || type === 'dynasty_read';
+        if (useWebSearch && (!planAllowsWebSearch(aiSession.plan, type) || !webSearchFlagOn)) {
             useWebSearch = false;
             webSearchDisabled = true;
+        }
+
+        // Dynasty Read with no web search available (under-entitled plan, or the
+        // global web-search flag is off) has no value — and would poison the shared
+        // weekly cache with a newsless read. Short-circuit to an empty analysis so
+        // the client keeps its template fallback; no model call, no cache write. A
+        // cache HIT above already returned before this point, so paid users still
+        // get a previously-warmed read regardless of their own web-search tier.
+        if (type === 'dynasty_read' && !useWebSearch) {
+            return new Response(
+                JSON.stringify({ analysis: '', skipped: 'web_search_unavailable' }),
+                { status: 200, headers: { ...responseHeaders, 'Content-Type': 'application/json' } }
+            );
         }
         const promptBudget = Math.max(1000, Math.min(planLimits.maxInputChars, envNumber('AI_MAX_INPUT_CHARS', planLimits.maxInputChars)) - systemPrompt.length);
         const promptClamp = clampTextToChars(userPrompt, promptBudget);
@@ -2459,6 +2640,7 @@ Deno.serve(async (req) => {
         let inputTokens = 0;
         let outputTokens = 0;
         let cachedInputTokens = 0;
+        let webSearchCount = 0;
         const startedAt = Date.now();
         const reservedCostUsd = Number(usageReservation.reservedCostUsd || estimatedRequestCostUsd || 0);
         let failureRecorded = false;
@@ -2490,6 +2672,7 @@ Deno.serve(async (req) => {
             inputTokens = providerResult.inputTokens;
             outputTokens = providerResult.outputTokens;
             cachedInputTokens = providerResult.cachedInputTokens;
+            webSearchCount = providerResult.webSearchCount || 0;
         } catch (providerError) {
             if (useWebSearch || !isProviderAvailabilityError(providerError)) {
                 await recordProviderFailure(providerError);
@@ -2518,6 +2701,10 @@ Deno.serve(async (req) => {
                 throw fallbackError;
             }
         }
+
+        // Dynasty Read: keep only what's inside <read></read>, dropping any
+        // web-search narration the model emitted around it.
+        if (isDynastyRead) analysis = extractTaggedRead(analysis);
 
         const latencyMs = Date.now() - startedAt;
         const measuredTokensUsed = inputTokens + outputTokens;
@@ -2566,6 +2753,14 @@ Deno.serve(async (req) => {
         let insights = (!genericContext && JSON_ARRAY_TYPES.has(type)) ? parseJsonArray(analysis) : undefined;
         if (type === 'dashboard_digest') insights = validateDigestInsights(insights, context);
 
+        // Low-coverage ("bad") players make the model search to the cap (≥4 of the 5
+        // allowed) and the resulting depth/stash read barely changes week to week —
+        // so cache it ~4x longer (28d vs 7d) to avoid repeatedly paying for the
+        // expensive search on a player whose read is stable. Well-covered players are
+        // found in 1-2 searches and stay on the normal news-cadence TTL.
+        const effectiveTtlMs = (isDynastyRead && webSearchCount >= 4)
+            ? Math.max(cacheTtlMs, 28 * 24 * 60 * 60 * 1000)
+            : cacheTtlMs;
         if (cacheTtlMs > 0 && cacheKey && analysis && stopReason !== 'max_tokens') {
             await writeAIResponseCache({
                 cacheKey,
@@ -2575,7 +2770,7 @@ Deno.serve(async (req) => {
                 model: route.model,
                 analysis,
                 usage: { inputTokens, outputTokens, estimatedCostUsd },
-                ttlMs: cacheTtlMs,
+                ttlMs: effectiveTtlMs,
             });
         }
 

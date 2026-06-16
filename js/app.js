@@ -254,6 +254,7 @@
         const [activeLeagueId, setActiveLeagueId] = useState(null);
         const [selectedLeague, setSelectedLeague] = useState(null);
         const [proMode, setProMode] = useState(false); // Empire Dashboard mode
+        const [showConnect, setShowConnect] = useState(false); // hub: show platform connect / add-league view
         // Lifted tab state for browser history navigation
         const [activeTab, setActiveTab] = useState('dashboard');
         const isNavigatingRef = React.useRef(false);
@@ -772,6 +773,41 @@
             return { gp, wp, fillPct, teamCount: league.rosters?.length || 0 };
         }
 
+        // ── Franchise-picker helpers ──
+        function initialsFor(name) {
+            // ASCII-only so emoji / astral scripts (cuneiform, etc.) don't break the crest.
+            const ascii = String(name || '').replace(/[^A-Za-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (!ascii) return '★';
+            const w = ascii.split(' ');
+            return (((w[0] && w[0][0]) || '') + ((w[1] && w[1][0]) || '')).toUpperCase();
+        }
+        function leagueTeamName(league) {
+            try {
+                const me = league.rosters?.find(r => r.owner_id === sleeperUser?.user_id);
+                if (me) {
+                    const u = league.users?.find(x => x.user_id === me.owner_id);
+                    if (u?.metadata?.team_name) return u.metadata.team_name;
+                    if (u?.display_name) return u.display_name;
+                }
+            } catch (e) {}
+            return league.teamName || league.name || '';
+        }
+        function leagueFormat(league) {
+            const bits = [];
+            try {
+                const rp = (league.roster_positions || []).map(s => String(s).toUpperCase());
+                bits.push(rp.some(s => ['SUPER_FLEX', 'QB_FLEX', 'OP'].includes(s)) ? 'Superflex' : '1QB');
+                const rec = Number(league.scoring_settings?.rec ?? 0);
+                bits.push(rec >= 1 ? 'PPR' : rec >= 0.5 ? 'Half-PPR' : 'Standard');
+                if (Number(league.scoring_settings?.bonus_rec_te ?? 0) > 0) bits.push('TE-Prem');
+                const teams = league.rosters?.length || league.settings?.num_teams || league.total_rosters || 0;
+                if (teams) bits.push(teams + '-team');
+                const type = Number(league.settings?.type ?? -1);
+                bits.push(type === 0 ? 'Redraft' : type === 1 ? 'Keeper' : 'Dynasty');
+            } catch (e) {}
+            return bits.join(' · ');
+        }
+
         // Pro tier icon (SVG shield with star)
         function ProTierIcon({ size }) {
             const s = size || 24;
@@ -841,10 +877,6 @@
                         </div>
                     )}
 
-                    {/* Alex's Desk — cross-league AI digest (ambient, cached, uncounted) */}
-                    {!loading && sleeperLeagues.length > 0 && window.WR?.DashboardDigestCard &&
-                        React.createElement(window.WR.DashboardDigestCard, { leagues: sleeperLeagues, sleeperUser, onSelectLeague: onSelect })}
-
                     <div className="hub-league-list">
                         {sleeperLeagues.map(l => {
                             const h = leagueHealth(l);
@@ -868,6 +900,94 @@
                         })}
                         {loading && <div style={{ padding: '0.5rem', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', opacity: 0.6 }}>Loading more leagues…</div>}
                     </div>
+                </div>
+            );
+        }
+
+        // Unified franchise picker — the default landing for a connected (signed-up) user.
+        // Empire Command hero on top (launch for paid / upgrade for free), then a tile per
+        // franchise showing team name · league name · league settings, then "Add a league".
+        function FranchisePicker({ leagues, onSelect }) {
+            const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
+            const isPaid = EMPIRE_FREE_PRELIVE || tier === 'pro' || tier === 'warroom' || tier === 'war_room' || tier === 'commissioner';
+            return (
+                <div className="hub-franchise-picker" style={{ padding: '4px 12px 14px' }}>
+                    {isPaid ? (
+                        <div className="empire-hero" onClick={() => setProMode(true)}
+                            style={{ cursor: 'pointer', marginBottom: '14px', borderRadius: '14px', padding: '16px', background: 'linear-gradient(135deg, rgba(212,175,55,0.16), rgba(212,175,55,0.04))', border: '1px solid var(--gold)', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 0 0 1px var(--acc-line1, rgba(212,175,55,0.12)), 0 0 22px rgba(212,175,55,0.10)', transition: 'all .16s' }}
+                            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 0 0 1px var(--gold), 0 0 28px rgba(212,175,55,0.22)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 0 0 1px rgba(212,175,55,0.12), 0 0 22px rgba(212,175,55,0.10)'; e.currentTarget.style.transform = 'none'; }}>
+                            <div style={{ width: '44px', height: '44px', flexShrink: 0 }}><ProTierIcon size={44} /></div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                                    <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1.15rem', letterSpacing: '.08em', color: 'var(--gold)' }}>EMPIRE COMMAND</span>
+                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '.06em', color: 'var(--black)', background: 'var(--gold)', borderRadius: '5px', padding: '1px 6px' }}>PRO</span>
+                                </div>
+                                <div style={{ fontSize: 'var(--text-label, 0.8rem)', color: 'var(--silver)', marginTop: '4px' }}>All {leagues.length} league{leagues.length !== 1 ? 's' : ''} in one terminal · cross-league trade intelligence</div>
+                            </div>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" strokeWidth="2" style={{ flexShrink: 0, opacity: 0.7 }}><polyline points="9 18 15 12 9 6"/></svg>
+                        </div>
+                    ) : (
+                        <div className="empire-hero locked" onClick={() => { if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage(); else window.location.href = 'landing.html'; }}
+                            style={{ cursor: 'pointer', marginBottom: '14px', borderRadius: '14px', padding: '16px', background: 'linear-gradient(135deg, rgba(212,175,55,0.07), rgba(212,175,55,0.02))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', display: 'flex', alignItems: 'center', gap: '14px', transition: 'all .16s' }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--acc-line2, rgba(212,175,55,0.3))'; }}>
+                            <div style={{ width: '44px', height: '44px', flexShrink: 0, borderRadius: '50%', border: '1.5px solid var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--gold)" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                                    <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1.15rem', letterSpacing: '.08em', color: 'var(--gold)' }}>EMPIRE COMMAND</span>
+                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '.06em', color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: '5px', padding: '1px 6px' }}>PRO</span>
+                                </div>
+                                <div style={{ fontSize: 'var(--text-label, 0.8rem)', color: 'var(--silver)', marginTop: '4px' }}>Command every league from one terminal — see cross-league trades you can't spot inside a single league.</div>
+                            </div>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 700, color: 'var(--gold)', whiteSpace: 'nowrap', flexShrink: 0 }}>Unlock ›</span>
+                        </div>
+                    )}
+
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.7, margin: '2px 0 10px' }}>{isPaid ? 'Or enter a single league' : 'Select franchise'}</div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                        {leagues.map(l => {
+                            const h = leagueHealth(l);
+                            const team = leagueTeamName(l);
+                            const showTeam = team && team !== l.name;
+                            const title = showTeam ? team : l.name;
+                            const sub = showTeam ? l.name : null;
+                            const isLast = String(l.id) === String(lastLeagueId);
+                            const recordCol = h.wp === null ? 'var(--silver)' : h.wp >= 60 ? 'var(--win-green)' : h.wp < 40 ? 'var(--loss-red)' : 'var(--silver)';
+                            return (
+                                <div key={l.id} onClick={() => onSelect(l)}
+                                    style={{ position: 'relative', cursor: 'pointer', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (isLast ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'), borderRadius: '12px', padding: '14px', transition: 'all .14s' }}
+                                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.borderColor = isLast ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'; e.currentTarget.style.transform = 'none'; }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
+                                        <div style={{ width: '40px', height: '40px', flexShrink: 0, borderRadius: '50%', border: '1.5px solid var(--gold)', background: 'var(--black)', color: 'var(--gold)', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initialsFor(title)}</div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                                <span style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 600, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+                                                {isLast && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 600, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '4px', padding: '0 4px', flexShrink: 0 }}>LAST</span>}
+                                            </div>
+                                            {sub && <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>}
+                                        </div>
+                                    </div>
+                                    <div style={{ marginTop: '11px', paddingTop: '10px', borderTop: '1px solid var(--acc-line1, rgba(212,175,55,0.12))', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{leagueFormat(l)}</span>
+                                        {h.wp !== null && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 700, color: recordCol, flexShrink: 0 }}>{l.wins}-{l.losses}{l.ties > 0 ? '-' + l.ties : ''}</span>}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <div onClick={() => setShowConnect(true)}
+                            style={{ cursor: 'pointer', border: '1px dashed var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '12px', padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px', color: 'var(--silver)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label, 0.8rem)', minHeight: '92px', transition: 'all .14s' }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)'; e.currentTarget.style.color = 'var(--gold)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--acc-line2, rgba(212,175,55,0.3))'; e.currentTarget.style.color = 'var(--silver)'; }}>
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Add a league
+                        </div>
+                    </div>
+                    {loading && <div style={{ padding: '10px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', opacity: 0.6 }}>Loading more leagues…</div>}
                 </div>
             );
         }
@@ -979,7 +1099,9 @@
         }
 
         // Search connected leagues across active production platforms.
-        const resumeLeague = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues].find(l => l.id === lastLeagueId);
+        const allLeagues = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues];
+        const hasLeagues = allLeagues.length > 0;
+        const resumeLeague = allLeagues.find(l => l.id === lastLeagueId);
         const iconSrc = ((window.location.pathname || '').includes('/dist-preview/') ? '../' : '') + 'icon-192.png';
 
         return (
@@ -993,15 +1115,14 @@
                             <div className="header-subtitle">{String(displayName)}</div>
                         </div>
                     </div>
-                    <a href={RECONAI_BASE} onClick={() => localStorage.setItem('fw_preferred_view','scout')} style={{ fontSize:'var(--text-label, 0.75rem)',color:'var(--gold)',textDecoration:'none',fontWeight:700,padding:'4px 10px',border:'1px solid var(--acc-line1, rgba(212,175,55,.25))',borderRadius:'6px',whiteSpace:'nowrap',marginRight:'8px',display:'inline-flex',alignItems:'center',minHeight:'44px' }} title="Switch to Scout mobile view">Scout</a>
                     <svg className="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" onClick={() => setShowSettings(true)} style={{ cursor: 'pointer' }}>
                         <circle cx="12" cy="12" r="3" stroke="var(--gold)"/>
                         <path d="M12 1v6m0 6v6m-5.2-7.8l-4.3-4.2m12.9 0l4.3 4.2M1 12h6m6 0h6m-7.8 5.2l-4.2 4.3m0-12.9l4.2 4.3" stroke="var(--gold)"/>
                     </svg>
                 </header>
 
-                {/* ── Session Strip ── */}
-                {resumeLeague && !loading && (
+                {/* ── Session Strip (only in connect/add-league view; picker shows LAST inline) ── */}
+                {resumeLeague && !loading && (!hasLeagues || showConnect) && (
                     <div className="session-strip">
                         <span className="session-strip-label">Last Session:</span>
                         <span className="session-strip-league">{lastLeagueName}</span>
@@ -1011,16 +1132,18 @@
                     </div>
                 )}
 
-                {/* ── Welcome banner ── */}
-                {!loading && (
-                    <div className="hub-welcome">
-                        <h2>Welcome back, <span>{String(displayName)}</span></h2>
-                        <p>Choose a league to enter your Dynasty HQ.</p>
-                    </div>
+                {/* ── Franchise picker — default landing for a connected user ── */}
+                {hasLeagues && !showConnect && (
+                    <FranchisePicker leagues={allLeagues} onSelect={handleSelectLeague} />
                 )}
 
-                {/* ── Platform Cards (centers a single card; 2-up when multiple) ── */}
-                <div className={'hub-platform-grid' + (platformAccessAllowed('mfl') ? ' is-multi' : '')}>
+                {/* ── Connect / add-league view (platform cards) ── */}
+                {(!hasLeagues || showConnect) && (<>
+                {showConnect && hasLeagues && (
+                    <button onClick={() => setShowConnect(false)} className="hub-cta ghost" style={{ margin: '0 12px 10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>‹ Back to franchises</button>
+                )}
+                {/* ── 4 Platform Cards ── */}
+                <div className="hub-platform-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', padding: '0 12px' }}>
 
                     {/* ──── SLEEPER ──── */}
                     <div className="product-card" style={{ borderColor: 'rgba(26,153,170,0.3)', background: 'linear-gradient(135deg, rgba(26,153,170,0.04), transparent)' }}>
@@ -1131,9 +1254,11 @@
                     {/* ──── YAHOO ──── HIDDEN — infrastructure preserved, UI removed */}
 
                 </div>
+                </>)}
 
                 {showSettings && (
                     <SettingsModal
+                        accountOnly={true}
                         onClose={() => setShowSettings(false)}
                         initDisplayName={customDisplayName}
                         onDisplayNameSave={(name) => {

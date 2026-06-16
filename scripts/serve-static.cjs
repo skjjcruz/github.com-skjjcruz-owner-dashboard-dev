@@ -179,6 +179,69 @@ function normalizeMessages(type, context) {
   return { system, messages, maxTokens };
 }
 
+// MIRROR of buildDynastyReadSystemPrompt / dynastyReadFormatClause /
+// buildDynastyReadPrompt in supabase/functions/ai-analyze/index.ts — keep in sync.
+// Lets the LOCAL preview produce the REAL dynasty read (NFL-analyst, plain prose,
+// web-search-grounded) instead of the generic bridge prompt. Dev harness only:
+// no shared cache, no pause_turn resume (prod handles those).
+function buildDynastyReadDev(parsed) {
+  const name = parsed?.name || 'this player';
+  const pos = parsed?.pos || '';
+  const team = parsed?.team || 'FA';
+  const age = parsed?.age ? `, age ${parsed.age}` : '';
+  const wk = (parsed?.week === 0 || parsed?.week === '0' || parsed?.week == null) ? 'the offseason' : `week ${parsed.week}`;
+  const season = parsed?.season || '';
+
+  const sf = parsed?.superflex === true || parsed?.isSuperFlex === true;
+  const tep = parsed?.tep === true || parsed?.tePremium === true || parsed?.isTEP === true;
+  const idp = parsed?.idp === true || parsed?.isIDP === true;
+  const scoring = parsed?.scoringType || parsed?.scoring || '';
+  const bits = [];
+  if (scoring === 'ppr') bits.push('full PPR');
+  else if (scoring === 'half_ppr' || scoring === 'half') bits.push('half PPR');
+  else if (scoring === 'std' || scoring === 'standard') bits.push('standard / non-PPR');
+  if (sf) bits.push('superflex (2 QB-eligible slots)');
+  if (tep) bits.push('TE-premium');
+  if (idp) bits.push('IDP');
+  const fmt = bits.length
+    ? `\nThe GM's league is ${bits.join(', ')}. Read this player THROUGH that lens — the same news means different things by format: QB value swings hardest in superflex; high-target receivers and pass-catching backs gain in PPR; every-down and receiving tight ends gain in TE-premium; defenders carry real, tradeable value in IDP. Weight the outlook to what this format rewards.\n`
+    : `\nThis is a league-agnostic dynasty read: focus on the role, usage, health and trajectory signals that move a player's value in any format.\n`;
+
+  const system = `You are a sharp NFL analyst writing the dynasty read on ONE player for the GM who ALREADY ROSTERS him. Your job: translate what is ACTUALLY happening with this player in the real world right now into what it means for his dynasty value. You have web search — use it, and build the read entirely on what you find.
+
+Weave three things into plain prose, in this order (do not label them):
+1. SITUATION — the most important real, current development from recent reporting: depth-chart role and snap/target/touch trend, health and its timeline, contract or roster status, a coaching/scheme change, or a teammate's move that opens or closes a path. Anchor it to something concrete and recent — not a career résumé.
+2. IMPACT — what that situation does to his usage and value right now.
+3. LONG-TERM OUTLOOK — the dynasty trajectory over the next 1-3 seasons: arrow up, flat, or down, and the specific reason driving it.
+${fmt}
+HARD RULES:
+- Ground the read in real, recent developments you actually found. Do NOT fall back on a generic age/role platitude that could be said about any player at his position.
+- LOW-PROFILE PLAYERS (deep bench, practice squad, just-drafted, UDFA): never go blank or generic — give his depth-chart spot, who is ahead of him, his realistic path to snaps, and a blunt verdict (deep stash / taxi-only / waiver-level) plus the single change that would put him on the radar.
+- The GM ALREADY OWNS him — write the forward outlook and a hold-or-move read, NOT whether to acquire him or what to pay. Never say "don't pay up" or give buy-price advice.
+- Wrap the final read — and nothing else — in <read></read> tags. Only the text inside those tags is shown to the GM, so put no preamble, fact list, separators, labels, or meta-commentary inside them (you may reason before the opening tag if you must). Example: <read>His role firmed up when…</read>
+- Confident and direct. Cut "could / may / might" hedging.
+- 3-5 sentences of PLAIN PROSE that run together as one short paragraph. Absolutely NO markdown, NO "#"/"##" headings, NO section titles ("Quick Take", "Situation", "Verdict", etc.), NO bullets, NO tables, NO labels, NO sign-off — just the sentences.`;
+
+  const user = `Use web search to pull the LATEST reporting on ${name} (${pos}, ${team}${age}) as of ${wk} ${season} — prioritize the last ~10 days plus this offseason's moves. Sources: ESPN, PFF, The Athletic, trusted team beat reporters. Then write the read per your instructions. Do NOT restate fantasy points, DHQ value, or position rank.`;
+
+  return { system, messages: [{ role: 'user', content: user }], maxTokens: 2000, webSearch: true };
+}
+
+// MIRROR of extractTaggedRead in index.ts — keep only the <read></read> content.
+function extractTaggedRead(text) {
+  const raw = String(text || '').trim();
+  const m = raw.match(/<read>([\s\S]*?)<\/read>/i);
+  if (m && m[1].trim()) return m[1].trim();
+  let t = raw.replace(/<\/?read>/gi, '').trim();
+  const sep = t.split(/\n\s*-{3,}\s*\n/);
+  if (sep.length > 1) t = sep[sep.length - 1].trim();
+  const paras = t.split(/\n\s*\n/);
+  if (paras.length > 1 && /^(i have |i'?ve |let me |here(?:'s| is| are)|okay|alright|sure|based on|after (?:my |the )?search)/i.test(paras[0].trim())) {
+    t = paras.slice(1).join('\n\n').trim();
+  }
+  return t.trim();
+}
+
 async function callOpenAI(provider, request) {
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -234,6 +297,20 @@ async function callGemini(provider, request) {
 }
 
 async function callAnthropic(provider, request) {
+  const payload = {
+    model: provider.model,
+    max_tokens: request.maxTokens,
+    system: request.system,
+    messages: request.messages
+      .filter(message => message.role !== 'system')
+      .map(message => ({
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: String(message.content || ''),
+      })),
+  };
+  // GA web search for the dynasty read (mirrors the edge function) so the preview
+  // produces a real news-grounded read, not an answer from training.
+  if (request.webSearch) payload.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -241,17 +318,7 @@ async function callAnthropic(provider, request) {
       'x-api-key': provider.apiKey,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({
-      model: provider.model,
-      max_tokens: request.maxTokens,
-      system: request.system,
-      messages: request.messages
-        .filter(message => message.role !== 'system')
-        .map(message => ({
-          role: message.role === 'assistant' ? 'assistant' : 'user',
-          content: String(message.content || ''),
-        })),
-    }),
+    body: JSON.stringify(payload),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || `Anthropic API error ${response.status}`);
@@ -303,7 +370,16 @@ async function handleDevAI(req, res) {
       return;
     }
 
-    const provider = localAIProvider();
+    let provider = localAIProvider();
+    // dynasty_read needs Anthropic (web search) to mirror prod. Prefer the
+    // Anthropic key for this type even if another provider is first in priority.
+    if (body.type === 'dynasty_read' && process.env.ANTHROPIC_API_KEY) {
+      provider = {
+        name: 'anthropic',
+        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      };
+    }
     if (!provider) {
       sendJson(res, 503, {
         error: 'Local AI preview bridge is not configured. Add OPENAI_API_KEY, GOOGLE_AI_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY to warroom/.env.local, or sign in with a real app session and restart the preview.',
@@ -311,15 +387,25 @@ async function handleDevAI(req, res) {
       return;
     }
 
-    const request = normalizeMessages(body.type, body.context);
+    // dynasty_read uses the REAL prompt + web search (Anthropic only); everything
+    // else uses the generic single-provider bridge.
+    let request;
+    if (body.type === 'dynasty_read' && provider.name === 'anthropic') {
+      let parsed = body.context;
+      if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch { parsed = {}; } }
+      request = buildDynastyReadDev(parsed);
+    } else {
+      request = normalizeMessages(body.type, body.context);
+    }
     const result = provider.name === 'openai'
       ? await callOpenAI(provider, request)
       : provider.name === 'gemini'
         ? await callGemini(provider, request)
         : await callAnthropic(provider, request);
 
+    const analysis = body.type === 'dynasty_read' ? extractTaggedRead(result.analysis) : result.analysis;
     sendJson(res, 200, {
-      analysis: result.analysis,
+      analysis,
       provider: provider.name,
       model: provider.model,
       usage: {
