@@ -54,6 +54,24 @@ const WIDGET_MODULES = {
         sizes: ['sm', 'md', 'lg', 'tall', 'xxl'],
         clickTarget: { sm: 'myteam', md: 'myteam' },
     },
+    'window-forecast': {
+        label: 'Window Forecast',
+        icon: '⏳',
+        description: 'When each position group ages out — cliffs + sell-by list',
+        accent: () => T().color?.('warn') || 'var(--k-f0a500, #f0a500)',
+        metrics: [],
+        sizes: ['sm', 'md', 'lg', 'tall'],
+        clickTarget: { sm: 'myteam', md: 'myteam' },
+    },
+    'gap-plan': {
+        label: 'Gap Plan',
+        icon: '🧩',
+        description: 'Positional gaps in player counts vs elite tier teams',
+        accent: () => T().color?.('negative') || 'var(--k-e74c3c, #e74c3c)',
+        metrics: [],
+        sizes: ['sm', 'md', 'lg'],
+        clickTarget: { sm: 'myteam' },
+    },
     'league-landscape': {
         label: 'League Landscape',
         icon: '🌐',
@@ -1069,6 +1087,18 @@ function DashboardPanel({
             return React.createElement(RPW, {
                 size, primaryMetric, myRoster, rankedTeams, sleeperUserId, currentLeague,
                 playersData, computeKpiValue, setActiveTab, navigateWidget,
+            });
+        }
+        // Window Forecast → WindowForecastWidget (js/widgets/window-forecast.js)
+        if (moduleKey === 'window-forecast' && typeof window.WindowForecastWidget === 'function') {
+            return React.createElement(window.WindowForecastWidget, {
+                size, myRoster, currentLeague, playersData, sleeperUserId, setActiveTab, navigateWidget,
+            });
+        }
+        // Gap Plan → GapPlanWidget (js/widgets/gap-plan.js)
+        if (moduleKey === 'gap-plan' && typeof window.GapPlanWidget === 'function') {
+            return React.createElement(window.GapPlanWidget, {
+                size, myRoster, currentLeague, playersData, sleeperUserId, setActiveTab, navigateWidget,
             });
         }
         // League Landscape → LeagueLandscapeWidget (js/widgets/league-landscape.js)
