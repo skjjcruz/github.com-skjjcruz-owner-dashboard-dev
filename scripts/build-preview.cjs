@@ -76,8 +76,8 @@ function build() {
 
   html = html.replace(/\n?<script[^>]+src=["']https:\/\/unpkg\.com\/@babel\/standalone[^"']*["'][^>]*><\/script>\s*/i, '\n');
 
-  // data-wr-defer scripts (the lazy-loaded draft module) are kept INERT
-  // (type="text/wr-deferred") so the browser doesn't run them at boot; the draft
+  // data-wr-defer scripts (lazy-loaded module groups) are kept INERT
+  // (type="text/wr-deferred") so the browser doesn't run them at boot; the module
   // loader injects executable copies on demand. They are still compiled like any
   // other JSX module so the compiled overlay exists for the loader to fetch.
   const deferType = (a, b, c) => /\bdata-wr-defer\b/i.test((a || '') + (b || '') + (c || '')) ? ' type="text/wr-deferred"' : '';

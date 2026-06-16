@@ -581,8 +581,20 @@
         }, [loading, sleeperLeagues, espnLeagues, mflLeagues]);
 
         // Show Empire Dashboard (Pro mode)
+        // global-view.js is a deferred module group (see js/module-loader.js); load it
+        // when Pro mode activates and re-render once EmpireDashboard exists.
         // eslint-disable-next-line no-undef
         const _EmpireDash = typeof EmpireDashboard === 'function' ? EmpireDashboard : null;
+        const [empireModuleState, setEmpireModuleState] = useState(_EmpireDash ? 'ready' : 'idle');
+        useEffect(() => {
+            if (!proMode || _EmpireDash || !window.wrLoadModuleGroup) return;
+            let alive = true;
+            setEmpireModuleState('loading');
+            window.wrLoadModuleGroup('empire')
+                .then(() => { if (alive) setEmpireModuleState('ready'); })
+                .catch(() => { if (alive) setEmpireModuleState('error'); });
+            return () => { alive = false; };
+        }, [proMode, _EmpireDash]);
         const [empirePlayersLoaded, setEmpirePlayersLoaded] = useState(false);
         const [empirePlayers, setEmpirePlayers] = useState({});
         // Bumped after background roster assessment so the Rolodex re-renders.
@@ -593,6 +605,9 @@
             if (!proMode || empirePlayersLoaded) return;
             (async () => {
                 try {
+                    // The deferred empire group owns buildEmpireDna & co. — make sure it
+                    // has executed before the assessment loop below reaches for it.
+                    if (window.wrLoadModuleGroup) { try { await window.wrLoadModuleGroup('empire'); } catch (e) {} }
                     // Load 10k player database (league-independent, cached 1hr)
                     const players = await window.App.fetchAllPlayers();
                     setEmpirePlayers(players || {});
@@ -687,6 +702,27 @@
             })();
         }, [proMode, empirePlayersLoaded]);
 
+        if (proMode && !selectedLeague && !_EmpireDash) {
+            // Empire module still injecting (or failed) — hold the surface instead of
+            // flashing the hub. Escape hatch mirrors the Empire onBack handler.
+            return (
+                <div style={{ padding: '96px 24px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' }}>
+                    {empireModuleState === 'error' ? 'Empire Dashboard failed to load.' : 'Loading Empire Dashboard…'}
+                    <div>
+                        <button
+                            onClick={() => {
+                                if (empireModuleState === 'error') { window.location.reload(); return; }
+                                setProMode(false);
+                                if (!isNavigatingRef.current) {
+                                    history.pushState({ view: 'hub' }, '', routeUrl(''));
+                                }
+                            }}
+                            style={{ marginTop: '16px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+                        >{empireModuleState === 'error' ? 'Reload' : 'Back to Hub'}</button>
+                    </div>
+                </div>
+            );
+        }
         if (proMode && !selectedLeague && _EmpireDash) {
             return (
                 <ErrorBoundary>
