@@ -191,11 +191,27 @@
     .alert-error{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
     .alert-success{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2)}
 
+    /* Pricing */
+    .pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:stretch}
+    .price-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px 20px;position:relative;display:flex;flex-direction:column}
+    .price-card-pop{border-color:var(--gold);box-shadow:0 0 34px rgba(212,175,55,.11)}
+    .price-badge{position:absolute;top:-10px;left:18px;background:var(--gold);color:#0a0a0a;font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:0;font-weight:800;margin-bottom:6px}
+    .price-amount{font-size:30px;font-weight:800;letter-spacing:0;margin-bottom:2px}
+    .price-amount span{font-size:14px;font-weight:600;color:var(--silver)}
+    .price-note{font-size:12px;color:var(--muted);margin-bottom:16px;min-height:30px}
+    .price-features{list-style:none;margin-bottom:22px;display:flex;flex-direction:column;gap:8px}
+    .price-features li{font-size:13px;color:var(--silver);line-height:1.35;display:flex;align-items:flex-start;gap:8px}
+    .price-features li::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--gold);flex-shrink:0;margin-top:6px}
+    .price-btn{width:100%;min-height:44px;margin-top:auto;font-size:14px;font-weight:800;border-radius:9px;border:1px solid var(--border);background:var(--bg3);color:var(--white);cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s}
+    .price-btn:hover{border-color:var(--gold);color:var(--gold)}
+    .price-btn-gold{background:var(--gold);color:#0a0a0a;border:none;box-shadow:0 5px 20px rgba(212,175,55,.2)}
+    .price-btn-gold:hover{color:#0a0a0a;box-shadow:0 9px 28px rgba(212,175,55,.28)}
     /* Footer */
     .footer{text-align:center;padding:24px;font-size:12px;color:var(--muted);border-top:1px solid var(--border)}
     @media(max-width:1040px){
       .hero-dashboard{right:-110px;width:640px;opacity:.7}
       .phone-preview{display:none}
+      .pricing-grid{grid-template-columns:repeat(2,1fr)}
     }
     @media(max-width:780px){
       .hero{align-items:flex-end;padding:96px 20px 46px;min-height:min(640px,calc(100vh - 98px))}
@@ -229,6 +245,7 @@
       .hero-cta,.hero-secondary{width:100%}
       .product-strip,.platforms{padding-left:16px;padding-right:16px}
       .section{padding-left:16px;padding-right:16px}
+      .pricing-grid{grid-template-columns:1fr}
       .price-note{min-height:0}
       .auth{padding-left:16px;padding-right:16px}
     }
@@ -296,6 +313,7 @@
       <p class="hero-sub">Most tools stop at player rankings. Dynasty HQ turns your Sleeper league into the model: DHQ values, owner tendencies, draft history, trade memory, and Scout decisions in one operating system.</p>
       <div class="hero-actions">
         <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Join with Sleeper</button>
+        <button class="hero-secondary" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">View plans</button>
       </div>
       <p class="hero-free">Create a free account with Google or email, add your Sleeper username, and you're in.</p>
     </div>
@@ -365,6 +383,77 @@
       <div class="feat-card"><div class="feat-icon">AI</div><div class="feat-name">AI with real context</div><p class="feat-desc">Alex answers with your roster, scoring, history, values, owner profiles, and current league state in the prompt.</p></div>
       <div class="feat-card"><div class="feat-icon">DB</div><div class="feat-name">Decision backlog</div><p class="feat-desc">Save tags, notes, targets, and trade ideas so today&apos;s thought is still there when you return at the deadline.</p></div>
     </div>
+  </section>
+
+  <!-- Pricing -->
+  <section class="section pricing" id="pricing">
+    <div class="section-head">
+      <div>
+        <div class="section-kicker">Plans</div>
+        <h2 class="section-title">Start with one league. Upgrade when the board gets bigger.</h2>
+      </div>
+      <p class="section-sub">Live plans are Sleeper-first while additional platform connectors stay in beta.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-name">Free</div>
+        <div class="price-amount">$0</div>
+        <div class="price-note">One league, forever</div>
+        <ul class="price-features">
+          <li>One Sleeper league</li>
+          <li>League-specific DHQ values</li>
+          <li>Player cards with age curves</li>
+          <li>Team diagnosis</li>
+          <li>1 AI query per day</li>
+        </ul>
+        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Get started</button>
+      </div>
+      <div class="price-card price-card-pop">
+        <div class="price-badge">Most Popular</div>
+        <div class="price-name">Dynasty HQ</div>
+        <div class="price-amount">$9.99 <span>/mo</span></div>
+        <div class="price-note">Unlimited Sleeper leagues. Cancel anytime.</div>
+        <ul class="price-features">
+          <li>Everything in Free</li>
+          <li>Unlimited Sleeper leagues</li>
+          <li>Unlimited AI analysis</li>
+          <li>Owner DNA profiles</li>
+          <li>Trade memory + finder</li>
+          <li>Draft command + pick values</li>
+          <li>Scout + War Room access</li>
+        </ul>
+        <button class="price-btn price-btn-gold" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free trial</button>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Pro</div>
+        <div class="price-amount">$14.95 <span>/mo</span></div>
+        <div class="price-note">Multi-league command center.</div>
+        <ul class="price-features">
+          <li>Everything in Dynasty HQ</li>
+          <li>Global dashboard for Sleeper leagues</li>
+          <li>Cross-league AI advice</li>
+          <li>Player exposure tracking</li>
+          <li>Unified Trophy Room</li>
+          <li>Season recap generator</li>
+        </ul>
+        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free trial</button>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Dynasty HQ Annual</div>
+        <div class="price-amount">$79.99 <span>/yr</span></div>
+        <div class="price-note">Save 33% — $6.67/mo</div>
+        <ul class="price-features">
+          <li>Everything in monthly</li>
+          <li>Locked-in annual rate</li>
+          <li>Priority feature access</li>
+          <li>Unlimited Sleeper leagues</li>
+        </ul>
+        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free trial</button>
+      </div>
+    </div>
+    <p style="text-align:center;font-size:13px;color:var(--muted);margin-top:24px">
+      <strong style="color:var(--gold)">League Pass</strong> — Get your whole league on Dynasty HQ at a group discount. <a href="mailto:fantasywarsapp@gmail.com" style="color:var(--gold)">Contact us</a>
+    </p>
   </section>
 
   <!-- Platforms -->
@@ -503,7 +592,7 @@
       viewport: window.innerWidth < 768 ? 'mobile' : 'desktop',
     });
     document.addEventListener('click', (evt) => {
-      const target = evt.target.closest?.('.hero-cta,.nav-btn,.auth-submit');
+      const target = evt.target.closest?.('.hero-cta,.hero-secondary,.price-btn,.nav-btn,.auth-submit');
       if (!target) return;
       trackLandingEvent('landing_cta_clicked', {
         widget: target.className.split(/\s+/)[0],
