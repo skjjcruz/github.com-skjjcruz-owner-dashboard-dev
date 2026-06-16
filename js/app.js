@@ -27,6 +27,12 @@
     const EMPIRE_FREE_PRELIVE = true;
     window.App.EMPIRE_FREE_PRELIVE = EMPIRE_FREE_PRELIVE;
 
+    // ── Owner default: bigloco's locked-in MFL franchise in the "MLS Dynasty
+    // League" (id 41969). Used to auto-select the team on rehydrate when no
+    // mfl_franchise_id is persisted yet. Matched by NAME in loadMflData so the
+    // pick survives storage clears / new devices without pinning a numeric id. ──
+    const OWNER_MFL_TEAM = 'St. Louis City SC';
+
     // ── Notes from the Front — Field Log feed from Scout sessions ──
     var FL_CAT_COLORS = { trade:'var(--k-d4af37, #d4af37)', roster:'var(--k-2ecc71, #2ecc71)', draft:'var(--k-3498db, #3498db)', waivers:'var(--k-9b59b6, #9b59b6)', research:'var(--k-e67e22, #e67e22)', note:'var(--k-808080, #808080)' };
     var FL_CAT_ICONS  = { trade:'🔄', roster:'📋', draft:'🎯', waivers:'📡', research:'🔍', note:'📝' };
@@ -320,6 +326,99 @@
         useEffect(() => {
             if (sleeperUsername) loadSleeperData();
         }, [selectedYear]);
+
+        // Build the hub league object from a mapped MFL result. Shared by the
+        // connect flow (finalizeMFLConnect) and the on-load rehydrator
+        // (loadMflData) so both produce an identical shape.
+        function buildMflLeagueObj(result, leagueId, franchiseId) {
+            return {
+                id: result.league.league_id,
+                name: result.league.name,
+                season: result.league.season,
+                wins: 0, losses: 0, ties: 0,
+                rosters: result.rosters,
+                scoring_settings: result.league.scoring_settings,
+                roster_positions: result.league.roster_positions,
+                settings: result.league.settings || {},
+                users: result.leagueUsers,
+                _mfl: true,
+                _mflLeagueId: leagueId,
+                _mflFranchiseId: franchiseId || null,
+            };
+        }
+
+        // ── MFL rehydration ──
+        // Sleeper leagues reload from the username on every launch; MFL has no
+        // such identity, so a connected league would vanish on refresh. We
+        // persist the connection (id / year / team) and re-fetch it on mount so
+        // a locked-in MFL league always reappears in the franchise picker.
+        useEffect(() => {
+            if (!PLATFORM_SANDBOX_ACCESS) return;
+            let alive = true;
+            (async () => {
+                // Resolve the connection: prefer local, else pull the cloud-synced
+                // one so a fresh device rehydrates the MFL league + team without a
+                // manual reconnect (mirrors how Sleeper rehydrates from the username).
+                let leagueId = localStorage.getItem('mfl_league_id');
+                if (!leagueId && window.OD?.loadMflConnection) {
+                    try {
+                        const conn = await window.OD.loadMflConnection();
+                        if (conn?.leagueId) {
+                            leagueId = String(conn.leagueId);
+                            localStorage.setItem('mfl_league_id', leagueId);
+                            if (conn.year) localStorage.setItem('mfl_year', String(conn.year));
+                            if (conn.franchiseId) localStorage.setItem('mfl_franchise_id', String(conn.franchiseId));
+                        }
+                    } catch (e) { window.wrLog?.('app.loadMflConnection', e); }
+                }
+                if (!alive || !leagueId) return;
+                // mfl-api.js ships in the shared bundle, but guard against the
+                // connector not being ready yet on a cold start.
+                for (let i = 0; i < 50 && !window.MFL; i++) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                if (!alive || !window.MFL) return;
+                const year = localStorage.getItem('mfl_year') || '2026';
+                const apiKey = sessionStorage.getItem('mfl_api_key') || null;
+                let franchiseId = localStorage.getItem('mfl_franchise_id') || null;
+                try {
+                    const raw = await window.MFL.fetchLeague(leagueId, year, apiKey);
+                    if (!alive || !raw?.leagueData?.league) return;
+                    const franchisesRaw = raw.leagueData?.league?.franchises?.franchise || [];
+                    const franchiseArr = Array.isArray(franchisesRaw) ? franchisesRaw : [franchisesRaw];
+                    // Owner default: if bigloco hasn't picked a team yet, lock in the
+                    // known franchise (OWNER_MFL_TEAM) by name and persist its id so
+                    // it sticks across reloads / devices.
+                    if (!franchiseId && (sleeperUsername || '').toLowerCase() === 'bigloco') {
+                        const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const owned = franchiseArr.find(f => norm(f.name) === norm(OWNER_MFL_TEAM));
+                        if (owned) { franchiseId = owned.id; localStorage.setItem('mfl_franchise_id', String(owned.id)); }
+                    }
+                    const mflPlayerArr = raw.playersData?.players?.player || [];
+                    const allMflPlayers = Array.isArray(mflPlayerArr) ? mflPlayerArr : [mflPlayerArr];
+                    const crosswalk = window.MFL.buildCrosswalk({}, allMflPlayers, year);
+                    const result = window.MFL.mapToSleeperState(raw, leagueId, year, crosswalk);
+                    if (!alive) return;
+                    const league = buildMflLeagueObj(result, leagueId, franchiseId);
+                    setMflLeagues(prev => {
+                        const filtered = prev.filter(l => l._mflLeagueId !== league._mflLeagueId);
+                        return [...filtered, league];
+                    });
+                    // Keep the cloud copy in sync — backfills a league first
+                    // connected on this device so it follows the account elsewhere.
+                    window.OD?.saveMflConnection?.({ leagueId, year, franchiseId });
+                    // Still no team (non-owner, or name not matched)? Prime the
+                    // franchise picker so it can be locked in one click from the MFL card.
+                    if (!franchiseId) {
+                        setMflFranchises(franchiseArr);
+                        setMflPendingResult(result);
+                    }
+                } catch (e) {
+                    window.wrLog?.('app.loadMflData', e);
+                }
+            })();
+            return () => { alive = false; };
+        }, []);
 
         async function loadSleeperData() {
             setLoading(true);
@@ -838,20 +937,14 @@
             if (!platformAccessAllowed('mfl')) return;
             const result = mflPendingResult;
             if (!result) return;
-            const league = {
-                id: result.league.league_id,
-                name: result.league.name,
-                season: result.league.season,
-                wins: 0, losses: 0, ties: 0,
-                rosters: result.rosters,
-                scoring_settings: result.league.scoring_settings,
-                roster_positions: result.league.roster_positions,
-                settings: result.league.settings || {},
-                users: result.leagueUsers,
-                _mfl: true,
-                _mflLeagueId: localStorage.getItem('mfl_league_id'),
-                _mflFranchiseId: franchiseId || null,
-            };
+            const leagueId = localStorage.getItem('mfl_league_id');
+            // Lock in the team pick so it rehydrates on every future launch
+            // (league id + year are already persisted in handleMFLConnect).
+            if (franchiseId) localStorage.setItem('mfl_franchise_id', String(franchiseId));
+            else localStorage.removeItem('mfl_franchise_id');
+            // Sync the connection to the account so it follows the user across devices.
+            window.OD?.saveMflConnection?.({ leagueId, year: localStorage.getItem('mfl_year') || '2026', franchiseId: franchiseId || null });
+            const league = buildMflLeagueObj(result, leagueId, franchiseId);
             setMflLeagues(prev => {
                 const filtered = prev.filter(l => l._mflLeagueId !== league._mflLeagueId);
                 return [...filtered, league];
