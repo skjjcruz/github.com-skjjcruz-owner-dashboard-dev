@@ -1277,6 +1277,26 @@
     @media(max-width:900px){ .tc-dhq-hero { align-items: flex-start; flex-direction: column; } .tc-dhq-metrics { grid-template-columns: repeat(2, 1fr); } .tc-dhq-grid { grid-template-columns: 1fr; grid-template-areas: "partners" "dossier" "packages"; grid-auto-rows: auto; } .tc-dhq-panel { overflow: visible; } .tc-dhq-panel-body { overflow: visible; padding-right: 0; } .tc-dhq-deal-grid, .tc-dhq-readout, .tc-dhq-deal-stage-body { grid-template-columns: 1fr; } .tc-dhq-browser-head { align-items: flex-start; flex-direction: column; } .tc-dhq-browser-controls { justify-content: flex-start; } }
     @media(max-width:560px){ .tc-dhq-metrics, .tc-dhq-dossier-grid { grid-template-columns: 1fr; } .tc-dhq-panel { padding: 9px; } .tc-dhq-hero h2 { font-size: 1.3rem; } .tc-dhq-actions { justify-content: flex-start; } .tc-dhq-deal-stage { min-height: 0; } }
 
+    /* ── Adaptive canvas Context Rail (morphing Dossier ⇄ DNA ⇄ Verdict) ──
+       Desktop-only: at ≥1281px the rail owns the dossier (Deal HQ slims to partners+packages
+       and the expanded builder's inline verdict hides). Narrower viewports keep today's
+       layout untouched — the rail simply doesn't display. */
+    .tc-adaptive-canvas, .tc-adaptive-main { min-width: 0; }
+    .tc-context-rail { display: none; }
+    .tc-rail-badges { display: flex; gap: 6px; margin-bottom: 10px; flex: 0 0 auto; }
+    .tc-rail-badges button { flex: 1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.09); border-radius: 6px; color: var(--silver); cursor: pointer; font-family: var(--font-body); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; padding: 6px 0; text-transform: uppercase; }
+    .tc-rail-badges button.is-active { background: rgba(212,175,55,0.1); border-color: rgba(212,175,55,0.35); color: var(--gold); }
+    .tc-rail-badges .tc-rail-pin { flex: 0 0 36px; padding: 6px 0; }
+    .tc-rail-badges .tc-rail-pin.is-on { background: rgba(53,208,214,0.1); border-color: rgba(53,208,214,0.4); color: #35d0d6; }
+    .tc-rail-dna-link { width: 100%; margin-top: 10px; background: rgba(212,175,55,0.06); border: 1px solid rgba(212,175,55,0.2); border-radius: 6px; color: var(--gold); cursor: pointer; font-family: var(--font-body); font-size: 0.74rem; font-weight: 600; padding: 8px 10px; }
+    @media(min-width:1281px){
+        .tc-adaptive-canvas.has-rail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(296px, 330px); gap: 12px; align-items: start; }
+        .tc-adaptive-canvas.has-rail .tc-context-rail { display: flex; position: sticky; top: 10px; max-height: calc(100vh - 84px); }
+        .tc-adaptive-canvas.has-rail .tc-dhq-grid { grid-template-columns: minmax(250px, 0.8fr) minmax(430px, 1.45fr); grid-template-areas: "partners packages"; }
+        .tc-adaptive-canvas.has-rail .tc-dhq-dossier { display: none; }
+        .tc-adaptive-canvas.has-rail .tc-rail-wide-hide { display: none; }
+    }
+
     /* DNA Grid */
     .tc-dna-grid { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
     @media(min-width:600px){ .tc-dna-grid { grid-template-columns: 1fr 1fr; } }

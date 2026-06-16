@@ -530,7 +530,7 @@
             const rosterPos = currentLeague.roster_positions || [];
             const users = currentLeague.users || [];
             const user = users.find(u => u.user_id === roster.owner_id);
-            const teamName = user?.metadata?.team_name || `Team ${roster.roster_id}`;
+            const teamName = user?.metadata?.team_name || user?.display_name || `Team ${roster.roster_id}`;
             const ownerName = user?.display_name || `Owner ${roster.roster_id}`;
             const avatar = user?.avatar || null;
             const wins = roster.settings?.wins || 0;
@@ -769,6 +769,8 @@
         const [tcTab, setTcTab] = useState(initialSubTab || 'dealhq');
         const [adaptiveView, setAdaptiveView] = useState('hero'); // Adaptive War Room canvas view: 'hero' | 'workspace'
         const [builderExpanded, setBuilderExpanded] = useState(false); // persistent builder panel open/closed
+        const [railView, setRailView] = useState('dossier'); // Context Rail morph state: 'dossier' | 'dna' | 'verdict'
+        const [railPinned, setRailPinned] = useState(false); // 📌 pinned rail ignores auto-morph
         const [dealMode, setDealMode] = useState('fillNeed');
         const [dealFocusPid, setDealFocusPid] = useState(null);
         const [selectedDealPartnerId, setSelectedDealPartnerId] = useState(null);
@@ -782,6 +784,7 @@
         const generatedPackagesRef = useRef(null);
         useEffect(() => {
             if (!initialSubTab) return;
+            setAdaptiveView('workspace'); // sub-tab deep-links land on the requested surface, never the hero
             if (initialSubTab === 'finder') {
                 window._wrAnalyzerMode = 'find';
                 setDealMode('acquire');
@@ -793,6 +796,15 @@
             }
             if (onSubTabConsumed) onSubTabConsumed();
         }, [initialSubTab]);
+        // Context Rail auto-morph (mockup rule: the rail follows what you touch unless pinned):
+        // selecting a partner pulls the rail to their dossier; opening the persistent builder
+        // pulls it to the live verdict.
+        useEffect(() => {
+            if (selectedDealPartnerId && !railPinned) setRailView('dossier');
+        }, [selectedDealPartnerId]);
+        useEffect(() => {
+            if (builderExpanded && !railPinned) setRailView('verdict');
+        }, [builderExpanded]);
         const [finderAutoTarget, setFinderAutoTarget] = useState(null);
         useEffect(() => {
             const openFinder = (target) => {
@@ -1899,11 +1911,14 @@
             });
             setTradeFaab({ A: deal.giveFaab || 0, B: deal.receiveFaab || 0 });
             setSearchText({ A: '', B: '' });
-            if (typeof window !== 'undefined' && window._wrAdaptiveCanvas === true) {
+            if (typeof window !== 'undefined' && window._wrAdaptiveCanvas !== false) {
                 // Adaptive canvas: edit the generated deal IN PLACE via the persistent builder,
-                // instead of jumping to a separate Builder surface.
+                // instead of jumping to a separate Builder surface. The rail jumps to the live
+                // verdict and PINS there (mockup loadDeal rule) so partner browsing keeps it.
                 setAdaptiveView('workspace');
                 setBuilderExpanded(true);
+                setRailView('verdict');
+                setRailPinned(true);
             } else {
                 setTcTab('analyzer');
             }
@@ -2712,32 +2727,14 @@
             );
         }
 
-        function renderDealHQ() {
-            if (!rosterState.isUsable) {
-                return <div className="tc-dhq-shell wr-fade-in">
-                    <div className="tc-dhq-hero">
-                        <div>
-                            <div className="tc-dhq-kicker">Deal HQ</div>
-                            <h2>Trade recommendations paused</h2>
-                            <p>Partner scores and generated packages are hidden until complete roster IDs are available.</p>
-                        </div>
-                    </div>
-                    {window.App?.renderRosterDataBlocker?.(rosterState, {
-                        title: rosterState.isPreDraftRosterEmpty ? null : 'Roster sync incomplete',
-                        message: rosterState.isPreDraftRosterEmpty ? rosterState.message : 'Trade partner scores need your current roster before they can be trusted.',
-                        detail: rosterState.detail,
-                        actionLabel: rosterState.isPreDraftRosterEmpty ? null : 'Refresh Data',
-                        style: { minHeight: '220px' },
-                    })}
-                </div>;
-            }
-            if (!assessments.length || !myAssessment) {
-                return <div style={{ color:'var(--silver)', textAlign:'center', padding:'2rem' }}>No trade data loaded yet.</div>;
-            }
-
+        // ── computePartnerBoard — the single partner ranking consumed by Deal HQ, the
+        // best-move hero, and the Context Rail. Extracted from renderDealHQ (the hero used
+        // to carry a mirrored copy with a KEEP-IN-SYNC warning — now there is one copy).
+        function computePartnerBoard() {
+            if (!assessments.length || !myAssessment) return [];
             const myStrengths = myAssessment.strengths || [];
             const myNeeds = myAssessment.needs || [];
-            const partnerBoard = assessments
+            return assessments
                 .filter(a => a.rosterId !== myRosterId)
                 .map(a => {
                     const dnaKey = ownerDna[a.ownerId] || 'NONE';
@@ -2776,6 +2773,116 @@
                     return { assessment:a, dnaKey, dna, posture, compat, mutualNeedFit, theyHaveNeed, pickAssets, pickCapital, profile, behaviorProfile, behaviorScore, score, tag, tagColor, scoreReasons };
                 })
                 .sort((a, b) => b.score - a.score || b.compat - a.compat);
+        }
+
+        // ── renderPartnerDossierBody — the partner dossier content, shared by the Deal HQ
+        // dossier panel and the Context Rail. `item` is a computePartnerBoard() entry; pass
+        // opts.savedQueueRef from the Deal HQ copy so scrollToSavedQueue keeps its anchor.
+        function renderPartnerDossierBody(item, opts = {}) {
+            const partner = item?.assessment || null;
+            if (!item || !partner) return <div className="tc-dhq-empty">Select a partner to view their dossier.</div>;
+            const headToHeadTrades = (window.App?.LI?.tradeHistory || [])
+                .filter(t => {
+                    const ids = tradeRosterIds(t);
+                    return ids.includes(String(myRosterId)) && ids.includes(String(partner.rosterId));
+                })
+                .sort((a, b) => tradeTimestampMs(b) - tradeTimestampMs(a) || (Number(b.season || 0) - Number(a.season || 0)) || (Number(b.week || 0) - Number(a.week || 0)))
+                .slice(0, 5);
+            const tradeHistoryRow = (trade, idx) => {
+                const received = tradeSideReceivedAssets(trade, myRosterId);
+                const sent = tradeSideSentAssets(trade, myRosterId);
+                const net = tradeAssetsValue(received) - tradeAssetsValue(sent);
+                const dateLabel = trade.season ? `${trade.season} W${trade.week || '-'}` : tradeTimestampMs(trade) ? new Date(tradeTimestampMs(trade)).toLocaleDateString() : 'Past trade';
+                return <div key={trade.transaction_id || trade.id || idx} className="tc-dhq-history-row">
+                    <div>
+                        <span>{dateLabel}</span>
+                        <strong>{partner.ownerName || 'Partner'}</strong>
+                    </div>
+                    <p><b>You got</b> {summarizeTradeAssets(received)}</p>
+                    <p><b>You sent</b> {summarizeTradeAssets(sent)}</p>
+                    <em style={{ color:net >= 0 ? 'var(--good)' : 'var(--bad)' }}>{net >= 0 ? '+' : ''}{Math.round(net).toLocaleString()} DHQ</em>
+                </div>;
+            };
+            return <>
+                <div className="tc-dhq-dossier-card">
+                    <h3>{partner.ownerName}</h3>
+                    <div className="tc-dhq-chipline">
+                        <span style={{ color:partner.tierColor }}>{partner.tier}</span>
+                        <span style={{ color:item.posture.color }}>{item.posture.label}</span>
+                        <span>{item.compat}% fit</span>
+                    </div>
+                    <p>{item.behaviorProfile?.strategy?.offerFrame || item.dna?.strategy || item.posture.desc}</p>
+                </div>
+                <div className="tc-dhq-dossier-block">
+                    <b>Why this partner</b>
+                    <p>{item.scoreReasons.slice(0, 3).join(' · ')}.</p>
+                </div>
+                <div className="tc-dhq-dossier-grid">
+                    <div><span>Record</span><strong>{partner.wins}-{partner.losses}{partner.ties ? '-' + partner.ties : ''}</strong></div>
+                    <div><span>Weekly</span><strong>{partner.weeklyPts || '--'}</strong></div>
+                    <div><span>Trade W-L</span><strong>{item.profile.tradesWon || 0}-{item.profile.tradesLost || 0}</strong></div>
+                    <div><span>Avg Trade</span><strong>{(item.profile.avgValueDiff || 0) >= 0 ? '+' : ''}{Math.round(item.profile.avgValueDiff || 0)}</strong></div>
+                </div>
+                <div className="tc-dhq-dossier-block">
+                    <b>Needs</b>
+                    <div className="tc-dhq-chipline">{(partner.needs || []).slice(0, 6).map(n => <i key={n.pos} className={n.urgency === 'deficit' ? 'need' : ''}>{n.pos}</i>)}</div>
+                </div>
+                <div className="tc-dhq-dossier-block">
+                    <b>Assets they may move</b>
+                    <div className="tc-dhq-chipline">{(partner.strengths || []).slice(0, 6).map(s => <i key={s} className="strength">+{s}</i>)}{item.pickAssets.slice(0, 3).map(p => <i key={p.id}>{p.label}</i>)}</div>
+                </div>
+                <div className="tc-dhq-dossier-block">
+                    <b>Acceptance drivers</b>
+                    <ul>
+                        <li>{item.posture.desc}</li>
+                        {partner.panic >= 3 && <li>Panic level {partner.panic}/5 creates urgency.</li>}
+                        {item.mutualNeedFit > 0 && <li>Your surplus matches {item.mutualNeedFit} of their needs.</li>}
+                        {item.dnaKey !== 'NONE' && <li>{item.dna.label}: {item.dna.desc}</li>}
+                        {(item.behaviorProfile?.observedFacts || []).slice(0, 2).map(fact => <li key={fact.code}>{fact.detail}</li>)}
+                    </ul>
+                </div>
+                <div className="tc-dhq-dossier-block">
+                    <b>Head-to-head trade history</b>
+                    {headToHeadTrades.length
+                        ? <div className="tc-dhq-history">{headToHeadTrades.map(tradeHistoryRow)}</div>
+                        : <p>No recorded trades between your team and this partner yet.</p>}
+                </div>
+                <div className="tc-dhq-dossier-block" ref={opts.savedQueueRef || null}>
+                    <b>Saved queue</b>
+                    <p>Saved package cards live here for this league and reopen in the manual analyzer.</p>
+                    {savedDeals.length ? savedDeals.slice(0, 5).map(d => <div key={d.id} className="tc-dhq-saved">
+                        <button onClick={() => loadDealIntoAnalyzer(d)}>{d.partnerName || 'Saved deal'} <span>{d.likelihood}%</span></button>
+                        <button onClick={() => removeSavedDeal(d.id)}>X</button>
+                    </div>) : <p>No saved deals yet.</p>}
+                </div>
+            </>;
+        }
+
+        function renderDealHQ() {
+            if (!rosterState.isUsable) {
+                return <div className="tc-dhq-shell wr-fade-in">
+                    <div className="tc-dhq-hero">
+                        <div>
+                            <div className="tc-dhq-kicker">Deal HQ</div>
+                            <h2>Trade recommendations paused</h2>
+                            <p>Partner scores and generated packages are hidden until complete roster IDs are available.</p>
+                        </div>
+                    </div>
+                    {window.App?.renderRosterDataBlocker?.(rosterState, {
+                        title: rosterState.isPreDraftRosterEmpty ? null : 'Roster sync incomplete',
+                        message: rosterState.isPreDraftRosterEmpty ? rosterState.message : 'Trade partner scores need your current roster before they can be trusted.',
+                        detail: rosterState.detail,
+                        actionLabel: rosterState.isPreDraftRosterEmpty ? null : 'Refresh Data',
+                        style: { minHeight: '220px' },
+                    })}
+                </div>;
+            }
+            if (!assessments.length || !myAssessment) {
+                return <div style={{ color:'var(--silver)', textAlign:'center', padding:'2rem' }}>No trade data loaded yet.</div>;
+            }
+
+            const myStrengths = myAssessment.strengths || [];
+            const partnerBoard = computePartnerBoard();
 
             const focusTuning = getDealHqTuning(window.WR?.AlexSettings?.get?.() || {});
             const selectedItem = partnerBoard.find(p => String(p.assessment.ownerId) === String(selectedDealPartnerId)) || partnerBoard[0] || null;
@@ -2876,32 +2983,6 @@
                         chips.push({ key:`stable-${pos}`, label:pos, className:'' });
                     });
                 return chips.slice(0, limit);
-            }
-
-            const headToHeadTrades = selectedPartner
-                ? (window.App?.LI?.tradeHistory || [])
-                    .filter(t => {
-                        const ids = tradeRosterIds(t);
-                        return ids.includes(String(myRosterId)) && ids.includes(String(selectedPartner.rosterId));
-                    })
-                    .sort((a, b) => tradeTimestampMs(b) - tradeTimestampMs(a) || (Number(b.season || 0) - Number(a.season || 0)) || (Number(b.week || 0) - Number(a.week || 0)))
-                    .slice(0, 5)
-                : [];
-
-            function tradeHistoryRow(trade, idx) {
-                const received = tradeSideReceivedAssets(trade, myRosterId);
-                const sent = tradeSideSentAssets(trade, myRosterId);
-                const net = tradeAssetsValue(received) - tradeAssetsValue(sent);
-                const dateLabel = trade.season ? `${trade.season} W${trade.week || '-'}` : tradeTimestampMs(trade) ? new Date(tradeTimestampMs(trade)).toLocaleDateString() : 'Past trade';
-                return <div key={trade.transaction_id || trade.id || idx} className="tc-dhq-history-row">
-                    <div>
-                        <span>{dateLabel}</span>
-                        <strong>{selectedPartner?.ownerName || 'Partner'}</strong>
-                    </div>
-                    <p><b>You got</b> {summarizeTradeAssets(received)}</p>
-                    <p><b>You sent</b> {summarizeTradeAssets(sent)}</p>
-                    <em style={{ color:net >= 0 ? 'var(--good)' : 'var(--bad)' }}>{net >= 0 ? '+' : ''}{Math.round(net).toLocaleString()} DHQ</em>
-                </div>;
             }
 
             function scrollToSavedQueue() {
@@ -3073,59 +3154,7 @@
                             <em>{selectedPartner?.teamName || 'No partner selected'}</em>
                         </div>
                         <div className="tc-dhq-panel-body tc-dhq-dossier-body">
-                        {selectedItem && selectedPartner ? <>
-                            <div className="tc-dhq-dossier-card">
-                                <h3>{selectedPartner.ownerName}</h3>
-                                <div className="tc-dhq-chipline">
-                                    <span style={{ color:selectedPartner.tierColor }}>{selectedPartner.tier}</span>
-                                    <span style={{ color:selectedItem.posture.color }}>{selectedItem.posture.label}</span>
-                                    <span>{selectedItem.compat}% fit</span>
-                                </div>
-                                <p>{selectedItem.behaviorProfile?.strategy?.offerFrame || selectedItem.dna?.strategy || selectedItem.posture.desc}</p>
-                            </div>
-                            <div className="tc-dhq-dossier-block">
-                                <b>Why this partner</b>
-                                <p>{selectedItem.scoreReasons.slice(0, 3).join(' · ')}.</p>
-                            </div>
-                            <div className="tc-dhq-dossier-grid">
-                                <div><span>Record</span><strong>{selectedPartner.wins}-{selectedPartner.losses}{selectedPartner.ties ? '-' + selectedPartner.ties : ''}</strong></div>
-                                <div><span>Weekly</span><strong>{selectedPartner.weeklyPts || '--'}</strong></div>
-                                <div><span>Trade W-L</span><strong>{selectedItem.profile.tradesWon || 0}-{selectedItem.profile.tradesLost || 0}</strong></div>
-                                <div><span>Avg Trade</span><strong>{(selectedItem.profile.avgValueDiff || 0) >= 0 ? '+' : ''}{Math.round(selectedItem.profile.avgValueDiff || 0)}</strong></div>
-                            </div>
-                            <div className="tc-dhq-dossier-block">
-                                <b>Needs</b>
-                                <div className="tc-dhq-chipline">{(selectedPartner.needs || []).slice(0, 6).map(n => <i key={n.pos} className={n.urgency === 'deficit' ? 'need' : ''}>{n.pos}</i>)}</div>
-                            </div>
-                            <div className="tc-dhq-dossier-block">
-                                <b>Assets they may move</b>
-                                <div className="tc-dhq-chipline">{(selectedPartner.strengths || []).slice(0, 6).map(s => <i key={s} className="strength">+{s}</i>)}{selectedItem.pickAssets.slice(0, 3).map(p => <i key={p.id}>{p.label}</i>)}</div>
-                            </div>
-                            <div className="tc-dhq-dossier-block">
-                                <b>Acceptance drivers</b>
-                                <ul>
-                                    <li>{selectedItem.posture.desc}</li>
-                                    {selectedPartner.panic >= 3 && <li>Panic level {selectedPartner.panic}/5 creates urgency.</li>}
-                                    {selectedItem.mutualNeedFit > 0 && <li>Your surplus matches {selectedItem.mutualNeedFit} of their needs.</li>}
-                                    {selectedItem.dnaKey !== 'NONE' && <li>{selectedItem.dna.label}: {selectedItem.dna.desc}</li>}
-                                    {(selectedItem.behaviorProfile?.observedFacts || []).slice(0, 2).map(fact => <li key={fact.code}>{fact.detail}</li>)}
-                                </ul>
-                            </div>
-                            <div className="tc-dhq-dossier-block">
-                                <b>Head-to-head trade history</b>
-                                {headToHeadTrades.length
-                                    ? <div className="tc-dhq-history">{headToHeadTrades.map(tradeHistoryRow)}</div>
-                                    : <p>No recorded trades between your team and this partner yet.</p>}
-                            </div>
-                            <div className="tc-dhq-dossier-block" ref={savedQueueRef}>
-                                <b>Saved queue</b>
-                                <p>Saved package cards live here for this league and reopen in the manual analyzer.</p>
-                                {savedDeals.length ? savedDeals.slice(0, 5).map(d => <div key={d.id} className="tc-dhq-saved">
-                                    <button onClick={() => loadDealIntoAnalyzer(d)}>{d.partnerName || 'Saved deal'} <span>{d.likelihood}%</span></button>
-                                    <button onClick={() => removeSavedDeal(d.id)}>X</button>
-                                </div>) : <p>No saved deals yet.</p>}
-                            </div>
-                        </> : <div className="tc-dhq-empty">Select a partner to view their dossier.</div>}
+                        {renderPartnerDossierBody(selectedItem, { savedQueueRef })}
                         </div>
                     </aside>
                 </div>
@@ -3149,54 +3178,14 @@
 
         // ── renderTradeAnalyzer ──
         // ── renderAdaptiveLanding — Slice 1 of the tab-free Adaptive War Room canvas ──
-        // Behind the window._wrAdaptiveCanvas flag (default OFF). Computes the single best move
+        // Default ON (kill switch: window._wrAdaptiveCanvas = false). Computes the single best move
         // (top partner via the SAME partnerBoard ranking as renderDealHQ + its best generated deal)
         // and shows a calm Alex-voiced "best move" hero. CTAs reveal the existing surfaces via
         // existing state. Returns null if there's no usable best move (caller falls through to tabs).
         function renderAdaptiveLanding() {
-            if (!assessments.length || !myAssessment) return null;
+            if (!rosterState.isUsable || !assessments.length || !myAssessment) return null;
 
-            // Mirror of renderDealHQ partnerBoard ranking — KEEP IN SYNC with renderDealHQ.
-            const myStrengths = myAssessment.strengths || [];
-            const myNeeds = myAssessment.needs || [];
-            const partnerBoard = assessments
-                .filter(a => a.rosterId !== myRosterId)
-                .map(a => {
-                    const dnaKey = ownerDna[a.ownerId] || 'NONE';
-                    const dna = DNA_TYPES[dnaKey] || DNA_TYPES.NONE;
-                    const posture = calcOwnerPosture(a, dnaKey);
-                    const compat = calcComplementarity(myAssessment, a);
-                    const theirNeeds = a.needs || [];
-                    const mutualNeedFit = theirNeeds.filter(n => myStrengths.includes(n.pos)).length;
-                    const theyHaveNeed = myNeeds.filter(n => (a.strengths || []).includes(n.pos)).length;
-                    const pickAssets = pickAssetsForOwner(a.ownerId);
-                    const pickCapital = pickAssets.reduce((s, p) => s + p.value, 0);
-                    const profile = window.App?.LI?.ownerProfiles?.[a.rosterId] || {};
-                    const behaviorProfile = ownerBehaviorByRosterId?.[String(a.rosterId)] || null;
-                    const behaviorTags = new Set(behaviorProfile?.inferences || []);
-                    const tradeVol = profile.trades || 0;
-                    const behaviorScore = behaviorProfile
-                        ? Math.round(((behaviorProfile.scores?.liquidity ?? 50) - 50) / 4)
-                            + (behaviorTags.has('active-trader') ? 8 : 0)
-                            + (behaviorTags.has('fair-dealer') ? 5 : 0)
-                            + (behaviorTags.has('low-liquidity') ? -12 : 0)
-                            + (behaviorTags.has('value-hunter') ? -5 : 0)
-                        : 0;
-                    const panicScore = Math.min(8, (a.panic || 0) * 2);
-                    const pickCapitalScore = Math.min(5, Math.round(pickCapital / 4200));
-                    const rawScore = compat * 0.62 + mutualNeedFit * 13 + theyHaveNeed * 10 + panicScore + pickCapitalScore + Math.min(7, tradeVol) + behaviorScore + (posture.key === 'LOCKED' ? -18 : 0);
-                    const fitCap = compat >= 80 ? 99 : compat >= 65 ? 94 : compat >= 50 ? 88 : compat >= 35 ? 78 : 68;
-                    const score = Math.round(clampNum(rawScore, 0, fitCap, 0));
-                    const tag = score >= 85 ? 'Attack' : score >= 68 ? 'Prime' : score >= 48 ? 'Possible' : a.panic >= 3 ? 'Monitor' : 'Long shot';
-                    const tagColor = tag === 'Attack' || tag === 'Prime' ? 'var(--good)' : tag === 'Possible' ? 'var(--warn)' : tag === 'Monitor' ? 'var(--k-bb8fce, #bb8fce)' : 'var(--silver)';
-                    const scoreReasons = [];
-                    if (mutualNeedFit > 0) scoreReasons.push(`your surplus matches ${mutualNeedFit} need${mutualNeedFit === 1 ? '' : 's'}`);
-                    if (compat >= 60) scoreReasons.push(`${compat}% roster fit`);
-                    if (behaviorTags.has('active-trader')) scoreReasons.push('active trader');
-                    return { assessment: a, dnaKey, dna, posture, compat, score, tag, tagColor, scoreReasons };
-                })
-                .sort((a, b) => b.score - a.score || b.compat - a.compat);
-
+            const partnerBoard = computePartnerBoard();
             const bestPartner = partnerBoard[0];
             if (!bestPartner) return null;
 
@@ -3308,6 +3297,95 @@
             );
         }
 
+        // ── renderContextRail — the morphing right rail (Dossier ⇄ DNA ⇄ Verdict) from the
+        // locked Adaptive War Room design. Desktop-only via CSS (.tc-adaptive-canvas.has-rail
+        // ≥1281px); narrow viewports keep Deal HQ's inline dossier panel instead. Manual
+        // Verdict selection pins the rail (mockup rule) so partner browsing can't steal it.
+        function renderContextRail(_verdict, railItem) {
+            const partner = railItem?.assessment || null;
+            const pickBadge = (key) => {
+                setRailView(key);
+                if (key === 'verdict') setRailPinned(true);
+            };
+            const railTitle = railView === 'dossier' ? 'Partner Dossier' : railView === 'dna' ? 'Owner DNA' : 'Live Verdict';
+            const railSub = railView === 'verdict'
+                ? (_verdict.hasTrade ? `${_verdict.likelihood}% accept` : 'No live deal')
+                : (partner ? (railView === 'dna' ? partner.ownerName : partner.teamName) : 'No partner selected');
+            let railBody;
+            if (railView === 'dna') {
+                if (!canAccess('owner-dna')) {
+                    railBody = React.createElement(UpgradeGate, { feature: 'owner-dna', title: 'UNLOCK OWNER DNA', description: 'Profile every manager\'s trading psychology. Know who\'s a Fleecer, who\'s Desperate, and exactly how to approach each trade conversation.', targetTier: 'warroom' });
+                } else if (!partner) {
+                    railBody = <div className="tc-dhq-empty">Select a partner to scout their DNA.</div>;
+                } else {
+                    const aiDna = typeof computeWeightedDNA === 'function' ? computeWeightedDNA(partner.rosterId) : null;
+                    const currentDna = ownerDna[partner.ownerId] || 'NONE';
+                    const isOverridden = aiDna && currentDna !== 'NONE' && currentDna !== aiDna.key;
+                    const dnaInfo = DNA_TYPES[currentDna] || DNA_TYPES.NONE;
+                    railBody = <>
+                        <div className="tc-dhq-dossier-card">
+                            <h3>{partner.ownerName}</h3>
+                            <div className="tc-dhq-chipline">
+                                <span style={{ color: railItem.posture.color }}>{railItem.posture.label}</span>
+                                {railItem.dnaKey !== 'NONE' && <span style={{ color: railItem.dna.color }}>{railItem.dna.label}</span>}
+                            </div>
+                        </div>
+                        {aiDna ? (
+                            <div style={{ fontSize: '0.76rem', marginBottom: '6px' }}>
+                                <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Scout suggests: </span>
+                                <span style={{ color: DNA_TYPES[aiDna.key]?.color || 'var(--silver)', fontWeight: 700 }}>{DNA_TYPES[aiDna.key]?.label || aiDna.key}</span>
+                                <span style={{ color: 'var(--silver)', marginLeft: '4px', opacity: 0.65 }}>({aiDna.confidence}% confidence)</span>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.7, marginTop: '2px' }}>{aiDna.reasoning}</div>
+                            </div>
+                        ) : (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.55, marginBottom: '6px', fontStyle: 'italic' }}>Not enough trade signal — tag manually.</div>
+                        )}
+                        <select className="tc-dna-select" value={currentDna} onChange={e => updateDna(partner.ownerId, e.target.value)}>
+                            {aiDna && <option value={aiDna.key}>AI: {DNA_TYPES[aiDna.key]?.label} (recommended)</option>}
+                            {Object.entries(DNA_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                        </select>
+                        {isOverridden && <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--warn)', marginTop: '4px' }}>Overridden from AI suggestion</div>}
+                        {currentDna !== 'NONE' && dnaInfo.desc && (
+                            <div style={{ marginTop: '8px', padding: '8px 10px', background: window.wrAlpha ? window.wrAlpha(dnaInfo.color, '08') : 'transparent', borderLeft: '3px solid ' + dnaInfo.color, borderRadius: '0 6px 6px 0' }}>
+                                <div style={{ fontSize: '0.74rem', color: 'var(--silver)', lineHeight: 1.5 }}>{dnaInfo.desc}</div>
+                                {dnaInfo.strategy && <div style={{ marginTop: '4px', fontSize: '0.72rem', color: dnaInfo.color, opacity: 0.9, fontStyle: 'italic' }}>→ {dnaInfo.strategy}</div>}
+                            </div>
+                        )}
+                        <button type="button" className="tc-rail-dna-link" onClick={() => setTcTab('profiles')}>Open full Owner DNA ▸</button>
+                    </>;
+                }
+            } else if (railView === 'verdict') {
+                railBody = _verdict.hasTrade
+                    ? <>
+                        {React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}
+                        {renderAlexVerdict()}
+                    </>
+                    : <div className="tc-dhq-empty">No live deal yet. Open the deal builder or edit a generated package — the verdict tracks here as you build.</div>;
+            } else {
+                railBody = <>
+                    {renderPartnerDossierBody(railItem)}
+                    {partner && <button type="button" className="tc-rail-dna-link" onClick={() => setRailView('dna')}>Edit Owner DNA ▸</button>}
+                </>;
+            }
+            return (
+                <aside className="tc-dhq-panel tc-context-rail">
+                    <div className="tc-rail-badges">
+                        {['dossier', 'dna', 'verdict'].map(key => (
+                            <button key={key} type="button" className={railView === key ? 'is-active' : ''} onClick={() => pickBadge(key)}>{key === 'dna' ? 'DNA' : key.charAt(0).toUpperCase() + key.slice(1)}</button>
+                        ))}
+                        <button type="button" className={'tc-rail-pin' + (railPinned ? ' is-on' : '')} title={railPinned ? 'Unpin — rail follows what you touch' : 'Pin the rail on this view'} onClick={() => setRailPinned(v => !v)}>📌</button>
+                    </div>
+                    <div className="tc-dhq-panel-head">
+                        <span>{railTitle}</span>
+                        <em>{railSub}</em>
+                    </div>
+                    <div className="tc-dhq-panel-body tc-dhq-dossier-body">
+                        {railBody}
+                    </div>
+                </aside>
+            );
+        }
+
         // ── renderAdaptiveWorkspace — Slice 2a of the tab-free Adaptive War Room canvas ──
         // Flag-on workspace shell: replaces the old tab bar with a slim adaptive header (‹ Best Move
         // back-link + a clean Deal HQ / Builder / Owner DNA nav) and reuses the existing surfaces as
@@ -3327,6 +3405,11 @@
             // Persistent live verdict — the in-progress deal's verdict follows you across surfaces.
             const _verdict = computeManualVerdict();
             const _tsDeps = buildTradeSideDeps();
+            // Context Rail (desktop ≥1281px via CSS): owns dossier/DNA/verdict context beside the
+            // Stage. Skipped on the Builder surface, which renders the full verdict inline.
+            const railOn = active !== 'analyzer';
+            const railBoard = railOn ? computePartnerBoard() : [];
+            const railItem = railBoard.find(p => String(p.assessment.ownerId) === String(selectedDealPartnerId)) || railBoard[0] || null;
             return (
                 <div className="tc-trade-root">
                     <div className="wr-module-strip">
@@ -3342,6 +3425,8 @@
                             </div>
                         </div>
                     </div>
+                    <div className={'tc-adaptive-canvas' + (railOn ? ' has-rail' : '')}>
+                    <div className="tc-adaptive-main">
                     {tradeContext && (
                         <div className="trade-context-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
                             <div style={{ minWidth: 0 }}>
@@ -3373,12 +3458,15 @@
                                         {TcTradeSide({ side: 'A', color: 'var(--k-5dade2, #5dade2)', label: 'YOU SEND', ..._tsDeps })}
                                         {TcTradeSide({ side: 'B', color: 'var(--k-e74c3c, #e74c3c)', label: 'YOU GET', ..._tsDeps })}
                                     </div>
-                                    {_verdict.hasTrade && <div style={{ marginTop: '12px' }}>{React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}{renderAlexVerdict()}</div>}
+                                    {_verdict.hasTrade && <div className="tc-rail-wide-hide" style={{ marginTop: '12px' }}>{React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}{renderAlexVerdict()}</div>}
                                 </div>
                             )}
                         </div>
                     )}
                     {body}
+                    </div>
+                    {railOn && renderContextRail(_verdict, railItem)}
+                    </div>
                 </div>
             );
         }
@@ -3910,11 +3998,10 @@
             profiles: 'Owner posture, roster gaps, pick context, and trade history.',
             analyzer: 'Manual player, pick, and FAAB inspection.'
         };
-        // Adaptive War Room canvas — behind a default-OFF flag (window._wrAdaptiveCanvas).
-        // Flag ON => fully tab-free: the calm "best move" hero (landing view) + a tab-free workspace
-        // shell that reuses the existing surfaces. Flag OFF => the existing 3-tab return below,
-        // byte-identical (this branch never runs).
-        const _wrAdaptiveOn = (typeof window !== 'undefined' && window._wrAdaptiveCanvas === true);
+        // Adaptive War Room canvas — DEFAULT ON (kill switch: window._wrAdaptiveCanvas = false).
+        // On => fully tab-free: the calm "best move" hero (landing view) + a tab-free workspace
+        // shell that reuses the existing surfaces. Off => the legacy 3-tab return below.
+        const _wrAdaptiveOn = (typeof window !== 'undefined' && window._wrAdaptiveCanvas !== false);
         if (_wrAdaptiveOn && canAccess('trade-finder')) {
             // Hero is the landing view, only when not seeded by a deep-link (which jumps to workspace).
             if (adaptiveView === 'hero' && !selectedDealPartnerId && !dealFocusPid && !tradeContext) {
