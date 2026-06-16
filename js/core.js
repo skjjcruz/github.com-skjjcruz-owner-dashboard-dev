@@ -455,6 +455,129 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     };
     window.formatNFLDraftSlot = window.App.formatNFLDraftSlot;
 
+    // ── Shared rookie/prospect field resolver ────────────────────────────────
+    // Joins an arbitrary Sleeper player to its rookie-data prospect record so the
+    // rich scouting fields (college, NFL draft slot, NFL team, consensus rank,
+    // tier, size/speed profile) can be surfaced consistently in Free Agency, the
+    // Trade Center, and My Roster — all of which key players by Sleeper pid, while
+    // the prospect record keys by normalized NAME (its `pid` is a synthetic
+    // `csv_<name>`, never a Sleeper id). The base findProspect/getProspects come
+    // from rookie-data.js (eager at boot); the alias-richer scouting.js versions
+    // override them once the Draft module group loads. We read whichever exists at
+    // CALL time and degrade to null/empty before the rookie CSV has loaded — so
+    // callers should memoize any built index on a load signal (e.g. timeRecomputeTs).
+    (function() {
+        const ROOKIE_SUFFIX = /\s+(jr\.?|sr\.?|ii|iii|iv)$/;
+        function rkNorm(s) {
+            return String(s || '').toLowerCase().replace(/['‘’`.]/g, '')
+                .replace(ROOKIE_SUFFIX, '').replace(/\s+/g, ' ').trim();
+        }
+        function rkNameOf(p) {
+            if (!p) return '';
+            return p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || p.name || '';
+        }
+        function rkFinder() { return (window.RookieData && window.RookieData.findProspect) || window.findProspect || null; }
+        function rkList() {
+            const g = (window.RookieData && window.RookieData.getProspects) || window.getProspects || null;
+            if (!g) return [];
+            try { return g() || []; } catch (e) { return []; }
+        }
+        // Reject same-name veteran/rookie collisions when both positions are known.
+        function rkPosOk(player, prospect) {
+            if (!player || !player.position) return true;
+            const ppos = prospect && (prospect.mappedPos || prospect.pos || prospect.position);
+            if (!ppos) return true;
+            const np = window.App.normPos;
+            const a = np ? np(player.position) : player.position;
+            const b = np ? (np(ppos) || ppos) : ppos;
+            return !a || !b || a === b;
+        }
+        // One-shot resolver (alias matching via findProspect). Use for a handful of
+        // lookups; for table rendering over many rows, prefer buildIndex + lookup.
+        function rkResolve(player, opts) {
+            const f = rkFinder(); if (!f || !player) return null;
+            const nm = rkNameOf(player); if (!nm) return null;
+            let pr = null;
+            try { pr = f(nm); } catch (e) { return null; }
+            if (!pr) return null;
+            if ((!opts || opts.posGuard !== false) && !rkPosOk(player, pr)) return null;
+            return pr;
+        }
+        // Normalized-name → prospect Map for hot render loops. getProspects() is
+        // rank-sorted, so first-in-wins yields the best-ranked prospect on collisions.
+        function rkBuildIndex() {
+            const m = new Map();
+            rkList().forEach(pr => { const k = rkNorm(pr.name); if (k && !m.has(k)) m.set(k, pr); });
+            return m;
+        }
+        function rkLookup(index, player, opts) {
+            if (!index || !player) return null;
+            const pr = index.get(rkNorm(rkNameOf(player)));
+            if (!pr) return null;
+            if (opts && opts.posGuard && !rkPosOk(player, pr)) return null;
+            return pr;
+        }
+        // NFL draft-capital label: "R2.45" / "UDFA" / '' (pre-draft / unknown).
+        function rkDraftSlot(pr) {
+            if (!pr) return '';
+            if (pr.isUDFA) return 'UDFA';
+            if (pr.draftRound || pr.draftPick) {
+                const fmt = window.App.formatNFLDraftSlot;
+                return (typeof fmt === 'function' ? fmt(pr.draftRound, pr.draftPick) : '')
+                    || ('R' + (pr.draftRound || '?') + (pr.draftPick ? '.' + pr.draftPick : ''));
+            }
+            return '';
+        }
+        // Normalized display fields off a prospect record. Returns null if no prospect.
+        function rkFields(pr) {
+            if (!pr) return null;
+            const profile = [pr.size, pr.weight ? pr.weight + 'lb' : '', pr.speed].filter(Boolean).join(' · ');
+            return {
+                prospect: pr,
+                college: pr.college || pr.school || '',
+                nflTeam: pr.nflTeam || '',
+                isUDFA: !!pr.isUDFA,
+                draftRound: pr.draftRound || null,
+                draftPick: pr.draftPick || null,
+                draftSlot: rkDraftSlot(pr),
+                consensusRank: pr.consensusRank != null ? pr.consensusRank : (pr.avgRank != null ? pr.avgRank : null),
+                rank: pr.rank != null ? pr.rank : null,
+                tier: pr.tierNum != null ? pr.tierNum : (pr.tier != null ? pr.tier : null),
+                tierLabel: pr.tierLabel || '',
+                grade: pr.grade != null ? pr.grade : null,
+                size: pr.size || '',
+                weight: pr.weight || '',
+                speed: pr.speed || '',
+                profile,
+                dynastyValue: pr.dynastyValue != null ? pr.dynastyValue : null,
+                summary: pr.summary || '',
+            };
+        }
+        // Is this Sleeper player a current rookie? Prospect-resolution is the strong
+        // signal; fall back to 0 NFL years + no accumulated stats. Pass statsMaps
+        // {cur, prev} (keyed by pid) so a same-named veteran isn't mistaken for one.
+        function rkIsRookie(player, prospect, statsMaps) {
+            if (prospect) return true;
+            if (!player) return false;
+            if (Number(player.years_exp != null ? player.years_exp : (player.yoe != null ? player.yoe : 0)) !== 0) return false;
+            const pid = player.player_id || player.pid;
+            const cur = statsMaps && statsMaps.cur && pid ? statsMaps.cur[pid] : null;
+            const prev = statsMaps && statsMaps.prev && pid ? statsMaps.prev[pid] : null;
+            if ((cur && cur.gp > 0) || (prev && prev.gp > 0)) return false;
+            return true;
+        }
+        window.App.RookieFields = {
+            norm: rkNorm,
+            nameOf: rkNameOf,
+            resolve: rkResolve,
+            buildIndex: rkBuildIndex,
+            lookup: rkLookup,
+            draftSlot: rkDraftSlot,
+            fields: rkFields,
+            isRookie: rkIsRookie,
+        };
+    })();
+
     // computeNFLFit — fallback no-op if nfl-fit.js (shared) failed to load,
     // so callers can safely optional-chain. Real impl lives in shared/nfl-fit.js.
     window.App.computeNFLFit = window.App.computeNFLFit || function computeNFLFit() {

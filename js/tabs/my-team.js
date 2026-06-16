@@ -69,6 +69,18 @@ function MyTeamTab({
     return player.full_name || `${player.first_name || ''} ${player.last_name || ''}`.trim() || `Player ${playerId}`;
   }
 
+  // Rookie/prospect join — name→prospect index (rebuilt when the rookie CSV lands,
+  // signalled by timeRecomputeTs). Resolves a roster player to its rookie-data
+  // record so the rich scouting fields surface in columns + the Rookies filter.
+  const RookieFields = window.App?.RookieFields;
+  const rookieIndex = React.useMemo(() => RookieFields ? RookieFields.buildIndex() : new Map(), [timeRecomputeTs]);
+  const prospectForRow = React.useCallback((r) => RookieFields ? RookieFields.lookup(rookieIndex, r?.p, { posGuard: true }) : null, [rookieIndex]);
+  const isRookieRow = React.useCallback((r) => {
+    if (!r || !r.p) return false;
+    const pr = prospectForRow(r);
+    return RookieFields ? RookieFields.isRookie(r.p, pr, { cur: statsData, prev: stats2025Data }) : false;
+  }, [prospectForRow, statsData, stats2025Data]);
+
   // ── filteredAndSortedRows (formerly a sibling function of renderMyTeamTab) ──
   function filteredAndSortedRows(rows) {
     const offPos = new Set(['QB','RB','WR','TE','K','DEF']);
@@ -80,6 +92,7 @@ function MyTeamTab({
     else if (rosterFilter === 'IR') filtered = rows.filter(r => r.isIR);
     else if (rosterFilter === 'Offense') filtered = rows.filter(r => offPos.has(r.pos));
     else if (rosterFilter === 'IDP') filtered = rows.filter(r => idpPos.has(r.pos));
+    else if (rosterFilter === 'Rookies') filtered = rows.filter(r => isRookieRow(r));
 
     const posOrder = {QB:0,RB:1,WR:2,TE:3,K:4,DEF:5,DL:6,LB:7,DB:8};
     return [...filtered].sort((a, b) => {
@@ -127,6 +140,22 @@ function MyTeamTab({
         const getSosRank = (r) => { const s = window.App?.SOS?.getPlayerSOS?.(r.pid, r.pos, r.p?.team); return s?.avgRank || 16; };
         return (getSosRank(b) - getSosRank(a)) * dir; // higher rank = easier = sort first by default
       }
+      // Rookie columns — resolve the prospect record; non-rookies sort last.
+      if (key === 'rkSlot' || key === 'rkTeam' || key === 'rkRank' || key === 'rkTier' || key === 'rkProfile') {
+        const pa = prospectForRow(a), pb = prospectForRow(b);
+        if (key === 'rkTeam') { const ta = (pa?.nflTeam || ''), tb = (pb?.nflTeam || ''); if (!ta !== !tb) return ta ? -dir : dir; return (ta < tb ? -1 : ta > tb ? 1 : 0) * dir; }
+        if (key === 'rkSlot') {
+          const slot = p => !p ? 1e9 : (Number(p.draftRound) > 0 ? Number(p.draftRound) * 100 + (Number(p.draftPick) || 99) : 9000);
+          return (slot(pa) - slot(pb)) * dir;
+        }
+        if (key === 'rkProfile') {
+          const spd = p => { const s = parseFloat(p?.speed); return Number.isFinite(s) && s > 0 ? s : 1e9; };
+          return (spd(pa) - spd(pb)) * dir; // faster 40 first on ascending
+        }
+        // rkRank / rkTier — lower consensus rank is better; non-rookies last.
+        const rank = p => (p && (p.consensusRank ?? p.rank) != null) ? Number(p.consensusRank ?? p.rank) : 1e9;
+        return (rank(pa) - rank(pb)) * dir;
+      }
       return 0;
     });
   }
@@ -157,18 +186,27 @@ function MyTeamTab({
     acquired:   { label: 'Acquisition Method', shortLabel: 'Added', width: '74px', group: 'core' },
     acquiredDate: { label: 'Date Acquired', shortLabel: 'When', width: '60px', group: 'core' },
     sos:        { label: 'Sched Strength (1=hardest, 32=easiest)', shortLabel: 'SOS', width: '44px', group: 'stats' },
+    // Rookie/prospect columns — sourced from the rookie-data record (prospectForRow),
+    // NOT the Sleeper object (Sleeper draft capital is unreliable). '—' for vets.
+    rkSlot:     { label: 'NFL Draft Slot (rookie)', shortLabel: 'Draft', width: '54px', group: 'scout' },
+    rkTeam:     { label: 'Drafted NFL Team (rookie)', shortLabel: 'Drafted', width: '50px', group: 'scout' },
+    rkRank:     { label: 'Rookie Consensus Rank', shortLabel: 'Cons #', width: '48px', group: 'scout' },
+    rkTier:     { label: 'Rookie Tier', shortLabel: 'Tier', width: '64px', group: 'scout' },
+    rkProfile:  { label: 'Rookie Profile (Ht · Wt · 40)', shortLabel: 'Profile', width: '112px', group: 'scout' },
   };
 
   const COLUMN_PRESETS = {
     default: ['pos','age','dhq','posRankLg','ppg','durability','peak','action','sos'],
     stats:   ['pos','dhq','ppg','prev','trend','gp','durability','sos'],
     scout:   ['pos','age','college','slot','height','weight','depthChart','yrsExp','starterSzn','posRankNfl'],
+    rookie:  ['pos','age','college','rkSlot','rkTeam','rkRank','rkTier','rkProfile'],
     full:    Object.keys(ROSTER_COLUMNS),
   };
   const COLUMN_PRESET_META = {
     default: { label: 'Default', tone: 'decision board' },
     stats: { label: 'Stats', tone: 'production' },
     scout: { label: 'Scout', tone: 'profile' },
+    rookie: { label: 'Rookie', tone: 'prospect profile' },
     full: { label: 'Deep Data', tone: 'all fields' },
   };
   const rosterFilterOptions = [
@@ -179,6 +217,7 @@ function MyTeamTab({
     'IR',
     'Offense',
     ...(skinFeatures.showIDP === false ? [] : ['IDP']),
+    'Rookies',
   ];
   const rosterFilterKey = rosterFilterOptions.join('|');
   React.useEffect(() => {
@@ -669,6 +708,15 @@ function MyTeamTab({
           <span style={{ color: sos.color, fontSize: 'var(--text-micro, 0.6875rem)', opacity: 0.8 }}>{sos.label.toUpperCase()}</span>
         </div>;
       }
+      case 'rkSlot': case 'rkTeam': case 'rkRank': case 'rkTier': case 'rkProfile': {
+        const rf = window.App?.RookieFields?.fields?.(prospectForRow(r)) || null;
+        if (!rf) return <div key={colKey} style={{...base}}><span style={{ color: 'var(--ov-8, rgba(255,255,255,0.3))' }}>{'\u2014'}</span></div>;
+        if (colKey === 'rkSlot') return <div key={colKey} style={{...base}}><span style={{ color: rf.draftRound === 1 ? 'var(--good)' : rf.draftRound && rf.draftRound <= 3 ? 'var(--gold)' : 'var(--silver)', fontSize: '0.74rem', fontWeight: 700 }}>{rf.draftSlot || '\u2014'}</span></div>;
+        if (colKey === 'rkTeam') return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)' }}>{rf.nflTeam || '\u2014'}</span></div>;
+        if (colKey === 'rkRank') return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>{rf.consensusRank != null ? rf.consensusRank : '\u2014'}</span></div>;
+        if (colKey === 'rkTier') return <div key={colKey} style={{...base, justifyContent: 'flex-start'}}><span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: '0.72rem' }}>{rf.tierLabel || '\u2014'}</span></div>;
+        return <div key={colKey} style={{...base, justifyContent: 'flex-start'}}><span title={rf.profile} style={{ color: 'var(--silver)', fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rf.profile || '\u2014'}</span></div>;
+      }
       default: return <div key={colKey} style={{...base}}>{'\u2014'}</div>;
     }
   }
@@ -726,7 +774,7 @@ function MyTeamTab({
           <span className="wr-module-toolbar-label">View</span>
           <div className="wr-module-nav" style={{ padding: '2px', gap: '2px' }}>
             {Object.entries(COLUMN_PRESETS).map(([key, cols]) => (
-              <button key={key} className={activePresetKey === key ? 'is-active' : ''} onClick={() => { setVisibleCols(cols); setColPreset(key); }}>{COLUMN_PRESET_META[key]?.label || key}</button>
+              <button key={key} className={activePresetKey === key ? 'is-active' : ''} onClick={() => { setVisibleCols(cols); setColPreset(key); if (key === 'rookie') setRosterFilter('Rookies'); else if (rosterFilter === 'Rookies') setRosterFilter('All'); }}>{COLUMN_PRESET_META[key]?.label || key}</button>
             ))}
             <button className={(showColPicker || activePresetKey === 'custom') ? 'is-active' : ''} onClick={() => setShowColPicker(!showColPicker)}>Customize</button>
           </div>

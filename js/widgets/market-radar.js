@@ -120,6 +120,38 @@
             return out;
         }, [rosterState.isUsable, tradeTargets, myRoster, playersData, myStrengthPositions]);
 
+        // ── Leverage Board (xxl): who is DESPERATE, not just who fits ──
+        // Buyers: contending teams with the oldest DHQ-weighted cores — they
+        // pay up for win-now help and overpay with picks for youth.
+        // Sellers: rebuilders hoarding picks — they move vets for futures.
+        const leverage = React.useMemo(() => {
+            if (!rosterState.isUsable || !allAssess.length || size !== 'xxl') return { buyers: [], sellers: [] };
+            const scores = window.App?.LI?.playerScores || {};
+            const withAge = allAssess.filter(a => a.rosterId !== myRoster?.roster_id).map(a => {
+                const roster = (currentLeague?.rosters || []).find(r => r.roster_id === a.rosterId);
+                let dhqSum = 0, ageSum = 0;
+                (roster?.players || []).forEach(pid => {
+                    const dhq = scores[pid] || 0;
+                    const age = playersData?.[pid]?.age;
+                    if (dhq > 0 && Number.isFinite(age)) { dhqSum += dhq; ageSum += age * dhq; }
+                });
+                const user = roster ? (currentLeague?.users || window.S?.leagueUsers || []).find(u => u.user_id === roster.owner_id) : null;
+                return {
+                    rosterId: a.rosterId,
+                    name: user?.metadata?.team_name || user?.display_name || a.ownerName || ('Team ' + a.rosterId),
+                    wAge: dhqSum > 0 ? ageSum / dhqSum : 0,
+                    picks: a.picksAssessment?.totalPicks ?? null,
+                    tradeWindow: a.window,
+                    healthScore: a.healthScore || 0,
+                };
+            });
+            const buyers = withAge.filter(a => a.tradeWindow === 'CONTENDING' && a.wAge > 0)
+                .sort((x, y) => y.wAge - x.wAge).slice(0, 3);
+            const sellers = withAge.filter(a => a.tradeWindow === 'REBUILDING')
+                .sort((x, y) => ((y.picks || 0) - (x.picks || 0)) || (x.healthScore - y.healthScore)).slice(0, 3);
+            return { buyers, sellers };
+        }, [rosterState.isUsable, allAssess, currentLeague, playersData, myRoster?.roster_id, size]);
+
         const isClickable = size === 'sm' || size === 'md';
         const goTo = (target, e) => {
             e?.stopPropagation?.();
@@ -433,8 +465,8 @@
             return (
                 <div style={{ ...cardStyle, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {header({ large: true })}
-                    {/* Top strip: Surplus matrix (left) + FAAB context (right) */}
-                    <div style={{ marginBottom: '10px', flexShrink: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '10px' }}>
+                    {/* Top strip: Surplus matrix | Leverage Board | FAAB context */}
+                    <div style={{ marginBottom: '10px', flexShrink: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1.2fr) minmax(0, 1fr)', gap: '10px' }}>
                         {matrix.length > 0 ? (
                             <div style={{ padding: '8px 10px', background: 'rgba(124,107,248,0.06)', border: '1px solid rgba(124,107,248,0.2)', borderRadius: '6px' }}>
                                 <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Surplus by Position (your needs)</div>
@@ -450,6 +482,33 @@
                                 </div>
                             </div>
                         ) : <div />}
+                        {/* Leverage Board */}
+                        <div style={{ padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'), borderRadius: '6px', minWidth: 0, overflow: 'hidden' }}>
+                            <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Leverage Board</div>
+                            {(leverage.buyers.length === 0 && leverage.sellers.length === 0) && (
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: colors.textFaint, fontStyle: 'italic', fontFamily: fonts.ui }}>No clear buyers or sellers yet.</div>
+                            )}
+                            {leverage.buyers.map(t => (
+                                <div key={'b' + t.rosterId} onClick={openTrades} role="button" tabIndex={0}
+                                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTrades(e); } }}
+                                    title="Open Trade Center"
+                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '2px 0', cursor: 'pointer' }}>
+                                    <span style={{ fontSize: fs(0.6) }}>🔥</span>
+                                    <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
+                                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: colors.warn || 'var(--k-f0a500, #f0a500)', fontFamily: fonts.ui, whiteSpace: 'nowrap' }}>buys now · core {t.wAge.toFixed(1)}</span>
+                                </div>
+                            ))}
+                            {leverage.sellers.map(t => (
+                                <div key={'s' + t.rosterId} onClick={openTrades} role="button" tabIndex={0}
+                                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTrades(e); } }}
+                                    title="Open Trade Center"
+                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '2px 0', cursor: 'pointer' }}>
+                                    <span style={{ fontSize: fs(0.6) }}>🧊</span>
+                                    <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
+                                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: colors.info || 'var(--k-3498db, #3498db)', fontFamily: fonts.ui, whiteSpace: 'nowrap' }}>{Number.isFinite(t.picks) ? 'sells vets · ' + t.picks + ' picks' : 'sells vets'}</span>
+                                </div>
+                            ))}
+                        </div>
                         {faabContext && (
                             <div style={{ padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'), borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: fonts.ui }}>FAAB · You vs League</div>
