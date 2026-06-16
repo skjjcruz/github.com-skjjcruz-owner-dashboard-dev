@@ -56,6 +56,7 @@
                 let picks = null;
                 let meta = null;
                 let tradedPicks = null;
+                let mflSlots = null; // MFL: current per-slot ownership for the follow board
                 if (isMfl) {
                     // Re-pull the MFL draft board; map MADE picks → Sleeper pick shape
                     // for the existing reconciler. Email/offline drafts may commit in
@@ -76,6 +77,7 @@
                             player_id: p.player_id,
                         }));
                         meta = { status: d.status };
+                        mflSlots = Array.isArray(d._slots) ? d._slots : null;
                     }
                 } else {
                     if (window.Sleeper?.fetchDraftPicks) {
@@ -149,6 +151,8 @@
                     remoteBehind: snapshot.remoteBehind,
                     stale: !!staleReason,
                     error: staleReason,
+                    tradedPicks: Array.isArray(tradedPicks) ? tradedPicks : null,
+                    mflSlots: Array.isArray(mflSlots) ? mflSlots : null,
                 });
                 if (snapshot.newPicks.length) onNewPicks(snapshot.newPicks, snapshot);
             } catch (e) {

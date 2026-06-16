@@ -216,6 +216,11 @@
         // changes (signature-gated in the live-sync onStatus handler).
         const [liveDraftTradedPicks, setLiveDraftTradedPicks] = React.useState(null);
         const liveTradedSigRef = React.useRef('');
+        // MFL: live per-slot ownership from the draft board (round.slot → current
+        // franchise, all rounds). Keeps the follow board's pick ownership current
+        // (round1DraftOrder only covers round 1 and collapses traded picks).
+        const [liveMflSlots, setLiveMflSlots] = React.useState(null);
+        const liveMflSlotsSigRef = React.useRef('');
         const leagueIdForFetch = currentLeague?.league_id || currentLeague?.id;
         React.useEffect(() => {
             if (!leagueIdForFetch) return;
@@ -256,6 +261,15 @@
                 || drafts[0];
             const sleeperOrder = upcoming?.draft_order || {};
 
+            // MFL: the authoritative, trade-aware per-slot ownership for EVERY round
+            // is the draft board's _slots (live-polled). round1DraftOrder only covers
+            // round 1 and collapses franchises that own 0 or several picks.
+            const mcIsMfl = !!(currentLeague?._mfl || String(currentLeague?.id || currentLeague?.league_id || '').startsWith('mfl_'));
+            const mflSlots = mcIsMfl
+                ? (Array.isArray(liveMflSlots) && liveMflSlots.length ? liveMflSlots
+                    : (Array.isArray(upcoming?._slots) ? upcoming._slots : null))
+                : null;
+
             const slotToRoster = {};
             const hasRealDraftOrder = Object.keys(sleeperOrder).length > 0;
             if (hasRealDraftOrder) {
@@ -276,6 +290,19 @@
                     const user = users.find(u => u.user_id === r.owner_id);
                     const name = user?.metadata?.team_name || user?.display_name || user?.username || 'Team ' + (i + 1);
                     slotToRoster[i + 1] = { rosterId: r.roster_id, ownerName: name, userId: r.owner_id };
+                });
+            }
+
+            // MFL: rebuild round-1 slot ownership from the board's _slots — complete
+            // and current (the round1DraftOrder-derived map above drops slots when a
+            // franchise owns 0 or multiple round-1 picks).
+            if (mflSlots) {
+                mflSlots.filter(s => Number(s.round) === 1 && s.draft_slot != null).forEach(s => {
+                    const slot = Number(s.draft_slot);
+                    const roster = rosters.find(r => String(r.roster_id) === String(s.roster_id));
+                    const user = users.find(u => u.user_id === roster?.owner_id);
+                    const name = user?.metadata?.team_name || user?.display_name || user?.username || ('Team ' + slot);
+                    slotToRoster[slot] = { rosterId: roster?.roster_id || s.roster_id, ownerName: name, userId: roster?.owner_id || s.roster_id };
                 });
             }
 
@@ -329,6 +356,26 @@
 
             // Build pick ownership (traded picks)
             const pickOwnership = {};
+            if (mflSlots) {
+                // MFL: take each (round, slot)'s CURRENT owner straight from the draft
+                // board — covers every round and reflects traded picks (refreshes each
+                // poll). Marked "traded" when the slot's owner differs from its round-1
+                // owner or MFL's comment flagged it.
+                mflSlots.forEach(s => {
+                    const rd = Number(s.round), slot = Number(s.draft_slot);
+                    if (!rd || !slot) return;
+                    const roster = rosters.find(r => String(r.roster_id) === String(s.roster_id));
+                    const user = users.find(u => u.user_id === roster?.owner_id);
+                    const name = user?.metadata?.team_name || user?.display_name || ('Team ' + slot);
+                    const origInfo = slotToRoster[slot] || {};
+                    pickOwnership[rd + '-' + slot] = {
+                        ownerName: name,
+                        rosterId: roster?.roster_id || s.roster_id,
+                        traded: !!s._traded || (origInfo.rosterId != null && String(origInfo.rosterId) !== String(s.roster_id)),
+                        originalOwner: origInfo.ownerName,
+                    };
+                });
+            } else
             for (let rd = 1; rd <= (propRounds || 5); rd++) {
                 for (let slot = 1; slot <= numTeams; slot++) {
                     const origInfo = slotToRoster[slot] || {};
@@ -394,7 +441,7 @@
                 draftVariant,
                 upcomingSettings,
             };
-        }, [myRoster, currentLeague, propRounds, fetchedDrafts, liveDraftTradedPicks]);
+        }, [myRoster, currentLeague, propRounds, fetchedDrafts, liveDraftTradedPicks, liveMflSlots]);
 
         // Reducer + initial state (load from localStorage if possible)
         const [state, dispatch] = React.useReducer(
@@ -798,6 +845,18 @@
                         if (sig !== liveTradedSigRef.current) {
                             liveTradedSigRef.current = sig;
                             setLiveDraftTradedPicks(status.tradedPicks);
+                        }
+                    }
+                    // MFL: capture the board's current per-slot ownership. Gate on the
+                    // ownership signature (round.slot→roster) so traded picks refresh the
+                    // board without re-rendering on every poll / made pick.
+                    if (Array.isArray(status?.mflSlots)) {
+                        const sig = status.mflSlots
+                            .map(s => s.round + '.' + s.draft_slot + ':' + s.roster_id)
+                            .join('|');
+                        if (sig !== liveMflSlotsSigRef.current) {
+                            liveMflSlotsSigRef.current = sig;
+                            setLiveMflSlots(status.mflSlots);
                         }
                     }
                     dispatch({ type: 'LIVE_SYNC_STATUS', payload: status });
