@@ -97,7 +97,7 @@ function processEntry(entry) {
       compileExternal(srcMatch[1]);
       entryExternal++;
       // data-wr-defer scripts are kept INERT (non-executing type) so the browser
-      // doesn't run them at boot; the draft loader injects executable copies on
+      // doesn't run them at boot; the module loader injects executable copies on
       // demand. The compiled overlay file + ?v= hashing (step 4) still apply.
       const deferred = /\bdata-wr-defer\b/i.test(attrs);
       return deferred ? `<script type="text/wr-deferred" ${attrs}></script>` : `<script ${attrs}></script>`;

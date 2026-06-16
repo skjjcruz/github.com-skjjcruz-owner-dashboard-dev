@@ -5,33 +5,47 @@
     const LEAGUE_WR_KEYS  = window.App.WR_KEYS;
     const LeagueStorage = window.App.WrStorage;
 
-    // Lazy boundary for the Draft Command module (~1.26MB). The draft scripts are
-    // deferred at boot (see js/draft-loader.js); on first open we inject them, show a
-    // spinner, then render the real DraftTab. DraftTab is a bare global only defined
-    // after the load completes, so it is referenced only inside the loaded branch.
-    function DraftTabLazy(props) {
-        const [phase, setPhase] = React.useState(window.__wrDraftLoaded ? 'ready' : 'loading');
-        React.useEffect(() => {
-            if (phase === 'ready') return;
-            let alive = true;
-            const loader = window.wrLoadDraft ? window.wrLoadDraft() : Promise.resolve();
-            loader.then(() => { if (alive) setPhase('ready'); })
-                  .catch((e) => { if (window.wrLog) window.wrLog('draft.lazyLoad', e); if (alive) setPhase('error'); });
-            return () => { alive = false; };
-        }, []);
-        if (phase === 'error') {
-            return React.createElement('div', { style: { padding: '48px 24px', textAlign: 'center', color: 'var(--silver)' } },
-                'Draft module failed to load. ',
-                React.createElement('button', {
-                    onClick: () => window.location.reload(),
-                    style: { marginTop: '12px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 },
-                }, 'Reload'));
-        }
-        if (phase !== 'ready' || typeof DraftTab === 'undefined') {
-            return React.createElement('div', { style: { padding: '64px 24px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' } }, 'Loading Draft Command…');
-        }
-        return React.createElement(DraftTab, props);
+    // Lazy boundary factory for deferred module groups (see js/module-loader.js).
+    // Heavy tab modules are inert at boot; on first open we inject the group's
+    // scripts, show a spinner, then render the real component. The components are
+    // globals only defined after the load completes, so each is resolved through a
+    // thunk that is only trusted once the group reports ready.
+    function wrLazyTab(group, label, resolveComponent) {
+        return function WrLazyTabBoundary(props) {
+            const [phase, setPhase] = React.useState(
+                (window.wrModuleGroupLoaded?.(group) && typeof resolveComponent() === 'function') ? 'ready' : 'loading'
+            );
+            React.useEffect(() => {
+                if (phase === 'ready') return;
+                let alive = true;
+                const loader = window.wrLoadModuleGroup ? window.wrLoadModuleGroup(group) : Promise.resolve();
+                loader.then(() => { if (alive) setPhase('ready'); })
+                      .catch((e) => { if (window.wrLog) window.wrLog(group + '.lazyLoad', e); if (alive) setPhase('error'); });
+                return () => { alive = false; };
+            }, []);
+            if (phase === 'error') {
+                return React.createElement('div', { style: { padding: '48px 24px', textAlign: 'center', color: 'var(--silver)' } },
+                    label + ' module failed to load. ',
+                    React.createElement('button', {
+                        onClick: () => window.location.reload(),
+                        style: { marginTop: '12px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 },
+                    }, 'Reload'));
+            }
+            const Comp = resolveComponent();
+            if (phase !== 'ready' || typeof Comp !== 'function') {
+                return React.createElement('div', { style: { padding: '64px 24px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' } }, 'Loading ' + label + '…');
+            }
+            return React.createElement(Comp, props);
+        };
     }
+    const DraftTabLazy = wrLazyTab('draft', 'Draft Command', () => (typeof DraftTab === 'function' ? DraftTab : null));
+    const TradeCalcTabLazy = wrLazyTab('trade', 'Trade Center', () => (typeof TradeCalcTab === 'function' ? TradeCalcTab : null));
+    const FreeAgencyTabLazy = wrLazyTab('fa', 'Free Agency', () => (typeof FreeAgencyTab === 'function' ? FreeAgencyTab : null));
+    const LeagueMapTabLazy = wrLazyTab('analysis', 'League Intel', () => (typeof LeagueMapTab === 'function' ? LeagueMapTab : null));
+    const AnalyticsPanelLazy = wrLazyTab('analysis', 'Analytics', () => (typeof AnalyticsPanel === 'function' ? AnalyticsPanel : null));
+    const TrophyRoomTabLazy = wrLazyTab('trophies', 'Trophy Room', () => (typeof TrophyRoomTab === 'function' ? TrophyRoomTab : null));
+    const AlexInsightsTabLazy = wrLazyTab('alex', "GM's Office", () => (typeof window.AlexInsightsTab === 'function' ? window.AlexInsightsTab : null));
+    const CompareTabLazy = wrLazyTab('compare', 'Compare', () => (typeof window.CompareTab === 'function' ? window.CompareTab : null));
 
     function escapeHtml(str) {
         return String(str)
@@ -3339,7 +3353,7 @@
                 {/* Tab Content Routing — Brief tab folded into Dashboard as widgets */}
                 <div className="wr-content-frame">
                 {activeTab === 'trades' ? (
-                    <TradeCalcTab
+                    <TradeCalcTabLazy
                         playersData={playersData}
                         statsData={statsData}
                         myRoster={myRoster}
@@ -3385,7 +3399,7 @@
                     timeRecomputeTs={timeRecomputeTs}
                     setTimeRecomputeTs={setTimeRecomputeTs}
                     getAcquisitionInfo={getAcquisitionInfo}
-                /> : activeTab === 'league' ? <LeagueMapTab
+                /> : activeTab === 'league' ? <LeagueMapTabLazy
                     leagueViewTab={leagueViewTab}
                     setLeagueViewTab={setLeagueViewTab}
                     leagueSelectedTeam={leagueSelectedTeam}
@@ -3412,7 +3426,7 @@
                     setTimeRecomputeTs={setTimeRecomputeTs}
                     getAcquisitionInfo={getAcquisitionInfo}
                     setActiveTab={setActiveTab}
-                /> : activeTab === 'analytics' ? <AnalyticsPanel
+                /> : activeTab === 'analytics' ? <AnalyticsPanelLazy
                     analyticsData={analyticsData}
                     analyticsTab={analyticsTab}
                     setAnalyticsTab={setAnalyticsTab}
@@ -3435,7 +3449,7 @@
                     setTradeSubTab={setTradeSubTab}
                     getOwnerName={getOwnerName}
                     getAcquisitionInfo={getAcquisitionInfo}
-                /> : activeTab === 'fa' ? <FreeAgencyTab
+                /> : activeTab === 'fa' ? <FreeAgencyTabLazy
                     playersData={playersData}
                     statsData={statsData}
                     prevStatsData={stats2025Data}
@@ -3457,7 +3471,7 @@
                     sendReconMessage={sendReconMessage}
                     timeRecomputeTs={timeRecomputeTs}
                     viewMode={viewMode}
-                /> : activeTab === 'trophies' ? <TrophyRoomTab
+                /> : activeTab === 'trophies' ? <TrophyRoomTabLazy
                     currentLeague={currentLeague}
                     leagueSkin={leagueSkin}
                     playersData={playersData}
@@ -3473,19 +3487,17 @@
                         : <div style={{ padding: '40px', textAlign: 'center', color: 'var(--silver)' }}>Settings module not loaded.</div>
                 ) : activeTab === 'legend' ? (
                     React.createElement(LegendPanel, { module: true })
-                ) : (activeTab === 'alex' || activeTab === 'strategy') ? (typeof window.AlexInsightsTab === 'function' ? React.createElement(window.AlexInsightsTab, {
+                ) : (activeTab === 'alex' || activeTab === 'strategy') ? React.createElement(AlexInsightsTabLazy, {
                     currentLeague, leagueSkin, myRoster, playersData, statsData,
                     stats2025Data, standings, sleeperUserId,
                     timeRecomputeTs, setActiveTab,
                     gmStrategy, setGmStrategy,
                     // Old tab=strategy URLs land on the Strategy sub-view inside GM's Office.
                     initialSubTab: activeTab === 'strategy' ? 'strategy' : null,
-                }) : <div style={{ padding: '40px', textAlign: 'center', color: 'var(--silver)' }}>GM's Office module not loaded.</div>
-                ) : activeTab === 'compare' ? (typeof window.CompareTab === 'function' ? React.createElement(window.CompareTab, {
+                }) : activeTab === 'compare' ? React.createElement(CompareTabLazy, {
                     currentLeague, leagueSkin, myRoster, playersData, statsData, stats2025Data,
                     standings, sleeperUserId,
-                }) : <div style={{ padding: '40px', textAlign: 'center', color: 'var(--silver)' }}>Compare module not loaded.</div>
-                ) : (
+                }) : (
                 <DashboardPanel
                     selectedWidgets={selectedWidgets}
                     setSelectedWidgets={setSelectedWidgets}

@@ -122,6 +122,18 @@ function IntelligenceBriefWidget({
     const spent = myRoster?.settings?.waiver_budget_used || 0;
     const faabRemaining = Math.max(0, budget - spent);
 
+	    // free-agency.js is a deferred module group (see js/module-loader.js); it owns
+	    // getFreeAgencyBriefTarget. Kick off the load and recompute once it lands so the
+	    // brief upgrades from the rough waiver heuristic to the real action target.
+	    const [faModuleTick, setFaModuleTick] = useState(0);
+	    useEffect(() => {
+	        if (typeof window.App?.getFreeAgencyBriefTarget === 'function') return;
+	        if (!window.wrLoadModuleGroup) return;
+	        let alive = true;
+	        window.wrLoadModuleGroup('fa').then(() => { if (alive) setFaModuleTick(1); }).catch(() => {});
+	        return () => { alive = false; };
+	    }, []);
+
 	    // Best waiver target
 	    const waiverTarget = useMemo(() => {
 	        if (!rosterState.isUsable) return null;
@@ -169,7 +181,7 @@ function IntelligenceBriefWidget({
             }
         }
         return candidates[0] || null;
-	    }, [rosterState.isUsable, needs, playersData, statsData, prevStatsData, myRoster, currentLeague, briefDraftInfo, scores, timeRecomputeTs]);
+	    }, [rosterState.isUsable, needs, playersData, statsData, prevStatsData, myRoster, currentLeague, briefDraftInfo, scores, timeRecomputeTs, faModuleTick]);
 
     // Key drops (high-value players dropped in last 3 weeks)
     const keyDrops = useMemo(() => {
