@@ -42,6 +42,14 @@
         if (lf.draftType) fmt.push(`${lf.draftType} draft`);
         if (fmt.length) lines.push(`League: ${fmt.join(', ')}.`);
 
+        // Multi-copy leagues (MFL): a player can be rostered by several teams, so a
+        // "drafted" stud may STILL be available until all copies are gone. Alex must
+        // factor remaining copies into targeting, runs, and "is he gone?" calls.
+        const copies = Math.max(1, Number(state.playerCopies) || 1);
+        if (copies > 1) {
+            lines.push(`MULTI-COPY DRAFT: each player can be drafted by up to ${copies} different teams. A player is only truly gone once all ${copies} copies are taken — do NOT treat a player as unavailable after a single team drafts him. Weigh how many copies remain when judging runs, scarcity, and who to target.`);
+        }
+
         // On the clock
         const slot = state.pickOrder?.[state.currentIdx];
         if (slot) {
@@ -69,10 +77,13 @@
         if (needs.length) lines.push(`Flagged roster needs: ${needs.join(', ')}.`);
 
         // Top available on the board (the single most important context)
+        const drafted = state.draftedPids || {};
         const top = (state.pool || []).slice(0, 15).map((p, i) => {
             const val = Math.round(p.dhq || p.val || 0);
             const age = p.age ? `, age ${p.age}` : '';
-            return `${i + 1}. ${p.name} (${p.pos}${p.team ? '-' + p.team : ''}, DHQ ${val}${age})`;
+            const taken = drafted[p.pid] || 0;
+            const copyNote = copies > 1 ? `, ${Math.max(0, copies - taken)}/${copies} copies left` : '';
+            return `${i + 1}. ${p.name} (${p.pos}${p.team ? '-' + p.team : ''}, DHQ ${val}${age}${copyNote})`;
         });
         if (top.length) lines.push(`Top available players right now:\n${top.join('\n')}`);
 

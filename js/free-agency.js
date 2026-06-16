@@ -338,8 +338,15 @@
             return { ...x, name: playerName(x.p, x.pid), pos, ppg, faab, fit, fitScore: fit.score, peakYrs: win.peakYrs, valueYrs: win.valueYrs, windowLabel: win.label, windowShort: win.short, windowColor: win.color, formatReasons, playerContext, intelligence, why };
         }
 
-        const rostered = new Set();
-        (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
+        // Multi-copy leagues (MFL rostersPerPlayer): a player is only off the wire
+        // once ALL copies are rostered. Count occurrences across rosters and gate on
+        // the copy cap (copies===1 ⇒ identical to the old gone-on-first-roster Set).
+        const faCopies = Math.max(1, Number(currentLeague?.settings?.player_copies) || 1);
+        const faRosteredCount = {};
+        // Dedupe per roster — taxi/reserve ids are also in players[], so a raw count
+        // would double-count a taxi/IR stash toward the copy cap.
+        (currentLeague?.rosters || []).forEach(r => new Set((r.players || []).concat(r.taxi || [], r.reserve || []).map(String)).forEach(k => { faRosteredCount[k] = (faRosteredCount[k] || 0) + 1; }));
+        const rostered = { has: (pid) => (faRosteredCount[String(pid)] || 0) >= faCopies };
         const availablePlayers = Object.entries(playersData || {})
             .filter(([pid, p]) => !rostered.has(pid) && p.team && p.status !== 'Inactive' && p.status !== 'Retired' && p.active !== false && (scores[pid] || 0) > 0 && !isDraftProspect(pid, p))
             .map(([pid, p]) => ({ pid, p, dhq: scores[pid] || 0, pos: normPos(p.position) || p.position }))
@@ -589,9 +596,13 @@
 
         // Find available (unrostered) players
         const rostered = useMemo(() => {
-            const set = new Set();
-            (currentLeague.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => set.add(String(pid))));
-            return set;
+            // Copy-aware availability — see buildFreeAgencyActionBoard above. A player
+            // counts as rostered only when every copy the league allows is taken.
+            const copies = Math.max(1, Number(currentLeague?.settings?.player_copies) || 1);
+            const count = {};
+            // Dedupe per roster — taxi/reserve ids are also in players[].
+            (currentLeague.rosters || []).forEach(r => new Set((r.players || []).concat(r.taxi || [], r.reserve || []).map(String)).forEach(k => { count[k] = (count[k] || 0) + 1; }));
+            return { has: (pid) => (count[String(pid)] || 0) >= copies };
         }, [currentLeague]);
 
         const availablePlayers = useMemo(() => {

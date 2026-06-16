@@ -220,10 +220,16 @@
         React.useEffect(() => {
             if (!leagueIdForFetch) return;
             let cancelled = false;
-            const fn = window.Sleeper?.fetchDrafts || (async (lid) => {
-                const resp = await fetch('https://api.sleeper.app/v1/league/' + lid + '/drafts');
-                return resp.ok ? resp.json() : [];
-            });
+            // MFL: the Sleeper drafts endpoint 404s on the 'mfl_<id>_<year>' id;
+            // use the status-bearing MFL draft objects hydrated onto window.S / the
+            // league instead so slotToRoster + the live launch path resolve.
+            const isMfl = !!(currentLeague?._mfl || String(currentLeague?.id || '').startsWith('mfl_'));
+            const fn = isMfl
+                ? (async () => window.S?.drafts || currentLeague?.drafts || [])
+                : (window.Sleeper?.fetchDrafts || (async (lid) => {
+                    const resp = await fetch('https://api.sleeper.app/v1/league/' + lid + '/drafts');
+                    return resp.ok ? resp.json() : [];
+                }));
             fn(leagueIdForFetch).then(d => {
                 if (!cancelled) setFetchedDrafts(Array.isArray(d) ? d : []);
             }).catch(() => { if (!cancelled) setFetchedDrafts([]); });
@@ -435,6 +441,8 @@
                     season: currentLeague?.season,
                     rounds: upcoming?.rounds || propRounds || 5,
                     leagueSize: upcoming?.teams || draftMeta.numTeams,
+                    // Multi-copy leagues (MFL rostersPerPlayer) — 1 elsewhere.
+                    playerCopies: currentLeague?.settings?.player_copies || 1,
                     draftType: upcoming?.type || draftMeta.draftType || 'snake',
                     variant: upcoming?.variant || draftMeta.draftVariant || 'startup',
                     userRosterId: myRoster?.roster_id,
@@ -846,9 +854,20 @@
 
             (async () => {
                 try {
-                    const resp = await fetch('https://api.sleeper.app/v1/draft/' + state.sleeperDraftId);
-                    if (!resp.ok) return;
-                    const meta = await resp.json();
+                    // MFL draft ids ('mfl_draft_...') 404 on Sleeper — read the variant
+                    // signal (settings.player_type) from the already-hydrated MFL draft
+                    // object instead of a doomed cross-origin fetch.
+                    const isMfl = String(state.sleeperDraftId || '').startsWith('mfl_draft_');
+                    let meta;
+                    if (isMfl) {
+                        const list = window.S?.drafts || currentLeague?.drafts || [];
+                        meta = list.find(d => d.draft_id === state.sleeperDraftId) || list[0] || null;
+                        if (!meta) return;
+                    } else {
+                        const resp = await fetch('https://api.sleeper.app/v1/draft/' + state.sleeperDraftId);
+                        if (!resp.ok) return;
+                        meta = await resp.json();
+                    }
                     const detectedVariant = stateFns.detectDraftVariant
                         ? stateFns.detectDraftVariant({ currentLeague, draft: meta, fallback: state.variant || 'startup' })
                         : detectSleeperDraftVariant(meta, currentLeague, state.variant || 'startup');
@@ -1492,7 +1511,8 @@
             const round = currentSlot.round;
             // Predict only over the AVAILABLE pool (drafted players removed) so a
             // "likely pick" can never be a player who is already off the board.
-            const availablePool = (state.pool || []).filter(p => p && p.pid && !state.draftedPids?.[p.pid]);
+            const apCopies = Math.max(1, Number(state.playerCopies) || 1);
+            const availablePool = (state.pool || []).filter(p => p && p.pid && (state.draftedPids?.[p.pid] || 0) < apCopies);
             const payload = {};
             Object.entries(state.personas).forEach(([rid, persona]) => {
                 try {

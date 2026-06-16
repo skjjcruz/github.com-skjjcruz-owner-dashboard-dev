@@ -250,13 +250,16 @@
 
         const decoratedPool = React.useMemo(() => {
             // Keep undrafted players exactly as state.pool provides them, then re-add
-            // any drafted players from the full original pool so they stay on the board
-            // (struck through) instead of vanishing the moment they're picked.
+            // any fully-drafted players from the full original pool so they stay on the
+            // board (struck through) instead of vanishing the moment they're picked.
             const drafted = state.draftedPids || {};
+            const copies = Math.max(1, Number(state.playerCopies) || 1);
             const live = state.pool || [];
             const liveIds = new Set(live.map(p => String(idOf(p))));
+            // Only re-add players whose copies are ALL taken (still in the pool while
+            // copies remain). drafted is a count map; full = count >= copies.
             const draftedExtra = (state.originalPool || [])
-                .filter(p => drafted[idOf(p)] && !liveIds.has(String(idOf(p))));
+                .filter(p => (drafted[idOf(p)] || 0) >= copies && !liveIds.has(String(idOf(p))));
             return [...live, ...draftedExtra].map(player => {
                 const pid = idOf(player);
                 const entry = boardContext?.entries?.[pid] || {};
@@ -281,10 +284,14 @@
                         tier: entry.tier || player.tier || player.csv?.tier || null,
                         rankDelta: dhqRank && activeRank && activeRank < 99999 ? dhqRank - activeRank : 0,
                     },
-                    _drafted: !!drafted[pid],
+                    // Multi-copy aware: a player is only "drafted" (struck through) once
+                    // every copy is gone; partial copies show a "taken/total" chip.
+                    _copies: copies,
+                    _copiesTaken: drafted[pid] || 0,
+                    _drafted: (drafted[pid] || 0) >= copies,
                 };
             });
-        }, [state.pool, state.originalPool, state.draftedPids, boardContext, activeLane, activeRanks, dhqRanks, aiRanks, myRanks]);
+        }, [state.pool, state.originalPool, state.draftedPids, state.playerCopies, boardContext, activeLane, activeRanks, dhqRanks, aiRanks, myRanks]);
 
         const available = React.useMemo(() => {
             const filtered = decoratedPool.filter(p => {
@@ -680,6 +687,18 @@
                                 <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rowRank <= 12 ? 'var(--gold)' : 'var(--ov-8, rgba(255,255,255,0.34))', textAlign: 'right', fontFamily: FONT_MONO }}>{rowRank}</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
                                     <span style={{ color: 'var(--white)', fontWeight: 700, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: p._drafted ? 'line-through' : 'none' }}>{p.name}</span>
+                                    {p._copies > 1 && p._copiesTaken > 0 && (() => {
+                                        // Copies-taken chip for multi-copy leagues: green→amber→red
+                                        // as the last copy nears; red when all copies are gone.
+                                        const remaining = p._copies - p._copiesTaken;
+                                        const chipCol = remaining <= 0 ? 'var(--bad, #e5534b)' : remaining === 1 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-2ecc71, #2ecc71)';
+                                        return (
+                                            <span title={remaining > 0 ? remaining + ' of ' + p._copies + ' copies still available' : 'All ' + p._copies + ' copies drafted'}
+                                                style={{ flexShrink: 0, color: chipCol, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, fontFamily: FONT_MONO, border: '1px solid ' + wrAlpha(chipCol, '55'), background: wrAlpha(chipCol, '16'), borderRadius: '3px', padding: '0 4px', lineHeight: 1.45 }}>
+                                                {p._copiesTaken}/{p._copies}
+                                            </span>
+                                        );
+                                    })()}
                                     {tag && (
                                         <span style={{ flexShrink: 0, color: tag.color, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, border: '1px solid ' + wrAlpha(tag.color, '55'), background: wrAlpha(tag.color, '18'), borderRadius: '3px', padding: '0 4px' }}>{tag.label}</span>
                                     )}

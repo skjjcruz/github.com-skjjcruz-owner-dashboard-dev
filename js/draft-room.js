@@ -191,7 +191,25 @@
             const lid = window.S?.currentLeagueId || currentLeague?.league_id || currentLeague?.id;
             if (!lid) return;
             let cancelled = false, timer = null;
-            const fetchDrafts = window.Sleeper?.fetchDrafts || (async (id) => { const r = await fetch('https://api.sleeper.app/v1/league/' + id + '/drafts'); return r.ok ? r.json() : []; });
+            // MFL leagues have no Sleeper drafts endpoint — that fetch 404s on the
+            // 'mfl_<id>_<year>' league id. Source the status-bearing MFL draft
+            // objects instead (re-pulled live so pre_draft → drafting is caught),
+            // falling back to the hydrated copy on window.S / the league object.
+            const isMfl = !!(currentLeague?._mfl || String(currentLeague?.id || '').startsWith('mfl_'));
+            const fetchDrafts = isMfl
+                ? (async () => {
+                    try {
+                        if (window.MFL?.fetchDraftStatus) {
+                            const mlid = currentLeague._mflLeagueId || String(currentLeague.id || '').replace(/^mfl_/, '').replace(/_\d+$/, '');
+                            const yr = currentLeague.season || localStorage.getItem('mfl_year') || String(new Date().getFullYear());
+                            const key = sessionStorage.getItem('mfl_api_key') || null;
+                            const d = await window.MFL.fetchDraftStatus(mlid, yr, key, currentLeague);
+                            if (Array.isArray(d) && d.length) return d;
+                        }
+                    } catch (e) { window.wrLog?.('draftRoom.mflDraftStatus', e); }
+                    return window.S?.drafts || currentLeague?.drafts || [];
+                })
+                : (window.Sleeper?.fetchDrafts || (async (id) => { const r = await fetch('https://api.sleeper.app/v1/league/' + id + '/drafts'); return r.ok ? r.json() : []; }));
             const poll = () => {
                 Promise.resolve(fetchDrafts(lid)).then(rows => {
                     if (cancelled) return;
@@ -645,8 +663,14 @@
         // Fetch draft countdown info from Sleeper
         useEffect(() => {
             if (!currentLeague?.id) return;
-            fetch('https://api.sleeper.app/v1/league/' + (currentLeague.league_id || currentLeague.id) + '/drafts')
-                .then(r => r.ok ? r.json() : [])
+            // MFL leagues: use the status-bearing MFL draft objects (hydrated onto
+            // window.S / the league) — the Sleeper endpoint 404s on the mfl_ id.
+            const isMfl = !!(currentLeague._mfl || String(currentLeague.id || '').startsWith('mfl_'));
+            const draftsPromise = isMfl
+                ? Promise.resolve(window.S?.drafts || currentLeague.drafts || [])
+                : fetch('https://api.sleeper.app/v1/league/' + (currentLeague.league_id || currentLeague.id) + '/drafts')
+                    .then(r => r.ok ? r.json() : []);
+            draftsPromise
                 .then(drafts => {
                     const upcoming = drafts.find(d => d.status === 'pre_draft') || drafts[0];
                     if (upcoming) setDraftInfo(upcoming);
