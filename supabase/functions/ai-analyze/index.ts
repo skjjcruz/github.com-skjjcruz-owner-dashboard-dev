@@ -556,6 +556,7 @@ async function callAIProvider(args: {
     inputTokens: number;
     outputTokens: number;
     cachedInputTokens: number;
+    webSearchCount?: number;
 }> {
     const { route, systemPrompt, userPrompt, maxTokens, useWebSearch } = args;
 
@@ -641,22 +642,59 @@ async function callAIProvider(args: {
         messages: [{ role: 'user', content: userPrompt }],
     };
     if (useWebSearch) {
-        anthropicRequest.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+        // GA web search (dynamic filtering) — no beta header required, and it triggers
+        // more reliably on current models than the legacy web_search_20250305 +
+        // 'web-search-2025-03-05' beta combo. max_uses caps searches per read so a
+        // low-coverage ("bad") player can't trigger a runaway, expensive search loop —
+        // the model concludes with what it has, and the prompt makes that a depth/stash
+        // read rather than a blank.
+        anthropicRequest.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
     }
-    const message = await anthropic.messages.create(
-        anthropicRequest,
-        useWebSearch ? { headers: { 'anthropic-beta': 'web-search-2025-03-05' } } : undefined,
-    );
-    const usage = (message as any).usage || {};
+
+    const textFromContent = (content: any[]) => (content || [])
+        .filter(part => part.type === 'text')
+        .map(part => part.text || '')
+        .join('');
+    const searchesIn = (content: any[]) => (content || [])
+        .filter(part => part.type === 'server_tool_use').length;
+
+    // Server-side web search runs an internal tool loop. If it hits the per-response
+    // iteration cap before the model writes its answer, the response returns with
+    // stop_reason 'pause_turn' and NO final text — common for low-profile players the
+    // model searches hard for, and was surfacing as a BLANK read → template. Re-send
+    // the assistant turn to resume until it finishes (end_turn) or a small cap (with
+    // max_uses bounding searches, pauses are now rare).
+    let message = await anthropic.messages.create(anthropicRequest);
+    let analysis = textFromContent(message.content as any[]);
+    let webSearchCount = searchesIn(message.content as any[]);
+    let inputTokens = (message as any).usage?.input_tokens || 0;
+    let outputTokens = (message as any).usage?.output_tokens || 0;
+    let cachedInputTokens = (message as any).usage?.cache_read_input_tokens || 0;
+    let pauses = 0;
+    while ((message as any).stop_reason === 'pause_turn' && pauses < 2) {
+        anthropicRequest.messages = [...anthropicRequest.messages, { role: 'assistant', content: message.content }];
+        message = await anthropic.messages.create(anthropicRequest);
+        pauses++;
+        const turnText = textFromContent(message.content as any[]);
+        if (turnText) analysis = analysis ? `${analysis} ${turnText}` : turnText;
+        webSearchCount += searchesIn(message.content as any[]);
+        inputTokens += (message as any).usage?.input_tokens || 0;
+        outputTokens += (message as any).usage?.output_tokens || 0;
+        cachedInputTokens += (message as any).usage?.cache_read_input_tokens || 0;
+    }
+
+    if (useWebSearch) {
+        // Diagnostic (edge logs): searches=0 → answered from training (newsless);
+        // text=0 → blank read; high searches → low-coverage player (cached longer).
+        console.log(`[web_search] model=${route.model} searches=${webSearchCount} pauses=${pauses} stop=${(message as any).stop_reason || ''} text=${analysis.length}`);
+    }
     return {
-        analysis: ((message.content || []) as any[])
-            .filter(part => part.type === 'text')
-            .map(part => part.text || '')
-            .join(''),
+        analysis,
         stopReason: (message as any).stop_reason || '',
-        inputTokens: usage.input_tokens || 0,
-        outputTokens: usage.output_tokens || 0,
-        cachedInputTokens: usage.cache_read_input_tokens || 0,
+        inputTokens,
+        outputTokens,
+        cachedInputTokens,
+        webSearchCount,
     };
 }
 
@@ -2200,6 +2238,50 @@ Output ONLY a valid JSON array, no markdown, no backticks, no prose:
 // read is league-agnostic on purpose: the DHQ value, position rank and roster
 // call live elsewhere on the card; this panel is the "what's actually happening
 // with him" layer that a stats engine can't produce.
+// League-format clause for the Dynasty Read. Honors format flags ONLY when the
+// caller passes them; otherwise the read stays league-agnostic so the shared
+// weekly cache key remains identical across users.
+function dynastyReadFormatClause(ctx: any): string {
+    if (!ctx) return '';
+    const sf      = ctx.superflex === true || ctx.isSuperFlex === true;
+    const tep     = ctx.tep === true || ctx.tePremium === true || ctx.isTEP === true;
+    const idp     = ctx.idp === true || ctx.isIDP === true;
+    const scoring = ctx.scoringType || ctx.scoring || '';
+
+    const bits: string[] = [];
+    if (scoring === 'ppr') bits.push('full PPR');
+    else if (scoring === 'half_ppr' || scoring === 'half') bits.push('half PPR');
+    else if (scoring === 'std' || scoring === 'standard') bits.push('standard / non-PPR');
+    if (sf)  bits.push('superflex (2 QB-eligible slots)');
+    if (tep) bits.push('TE-premium');
+    if (idp) bits.push('IDP');
+
+    if (!bits.length) {
+        return `\nThis is a league-agnostic dynasty read: focus on the role, usage, health and trajectory signals that move a player's value in any format.\n`;
+    }
+    return `\nThe GM's league is ${bits.join(', ')}. Read this player THROUGH that lens — the same news means different things by format: QB value swings hardest in superflex; high-target receivers and pass-catching backs gain in PPR; every-down and receiving tight ends gain in TE-premium; defenders carry real, tradeable value in IDP. Weight the outlook to what this format rewards.\n`;
+}
+
+// System prompt for the Dynasty Read. Deliberately NOT buildSystemPrompt(): that
+// one is the full league-analyst persona (bold headers, 1200 words, cite owners /
+// records) and fights this surface's tight single-player brief.
+function buildDynastyReadSystemPrompt(ctx: any): string {
+    const fmt = dynastyReadFormatClause(ctx);
+    return `You are a sharp NFL analyst writing the dynasty read on ONE player for the GM who rosters him. Your job: translate what is ACTUALLY happening with this player in the real world right now into what it means for his dynasty value. You have web search — use it, and build the read entirely on what you find.
+
+Weave three things into plain prose, in this order (do not label them):
+1. SITUATION — the most important real, current development from recent reporting: depth-chart role and snap/target/touch trend, health and its timeline, contract or roster status, a coaching/scheme change, or a teammate's move that opens or closes a path. Anchor it to something concrete and recent — not a career résumé.
+2. IMPACT — what that situation does to his usage and value right now.
+3. LONG-TERM OUTLOOK — the dynasty trajectory over the next 1-3 seasons: arrow up, flat, or down, and the specific reason driving it.
+${fmt}
+HARD RULES:
+- Ground the read in real, recent developments you actually found. Do NOT fall back on a generic age/role platitude that could be said about any player at his position — that is the exact failure mode to avoid.
+- If genuinely nothing is breaking, the honest read is STILL concrete: his current depth-chart role, scheme fit, and the most recent move around him, and what those imply. Never write vague "trajectory" filler.
+- LOW-PROFILE PLAYERS (deep bench, practice squad, just-drafted, UDFA, little coverage): never go blank or generic. Give his actual depth-chart spot and who is ahead of him, his draft pedigree and realistic path to snaps, and a blunt dynasty verdict — deep stash, taxi-only, or waiver-level — plus the single change (an injury ahead of him, a scheme fit, a standout camp/preseason report) that would put him on the radar.
+- Confident and direct, like an analyst who has done the homework. Cut "could / may / might" hedging.
+- 3-5 sentences of plain prose. No markdown, headers, bullets, labels, citations, or sign-off.`;
+}
+
 function buildDynastyReadPrompt(ctx: any): string {
     const name = ctx?.name || 'this player';
     const pos = ctx?.pos || '';
@@ -2207,22 +2289,16 @@ function buildDynastyReadPrompt(ctx: any): string {
     const age = ctx?.age ? `, age ${ctx.age}` : '';
     const wk = (ctx?.week === 0 || ctx?.week === '0' || ctx?.week == null) ? 'the offseason' : `week ${ctx.week}`;
     const season = ctx?.season || '';
-    return `Search the web for the LATEST reporting (last ~10 days) on ${name} (${pos}, ${team}${age}) as of ${wk} ${season}. Pull from credible sources — ESPN, PFF, The Athletic, and trusted team beat reporters. Synthesize what actually matters for his DYNASTY value into a tight read.
+    return `Use web search to pull the LATEST reporting on ${name} (${pos}, ${team}${age}) as of ${wk} ${season} — prioritize the last ~10 days plus this offseason's moves. Sources: ESPN, PFF, The Athletic, and trusted team beat reporters.
 
-Cover, only where there's real signal:
-- Role / depth-chart status and recent usage trend (snaps, targets, touches, routes).
-- Injury status or designation and the expected timeline.
-- Coaching, scheme, or personnel changes around him (new OC, a competing acquisition, a teammate's injury opening a path).
-- Trade buzz or contract situation.
-- The forward dynasty outlook this news implies — is his arrow up, flat, or down, and why.
+Build the read on what you actually find about his real situation:
+- Depth-chart role and recent usage trend (snaps, targets, touches, routes).
+- Injury status / designation and the expected timeline.
+- Coaching, scheme, or personnel changes around him (new OC, an added competitor, a teammate's injury opening a path).
+- Contract / roster status and any trade buzz.
+Then say what it means: the impact on his value now, and the dynasty outlook over the next 1-3 seasons.
 
-RULES:
-- 2-3 sentences. Tight, specific, and confident — sound like a sharp dynasty analyst briefing a GM, not a recap bot.
-- Lead with the single most decision-relevant development, not a biography.
-- Do NOT restate raw fantasy points, DHQ value, or position rank — the card already shows those.
-- Attribute naturally when it strengthens the point ("per The Athletic's beat writer…"), but no link dumps, footnotes, or citation markers.
-- If it's a genuinely quiet stretch with no real news, say so plainly in one line and give the role/trajectory read instead — never invent a development.
-- Plain prose only. No markdown, no headers, no bullet points, no "— Alex" sign-off.`;
+Lead with the single most decision-relevant real development. Do NOT restate fantasy points, DHQ value, or position rank — the card already shows those. Do NOT pad with generic age-curve commentary; if news is thin, give the most recent concrete situational fact and what it implies.`;
 }
 
 // ── Live NFL news (ESPN RSS, best-effort) ─────────────────────────────────────
@@ -2433,10 +2509,18 @@ Deno.serve(async (req) => {
         }
 
         const isMockDraft = type === 'mock_draft' && !genericContext;
+        const isDynastyRead = type === 'dynasty_read' && !genericContext;
         const requestedMaxTokens = maxTokensOverride || (isMockDraft ? 16000 : 8192);
         const routeOutputCap = isMockDraft
             ? planLimits.mockDraftMaxOutputTokens
-            : planLimits.maxOutputTokens;
+            // Web search emits tool-query blocks that count as output tokens. On a
+            // low plan cap (e.g. War Room's 2200) a player the model searches hard
+            // for — typically a low-profile one with thin coverage — can exhaust the
+            // budget before writing the final read, returning empty → template. Give
+            // dynasty_read headroom; still bounded by the global cap below.
+            : isDynastyRead
+                ? Math.max(planLimits.maxOutputTokens, 4000)
+                : planLimits.maxOutputTokens;
         if (routeOutputCap <= 0) {
             return new Response(
                 JSON.stringify({ error: 'This AI feature is not included on your current plan.' }),
@@ -2447,7 +2531,9 @@ Deno.serve(async (req) => {
         const maxTokens = Math.max(100, Math.min(requestedMaxTokens, routeOutputCap, globalOutputCap));
         let systemPrompt = genericContext?.system || (isMockDraft
             ? 'You are a dynasty fantasy football draft simulator. Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no prose before or after. Start your response with [ and end with ]. Never repeat a player. Track all prior picks carefully so each player is selected at most once.'
-            : buildSystemPrompt(context) + buildUserPreferenceBlock(userPrefs));
+            : type === 'dynasty_read'
+                ? buildDynastyReadSystemPrompt(parsedContext)
+                : buildSystemPrompt(context) + buildUserPreferenceBlock(userPrefs));
 
         // Hold generic chat/scout surfaces to the same league-format / team-mode /
         // quality discipline as the structured path. Off by default; enable via
@@ -2463,7 +2549,13 @@ Deno.serve(async (req) => {
         const downgradedRoute = downgradeRouteForEntitlement(route, planLimits);
         route = downgradedRoute.route;
         let webSearchDisabled = false;
-        if (useWebSearch && (!planAllowsWebSearch(aiSession.plan, type) || !envFlag('AI_ALLOW_WEB_SEARCH', false))) {
+        // dynasty_read IS a web-search feature — the synthesis is worthless without
+        // fresh reporting, and its cost is already bounded by the shared weekly cache
+        // (~1 search/player/week/format-bucket). It therefore does NOT depend on the
+        // generic AI_ALLOW_WEB_SEARCH launch flag; plan entitlement (planAllowsWebSearch)
+        // and the master AI kill switch / AI_ENABLED above still govern it.
+        const webSearchFlagOn = envFlag('AI_ALLOW_WEB_SEARCH', false) || type === 'dynasty_read';
+        if (useWebSearch && (!planAllowsWebSearch(aiSession.plan, type) || !webSearchFlagOn)) {
             useWebSearch = false;
             webSearchDisabled = true;
         }
@@ -2529,6 +2621,7 @@ Deno.serve(async (req) => {
         let inputTokens = 0;
         let outputTokens = 0;
         let cachedInputTokens = 0;
+        let webSearchCount = 0;
         const startedAt = Date.now();
         const reservedCostUsd = Number(usageReservation.reservedCostUsd || estimatedRequestCostUsd || 0);
         let failureRecorded = false;
@@ -2560,6 +2653,7 @@ Deno.serve(async (req) => {
             inputTokens = providerResult.inputTokens;
             outputTokens = providerResult.outputTokens;
             cachedInputTokens = providerResult.cachedInputTokens;
+            webSearchCount = providerResult.webSearchCount || 0;
         } catch (providerError) {
             if (useWebSearch || !isProviderAvailabilityError(providerError)) {
                 await recordProviderFailure(providerError);
@@ -2636,6 +2730,14 @@ Deno.serve(async (req) => {
         let insights = (!genericContext && JSON_ARRAY_TYPES.has(type)) ? parseJsonArray(analysis) : undefined;
         if (type === 'dashboard_digest') insights = validateDigestInsights(insights, context);
 
+        // Low-coverage ("bad") players make the model search to the cap (≥4 of the 5
+        // allowed) and the resulting depth/stash read barely changes week to week —
+        // so cache it ~4x longer (28d vs 7d) to avoid repeatedly paying for the
+        // expensive search on a player whose read is stable. Well-covered players are
+        // found in 1-2 searches and stay on the normal news-cadence TTL.
+        const effectiveTtlMs = (isDynastyRead && webSearchCount >= 4)
+            ? Math.max(cacheTtlMs, 28 * 24 * 60 * 60 * 1000)
+            : cacheTtlMs;
         if (cacheTtlMs > 0 && cacheKey && analysis && stopReason !== 'max_tokens') {
             await writeAIResponseCache({
                 cacheKey,
@@ -2645,7 +2747,7 @@ Deno.serve(async (req) => {
                 model: route.model,
                 analysis,
                 usage: { inputTokens, outputTokens, estimatedCostUsd },
-                ttlMs: cacheTtlMs,
+                ttlMs: effectiveTtlMs,
             });
         }
 

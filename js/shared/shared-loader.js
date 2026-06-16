@@ -14,7 +14,7 @@
         } catch (e) {}
         return 'https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/';
     })();
-    const DEFAULT_VERSION = '20260614dynread1';
+    const DEFAULT_VERSION = '20260614dynread3';
     const config = {
         localBase: null,
         remoteBase: REMOTE_BASE,
