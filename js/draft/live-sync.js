@@ -42,24 +42,70 @@
         _seenPickKeys = new Set(opts.seenPickKeys || []);
         _lastSuccessAt = 0;
         const onStatus = typeof opts.onStatus === 'function' ? opts.onStatus : null;
+        // MFL drafts mirror through window.MFL.fetchDraftStatus instead of Sleeper.
+        // The draft id encodes league + year: 'mfl_draft_<leagueId>_<year>'.
+        const isMfl = typeof draftId === 'string' && draftId.startsWith('mfl_draft_');
+        let mflLeagueId = null, mflYear = null;
+        if (isMfl) {
+            const parts = draftId.replace('mfl_draft_', '').split('_');
+            mflLeagueId = parts[0];
+            mflYear = parts[1] || String(new Date().getFullYear());
+        }
         const poll = async () => {
             try {
                 let picks = null;
                 let meta = null;
-                if (window.Sleeper?.fetchDraftPicks) {
-                    picks = await window.Sleeper.fetchDraftPicks(draftId);
-                } else {
-                    const resp = await fetch('https://api.sleeper.app/v1/draft/' + draftId + '/picks');
-                    if (resp.ok) picks = await resp.json();
-                }
-                try {
-                    if (window.Sleeper?.fetchDraft) {
-                        meta = await window.Sleeper.fetchDraft(draftId);
-                    } else {
-                        const metaResp = await fetch('https://api.sleeper.app/v1/draft/' + draftId);
-                        if (metaResp.ok) meta = await metaResp.json();
+                let tradedPicks = null;
+                let mflSlots = null; // MFL: current per-slot ownership for the follow board
+                if (isMfl) {
+                    // Re-pull the MFL draft board; map MADE picks → Sleeper pick shape
+                    // for the existing reconciler. Email/offline drafts may commit in
+                    // batches — the gap-tolerant reconciler already handles that.
+                    const key = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('mfl_api_key') : null) || null;
+                    const arr = window.MFL?.fetchDraftStatus
+                        ? await window.MFL.fetchDraftStatus(mflLeagueId, mflYear, key)
+                        : [];
+                    const list = Array.isArray(arr) ? arr : [];
+                    const d = list.find(x => x.draft_id === draftId) || list[0] || null;
+                    if (d) {
+                        picks = (d.picks || []).map(p => ({
+                            pick_no: p.pick_no,
+                            round: p.round,
+                            draft_slot: p.draft_slot,
+                            roster_id: p.roster_id,
+                            picked_by: p.picked_by,
+                            player_id: p.player_id,
+                        }));
+                        meta = { status: d.status };
+                        mflSlots = Array.isArray(d._slots) ? d._slots : null;
                     }
-                } catch (_) {}
+                } else {
+                    if (window.Sleeper?.fetchDraftPicks) {
+                        picks = await window.Sleeper.fetchDraftPicks(draftId);
+                    } else {
+                        const resp = await fetch('https://api.sleeper.app/v1/draft/' + draftId + '/picks');
+                        if (resp.ok) picks = await resp.json();
+                    }
+                    try {
+                        if (window.Sleeper?.fetchDraft) {
+                            meta = await window.Sleeper.fetchDraft(draftId);
+                        } else {
+                            const metaResp = await fetch('https://api.sleeper.app/v1/draft/' + draftId);
+                            if (metaResp.ok) meta = await metaResp.json();
+                        }
+                    } catch (_) {}
+                    // Pick ownership can change between picks (managers trade picks live).
+                    // Re-pull the draft's traded picks every poll so upcoming-pick ownership
+                    // stays current during high-frequency trading. Non-fatal.
+                    try {
+                        if (window.Sleeper?.fetchDraftTradedPicks) {
+                            tradedPicks = await window.Sleeper.fetchDraftTradedPicks(draftId);
+                        } else {
+                            const tpResp = await fetch('https://api.sleeper.app/v1/draft/' + draftId + '/traded_picks');
+                            if (tpResp.ok) tradedPicks = await tpResp.json();
+                        }
+                    } catch (_) {}
+                }
                 if (picks == null) {
                     // Distinguish a dead/missing draft (null/404 from the fetch) from
                     // a valid empty pre-draft feed ([]). A silent return here would
@@ -67,7 +113,9 @@
                     // draft id is wrong or the draft was deleted.
                     if (onStatus) onStatus({
                         status: 'error',
-                        error: 'Sleeper returned no draft for this draft id — check the draft id.',
+                        error: isMfl
+                            ? 'MFL returned no draft for this league/year — check the league id, year, and API key.'
+                            : 'Sleeper returned no draft for this draft id — check the draft id.',
                         lastPollAt: _lastSuccessAt || null,
                         stale: true,
                     });
@@ -103,6 +151,8 @@
                     remoteBehind: snapshot.remoteBehind,
                     stale: !!staleReason,
                     error: staleReason,
+                    tradedPicks: Array.isArray(tradedPicks) ? tradedPicks : null,
+                    mflSlots: Array.isArray(mflSlots) ? mflSlots : null,
                 });
                 if (snapshot.newPicks.length) onNewPicks(snapshot.newPicks, snapshot);
             } catch (e) {

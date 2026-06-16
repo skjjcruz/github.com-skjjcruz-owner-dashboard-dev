@@ -161,8 +161,9 @@
         const lane = activeLane(boardContext);
         const rankLookup = rankMap(boardContext?.lanes?.[lane]?.order || []);
         const needs = userNeedMap(state);
+        const ldCopies = Math.max(1, Number(state?.playerCopies) || 1);
         return asArray(state?.pool)
-            .filter(p => p?.pid && !state?.draftedPids?.[p.pid])
+            .filter(p => p?.pid && (state?.draftedPids?.[p.pid] || 0) < ldCopies)
             .map((p, idx) => decorateCandidate(state, p, idx, lane, rankLookup, needs))
             .sort((a, b) => (a.rank - b.rank) || (b.dhq - a.dhq))
             .slice(0, limit);

@@ -1540,7 +1540,10 @@
 	    .draft-card-actions-row { display: flex; flex-wrap: wrap; gap: 6px; }
 	    .draft-hq-action-card.draft-analyst-flash .draft-hq-panel-head { flex-shrink: 0; }
 	    .draft-alex-preview-board { flex: 1; min-height: 0; display: flex; overflow: hidden; }
-	    .draft-alex-preview-picks { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-right: 2px; align-content: start; }
+	    /* Cap the projected board at ~16 teams (6 rows of the 3-col grid): small
+	       leagues fit without scrolling, large leagues (e.g. 68-team MFL) scroll
+	       instead of ballooning the card. ~64px per row × 6 + gaps. */
+	    .draft-alex-preview-picks { flex: 1; min-height: 0; max-height: 396px; overflow-y: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-right: 2px; align-content: start; }
 	    .draft-alex-preview-picks button { width: 100%; min-height: 58px; text-align: left; border: 1px solid rgba(255,255,255,0.055); background: rgba(255,255,255,0.018); border-radius: 6px; padding: 6px 7px; cursor: pointer; }
 	    .draft-alex-preview-picks button:hover { border-color: rgba(212,175,55,0.28); background: rgba(212,175,55,0.045); }
 	    .draft-alex-preview-picks span { display: block; color: var(--gold); font-family: 'JetBrains Mono', monospace; font-size: 0.54rem; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2276,6 +2279,8 @@ WRShared.loadMany(WR_SHARED_FILES);
 <!-- 5. League detail tab components (extracted from league-detail.js) -->
 <!-- v2 widget modules (load before dashboard.js which consumes them) -->
 <script type="text/babel" src="js/widgets/roster-pulse.js?v=20260611phonewdg1"></script>
+<script type="text/babel" src="js/widgets/window-forecast.js?v=20260613gm1"></script>
+<script type="text/babel" src="js/widgets/gap-plan.js?v=20260613gm1"></script>
 <script type="text/babel" src="js/widgets/league-landscape.js?v=20260426p6"></script>
 <script type="text/babel" src="js/widgets/market-radar.js?v=20260516liveclick1"></script>
 <script type="text/babel" src="js/widgets/draft-capital.js?v=20260516liveclick1"></script>

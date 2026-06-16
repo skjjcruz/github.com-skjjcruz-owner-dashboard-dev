@@ -321,10 +321,27 @@
             const leagueId = currentLeague?.league_id || currentLeague?.id;
             if (!leagueId) return;
             let cancelled = false;
-            const fetchDrafts = window.Sleeper?.fetchDrafts || (async (lid) => {
-                const resp = await fetch('https://api.sleeper.app/v1/league/' + lid + '/drafts');
-                return resp.ok ? resp.json() : [];
-            });
+            // MFL leagues 404 on the Sleeper drafts endpoint (the id is 'mfl_<id>_<year>').
+            // Source the status-bearing MFL draft objects instead so the header
+            // "Draft Live" button appears + launches straight into the live draft.
+            const isMfl = !!(currentLeague?._mfl || String(leagueId).startsWith('mfl_'));
+            const fetchDrafts = isMfl
+                ? (async () => {
+                    try {
+                        if (window.MFL?.fetchDraftStatus) {
+                            const mlid = currentLeague._mflLeagueId || String(leagueId).replace(/^mfl_/, '').replace(/_\d+$/, '');
+                            const yr = currentLeague.season || localStorage.getItem('mfl_year') || String(new Date().getFullYear());
+                            const key = sessionStorage.getItem('mfl_api_key') || null;
+                            const d = await window.MFL.fetchDraftStatus(mlid, yr, key, currentLeague);
+                            if (Array.isArray(d) && d.length) return d;
+                        }
+                    } catch (e) { window.wrLog?.('leagueDetail.mflDraftStatus', e); }
+                    return window.S?.drafts || currentLeague?.drafts || [];
+                })
+                : (window.Sleeper?.fetchDrafts || (async (lid) => {
+                    const resp = await fetch('https://api.sleeper.app/v1/league/' + lid + '/drafts');
+                    return resp.ok ? resp.json() : [];
+                }));
             fetchDrafts(leagueId)
                 .then(rows => {
                     if (cancelled) return;
@@ -1686,6 +1703,9 @@
                         : tradedPicks;
                     window.S.matchups = matchupsData;
                     window.S.drafts = hydrated.drafts || [];
+                    // MFL: complete future-pick ownership (exact years/rounds) so the
+                    // Trade Center shows real future picks, not invented N-round sets.
+                    window.S._mflFuturePicks = hydrated._extras?.mflFuturePicks || null;
 
                     // Rolling PPG — fetch all played weeks' matchups in parallel
                     // so we can compute last-N-games PPG for each player. Runs

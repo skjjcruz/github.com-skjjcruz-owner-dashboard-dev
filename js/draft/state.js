@@ -331,6 +331,11 @@
             // Setup config
             rounds: opts.rounds || 5,
             leagueSize: opts.leagueSize || 12,
+            // Copies of each player the league allows on rosters (MFL multi-copy
+            // leagues = 3). 1 for every standard league ⇒ pool/dedup logic below
+            // behaves exactly as before. A player stays draftable until `copies`
+            // teams have taken him.
+            playerCopies: Math.max(1, Number(opts.playerCopies) || 1),
             draftType: opts.draftType || 'snake',
             userRosterId: opts.userRosterId || null,
             userSlot: opts.userSlot || 1,      // 1-indexed
@@ -1557,10 +1562,13 @@
     }
 
     function rebuildDraftDerived(picks) {
+        // draftedPids maps pid → COUNT of times drafted (≥1). For single-copy
+        // leagues every count is 1, so truthiness checks still read as "drafted".
+        // Multi-copy leagues compare the count against state.playerCopies.
         const draftedPids = {};
         const teamRosters = {};
         (picks || []).forEach(p => {
-            if (p?.pid) draftedPids[p.pid] = true;
+            if (p?.pid) draftedPids[p.pid] = (draftedPids[p.pid] || 0) + 1;
             const idx = p?.teamIdx;
             if (idx != null) teamRosters[idx] = [...(teamRosters[idx] || []), p.pos];
         });
@@ -1576,16 +1584,24 @@
     // restore/filter can't express "give back X, take away Y" cleanly).
     function rebuildPoolFromDrafted(state, draftedPids) {
         const original = (state.originalPool && state.originalPool.length) ? state.originalPool : (state.pool || []);
-        return original.filter(p => p?.pid != null && !draftedPids[p.pid]);
+        const copies = Math.max(1, Number(state.playerCopies) || 1);
+        // Keep a player in the pool until ALL his copies are taken (copies===1 ⇒
+        // drops on first pick, same as before).
+        return original.filter(p => p?.pid != null && (draftedPids[p.pid] || 0) < copies);
     }
 
     function restorePoolAfterUndo(state, remainingPicks, undonePick) {
-        const drafted = new Set((remainingPicks || []).map(p => String(p.pid)).filter(Boolean));
+        const copies = Math.max(1, Number(state.playerCopies) || 1);
+        // Count remaining drafted copies per pid so a multi-copy player returns to the
+        // pool as soon as a copy frees up (remaining < copies), not only when his last
+        // copy is undone. copies===1 ⇒ identical to the old boolean Set behavior.
+        const remainingCount = {};
+        (remainingPicks || []).forEach(p => { const k = String(p?.pid || ''); if (k) remainingCount[k] = (remainingCount[k] || 0) + 1; });
         const original = state.originalPool || [];
         const existing = new Set((state.pool || []).map(p => String(p.pid)).filter(Boolean));
         let nextPool = state.pool || [];
         const pid = String(undonePick?.pid || '');
-        if (pid && !drafted.has(pid) && !existing.has(pid)) {
+        if (pid && (remainingCount[pid] || 0) < copies && !existing.has(pid)) {
             const originalMatch = original.find(p => String(p.pid) === pid) || undonePick;
             nextPool = [originalMatch, ...nextPool];
         }
@@ -1656,8 +1672,11 @@
 	                const slot = state.pickOrder[state.currentIdx];
 	                if (!slot || !player) return state;
 	                const resolvedDhq = resolvePlayerDhq(player).value;
-	                const newPool = state.pool.filter(p => p.pid !== player.pid);
-                const newDrafted = { ...state.draftedPids, [player.pid]: true };
+	                const mpCopies = Math.max(1, Number(state.playerCopies) || 1);
+                const mpNewCount = (state.draftedPids[player.pid] || 0) + 1;
+                const newDrafted = { ...state.draftedPids, [player.pid]: mpNewCount };
+                // Only pull the player from the pool once his last copy is gone.
+                const newPool = mpNewCount >= mpCopies ? state.pool.filter(p => p.pid !== player.pid) : state.pool;
                 // In live-sync, every MAKE_PICK is a hand-entered pick (the live poll
                 // uses APPLY_LIVE_SYNC_PICKS, and AI auto-picks are disabled). Tag them
                 // all 'manual-live' — whether entered via override or on the user's own
@@ -2015,6 +2034,7 @@
                 let pool = state.pool;
                 let picks = state.picks.slice();
                 let draftedPids = { ...state.draftedPids };
+                const lsCopies = Math.max(1, Number(state.playerCopies) || 1);
                 let teamRosters = { ...state.teamRosters };
                 let pickOrder = state.pickOrder.slice();
                 let pickedByIdx = { ...(state.pickedByIdx || {}) };
@@ -2120,7 +2140,9 @@
                         return;
                     }
 
-                    if (existingPickNos.has(pickNo) || draftedPids[player.pid]) {
+                    // In a multi-copy league the same player legitimately appears in
+                    // multiple picks — only reject as a duplicate once every copy is used.
+                    if (existingPickNos.has(pickNo) || (draftedPids[player.pid] || 0) >= lsCopies) {
                         duplicateCount += 1;
                         return;
                     }
@@ -2139,8 +2161,10 @@
                     };
                     pickOrder[currentIdx] = adjustedSlot;
 
-                    pool = pool.filter(p => String(p.pid) !== String(player.pid));
-                    draftedPids = { ...draftedPids, [player.pid]: true };
+                    const lsNewCount = (draftedPids[player.pid] || 0) + 1;
+                    draftedPids = { ...draftedPids, [player.pid]: lsNewCount };
+                    // Keep the player available until his last copy is taken.
+                    if (lsNewCount >= lsCopies) pool = pool.filter(p => String(p.pid) !== String(player.pid));
 	                    const resolvedDhq = resolvePlayerDhq(player).value;
 	                    const newPick = {
                         id: 'pick_' + adjustedSlot.overall + '_' + Date.now(),
@@ -2440,8 +2464,10 @@
                 const target = Math.max(0, Math.min(action.idx || 0, state.replay.replayPicks.length));
                 const picks = state.replay.replayPicks.slice(0, target);
                 const derived = rebuildDraftDerived(picks);
-                // Pool shrinks — drop the pid of every pick made
-                const pool = state.originalPool.filter(p => !derived.draftedPids[p.pid]);
+                // Pool shrinks — drop a pid once all its copies are taken (copies===1 ⇒
+                // drops on first pick; replay is Sleeper-only today so copies is 1, but
+                // keep the count-aware form consistent with the rest of the reducer).
+                const pool = rebuildPoolFromDrafted(state, derived.draftedPids);
                 return {
                     ...state,
                     picks,

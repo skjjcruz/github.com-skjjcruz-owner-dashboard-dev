@@ -54,6 +54,7 @@ jobs:
           pending = {
               '20260610000000': 'supabase/migrations/20260610000000_ai_response_cache.sql',
               '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
+              '20260615000000': 'supabase/migrations/20260615000000_mfl_connection.sql',
           }
 
           def run_query(query):
@@ -119,6 +120,7 @@ jobs:
               '20260508000000': 'supabase/migrations/20260508000000_supabase_permission_hardening.sql',
               '20260610000000': 'supabase/migrations/20260610000000_ai_response_cache.sql',
               '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
+              '20260615000000': 'supabase/migrations/20260615000000_mfl_connection.sql',
           }
 
           for path in expected.values():
