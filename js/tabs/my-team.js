@@ -357,6 +357,32 @@ function MyTeamTab({
     window.addEventListener('wr:weekly-points-loaded', h);
     return () => window.removeEventListener('wr:weekly-points-loaded', h);
   }, []);
+
+  // Dynasty Read AI — paid-tier web-search news synthesis, fired only for the
+  // currently expanded row (one open at a time), template-first. Result is keyed
+  // by pid; the shared weekly cache means repeat opens are an instant hit.
+  const [aiReads, setAiReads] = React.useState({});
+  React.useEffect(() => {
+    const pid = expandedPid;
+    if (!pid || aiReads[pid] || typeof window.fetchDynastyRead !== 'function') return;
+    const p = playersData?.[pid];
+    if (!p) return;
+    let alive = true;
+    const nfl = window.S?.nflState || {};
+    const ctx = {
+      pid,
+      name: p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
+      team: p.team || '',
+      pos: (window.App?.normPos ? window.App.normPos(p.position) : p.position) || '',
+      age: p.age || null,
+      season: nfl.season || '',
+      week: nfl.display_week || nfl.week || 0,
+    };
+    window.fetchDynastyRead(ctx, { fallback: '' }).then((txt) => {
+      if (alive && txt) setAiReads(prev => (prev[pid] ? prev : { ...prev, [pid]: txt }));
+    });
+    return () => { alive = false; };
+  }, [expandedPid]);
   const dismissDrop = React.useCallback((pid) => {
     const playerName = window.App?.playersData?.[pid]?.full_name || pid;
     setDismissedDrops(prev => {
@@ -1003,7 +1029,7 @@ function MyTeamTab({
                     <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
                       <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.42 }}>
-                        {buildDynastyRead(r)}
+                        {aiReads[r.pid] || buildDynastyRead(r)}
                       </div>
                     </div>
                     <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
