@@ -43,6 +43,9 @@ function findSourceDir() {
   const candidates = [
     process.env.RECONAI_SHARED_SOURCE,
     path.resolve(ROOT, '..', 'reconai', 'shared'),
+    // Default two-repo clone layout: the canonical ReconAI checkout sits
+    // next to War Room under its GitHub repo name.
+    path.resolve(ROOT, '..', 'ReconAI-sandbox-dev', 'shared'),
   ].filter(Boolean);
 
   return candidates.find(candidate => fs.existsSync(candidate)) || null;

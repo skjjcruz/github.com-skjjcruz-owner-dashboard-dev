@@ -1,19 +1,24 @@
 # Shared Code Contract
 
 **ReconAI (`reconai/`) is the canonical owner of all shared logic.**
-War Room (`warroom/`) consumes it via CDN at runtime.
+War Room (`warroom/`) consumes it as a build-time vendored copy
+(`reconai-shared/`), synced from ReconAI at deploy time.
 
 ---
 
-## CDN Base URL
+## How shared code reaches War Room
 
-```
-https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/
-```
+War Room **vendors** ReconAI's shared modules into `reconai-shared/` at
+**deploy time** and loads them same-origin through `js/shared/shared-loader.js`.
+The Pages deploy (`.github/workflows/deploy.yml`) checks out the ReconAI repo
+and runs `npm run sync:shared` so the artifact always ships a fresh copy.
 
-War Room production pages load shared scripts from this URL through
-`js/shared/shared-loader.js`. Any change to a file in `reconai/shared/` is
-live to War Room after the next GitHub Pages deploy and War Room cache-bust.
+The legacy runtime CDN
+(`https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/`) is now a
+**debug-only escape hatch**, reachable with `?shared=remote`. Production no
+longer depends on the separate ReconAI Pages deploy being live. A change to a
+file in `reconai/shared/` reaches War Room on War Room's **next deploy**
+(which re-syncs), not on ReconAI's Pages deploy.
 
 ---
 
@@ -111,10 +116,10 @@ thresholds inline.
 
 ## How War Room Consumes Shared Code
 
-War Room loads shared scripts through `js/shared/shared-loader.js`. In
-production the loader resolves to `https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/`;
-in local/file mode it resolves to `reconai-shared/` after
-`npm run sync:shared`. Scripts run in the browser before War Room's own JS.
+War Room loads shared scripts through `js/shared/shared-loader.js`. The loader
+resolves to the vendored `reconai-shared/` copy (synced by `npm run sync:shared`)
+in every environment except the `?shared=remote` debug escape hatch, which
+points at the legacy CDN. Scripts run in the browser before War Room's own JS.
 
 **Pattern for constants that could fail to load:**
 
@@ -163,25 +168,34 @@ function.
 - **Adding a new shared function** — add to the appropriate `reconai/shared/` file, then add a fallback in `warroom/js/core.js` with the `|| fallback` pattern.
 - **Adding a new constant** — add to `reconai/shared/constants.js` and add a matching fallback in `warroom/js/core.js`.
 
+> Most fallbacks live in `warroom/js/core.js`, but some are co-located with
+> their consumer — e.g. `App.decayRates` is guarded in
+> `warroom/js/utils/player-value.js`. Grep for the symbol to find its fallback.
+
 ## Backend Ownership
 
-The two apps deploy to **separate Supabase projects**, each from its own
-`.github/workflows/deploy-functions.yml`:
+Both apps share **one Supabase project, `sxshiqyxhhifvtfqawbq`** (the former
+War Room project `hovnqztlbsgsywrbidbh` was merged into it — see
+`docs/SUPABASE-MERGE-PLAN.md`). Each repo deploys its own functions to that
+single project from its own `.github/workflows/deploy-functions.yml`:
 
-- **ReconAI** → project `sxshiqyxhhifvtfqawbq`. Deploys the provider proxies:
-  `espn-proxy`, `mfl-proxy`, `yahoo-proxy`.
-- **War Room** → project `hovnqztlbsgsywrbidbh`. Deploys account, billing,
-  admin, and server AI: `ai-analyze`, `get-session-token`, `set-password`,
-  `fw-signup`, `fw-signin`, `fw-create-checkout`, `fw-stripe-webhook`,
-  `admin-list-users`, plus its own `mfl-proxy` (see note below).
+- **ReconAI repo** deploys the provider proxies: `espn-proxy`, `yahoo-proxy`,
+  and `mfl-proxy` (ReconAI is the sole owner of `mfl-proxy` — see below).
+- **War Room repo** deploys account, billing, admin, and server AI:
+  `ai-analyze`, `ai-feedback`, `get-session-token`, `set-password`,
+  `fw-signup`, `fw-signin`, `fw-oauth-sync`, `fw-profile`, `fw-delete-account`,
+  `fw-create-checkout`, `fw-stripe-webhook`, `fw-request-password-reset`,
+  `fw-confirm-password-reset`, `admin-list-users`, `admin-analytics-report`.
 - `yahoo-auth` is retired; `yahoo-proxy` is the single Yahoo OAuth/API surface.
 
-**`mfl-proxy` exists in both repos by design** — each project needs its own
-copy. ReconAI's is an anon-tolerant, rate-limited CORS relay (Scout-app users
-may be anonymous). War Room's requires a valid app session token
-(`requireActiveAppSession`), because dashboard users are always signed in.
-They are not a deploy collision: each deploys only to its own project, so
-deploy each function by explicit name from its owning repo.
+Because the two repos now deploy to the **same** project, each function name
+must have exactly **one** owning repo — otherwise the two deploy workflows
+overwrite each other (last push wins). The only function that ever existed in
+both repos was `mfl-proxy`. It is now owned solely by the **ReconAI repo**: an
+anon-tolerant, IP-rate-limited CORS relay, because Scout-app users may be
+anonymous and the relay only proxies public MyFantasyLeague data. War Room's
+old session-gated copy was removed to end the deploy collision; War Room calls
+the same shared `mfl-proxy` endpoint.
 
 ### DHQ Labs
 
@@ -190,4 +204,7 @@ deploy each function by explicit name from its owning repo.
 - `tools/dhq-playground.html` can be opened directly in a browser to adjust league size, roster slots, scoring, and mode.
 - `npm run dhq:lab -- --data-file tools/dhq-sample-data.json` runs the same core from Node without app state.
 
-After editing any shared file: `git push origin main` in `reconai/` triggers GitHub Pages deploy (~1-2 min).
+After editing any shared file in `reconai/shared/`: push to ReconAI `main`
+(refreshes ReconAI's own deploy), **and** redeploy War Room — its `deploy.yml`
+re-runs `npm run sync:shared` to re-vendor the updated copy. War Room does not
+pick up the change until its next deploy.
