@@ -2238,6 +2238,23 @@ Output ONLY a valid JSON array, no markdown, no backticks, no prose:
 // read is league-agnostic on purpose: the DHQ value, position rank and roster
 // call live elsewhere on the card; this panel is the "what's actually happening
 // with him" layer that a stats engine can't produce.
+// Pull the read out of the <read></read> tags the model is told to wrap it in,
+// discarding any web-search narration/preamble around it. Falls back to stripping
+// a leading meta paragraph or pre-separator scratchpad if the tags are missing.
+function extractTaggedRead(text: string): string {
+    const raw = String(text || '').trim();
+    const m = raw.match(/<read>([\s\S]*?)<\/read>/i);
+    if (m && m[1].trim()) return m[1].trim();
+    let t = raw.replace(/<\/?read>/gi, '').trim();
+    const sep = t.split(/\n\s*-{3,}\s*\n/);
+    if (sep.length > 1) t = sep[sep.length - 1].trim();
+    const paras = t.split(/\n\s*\n/);
+    if (paras.length > 1 && /^(i have |i'?ve |let me |here(?:'s| is| are)|okay|alright|sure|based on|after (?:my |the )?search)/i.test(paras[0].trim())) {
+        t = paras.slice(1).join('\n\n').trim();
+    }
+    return t.trim();
+}
+
 // League-format clause for the Dynasty Read. Honors format flags ONLY when the
 // caller passes them; otherwise the read stays league-agnostic so the shared
 // weekly cache key remains identical across users.
@@ -2267,7 +2284,7 @@ function dynastyReadFormatClause(ctx: any): string {
 // records) and fights this surface's tight single-player brief.
 function buildDynastyReadSystemPrompt(ctx: any): string {
     const fmt = dynastyReadFormatClause(ctx);
-    return `You are a sharp NFL analyst writing the dynasty read on ONE player for the GM who rosters him. Your job: translate what is ACTUALLY happening with this player in the real world right now into what it means for his dynasty value. You have web search — use it, and build the read entirely on what you find.
+    return `You are a sharp NFL analyst writing the dynasty read on ONE player for the GM who ALREADY ROSTERS him. Your job: translate what is ACTUALLY happening with this player in the real world right now into what it means for his dynasty value. You have web search — use it, and build the read entirely on what you find.
 
 Weave three things into plain prose, in this order (do not label them):
 1. SITUATION — the most important real, current development from recent reporting: depth-chart role and snap/target/touch trend, health and its timeline, contract or roster status, a coaching/scheme change, or a teammate's move that opens or closes a path. Anchor it to something concrete and recent — not a career résumé.
@@ -2278,8 +2295,10 @@ HARD RULES:
 - Ground the read in real, recent developments you actually found. Do NOT fall back on a generic age/role platitude that could be said about any player at his position — that is the exact failure mode to avoid.
 - If genuinely nothing is breaking, the honest read is STILL concrete: his current depth-chart role, scheme fit, and the most recent move around him, and what those imply. Never write vague "trajectory" filler.
 - LOW-PROFILE PLAYERS (deep bench, practice squad, just-drafted, UDFA, little coverage): never go blank or generic. Give his actual depth-chart spot and who is ahead of him, his draft pedigree and realistic path to snaps, and a blunt dynasty verdict — deep stash, taxi-only, or waiver-level — plus the single change (an injury ahead of him, a scheme fit, a standout camp/preseason report) that would put him on the radar.
+- The GM ALREADY OWNS him — write the forward outlook and a hold-or-move read, NOT whether to acquire him or what to pay. Never say "don't pay up" or give buy-price advice.
+- Wrap the final read — and nothing else — in <read></read> tags. Only the text inside those tags is shown to the GM, so put no preamble, fact list, separators, labels, or meta-commentary inside them (you may reason before the opening tag if you must). Example: <read>His role firmed up when…</read>
 - Confident and direct, like an analyst who has done the homework. Cut "could / may / might" hedging.
-- 3-5 sentences of plain prose. No markdown, headers, bullets, labels, citations, or sign-off.`;
+- 3-5 sentences of PLAIN PROSE that run together as one short paragraph. Absolutely NO markdown, NO "#"/"##" headings, NO section titles ("Quick Take", "Situation", "Verdict", etc.), NO bullets, NO tables, NO labels, NO sign-off — just the sentences.`;
 }
 
 function buildDynastyReadPrompt(ctx: any): string {
@@ -2682,6 +2701,10 @@ Deno.serve(async (req) => {
                 throw fallbackError;
             }
         }
+
+        // Dynasty Read: keep only what's inside <read></read>, dropping any
+        // web-search narration the model emitted around it.
+        if (isDynastyRead) analysis = extractTaggedRead(analysis);
 
         const latencyMs = Date.now() - startedAt;
         const measuredTokensUsed = inputTokens + outputTokens;
