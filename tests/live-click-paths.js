@@ -353,7 +353,11 @@ async function main() {
 
   try {
     const context = await browser.newContext();
-    await context.addInitScript(({ leagueId, layout, reports }) => {
+    await context.addInitScript(({ leagueId, layout, reports, user }) => {
+      // Connect the user so the league shell renders. sleeperUsername reads from storage
+      // (OD.getCurrentUsername → dynastyhq_username), NOT the ?user= param, so without this
+      // the app sits on the pre-connect screen and LI_LOADED never flips.
+      localStorage.setItem('dynastyhq_username', user);
       localStorage.setItem('wr_tutorial_done_v1', '1');
       localStorage.setItem('wr_dashboard_hint_dismissed', '1');
       localStorage.setItem('wr_dashboard_migrated_v2', 'true');
@@ -363,7 +367,7 @@ async function main() {
       localStorage.setItem(`wr_hof_${leagueId}`, JSON.stringify([
         { id: 'qa_hof_1', scope: 'league', name: 'QA League Legend', category: 'Validation', year: 2026, note: 'Seeded by live click QA.' },
       ]));
-    }, { leagueId: LEAGUE_ID, layout: LIVE_WIDGET_LAYOUT, reports: SEEDED_REPORTS });
+    }, { leagueId: LEAGUE_ID, layout: LIVE_WIDGET_LAYOUT, reports: SEEDED_REPORTS, user: USER });
     await context.route('**/*', route => {
       const type = route.request().resourceType();
       if (['image', 'font', 'media'].includes(type)) return route.abort();
@@ -459,7 +463,7 @@ async function main() {
     const tabSurfaces = [
       ['myteam', 'My Roster', ['MY ROSTER', 'Roster Board']],
       ['analytics', 'Analytics', ['ANALYTICS', 'ROSTER']],
-      ['trades', 'Trade Center', ['TRADE', 'Deal HQ']],
+      ['trades', 'Trade Center', ['TRADE', 'Best Move']],
       ['draft', 'Draft', ['DRAFT', 'Flash Brief']],
       ['fa', 'Free Agency', ['WAIVERS', 'Free Agency Action HQ']],
       ['alex', 'GM Office', ['OFFICE', "GM's Office"]],
@@ -499,15 +503,20 @@ async function main() {
       await page.close();
     });
 
-    await run('Trade Center partner and sub-tab clicks update the surface', async () => {
+    await run('Trade Center partner and surface clicks update the adaptive canvas', async () => {
       const page = await newQaPage(context, baseUrl, failures, { tab: 'trades' });
+      await waitForText(page, 'Best Move');
+      // The hero renders when a usable best move exists; otherwise the workspace is already up.
+      const onHero = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('button')).some(b => b.innerText.trim() === 'Browse All Partners'));
+      if (onHero) await clickButtonText(page, 'Browse All Partners');
       await clickVisibleSelector(page, '.tc-dhq-partner', 'trade partner');
       await waitForText(page, 'Partner Dossier');
-      await clickButtonText(page, 'Owner Profiles');
-      await waitForText(page, 'Owner Profiles');
-      await clickButtonText(page, 'Trade Analyzer');
-      await waitForText(page, 'Trade Analyzer');
-      await assertSurfaceReady(page, 'Trade Center clicked state', ['Trade Analyzer']);
+      await clickButtonText(page, 'Owner DNA');
+      await waitForText(page, 'Owners · sorted by power');
+      await clickButtonText(page, 'Builder');
+      await waitForText(page, 'Build a Trade');
+      await assertSurfaceReady(page, 'Trade Center clicked state', ['Build a Trade']);
       await page.close();
     });
 
