@@ -495,6 +495,29 @@
                 setTimeout(() => window.dispatchEvent(new CustomEvent('wr:open-compare', { detail: { pid, rosterId: roster?.roster_id } })), 50);
             } catch (_) { /* noop */ }
         };
+        // Player-vs-player: open the Compare tab's Players mode and queue this player.
+        // We persist the intent (player + scope) to the SAME localStorage keys
+        // CompareTab reads on mount, so it survives any tab/mount churn — the
+        // in-memory global + deferred event are just the already-mounted fast path.
+        window.wrComparePlayers = (pid) => {
+            try {
+                const lid = currentLeague?.league_id || currentLeague?.id || '';
+                if (pid != null && pid !== '') {
+                    window._wrAddComparePlayer = String(pid);
+                    if (lid) {
+                        try {
+                            const key = 'wr_compare_players_' + lid;
+                            const list = JSON.parse(localStorage.getItem(key) || '[]').map(String);
+                            if (!list.includes(String(pid))) list.push(String(pid));
+                            localStorage.setItem(key, JSON.stringify(list.slice(0, 4)));
+                            localStorage.setItem('wr_compare_scope_' + lid, 'players');
+                        } catch (_) { /* storage best-effort */ }
+                    }
+                }
+                setActiveTab('compare');
+                setTimeout(() => window.dispatchEvent(new CustomEvent('wr:add-compare-player', { detail: { pid } })), 50);
+            } catch (_) { /* noop */ }
+        };
 
         useEffect(() => {
             if (window.S) window.S.activeTab = activeTab;
