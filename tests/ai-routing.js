@@ -12,6 +12,7 @@ const cacheMigration = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations',
 const feedbackMigration = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '20260610010000_ai_feedback.sql'), 'utf8');
 const feedbackFunction = fs.readFileSync(path.join(ROOT, 'supabase', 'functions', 'ai-feedback', 'index.ts'), 'utf8');
 const marginMigration = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '20260503020000_ai_margin_rollups.sql'), 'utf8');
+const lifetimeMigration = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '20260619000000_free_ai_lifetime_cap.sql'), 'utf8');
 const deployWorkflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'deploy-functions.yml'), 'utf8');
 const scaleScript = fs.readFileSync(path.join(ROOT, 'scripts', 'ai-scale-load-model.cjs'), 'utf8');
 
@@ -297,6 +298,22 @@ test('server AI enforces plan and prompt/output caps', () => {
   ok(source.includes("monthlyRequests: 200"), 'Pro monthly included AI cap should be explicit');
   ok(source.includes("maxInputChars"), 'missing input context cap');
   ok(source.includes("AI_MAX_OUTPUT_TOKENS"), 'missing global output cap');
+});
+
+test('free tier is bounded by a lifetime AI trial cap', () => {
+  // Edge enforces a lifetime cap only for the free plan; paid plans pass 0/null.
+  ok(source.includes('lifetimeRequests: 10'), 'free tier must have a 10-call lifetime AI trial cap');
+  ok(source.includes('lifetimeRequests: 0'), 'paid plans must opt out of the lifetime cap (0)');
+  ok(source.includes('p_lifetime_request_limit: args.limits.lifetimeRequests'), 'reserve_ai_usage call must pass the lifetime cap');
+  ok(source.includes("case 'lifetime_requests'"), 'edge must surface an upgrade message when the lifetime cap is hit');
+  // Migration must extend reserve_ai_usage with the lifetime gate, summed from
+  // ai_usage_monthly and gated on counted requests so cached calls are exempt.
+  ok(lifetimeMigration.includes('p_lifetime_request_limit integer default null'), 'migration must add the lifetime cap parameter');
+  ok(lifetimeMigration.includes("'reason', 'lifetime_requests'"), 'migration must deny with a lifetime_requests reason');
+  ok(/v_count and coalesce\(p_lifetime_request_limit, 0\) > 0/.test(lifetimeMigration), 'lifetime cap must be gated on counted requests');
+  ok(lifetimeMigration.includes('sum(request_count)'), 'lifetime count must sum ai_usage_monthly request_count');
+  ok(lifetimeMigration.includes('grant execute on function public.reserve_ai_usage'), 'new reserve_ai_usage must stay service-role callable');
+  ok(deployWorkflow.includes('20260619000000_free_ai_lifetime_cap.sql'), 'lifetime cap migration must be in the deploy allowlist');
 });
 
 test('Opus routes are gated by entitlement instead of available to every paid user', () => {

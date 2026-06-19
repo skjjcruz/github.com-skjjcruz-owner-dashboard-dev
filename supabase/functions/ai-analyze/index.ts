@@ -225,6 +225,8 @@ type AIModelTier = AIWorkloadTier;
 interface AIPlanLimits {
     dailyRequests: number;
     monthlyRequests: number;
+    // Lifetime request cap (free trial). 0 = no lifetime cap.
+    lifetimeRequests: number;
     dailyCostUsd: number;
     monthlyCostUsd: number;
     maxOutputTokens: number;
@@ -250,6 +252,7 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
     free: {
         dailyRequests: 1,
         monthlyRequests: 31,
+        lifetimeRequests: 10,
         dailyCostUsd: 0.10,
         monthlyCostUsd: 1.00,
         maxOutputTokens: 700,
@@ -261,6 +264,7 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
     scout: {
         dailyRequests: 1,
         monthlyRequests: 31,
+        lifetimeRequests: 0,
         dailyCostUsd: 0.10,
         monthlyCostUsd: 1.00,
         maxOutputTokens: 700,
@@ -272,6 +276,7 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
     warroom: {
         dailyRequests: 5,
         monthlyRequests: 20,
+        lifetimeRequests: 0,
         dailyCostUsd: 0.75,
         monthlyCostUsd: 6.00,
         maxOutputTokens: 2200,
@@ -283,6 +288,7 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
     pro: {
         dailyRequests: 25,
         monthlyRequests: 200,
+        lifetimeRequests: 0,
         dailyCostUsd: 3.00,
         monthlyCostUsd: 35.00,
         maxOutputTokens: 4200,
@@ -294,6 +300,7 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
     commissioner: {
         dailyRequests: 60,
         monthlyRequests: 600,
+        lifetimeRequests: 0,
         dailyCostUsd: 10.00,
         monthlyCostUsd: 150.00,
         maxOutputTokens: 8000,
@@ -305,6 +312,7 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
     legacy: {
         dailyRequests: 10,
         monthlyRequests: 100,
+        lifetimeRequests: 0,
         dailyCostUsd: 1.00,
         monthlyCostUsd: 12.00,
         maxOutputTokens: 2200,
@@ -1030,6 +1038,7 @@ async function reserveAIUsage(args: {
         p_global_daily_cost_limit: envNumber('AI_GLOBAL_DAILY_COST_LIMIT_USD', 50),
         p_global_monthly_cost_limit: envNumber('AI_GLOBAL_MONTHLY_COST_LIMIT_USD', 1000),
         p_count_request: args.countRequest !== false,
+        p_lifetime_request_limit: args.limits.lifetimeRequests || null,
     });
     if (error) {
         console.error('[ai-analyze] reserve_ai_usage failed:', error);
@@ -1044,6 +1053,8 @@ function aiLimitMessage(reason: string): string {
             return 'Daily AI limit reached. Try again tomorrow or upgrade your plan.';
         case 'monthly_requests':
             return 'Monthly AI limit reached. Your included AI resets next month.';
+        case 'lifetime_requests':
+            return 'You\'ve used up your free Alex messages. Upgrade to keep the dynasty intel coming.';
         case 'daily_cost':
         case 'monthly_cost':
             return 'AI budget limit reached for this plan. Try a shorter request or use your own AI key.';
