@@ -440,7 +440,7 @@ const AI_ROUTES: Record<string, AIWorkloadTier> = {
     'waiver-agent':      'standard',
     'draft-chat':        'standard',
     'strategy-analysis': 'standard',
-    'home-chat':         'fast',
+    'home-chat':         'standard',
     'memory-summary':    'fast',
     'power-posts':       'fast',
     'recon-chat':        'fast',

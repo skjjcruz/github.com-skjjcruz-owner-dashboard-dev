@@ -6,7 +6,20 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const RECON_ROOT = path.resolve(ROOT, '..', 'reconai');
+
+// Locate the sibling ReconAI checkout that owns the shared modules. Mirrors the
+// candidate-list approach in scripts/sync-reconai-shared.cjs so the contract
+// works across clone layouts: env override, canonical name, or GitHub repo name.
+function findReconRoot() {
+  const candidates = [
+    process.env.RECONAI_ROOT,
+    path.resolve(ROOT, '..', 'reconai'),
+    path.resolve(ROOT, '..', 'ReconAI-sandbox-dev'),
+  ].filter(Boolean);
+  return candidates.find(c => fs.existsSync(path.join(c, 'shared', 'supabase-client.js'))) || candidates[1];
+}
+
+const RECON_ROOT = findReconRoot();
 const fn = read(ROOT, 'supabase/functions/admin-analytics-report/index.ts');
 const admin = read(ROOT, 'admin.html');
 const landing = read(ROOT, 'landing.html');
@@ -52,7 +65,7 @@ group('admin report');
 
 test('admin analytics endpoint is admin-only and uses server rollup RPC', () => {
   [
-    'requireActiveAppSession',
+    'resolveAppUserId',
     'hasAdminRole',
     "admin.rpc('admin_analytics_report'",
     'auditEvent',

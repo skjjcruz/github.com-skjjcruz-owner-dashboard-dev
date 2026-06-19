@@ -37,12 +37,12 @@ const checks = [
   ['js/components/player-card.js', [
     ['buildPlayerContext', 'uses shared player context'],
     ['buildRosterRecommendation', 'uses roster recommendation object'],
-    ['buildWhyView', 'renders why view from recommendation'],
+    ['publishRecommendations', 'publishes the shared recommendation (carrying its why) to the intelligence registry'],
   ]],
   ['js/free-agency.js', [
     ['buildPlayerContext', 'uses shared player context'],
     ['buildWaiverRecommendation', 'uses waiver recommendation object'],
-    ['buildWhyView', 'renders why view from recommendation'],
+    ['fa-hq-why', 'renders the shared recommendation why inline'],
   ]],
   ['js/trade-calc.js', [
     ['buildTeamContext', 'uses shared team context'],

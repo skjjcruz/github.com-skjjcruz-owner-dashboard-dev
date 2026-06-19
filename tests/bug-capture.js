@@ -6,7 +6,20 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const RECON_ROOT = path.resolve(ROOT, '..', 'reconai');
+
+// Locate the sibling ReconAI checkout that owns the shared modules. Mirrors the
+// candidate-list approach in scripts/sync-reconai-shared.cjs so the contract
+// works across clone layouts: env override, canonical name, or GitHub repo name.
+function findReconRoot() {
+  const candidates = [
+    process.env.RECONAI_ROOT,
+    path.resolve(ROOT, '..', 'reconai'),
+    path.resolve(ROOT, '..', 'ReconAI-sandbox-dev'),
+  ].filter(Boolean);
+  return candidates.find(c => fs.existsSync(path.join(c, 'shared', 'app-config.js'))) || candidates[1];
+}
+
+const RECON_ROOT = findReconRoot();
 const rootIndex = read(ROOT, 'index.html');
 const core = read(ROOT, 'js/core.js');
 const components = read(ROOT, 'js/components.js');
