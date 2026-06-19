@@ -208,3 +208,67 @@ After editing any shared file in `reconai/shared/`: push to ReconAI `main`
 (refreshes ReconAI's own deploy), **and** redeploy War Room — its `deploy.yml`
 re-runs `npm run sync:shared` to re-vendor the updated copy. War Room does not
 pick up the change until its next deploy.
+
+---
+
+## AI Routing Parity (client ↔ edge)
+
+AI workload tiers are defined per call type in **two** places that must stay in
+sync:
+
+- **Client:** `reconai/shared/ai-dispatch.js` → `AI_ROUTES`
+- **Edge:** War Room `supabase/functions/ai-analyze/index.ts` → `AI_ROUTES`
+
+Both map a call type (`home-chat`, `trade-scout`, …) to a tier
+(`fast` / `standard` / `premium` / `deep`), and the tier resolves to a model
+(`fast` → `GEMINI_FAST`, `standard` → `GEMINI_BALANCED`, premium → Claude, …).
+When you change a call type's tier, **change it in both files** — otherwise the
+client believes it requested one model while the edge actually serves another.
+
+- `home-chat` runs on **standard** (`GEMINI_BALANCED`). It is the flagship
+  conversational surface and needs a model that can hold the persona voice.
+  (It was previously split — client `standard`, edge `fast` — a drift the eval
+  now guards against.)
+
+`reconai/tests/alex-evals.js` enforces this: each fixture case's `expectedTier`
+/ `expectedModel` is checked against **both** `ai-dispatch.js` and the War Room
+edge function, so a mismatch between the two repos fails the eval.
+
+---
+
+## Platform Connector Gating (War Room)
+
+War Room's loader (`index.html`) and app (`js/app.js`) gate provider connectors
+by environment:
+
+- **MFL loads on live.** `mfl-api.js` is spliced into the shared-file list
+  unconditionally because the shared `mfl-proxy` is anon-tolerant. MFL league
+  visibility is governed by `MFL_SANDBOX_ACCESS` (`MFL_ENABLED ||
+  PLATFORM_SANDBOX_ACCESS`), so MFL can be turned on in production.
+- **ESPN / Yahoo stay sandbox-only.** Their `*-api.js` files load, and their
+  leagues show, only when `WR_PLATFORM_SANDBOX_ACCESS` / `PLATFORM_SANDBOX_ACCESS`
+  is true (sandbox host or `?dev`).
+
+War Room's `tests/regression.js` (live-platform-gate group) asserts this split.
+
+---
+
+## Cross-Repo Test Layout
+
+A few tests read files from the *sibling* repo (ReconAI ↔ War Room):
+
+- ReconAI `tests/alex-evals.js` reads War Room's `ai-analyze/index.ts`.
+- War Room `tests/bug-capture.js` and `tests/analytics-report.js` read ReconAI's
+  `shared/` modules and migrations.
+
+Each resolves the sibling checkout through a **candidate list**, mirroring
+`warroom/scripts/sync-reconai-shared.cjs`:
+
+1. an explicit env override (`WARROOM_ROOT` / `RECONAI_ROOT`),
+2. the canonical name (`../warroom` / `../reconai`),
+3. the default GitHub repo name (`../github.com-skjjcruz-owner-dashboard-dev` /
+   `../ReconAI-sandbox-dev`).
+
+So the suites pass whether the repos are checked out under their canonical short
+names or their full GitHub repo names. If you add a new cross-repo test, reuse
+this resolver instead of hardcoding a sibling path.
