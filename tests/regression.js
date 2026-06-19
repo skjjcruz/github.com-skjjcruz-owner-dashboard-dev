@@ -210,8 +210,8 @@ test('league format skin loads early and is published to every module surface', 
   ok(!indexHtml.includes('--black:#24114F;'), 'redraft shell should not replace black card surfaces with royal purple');
 });
 
-test('light mode stays sandbox-only while it is under repair', () => {
-  sourceHas(themeSrc, "const SANDBOX_ONLY_THEMES = new Set(['light']);", 'light theme must be marked sandbox-only');
+test('theme engine retains the sandbox-gating mechanism (light mode now generally available)', () => {
+  sourceHas(themeSrc, 'const SANDBOX_ONLY_THEMES = new Set([]);', 'light mode is no longer sandbox-gated; the gating mechanism is retained (empty set) for future in-development themes');
   sourceHas(themeSrc, 'function isSandboxThemeMode()', 'theme engine must know whether sandbox-only themes can show');
   sourceHas(themeSrc, 'return Object.keys(THEMES).filter(themeId => isThemeAllowed(themeId));', 'normal theme list must hide sandbox-only themes');
   sourceHas(themeSrc, 'WrTheme.current = normalizeThemeId(saved);', 'saved light mode must normalize away outside sandbox mode');
@@ -285,11 +285,11 @@ test('redraft shell, history, calendar, and analytics hide dynasty-only assumpti
   sourceHas(analyticsSrc, 'window.App?.LeagueSkin?.resolveDraftRounds?.({', 'analytics draft capital must use skin-aware draft rounds');
   sourceHas(analyticsSrc, "window.addEventListener('wr_history_loaded', onLoaded);", 'analytics must re-render when league history loads');
   sourceHas(analyticsSrc, 'window.WrHistory.loadIfMissing(currentLeague)', 'analytics must load league history without requiring Trophy Room first');
-  sourceHas(analyticsSrc, 'Historical League Signals', 'analytics draft tab must show league-history fallback when draft outcomes are empty');
-  sourceHas(analyticsSrc, 'Pick Trade Reality', 'analytics draft history fallback must expose pick-trade reality');
-  sourceHas(analyticsSrc, "label: currentPicks.length + ' owned picks'", 'analytics draft build map must show resolved current owned picks');
-  sourceHas(analyticsSrc, 'Resolved from roster-slot skin rules, not raw Sleeper draft_rounds.', 'analytics draft tab must explain redraft round resolution');
-  sourceHas(leagueMapSrc, 'const shouldShowDraftPool = !!(resolvedLeagueSkin?.state?.isSeasonal &&', 'pre-draft redraft player table must use the player universe');
+  sourceHas(analyticsSrc, "kicker: 'Owned Picks'", 'analytics empty-draft fallback must surface owned draft capital (not championship/history filler)');
+  sourceHas(analyticsSrc, "kicker: 'Early Capital'", 'analytics empty-draft fallback must surface early-round capital');
+  sourceHas(analyticsSrc, "label: currentPicks.length + ' picks'", 'analytics draft build map must show resolved current owned picks');
+  sourceHas(analyticsSrc, 'Resolved from roster-slot skin rules', 'analytics draft tab must explain redraft round resolution');
+  sourceHas(leagueMapSrc, 'const shouldShowDraftPool = isPreDraftPhase || !!(resolvedLeagueSkin?.state?.isSeasonal', 'pre-draft redraft player table must use the player universe');
   sourceHas(leagueMapSrc, "teamName: 'Draft Pool'", 'pre-draft redraft players should be labeled as draft pool');
   sourceHas(leagueMapSrc, 'const years = skinFeatures.showFuturePicks === false ? [leagueSeason] : [leagueSeason, leagueSeason + 1, leagueSeason + 2];', 'pick ledger must hide future years in redraft');
   sourceHas(leagueMapSrc, 'window.App?.LeagueSkin?.resolveDraftRounds?.({', 'pick ledger must use skin-aware draft rounds');
@@ -391,15 +391,16 @@ test('live loader keeps non-Sleeper connector files sandbox-only', () => {
   sourceHas(indexHtml, 'const WR_PLATFORM_SANDBOX_ACCESS', 'sandbox platform flag missing from loader');
   sourceHas(indexHtml, "'sleeper-api.js',", 'Sleeper connector must remain in live loader');
   sourceHas(indexHtml, "'app-config.js',", 'shared backend config must load before backend-backed modules');
-  sourceHas(indexHtml, "if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'espn-api.js', 'mfl-api.js', 'yahoo-api.js');", 'beta connectors must be gated behind sandbox flag');
+  sourceHas(indexHtml, "WR_SHARED_FILES.splice(7, 0, 'mfl-api.js');", 'shared mfl-proxy connector loads on live (single anon-tolerant relay)');
+  sourceHas(indexHtml, "if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'espn-api.js', 'yahoo-api.js');", 'espn/yahoo connectors must stay gated behind the sandbox flag');
   ok(!/WRShared\.loadMany\(\[[\s\S]*'espn-api\.js'/.test(indexHtml), 'ESPN connector should not be in unconditional live loadMany list');
 });
 
 test('War Room app filters beta-platform leagues out of live route data', () => {
   sourceHas(appSrc, 'const PLATFORM_SANDBOX_ACCESS = WR_HOST.includes(\'sandbox\')', 'app sandbox platform flag missing');
   sourceHas(appSrc, 'const visibleEspnLeagues = PLATFORM_SANDBOX_ACCESS ? espnLeagues : [];', 'ESPN leagues must be hidden on live');
-  sourceHas(appSrc, 'const visibleMflLeagues = PLATFORM_SANDBOX_ACCESS ? mflLeagues : [];', 'MFL leagues must be hidden on live');
-  sourceHas(appSrc, 'const resumeLeague = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues].find(l => l.id === lastLeagueId);', 'resume must use filtered platform leagues');
+  sourceHas(appSrc, 'const visibleMflLeagues = MFL_SANDBOX_ACCESS ? mflLeagues : [];', 'MFL leagues are gated behind MFL_SANDBOX_ACCESS (enable-able on live)');
+  sourceHas(appSrc, 'const allLeagues = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues];', 'resume must use filtered platform leagues');
 });
 
 test('onboarding only persists allowed platforms for the current environment', () => {
@@ -443,7 +444,7 @@ group('my team roster density');
 
 test('expanded roster rows use contextual readout without duplicate profile cards', () => {
   sourceHas(myTeamSrc, 'const buildDynastyRead = r => {', 'contextual dynasty read helper missing');
-  sourceHas(myTeamSrc, '{buildDynastyRead(r)}', 'expanded card must render contextual dynasty read');
+  sourceHas(myTeamSrc, '{aiReads[r.pid] || buildDynastyRead(r)}', 'expanded card must render the AI read, falling back to the contextual dynasty read');
   sourceHas(myTeamSrc, "{formatHeight(r.p.height) ? ' \\u00B7 ' + formatHeight(r.p.height) : ''}", 'height must live in the player identity card');
   ok(!myTeamSrc.includes('Moderate dynasty asset. Watch trajectory.'), 'generic dynasty read copy should not return');
   ok(!myTeamSrc.includes("label: 'DEPTH', val"), 'expanded metric cards should not include the duplicate depth card');
@@ -537,7 +538,7 @@ test('first-run tutorial waits for Home instead of interrupting navigated workfl
 });
 
 test('empty Field Notes defaults to compact decision-log utility', () => {
-  sourceHas(leagueDetailSrc, "{ id: 'dw1', key: 'field-notes',        size: 'slim' }", 'default Field Notes widget should be compact');
+  sourceHas(leagueDetailSrc, "w = { ...w, size: 'slim' };", 'legacy Field Notes widget must migrate to the compact slim size');
   sourceHas(leagueDetailSrc, "w.key === 'field-notes' && w.id === 'dw1' && w.size === 'narrow'", 'old default Field Notes layouts should migrate compact');
   sourceHas(flashBriefSrc, 'No decisions logged yet', 'empty Field Notes should explain decision log state');
   sourceHas(flashBriefSrc, 'OPEN GM OFFICE', 'empty Field Notes should offer an action');

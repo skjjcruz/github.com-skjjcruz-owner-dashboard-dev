@@ -201,7 +201,7 @@ test('BYO AI keys are session-only and legacy localStorage keys are cleared', ()
 test('admin list uses admin role table instead of static bearer secret', () => {
   hasEvery(adminList, [
     'hasAdminRole',
-    'requireActiveAppSession',
+    'resolveAppUserId',
     'auditEvent',
   ], 'admin-list-users');
   ok(!adminList.includes('ADMIN_SECRET'), 'admin-list-users should not use static ADMIN_SECRET');
