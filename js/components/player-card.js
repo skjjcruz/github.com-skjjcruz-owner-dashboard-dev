@@ -404,10 +404,10 @@
         // ── Action handlers ────────────────────────────────────────
         function goCompare() {
             try {
-                if (typeof window.wrOpenCompare === 'function') window.wrOpenCompare(pid);
-                else if (typeof window.openPlayerModal === 'function') {
-                    // no-op — Compare tab lives inside My Roster; callers set wrOpenCompare
-                }
+                // Player-vs-player Compare (Players mode). Fall back to the legacy
+                // team-vs-team deep-link if the newer global isn't present.
+                if (typeof window.wrComparePlayers === 'function') window.wrComparePlayers(pid);
+                else if (typeof window.wrOpenCompare === 'function') window.wrOpenCompare(pid);
             } catch (e) { /* noop */ }
             onClose && onClose();
         }
