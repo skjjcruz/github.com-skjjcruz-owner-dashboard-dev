@@ -483,10 +483,20 @@
             return rosterHits >= userHits ? 'roster' : 'user';
         }
 
-        function buildPicksByOwner(rosters, tradedPicks, leagueSeason, draftRounds) {
+        // The tradeable pick window: the next PICK_HORIZON draft seasons. Once a
+        // season's rookie draft is complete those picks are spent, so the window
+        // rolls forward by a year (e.g. after the 2026 draft: 2027/2028/2029, not
+        // 2026/2027/2028) — this is what pulls the just-drafted year off the
+        // trade calculator.
+        function pickWindowYears(leagueSeason, skipCurrentSeason) {
+            const start = Number(leagueSeason) + (skipCurrentSeason ? 1 : 0);
+            return Array.from({ length: PICK_HORIZON }, (_, i) => start + i);
+        }
+
+        function buildPicksByOwner(rosters, tradedPicks, leagueSeason, draftRounds, skipCurrentSeason) {
             // League-specific round count (falls back to the constant only if unknown).
             const rounds = Math.max(1, Number(draftRounds) || DRAFT_ROUNDS);
-            const PICK_YEARS_INT = Array.from({ length: PICK_HORIZON }, (_, i) => leagueSeason + i);
+            const PICK_YEARS_INT = pickWindowYears(leagueSeason, skipCurrentSeason);
             const mode = detectPickIdMode(rosters, tradedPicks);
             const rosterById = {};
             for (const r of rosters) rosterById[String(r.roster_id)] = r;
@@ -520,7 +530,7 @@
             return picksByOwner;
         }
 
-        function assessTeamLocal(roster, nflStarterSet, ownerPicks) {
+        function assessTeamLocal(roster, nflStarterSet, ownerPicks, skipCurrentSeason) {
             // Try shared assessor first
             if (window.assessTeamFromGlobal) {
                 const result = window.assessTeamFromGlobal(roster.roster_id);
@@ -574,7 +584,7 @@
             }
 
             const leagueSeason = parseInt(currentLeague.season || new Date().getFullYear());
-            const pickYears = Array.from({ length: PICK_HORIZON }, (_, i) => String(leagueSeason + i));
+            const pickYears = pickWindowYears(leagueSeason, skipCurrentSeason).map(String);
             // League-specific rounds (not the hardcoded constant) so pick-capital
             // status reflects this league's actual draft size.
             const aRounds = Math.max(1, Number(tcDraftRounds) || DRAFT_ROUNDS);
@@ -915,6 +925,12 @@
         // League-specific rookie-draft round count — replaces the hardcoded DRAFT_ROUNDS
         // so EVERY league's future picks use its real round count, not a flat 7.
         const [leagueDraftRounds, setLeagueDraftRounds] = useState(null);
+        // True once every draft for the league's current season has completed —
+        // the signal that "the draft is over" and this season's picks should drop
+        // out of the trade calculator. Defaults false so picks stay tradeable
+        // until we positively confirm the draft finished (or for platforms with
+        // no draft objects, e.g. ESPN/Yahoo).
+        const [currentDraftComplete, setCurrentDraftComplete] = useState(false);
         useEffect(() => {
             if (!leagueId || !allRosters.length) return;
             let cancelled = false;
@@ -938,6 +954,17 @@
                     }
                     if (cancelled) return;
                     draftsList = Array.isArray(draftsList) ? draftsList : [];
+                    // ── "Draft is over" detection ──────────────────────────────
+                    // When every draft for the current season has completed, that
+                    // season's rookie picks are spent and must come off the trade
+                    // calculator. Require .length > 0 so "no drafts yet" is never
+                    // read as complete, and .every so a rookie+supplemental pair
+                    // doesn't drop the year while one is still pending (mirrors the
+                    // free-agency rookie-lock logic).
+                    const currentSeasonDrafts = draftsList.filter(d => Number(d.season) === leagueSeason);
+                    const seasonDraftDone = currentSeasonDrafts.length > 0
+                        && currentSeasonDrafts.every(d => String(d.status || '').toLowerCase() === 'complete');
+                    if (!cancelled) setCurrentDraftComplete(seasonDraftDone);
                     // ── League-specific rookie-draft round count (ALL platforms) ──
                     // Resolve from the ROOKIE draft (player_type===1) so a startup draft
                     // can't inflate it; resolveDraftRounds falls back to the league's
@@ -1117,16 +1144,16 @@
                 }
                 return out;
             }
-            return buildPicksByOwner(allRosters, tradedPicks, leagueSeason, tcDraftRounds);
-        }, [allRosters, tradedPicks, tcDraftRounds]);
+            return buildPicksByOwner(allRosters, tradedPicks, leagueSeason, tcDraftRounds, currentDraftComplete);
+        }, [allRosters, tradedPicks, tcDraftRounds, currentDraftComplete]);
 
         const assessments = useMemo(() => {
             if (!allRosters.length || !Object.keys(playersData).length) return [];
             return allRosters.map(r => {
                 const ownerPicks = picksByOwner[String(r.owner_id)] || [];
-                return assessTeamLocal(r, nflStarterSet, ownerPicks);
+                return assessTeamLocal(r, nflStarterSet, ownerPicks, currentDraftComplete);
             });
-        }, [allRosters, playersData, statsData, nflStarterSet, picksByOwner, timeRecomputeTs, leagueDraftRounds]);
+        }, [allRosters, playersData, statsData, nflStarterSet, picksByOwner, timeRecomputeTs, leagueDraftRounds, currentDraftComplete]);
 
         const myRosterId = myRoster?.roster_id;
         const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: allRosters, leagueSkin: resolvedLeagueSkin }) || { isUsable: true };
