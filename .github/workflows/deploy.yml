@@ -27,14 +27,14 @@ jobs:
         uses: actions/checkout@v6
 
       # reconai-shared/ is gitignored, so the bundled browser modules must be
-      # regenerated from the canonical ReconAI source at deploy time — otherwise
-      # the Pages artifact ships a stale (or missing) copy of supabase-client.js
-      # and the other shared modules.
-      - name: Checkout ReconAI shared source
+      # regenerated from the canonical engine (skjjcruz/DHQ-Shared) at deploy time —
+      # otherwise the Pages artifact ships a stale (or missing) copy of
+      # supabase-client.js and the other shared modules.
+      - name: Checkout DHQ-Shared (canonical engine)
         uses: actions/checkout@v6
         with:
-          repository: skjjcruz/ReconAI-sandbox-dev
-          path: reconai-src
+          repository: skjjcruz/DHQ-Shared
+          path: dhq-shared-src
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -45,8 +45,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --omit=dev
 
-      - name: Sync ReconAI shared modules
-        run: RECONAI_SHARED_SOURCE="$GITHUB_WORKSPACE/reconai-src/shared" npm run sync:shared
+      - name: Sync shared modules from DHQ-Shared
+        run: DHQ_SHARED_SOURCE="$GITHUB_WORKSPACE/dhq-shared-src" npm run sync:shared
 
       # Precompile every type="text/babel" entry (index + free-agency + draft-warroom
       # + trade-calculator) to plain JS so production no longer downloads ~3.1MB of
