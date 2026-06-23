@@ -57,7 +57,7 @@
     "@babel/standalone": "^7.29.7",
     "@capacitor/android": "^8.4.0",
     "@capacitor/cli": "^8.4.0",
-    "@capacitor/core": "^8.4.0",
+    "@capacitor/core": "^8.4.1",
     "@capacitor/ios": "^8.4.0",
     "esbuild": "^0.28.0"
   },
