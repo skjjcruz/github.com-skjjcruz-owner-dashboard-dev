@@ -61,7 +61,7 @@ jobs:
           cp -R \
             index.html admin.html landing.html connect-sleeper.html onboarding.html login.html reset-password.html gift.html \
             free-agency.html draft-warroom.html trade-calculator.html draft-war-room team-comps \
-            js css content reconai-shared icons *.js *.json *.webmanifest *.css *.png *.ico *.svg \
+            js css content reconai-shared icons vendor *.js *.json *.webmanifest *.css *.png *.ico *.svg \
             pages-artifact/ 2>/dev/null || true
           # Overlay the precompiled entries + plain-JS modules on top of the raw
           # sources, replacing the JSX files and the index.html that loaded Babel.
