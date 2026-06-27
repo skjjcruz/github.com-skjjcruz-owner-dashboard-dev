@@ -24,14 +24,14 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # reconai-shared/ is gitignored, so the bundled browser modules must be
       # regenerated from the canonical engine (skjjcruz/DHQ-Shared) at deploy time —
       # otherwise the Pages artifact ships a stale (or missing) copy of
       # supabase-client.js and the other shared modules.
       - name: Checkout DHQ-Shared (canonical engine)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: skjjcruz/DHQ-Shared
           path: dhq-shared-src
