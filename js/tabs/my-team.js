@@ -81,6 +81,45 @@ function MyTeamTab({
     return RookieFields ? RookieFields.isRookie(r.p, pr, { cur: statsData, prev: stats2025Data }) : false;
   }, [prospectForRow, statsData, stats2025Data]);
 
+  // ── GM Strategy — single source of truth. Live-updates on GM Strategy save. ──
+  // Drives untouchable lock badges, target/sell position accents, and a sell-rule
+  // nudge on the roster recommendation. Hook is called once, unconditionally.
+  const gm = window.WR.GmMode.useGmEffects(currentLeague);
+  const gmTargetPositions = gm?.targetPositions instanceof Set ? gm.targetPositions : new Set();
+  const gmSellPositions = gm?.sellPositions instanceof Set ? gm.sellPositions : new Set();
+  const gmUntouchable = gm?.untouchable instanceof Set ? gm.untouchable : new Set();
+  // Parse free-text sell rules like "Sell RB age 27+" leniently. Returns
+  // { pos: 'RB', minAge: 27 } per parseable rule; unparseable rules are ignored.
+  const gmSellRulesParsed = React.useMemo(() => {
+    const out = [];
+    (gm?.sellRules || []).forEach(rule => {
+      try {
+        const s = String(rule);
+        const posM = s.match(/\b(QB|RB|WR|TE|K|DEF|DL|LB|DB)\b/i);
+        const ageM = s.match(/age\s*(\d{1,2})\s*\+?/i);
+        if (!posM && !ageM) return; // nothing structured to match on
+        out.push({
+          pos: posM ? posM[1].toUpperCase() : null,
+          minAge: ageM ? parseInt(ageM[1], 10) : null,
+        });
+      } catch {}
+    });
+    return out;
+  }, [gm?.sellRules]);
+  // Does a row trip a sell rule or a sell-position? Used to nudge the rec.
+  const gmTripsSell = React.useCallback((r) => {
+    if (!r) return false;
+    const pos = String(r.pos);
+    if (gmSellPositions.has(pos)) return true;
+    return gmSellRulesParsed.some(rule => {
+      const posOk = !rule.pos || rule.pos === pos;
+      const ageOk = rule.minAge == null || (r.age != null && r.age >= rule.minAge);
+      // A rule with neither a usable pos nor age constraint shouldn't fire blindly.
+      if (rule.pos == null && rule.minAge == null) return false;
+      return posOk && ageOk;
+    });
+  }, [gmSellPositions, gmSellRulesParsed]);
+
   // ── filteredAndSortedRows (formerly a sibling function of renderMyTeamTab) ──
   function filteredAndSortedRows(rows) {
     const offPos = new Set(['QB','RB','WR','TE','K','DEF']);
@@ -277,9 +316,18 @@ function MyTeamTab({
     const _pidElite = typeof window.App?.isElitePlayer === 'function' ? window.App.isElitePlayer(pid) : dhq >= 7000;
     // Recommendation for MY roster — shared getPlayerAction() with simplified fallback
     const pa = typeof window.getPlayerAction === 'function' ? window.getPlayerAction(pid) : null;
-    const rec = pa ? pa.label : (valueYrsLeft <= 0 ? 'Sell' : _pidElite && peakYrsLeft >= 3 ? 'Hold Core' : peakYrsLeft >= 4 && dhq < 4000 ? 'Stash' : 'Hold');
+    let rec = pa ? pa.label : (valueYrsLeft <= 0 ? 'Sell' : _pidElite && peakYrsLeft >= 3 ? 'Hold Core' : peakYrsLeft >= 4 && dhq < 4000 ? 'Stash' : 'Hold');
 
-    return { pid, p, pos, dhq, age, curPPG, prevPPG, effectivePPG, effectiveGP, prevGP, durabilityGP, trend, isStarter, isIR, isTaxi, section, peakPhase, peakPct, peakYrsLeft, valueYrsLeft, rec, curGP, meta, injury: p.injury_status };
+    // GM Strategy nudge: if this player's position/age trips a sell rule or a
+    // sell-position (and isn't strategy-untouchable / already a sell or build
+    // call), steer the roster recommendation toward Sell. Flagged for the UI.
+    const gmIsUntouchable = gmUntouchable.has(String(pid));
+    const gmSellNudge = !gmIsUntouchable && !/sell|buy|build|core/i.test(rec) && gmTripsSell({ pos, age });
+    if (gmSellNudge) rec = 'Sell';
+    const gmIsTarget = gmTargetPositions.has(String(pos));
+    const gmIsSellPos = gmSellPositions.has(String(pos));
+
+    return { pid, p, pos, dhq, age, curPPG, prevPPG, effectivePPG, effectiveGP, prevGP, durabilityGP, trend, isStarter, isIR, isTaxi, section, peakPhase, peakPct, peakYrsLeft, valueYrsLeft, rec, curGP, meta, injury: p.injury_status, gmIsUntouchable, gmSellNudge, gmIsTarget, gmIsSellPos };
   }).filter(Boolean);
 
   // Position-level PPG percentiles for color coding
@@ -362,7 +410,30 @@ function MyTeamTab({
   // currently expanded row (one open at a time), template-first. Result is keyed
   // by pid; the shared weekly cache means repeat opens are an instant hit.
   const [aiReads, setAiReads] = React.useState({});
+  const [readOpen, setReadOpen] = React.useState(false);
+  // Only clamp the Dynasty Read when it actually overflows (short reads show in full).
+  const [readOverflow, setReadOverflow] = React.useState(false);
+  const readRef = React.useRef(null);
+  React.useLayoutEffect(() => {
+    const el = readRef.current;
+    setReadOverflow(!!el && el.scrollHeight > 112);
+  }, [expandedPid, aiReads, rosterViewportWidth]);
+  // Track the roster board's VISIBLE width so the expand card pins to the viewport
+  // instead of stretching to the full (horizontally-scrolling) table width.
+  const boardScrollRef = React.useRef(null);
+  const [boardWidth, setBoardWidth] = React.useState(0);
+  React.useLayoutEffect(() => {
+    const el = boardScrollRef.current;
+    if (!el) return;
+    const measure = () => setBoardWidth(el.clientWidth);
+    measure();
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(measure); ro.observe(el); }
+    window.addEventListener('resize', measure);
+    return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', measure); };
+  }, []);
   React.useEffect(() => {
+    setReadOpen(false);
     const pid = expandedPid;
     if (!pid || aiReads[pid] || typeof window.fetchDynastyRead !== 'function') return;
     const p = playersData?.[pid];
@@ -670,8 +741,10 @@ function MyTeamTab({
       </div>;
       case 'action': {
         const ann = getPlayerAnnotation(r.pid);
-        return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={ann?.text || ''}>
+        const gmNudgeTitle = r.gmSellNudge ? 'Nudged to Sell by GM Strategy (position/age trips a sell rule)' : '';
+        return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={gmNudgeTitle || ann?.text || ''}>
           <span style={{ fontSize:'var(--text-micro, 0.6875rem)',fontWeight:650,padding:'2px 6px',borderRadius:'4px',background:/sell/i.test(r.rec)?'rgba(231,76,60,0.12)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.12)':'var(--acc-fill2, rgba(212,175,55,0.1))',color:/sell/i.test(r.rec)?'var(--bad)':/buy|build|core/i.test(r.rec)?'var(--good)':'var(--gold)',border:'1px solid '+(/sell/i.test(r.rec)?'rgba(231,76,60,0.22)':/buy|build|core/i.test(r.rec)?'rgba(46,204,113,0.22)':'var(--acc-line1, rgba(212,175,55,0.22))') }}>{r.rec}</span>
+          {r.gmSellNudge && <span style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--warn)', letterSpacing: '0.05em', opacity: 0.85, lineHeight: 1 }}>GM</span>}
         </div>;
       }
       case 'gp': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.74rem' }}>{r.effectiveGP > 0 ? r.effectiveGP : '\u2014'}{r.curGP === 0 && r.prevGP > 0 ? '*' : ''}</span></div>;
@@ -927,7 +1000,7 @@ function MyTeamTab({
             </div>
           </div>
         </div>
-        <div style={{ overflowX: 'auto', overflowY: 'clip', background: 'linear-gradient(90deg, var(--ov-1, rgba(255,255,255,0.02)), transparent 12%, transparent 88%, var(--ov-1, rgba(255,255,255,0.018)))' }}>
+        <div ref={boardScrollRef} style={{ overflowX: 'auto', overflowY: 'clip', background: 'linear-gradient(90deg, var(--ov-1, rgba(255,255,255,0.02)), transparent 12%, transparent 88%, var(--ov-1, rgba(255,255,255,0.018)))' }}>
           <div style={{ minWidth: tableMinWidth + 'px' }}>
             {/* Header row */}
             <div style={{ display: 'flex', height: '32px', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', position: 'sticky', top: 0, zIndex: 5 }}>
@@ -990,6 +1063,11 @@ function MyTeamTab({
 	                      <span style={{ fontWeight: 650, color: 'var(--white)', fontSize: playerNameSize, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getPlayerName(r.pid)}</span>
                       {inlineTag(slotTagMeta[r.section], 'slot-' + r.pid)}
                       {inlineTag(rosterTagMeta[window._playerTags?.[r.pid]], 'tag-' + r.pid)}
+                      {/* GM Strategy: untouchable lock — distinct from manual tag system */}
+                      {r.gmIsUntouchable && <span title="GM Strategy: untouchable — locked from sell flags" style={{ fontSize: 'var(--text-micro, 0.6875rem)', flexShrink: 0, lineHeight: 1, color: 'var(--good)' }}>{'🛡'}</span>}
+                      {/* GM Strategy: acquisition-focus / sell-candidate position accents */}
+                      {!r.gmIsUntouchable && r.gmIsTarget && <span title="GM Strategy: acquisition-focus position" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.28))', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>TGT</span>}
+                      {!r.gmIsUntouchable && r.gmIsSellPos && <span title="GM Strategy: sell-candidate position" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'rgba(240,165,0,0.13)', color: 'var(--warn)', border: '1px solid rgba(240,165,0,0.32)', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>SELL</span>}
                       {dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title="Drop candidate (click to dismiss)" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
                     </div>
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, marginTop: '1px' }}>{r.p.team || 'FA'}{r.injury ? ' \u00B7 '+r.injury : ''}</div>
@@ -1004,7 +1082,7 @@ function MyTeamTab({
 
               {/* Inline expand card — Madden/FM style */}
               {isExpanded && (
-                <div style={{ borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', background: 'linear-gradient(180deg, var(--surf-solid, rgba(18,18,24,0.99)), var(--surf-solid, rgba(6,6,10,0.99)))', padding: '12px 14px', animation: 'wrFadeIn 0.2s ease' }}>
+                <div style={{ borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', background: 'linear-gradient(180deg, var(--surf-solid, rgba(18,18,24,0.99)), var(--surf-solid, rgba(6,6,10,0.99)))', padding: '12px 14px', animation: 'wrFadeIn 0.2s ease', position: 'sticky', left: 0, zIndex: 3, width: boardWidth ? boardWidth + 'px' : '100%', boxSizing: 'border-box' }}>
                   {/* Player dossier */}
                   <div className="mt-expand-grid" style={{ display: 'grid', gridTemplateColumns: rosterViewportWidth <= 560 ? '1fr' : rosterViewportWidth <= 834 ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(260px, 0.82fr) minmax(420px, 1.45fr) minmax(220px, 0.72fr)', gap: '10px', marginBottom: '10px', alignItems: 'stretch' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: '10px', alignItems: 'center', background: 'var(--ov-1, rgba(255,255,255,0.022))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px' }}>
@@ -1028,9 +1106,12 @@ function MyTeamTab({
                     </div>
                     <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
                       <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.42 }}>
-                        {aiReads[r.pid] || buildDynastyRead(r)}
+                      {/* Clamp the Dynasty Read only when it actually overflows; toggle to full. */}
+                      <div style={{ position: 'relative', maxHeight: (readOverflow && !readOpen) ? '104px' : 'none', overflow: (readOverflow && !readOpen) ? 'hidden' : 'visible' }}>
+                        <div ref={readRef} style={{ fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.42 }}>{aiReads[r.pid] || buildDynastyRead(r)}</div>
+                        {(readOverflow && !readOpen) ? <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '38px', background: 'linear-gradient(180deg, transparent, var(--surf-solid, rgba(12,12,18,0.99)))', pointerEvents: 'none' }} /> : null}
                       </div>
+                      {readOverflow ? <button onClick={e => { e.stopPropagation(); setReadOpen(v => !v); }} style={{ marginTop: '6px', fontSize: '0.72rem', color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>{readOpen ? '▴ Show less' : '▾ Full read'}</button> : null}
                     </div>
                     <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
                       <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '7px' }}>Decision Stack</div>

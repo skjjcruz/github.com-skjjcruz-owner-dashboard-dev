@@ -131,6 +131,10 @@
         const [flashAnalystError, setFlashAnalystError] = useState('');
         const [showFuturePickCapital, setShowFuturePickCapital] = useState(false);
         const [liveAutoStartToken, setLiveAutoStartToken] = useState(0);
+        // Draft History — archived recaps of finished drafts (local + Supabase-synced)
+        const [showDraftHistory, setShowDraftHistory] = useState(false);
+        const [historyRecapId, setHistoryRecapId] = useState(null);
+        const [recapPullTick, setRecapPullTick] = useState(0);
 
         // ── Live-draft bridge (shared by the Analyst Mock lock + Recommended Draft lock) ──
         // The live draft runs in a separate surface (Command Center) and persists its state to
@@ -160,7 +164,15 @@
             try {
                 const lid = window.S?.currentLeagueId || currentLeague?.league_id || currentLeague?.id;
                 const s = window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync');
-                if (!s || s.mode !== 'live-sync' || s.phase !== 'drafting') return empty;
+                if (!s || s.mode !== 'live-sync') return empty;
+                // A COMPLETED draft keeps feeding the War Room panels (graded picks,
+                // locked recommended rows, actual-pick overlays) exactly like it did
+                // while drafting — but only while it's still the draft of record, so
+                // a retired draft's picks never bleed into the next draft's prep.
+                const phaseOk = s.phase === 'drafting'
+                    || (s.phase === 'complete'
+                        && (!draftInfo?.draft_id || !s.sleeperDraftId || sameId(s.sleeperDraftId, draftInfo.draft_id)));
+                if (!phaseOk) return empty;
                 const status = s.liveSync?.status || '';
                 const picks = Array.isArray(s.picks) ? s.picks : [];
                 const myRid = (s.userRosterId != null ? s.userRosterId : myRoster?.roster_id);
@@ -180,7 +192,7 @@
             // Freshness is driven by liveTick (bumps only when the persisted live signature
             // changes), so we deliberately do NOT depend on timeRecomputeTs here — that would
             // recompute this (and the analyst/rec memos that consume it) on every unrelated tick.
-        }, [currentLeague, myRoster?.roster_id, liveTick]);
+        }, [currentLeague, myRoster?.roster_id, liveTick, draftInfo?.draft_id]);
 
         // Smart live-draft detection: poll the league's Sleeper draft status so the War Room
         // locks down element generation the moment the draft goes live — even before the first
@@ -214,11 +226,17 @@
                 Promise.resolve(fetchDrafts(lid)).then(rows => {
                     if (cancelled) return;
                     const drafts = Array.isArray(rows) ? rows : [];
-                    const active = drafts.find(d => d.status === 'drafting')
+                    // Draft of record: a completed draft only reads 'complete' while it
+                    // still owns the room — once superseded, status follows the next draft.
+                    const sel = window.DraftCC?.state?.selectCurrentDraft?.(drafts);
+                    const active = (sel && sel.draft)
+                        || drafts.find(d => d.status === 'drafting')
                         || drafts.find(d => d.status === 'complete')
                         || drafts.find(d => d.status === 'pre_draft') || null;
                     setLiveDraftStatus(active?.status || '');
-                    if (active?.status !== 'complete' && !cancelled) timer = setTimeout(poll, 20000);
+                    // Slow heartbeat post-completion so the tab rotates to the next
+                    // draft when it goes live, without a remount.
+                    if (!cancelled) timer = setTimeout(poll, active?.status === 'complete' ? 60000 : 20000);
                 }).catch(() => { if (!cancelled) timer = setTimeout(poll, 30000); });
             };
             poll();
@@ -660,7 +678,9 @@
             }
         }, [boardData]);
 
-        // Fetch draft countdown info from Sleeper
+        // Fetch draft info from Sleeper — the tab orbits the league's draft of
+        // record: live draft → just-completed draft (it STAYS current until a new
+        // draft is genuinely scheduled or goes live) → next scheduled draft.
         useEffect(() => {
             if (!currentLeague?.id) return;
             // MFL leagues: use the status-bearing MFL draft objects (hydrated onto
@@ -672,11 +692,40 @@
                     .then(r => r.ok ? r.json() : []);
             draftsPromise
                 .then(drafts => {
-                    const upcoming = drafts.find(d => d.status === 'pre_draft') || drafts[0];
+                    const list = Array.isArray(drafts) ? drafts : [];
+                    const sel = window.DraftCC?.state?.selectCurrentDraft?.(list);
+                    const upcoming = (sel && sel.draft) || list.find(d => d.status === 'pre_draft') || list[0];
                     if (upcoming) setDraftInfo(upcoming);
                 })
                 .catch(err => window.wrLog('draft.draftFetch', err));
         }, [currentLeague]);
+
+        // Cross-device recap archive: pull the Supabase copy once per league so
+        // Draft History shows drafts run on other devices too.
+        useEffect(() => {
+            if (!leagueKey || !window.App?.PostDraft?.pullRecapArchive) return;
+            let cancelled = false;
+            window.App.PostDraft.pullRecapArchive(leagueKey)
+                .then(() => { if (!cancelled) setRecapPullTick(t => t + 1); })
+                .catch(() => {});
+            return () => { cancelled = true; };
+        }, [leagueKey]);
+
+        // Archived recaps for Draft History (learning duplicates filtered out).
+        const draftHistoryRecaps = useMemo(() => {
+            try {
+                return (window.DraftCC?.state?.listDraftRecaps?.(leagueKey) || [])
+                    .filter(r => r && !String(r.id || '').startsWith('learning_'));
+            } catch (e) { return []; }
+        }, [leagueKey, recapPullTick, showDraftHistory, liveDraftStatus]);
+
+        // The just-completed draft's recap (grade chip in the results banner).
+        const lastDraftRecap = useMemo(() => {
+            const did = String(draftInfo?.draft_id || '');
+            return draftHistoryRecaps.find(r => did && String(r.sleeperDraftId || '') === did)
+                || draftHistoryRecaps.find(r => r.mode === 'live-sync')
+                || draftHistoryRecaps[0] || null;
+        }, [draftHistoryRecaps, draftInfo]);
 
         // Helper: get player display name
         const pName = (p) => p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || 'Unknown';
@@ -2430,6 +2479,7 @@
                     <button type="button" className={activeView === 'command' ? 'is-active' : ''} onClick={() => setDraftView('command')}>Flash Brief</button>
                     <button type="button" className={activeView === 'board' ? 'is-active' : ''} onClick={() => setDraftView('board')}>Big Board</button>
                     <button type="button" className={activeView === 'mock' ? 'is-active' : ''} onClick={() => setDraftView('mock')}>Mock Draft Center</button>
+                    <button type="button" onClick={() => setShowDraftHistory(true)} title="Archived drafts — grades, picks, and recaps">Draft History</button>
                     </div>
                     <button type="button" className={'wr-live-draft-action' + (activeView === 'live' ? ' is-active' : '')} onClick={launchLiveDraft}>Follow Live Draft</button>
                     </div>
@@ -2449,18 +2499,36 @@
                 {/* ═══════════════════ VIEW 1: FLASH BRIEF ═══════════════════ */}
                 {activeView === 'command' && (
                     <div className="draft-hq-shell">
-                        {liveDraftOn && (
+                        {liveDraftOn && liveDraftStatus !== 'complete' && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 10, borderRadius: 8, border: '1px solid var(--bad, #e5534b)', background: 'rgba(229,83,75,0.10)', flexWrap: 'wrap' }}>
                                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--bad, #e5534b)', boxShadow: '0 0 0 3px rgba(229,83,75,0.22)', flexShrink: 0 }} />
-                                <strong style={{ color: 'var(--bad, #e5534b)', fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{liveDraftStatus === 'complete' ? 'Draft Complete' : 'Live Draft In Progress'}</strong>
+                                <strong style={{ color: 'var(--bad, #e5534b)', fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Live Draft In Progress</strong>
                                 <span style={{ color: 'var(--silver)', fontSize: '0.8rem' }}>
                                     {liveDraftSnapshot.active
                                         ? 'Element generation locked — tracking your picks.'
                                         : 'Element generation locked. Open Follow Live Draft to pull picks.'}
                                 </span>
-                                {!liveDraftSnapshot.active && liveDraftStatus !== 'complete' && (
+                                {!liveDraftSnapshot.active && (
                                     <button type="button" onClick={launchLiveDraft} style={{ marginLeft: 'auto', padding: '4px 11px', minHeight: '32px', borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.76rem', fontWeight: 800, border: '1px solid var(--bad, #e5534b)', background: 'rgba(229,83,75,0.16)', color: 'var(--white)' }}>Follow Live Draft</button>
                                 )}
+                            </div>
+                        )}
+                        {liveDraftStatus === 'complete' && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', marginBottom: 10, borderRadius: 8, border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', flexWrap: 'wrap' }}>
+                                <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--gold)', boxShadow: '0 0 0 3px rgba(212,175,55,0.22)', flexShrink: 0 }} />
+                                <strong style={{ color: 'var(--gold)', fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Draft Complete</strong>
+                                {lastDraftRecap?.grade?.letter && (
+                                    <span style={{ padding: '2px 9px', borderRadius: 999, border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', color: 'var(--gold)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 800, fontSize: '0.8rem', letterSpacing: '0.04em' }}>
+                                        GRADE {lastDraftRecap.grade.letter}{lastDraftRecap.rank ? ' · #' + lastDraftRecap.rank + ' in class' : ''}
+                                    </span>
+                                )}
+                                <span style={{ color: 'var(--silver)', fontSize: '0.8rem' }}>
+                                    Your board and grade are saved — this draft stays here until the next one is scheduled.
+                                </span>
+                                <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                                    <button type="button" onClick={launchLiveDraft} style={{ padding: '4px 12px', minHeight: '32px', borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.76rem', fontWeight: 800, border: 'none', background: 'var(--gold)', color: 'var(--black)' }}>View Draft Results</button>
+                                    <button type="button" onClick={() => setShowDraftHistory(true)} style={{ padding: '4px 12px', minHeight: '32px', borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.76rem', fontWeight: 700, border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'transparent', color: 'var(--gold)' }}>Draft History</button>
+                                </div>
                             </div>
                         )}
                         <div className="draft-hq-hero">
@@ -3379,6 +3447,95 @@
                 {activeView === 'command' && window.DraftCC && window.DraftCC.AskAnswerWindow
                     ? React.createElement(window.DraftCC.AskAnswerWindow, { state: null })
                     : null}
+
+                {/* ═══════════════════ DRAFT HISTORY ═══════════════════
+                    The historical area for retired drafts: every archived recap
+                    (auto-saved when a draft completes), browsable with grade,
+                    picks, and highlights. */}
+                {showDraftHistory && (() => {
+                    const closeHistory = () => { setShowDraftHistory(false); setHistoryRecapId(null); };
+                    const fmtDate = ts => { try { return ts ? new Date(Number(ts)).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : ''; } catch (e) { return ''; } };
+                    const variantLabel = v => v === 'rookie' ? 'Rookie Draft' : v === 'startup' ? 'Startup Draft' : v === 'auction' ? 'Auction Draft' : 'Draft';
+                    const modeLabel = m => m === 'live-sync' ? 'Live draft' : m === 'manual' ? 'Manual tracking' : 'Mock';
+                    const detail = historyRecapId ? draftHistoryRecaps.find(r => r.id === historyRecapId) : null;
+                    const heroNum = (label, value) => (
+                        <div style={{ flex: '1 1 110px', padding: '8px 10px', borderRadius: 8, background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))' }}>
+                            <div style={{ color: 'var(--silver)', opacity: 0.7, fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+                            <div style={{ color: 'var(--white)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 800, fontSize: '1.05rem', marginTop: 2 }}>{value}</div>
+                        </div>
+                    );
+                    return (
+                        <div onClick={closeHistory} style={{ position: 'fixed', inset: 0, zIndex: 920, background: 'rgba(8,10,14,0.78)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+                            <div onClick={e => e.stopPropagation()} style={{ width: 'min(760px, 96vw)', maxHeight: '84vh', overflowY: 'auto', overscrollBehavior: 'contain', background: 'var(--panel, #12161c)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: 12, padding: '18px 20px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                                    {detail && (
+                                        <button type="button" onClick={() => setHistoryRecapId(null)} style={{ padding: '4px 10px', minHeight: 32, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', background: 'transparent', color: 'var(--silver)', fontFamily: 'var(--font-body)', fontSize: '0.74rem' }}>← All drafts</button>
+                                    )}
+                                    <strong style={{ color: 'var(--gold)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontSize: '1rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>🏛 Draft History</strong>
+                                    <button type="button" onClick={closeHistory} style={{ marginLeft: 'auto', padding: '4px 11px', minHeight: 32, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', background: 'transparent', color: 'var(--silver)', fontFamily: 'var(--font-body)', fontSize: '0.78rem' }}>✕ Close</button>
+                                </div>
+                                {!detail && !draftHistoryRecaps.length && (
+                                    <div style={{ padding: '22px 14px', textAlign: 'center', color: 'var(--silver)', fontSize: '0.82rem', lineHeight: 1.6 }}>
+                                        No archived drafts yet.<br />When a draft finishes, its board, grade, and recap are archived here automatically.
+                                    </div>
+                                )}
+                                {!detail && draftHistoryRecaps.map(r => (
+                                    <button key={r.id} type="button" onClick={() => setHistoryRecapId(r.id)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 6, borderRadius: 8, cursor: 'pointer', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.03))' }}>
+                                        <span style={{ width: 40, height: 40, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', color: 'var(--gold)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 900, fontSize: '1.05rem', flexShrink: 0 }}>{r.grade?.letter || '—'}</span>
+                                        <span style={{ minWidth: 0, flex: 1 }}>
+                                            <span style={{ display: 'block', color: 'var(--white)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 800, fontSize: '0.9rem' }}>
+                                                {r.season} {variantLabel(r.variant)}
+                                            </span>
+                                            <span style={{ display: 'block', color: 'var(--silver)', opacity: 0.75, fontSize: '0.72rem', marginTop: 2 }}>
+                                                {modeLabel(r.mode)} · {(r.picks || []).length} picks · {fmtDate(r.savedAt || r.archivedAt)}{r.rank ? ' · #' + r.rank + ' of ' + (r.teamRecaps?.length || r.leagueTotals && Object.keys(r.leagueTotals).length || '—') : ''}
+                                            </span>
+                                        </span>
+                                        <span style={{ color: 'var(--silver)', opacity: 0.5, fontSize: '0.9rem' }}>›</span>
+                                    </button>
+                                ))}
+                                {detail && (
+                                    <div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                                            <span style={{ width: 64, height: 64, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', color: 'var(--gold)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 900, fontSize: '1.8rem', flexShrink: 0 }}>{detail.grade?.letter || '—'}</span>
+                                            <div>
+                                                <div style={{ color: 'var(--white)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 800, fontSize: '1.1rem' }}>{detail.season} {variantLabel(detail.variant)}</div>
+                                                <div style={{ color: 'var(--silver)', opacity: 0.75, fontSize: '0.74rem', marginTop: 2 }}>{modeLabel(detail.mode)} · {fmtDate(detail.savedAt || detail.archivedAt)}{detail.percentile ? ' · ' + detail.percentile + 'th percentile in this league' : ''}</div>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                                            {heroNum('Total DHQ', Math.round(detail.totalDHQ || detail.grade?.totalDHQ || 0).toLocaleString())}
+                                            {heroNum('Expected', Math.round(detail.expectedDHQTotal || 0).toLocaleString())}
+                                            {detail.efficiency != null && heroNum('Efficiency', Math.round(detail.efficiency * 100) + '%')}
+                                            {detail.rank ? heroNum('Class Rank', '#' + detail.rank) : null}
+                                        </div>
+                                        {(detail.picks || []).length > 0 && (
+                                            <div style={{ marginBottom: 14 }}>
+                                                <div style={{ color: 'var(--gold)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Your Picks</div>
+                                                {(detail.picks || []).map((p, i) => (
+                                                    <div key={(p.pid || p.name || 'p') + '-' + i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 6, marginBottom: 3, background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                                        <span style={{ color: 'var(--silver)', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.72rem', width: 52, flexShrink: 0 }}>{p.round ? 'R' + p.round + '.' + String(p.pickInRound || p.slot || '').padStart(2, '0') : '#' + (p.overall || i + 1)}</span>
+                                                        <span style={{ color: 'var(--white)', fontSize: '0.82rem', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || 'Unknown'}</span>
+                                                        <span style={{ color: 'var(--silver)', fontSize: '0.72rem', width: 34, flexShrink: 0 }}>{p.pos || ''}</span>
+                                                        <span style={{ color: 'var(--gold)', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.74rem', flexShrink: 0 }}>{Math.round(p.dhq || 0).toLocaleString()}</span>
+                                                        {p.valueDelta != null && Math.round(p.valueDelta) !== 0 && (
+                                                            <span style={{ color: p.valueDelta > 0 ? 'var(--good, #3fb950)' : 'var(--bad, #e5534b)', fontSize: '0.7rem', flexShrink: 0, width: 44, textAlign: 'right' }}>{(p.valueDelta > 0 ? '+' : '') + Math.round(p.valueDelta)}</span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                            {detail.bestPick?.name && heroNum('Best Pick', detail.bestPick.name)}
+                                            {detail.biggestReach?.name && heroNum('Biggest Reach', detail.biggestReach.name)}
+                                            {detail.worstPick?.name && heroNum('Lightest Hit', detail.worstPick.name)}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
 
             </div>
         );

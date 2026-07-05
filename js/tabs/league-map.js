@@ -1456,7 +1456,7 @@ function LeagueMapTab({
 	        // Fire whenever the league is in its pre-draft phase REGARDLESS of skin family —
 	        // dynasty/long-term leagues have isSeasonal === false, so the old isSeasonal-gated
 	        // condition meant rookies never showed up pre-draft in dynasty leagues.
-	        const isPreDraftPhase = !!(resolvedLeagueSkin?.state?.isPreDraft || resolvedLeagueSkin?.state?.isPreDraftRosterEmpty);
+	        const isPreDraftPhase = !!(resolvedLeagueSkin?.state?.isPreDraft || resolvedLeagueSkin?.state?.isPreDraftRosterEmpty || resolvedLeagueSkin?.state?.isDrafting);
 	        const shouldShowDraftPool = isPreDraftPhase || !!(resolvedLeagueSkin?.state?.isSeasonal && allPlayers.length === 0);
 	        if (shouldShowDraftPool) {
 	            const leaguePositions = typeof window.getLeaguePositions === 'function'
@@ -1472,7 +1472,7 @@ function LeagueMapTab({
 	                if (!validPositions.has(pos)) return;
 	                // Keep incoming rookies (years_exp === 0) even if Sleeper still flags them
                 // inactive — they haven't debuted yet but must be visible in the pre-draft pool.
-                if (p.active === false && pos !== 'DEF' && p.years_exp !== 0) return;
+                if (p.active === false && pos !== 'DEF' && !(p.years_exp === 0 && (window.App?.LI?.playerScores?.[pid] || 0) > 0)) return;
 	                const dhq = window.App?.LI?.playerScores?.[pid] || 0;
 	                const st = statsData[pid] || {};
 	                const ppg = st.gp > 0 ? +(calcRawPts(st) / st.gp).toFixed(1) : 0;

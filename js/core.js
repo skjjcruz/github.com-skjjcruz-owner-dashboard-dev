@@ -872,11 +872,18 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
     const STATS_YEAR = '2025'; // Most recent completed season — used until Sleeper publishes projections
 
+    // Prefer the shared IndexedDB-backed, in-flight-deduped season cache
+    // (window.Sleeper.fetchSeasonStats) so these multi-MB blobs persist across
+    // reloads and are shared with the DHQ engine + player modal instead of being
+    // re-downloaded per session. Local memory cache + raw fetch is the fallback
+    // when the shared API hasn't loaded yet.
     let _wrStatsCache = {};
     async function fetchSeasonStats(season) {
         if (_wrStatsCache[season]) return _wrStatsCache[season];
         try {
-            _wrStatsCache[season] = await fetchJSON(`${SLEEPER_BASE_URL}/stats/nfl/regular/${season}`);
+            _wrStatsCache[season] = window.Sleeper?.fetchSeasonStats
+                ? await window.Sleeper.fetchSeasonStats(season)
+                : await fetchJSON(`${SLEEPER_BASE_URL}/stats/nfl/regular/${season}`);
         } catch (e) {
             console.warn('Stats fetch failed:', e);
             _wrStatsCache[season] = {};
@@ -888,7 +895,9 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     async function fetchSeasonProjections(season) {
         if (_projectionsCache[season]) return _projectionsCache[season];
         try {
-            _projectionsCache[season] = await fetchJSON(`${SLEEPER_BASE_URL}/projections/nfl/regular/${season}`);
+            _projectionsCache[season] = window.Sleeper?.fetchSeasonProjections
+                ? await window.Sleeper.fetchSeasonProjections(season)
+                : await fetchJSON(`${SLEEPER_BASE_URL}/projections/nfl/regular/${season}`);
         } catch (e) {
             console.warn('Projections fetch failed:', e);
             _projectionsCache[season] = {};

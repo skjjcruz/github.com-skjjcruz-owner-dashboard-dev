@@ -483,6 +483,13 @@ function DashboardPanel({
         try { return computeKpiValue(key); } catch { return { value: '—', sub: '', color: S }; }
     }
 
+    // ── Module accent resolver — WIDGET_MODULES.accent is a function,
+    // passing it raw into a style prop silently drops the declaration ──
+    function modAccent(mod) {
+        const a = mod?.accent;
+        return (typeof a === 'function' ? a() : a) || G;
+    }
+
     // ── Trend arrow from spark data ──
     function trendArrow(sparkData, color) {
         if (!sparkData || sparkData.length < 2) return null;
@@ -499,11 +506,12 @@ function DashboardPanel({
         const m = String(valueStr).match(/#?(\d+)\s*[/\-of]+\s*(\d+)/i);
         if (!m) return null;
         const rank = parseInt(m[1]), total = parseInt(m[2]);
-        if (!total) return null;
+        if (!total || rank > total) return null;
         const pct = Math.round((rank / total) * 100);
         const label = pct <= 25 ? 'Top 25%' : pct <= 50 ? 'Top 50%' : pct <= 75 ? 'Top 75%' : 'Bottom 25%';
         const col = pct <= 25 ? 'var(--k-2ecc71, #2ecc71)' : pct <= 50 ? G : pct <= 75 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
-        return <span style={{ fontSize: 'var(--text-label, 0.75rem)', padding: '1px 5px', borderRadius: '3px', background: `${col}18`, color: col, fontWeight: 700, marginLeft: '4px', fontFamily: dmFont }}>{label}</span>;
+        const bg = typeof wrAlpha === 'function' ? wrAlpha(col, '18') : 'var(--ov-2, rgba(255,255,255,0.03))';
+        return <span style={{ fontSize: 'var(--text-label, 0.75rem)', padding: '1px 5px', borderRadius: '3px', background: bg, color: col, fontWeight: 700, marginLeft: '4px', fontFamily: dmFont }}>{label}</span>;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -514,7 +522,7 @@ function DashboardPanel({
         const val = kv(key);
         const ann = typeof getKpiAnnotation === 'function' ? getKpiAnnotation(key, val.value) : '';
         const mod = WIDGET_MODULES[kpiKey];
-        const accentColor = mod?.accent || G;
+        const accentColor = modAccent(mod);
         return (
             <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', gap: '6px', position: 'relative' }}>
                 {/* Module badge */}
@@ -551,6 +559,7 @@ function DashboardPanel({
 
         const key = primaryMetric || mod.metrics?.[0]?.key;
         if (!key) return null;
+        const accent = modAccent(mod);
         const val = kv(key);
         const ann = typeof getKpiAnnotation === 'function' ? getKpiAnnotation(key, val.value) : '';
         const metaLabel = mod.metrics.find(m => m.key === key)?.label || key;
@@ -562,7 +571,7 @@ function DashboardPanel({
             <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column' }}>
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                    <div style={{ fontFamily: rajFont, fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: mod.accent, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                    <div style={{ fontFamily: rajFont, fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: accent, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
                         {mod.icon} {mod.label}
                     </div>
                     <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.5, fontFamily: dmFont }}>{metaLabel}</div>
@@ -572,13 +581,13 @@ function DashboardPanel({
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '6px' }}>
                     <span style={{ fontFamily: monoFont, fontSize: '1.8rem', fontWeight: 700, color: val.color || W, lineHeight: 1 }}>{val.value}</span>
                     {trendArrow(val.sparkData, val.color)}
-                    {percentileBadge(val.value, mod.accent)}
+                    {percentileBadge(val.value, accent)}
                 </div>
 
                 {/* Sparkline */}
                 {typeof Sparkline !== 'undefined' && val.sparkData && val.sparkData.length > 2 && (
                     <div style={{ marginBottom: '6px' }}>
-                        {React.createElement(Sparkline, { data: val.sparkData, width: 200, height: 28, color: val.color || mod.accent })}
+                        {React.createElement(Sparkline, { data: val.sparkData, width: 200, height: 28, color: val.color || accent })}
                     </div>
                 )}
 
@@ -617,6 +626,7 @@ function DashboardPanel({
         if (moduleKey === 'intel-brief') return renderIntelligenceBrief('lg');
         if (moduleKey === 'field-notes') return renderFieldNotes('lg');
 
+        const accent = modAccent(mod);
         const allMetrics = mod.metrics.map(m => ({ ...m, val: kv(m.key) }));
         const primaryKey = primaryMetric || mod.metrics?.[0]?.key;
         const primaryVal = kv(primaryKey);
@@ -639,14 +649,14 @@ function DashboardPanel({
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                     <span style={{ fontSize: '1.1rem' }}>{mod.icon}</span>
-                    <span style={{ fontFamily: rajFont, fontSize: '1rem', fontWeight: 700, color: mod.accent, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{mod.label}</span>
+                    <span style={{ fontFamily: rajFont, fontSize: '1rem', fontWeight: 700, color: accent, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{mod.label}</span>
                 </div>
 
                 {/* Primary stat hero */}
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
                     <span style={{ fontFamily: monoFont, fontSize: '2rem', fontWeight: 700, color: primaryVal.color || W, lineHeight: 1 }}>{primaryVal.value}</span>
                     {trendArrow(primaryVal.sparkData, primaryVal.color)}
-                    {percentileBadge(primaryVal.value, mod.accent)}
+                    {percentileBadge(primaryVal.value, accent)}
                 </div>
                 {ann && <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: G, fontFamily: dmFont, fontWeight: 600, lineHeight: 1.4, marginBottom: '10px' }}>{ann}</div>}
 
@@ -670,9 +680,9 @@ function DashboardPanel({
                         {allDHQs.slice(0, 6).map(t => (
                             <div key={t.rid} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <div style={{ flex: 1, height: '6px', background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '3px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', width: `${(t.dhq / maxDHQ) * 100}%`, background: t.isMe ? mod.accent : 'var(--ov-7, rgba(255,255,255,0.2))', borderRadius: '3px', transition: 'width 0.3s' }} />
+                                    <div style={{ height: '100%', width: `${(t.dhq / maxDHQ) * 100}%`, background: t.isMe ? accent : 'var(--ov-7, rgba(255,255,255,0.2))', borderRadius: '3px', transition: 'width 0.3s' }} />
                                 </div>
-                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, color: t.isMe ? mod.accent : S, opacity: t.isMe ? 1 : 0.6, minWidth: '32px', textAlign: 'right' }}>{(t.dhq / 1000).toFixed(0)}k</div>
+                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, color: t.isMe ? accent : S, opacity: t.isMe ? 1 : 0.6, minWidth: '32px', textAlign: 'right' }}>{(t.dhq / 1000).toFixed(0)}k</div>
                             </div>
                         ))}
                     </div>
@@ -1242,7 +1252,10 @@ function DashboardPanel({
                     .wr-dashboard-grid>.wr-widget{
                         min-width:0;
                     }
-                    .wr-dashboard-grid>.wr-widget[style*="span 4"]{
+                    /* Target full-width sizes by data attribute — [style*="span 4"]
+                       also matches grid-ROW spans (tall/narrow), stretching them wrong */
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xl"],
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xxl"]{
                         grid-column:span 2 !important;
                     }
                 }
@@ -1254,8 +1267,8 @@ function DashboardPanel({
                     .wr-dashboard-grid>.wr-add-widget{
                         min-width:0;
                     }
-                    .wr-dashboard-grid>.wr-widget[style*="span 3"],
-                    .wr-dashboard-grid>.wr-widget[style*="span 4"]{
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xl"],
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xxl"]{
                         grid-column:span 2 !important;
                     }
                 }
@@ -1267,7 +1280,8 @@ function DashboardPanel({
                     .wr-dashboard-grid>.wr-add-widget{
                         min-width:0;
                     }
-                    .wr-dashboard-grid>.wr-widget[style*="span 4"]{
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xl"],
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xxl"]{
                         grid-column:span 3 !important;
                     }
                 }

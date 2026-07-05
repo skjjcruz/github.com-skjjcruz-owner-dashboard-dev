@@ -36,7 +36,24 @@
         return users.find(u => u.user_id === roster.owner_id) || null;
     }
 
+    // GM Strategy is the source of truth for the YOUR-team buyer/seller framing.
+    // win_now / 1_year horizon → buyer (acquire now); rebuild / dynasty_long →
+    // seller (accumulate future); everything else holds steady.
+    function gmPosture(gm) {
+        const mode = gm?.mode;
+        const tl = gm?.timeline;
+        if (mode === 'win_now' || tl === '1_year') {
+            return { label: 'BUYER', sub: 'Acquire now', col: 'var(--win-green, var(--k-2ecc71, #2ecc71))' };
+        }
+        if (mode === 'rebuild' || tl === 'dynasty_long') {
+            return { label: 'SELLER', sub: 'Accumulate', col: 'var(--gold, var(--k-d4af37, #d4af37))' };
+        }
+        return { label: 'BALANCED', sub: 'Hold value', col: 'var(--silver)' };
+    }
+
     function CompetitiveTiersWidget({ size, sleeperUserId, currentLeague, playersData, setActiveTab, navigateWidget }) {
+        const gm = window.WR.GmMode.useGmEffects(currentLeague);
+
         const assessments = React.useMemo(() => {
             if (typeof window.assessAllTeamsFromGlobal === 'function') {
                 try { return window.assessAllTeamsFromGlobal() || []; } catch { return []; }
@@ -47,6 +64,9 @@
         const tiers = React.useMemo(() => groupByTier(assessments), [assessments]);
         const mine = assessments.find(a => a.ownerId === sleeperUserId);
         const myTier = mine?.tier || null;
+
+        // Primary YOUR-team framing = GM Strategy posture; tier is secondary.
+        const posture = React.useMemo(() => (gm?.hasStrategy ? gmPosture(gm) : null), [gm?.mode, gm?.timeline, gm?.hasStrategy]);
 
         const base = {
             background: 'var(--off-black)',
@@ -91,11 +111,11 @@
 
         // ── sm: my tier hero (kept) ──────────────────────────────
         if (size === 'sm') {
-            const col = mine ? TIER_COLORS[mine.tier] : 'var(--silver)';
+            const col = posture ? posture.col : (mine ? TIER_COLORS[mine.tier] : 'var(--silver)');
             return React.createElement('div', { style: { ...base, cursor: 'pointer', textAlign: 'center', justifyContent: 'center' }, onClick: jumpToLeague },
-                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.65 } }, 'My Tier'),
-                React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 700, color: col } }, mine?.tier || '—'),
-                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.55 } }, assessments.length + ' team' + (assessments.length === 1 ? '' : 's') + ' tracked')
+                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.65 } }, posture ? 'My Stance' : 'My Tier'),
+                React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 700, color: col } }, posture ? posture.label : (mine?.tier || '—')),
+                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.55 } }, posture ? (myTier ? myTier.charAt(0) + myTier.slice(1).toLowerCase() + ' · ' + posture.sub : posture.sub) : (assessments.length + ' team' + (assessments.length === 1 ? '' : 's') + ' tracked'))
             );
         }
 
@@ -119,9 +139,14 @@
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
                     React.createElement('span', { style: { fontSize: '0.9rem' } }, '🏆'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.88rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em' } }, 'Competitive Tiers'),
-                    React.createElement('div', {
-                        style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: myCol, fontWeight: 700, padding: '2px 6px', borderRadius: '3px', background: wrAlpha(myCol, '22'), border: '1px solid ' + wrAlpha(myCol, '55') }
-                    }, myTier ? 'YOU · ' + myTier : 'YOU · —'),
+                    posture
+                        ? React.createElement('div', {
+                            title: 'GM Strategy: ' + (gm.modeLabel || gm.mode) + ' · ' + posture.sub,
+                            style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: posture.col, fontWeight: 700, padding: '2px 6px', borderRadius: '3px', background: wrAlpha(posture.col, '22'), border: '1px solid ' + wrAlpha(posture.col, '55') }
+                        }, 'YOU · ' + posture.label + (myTier ? ' · ' + myTier.slice(0, 4) : ''))
+                        : React.createElement('div', {
+                            style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: myCol, fontWeight: 700, padding: '2px 6px', borderRadius: '3px', background: wrAlpha(myCol, '22'), border: '1px solid ' + wrAlpha(myCol, '55') }
+                        }, myTier ? 'YOU · ' + myTier : 'YOU · —'),
                 ),
                 // Tier bar with my position arrow
                 React.createElement('div', { style: { position: 'relative', marginTop: '4px' } },
@@ -223,7 +248,9 @@
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
                     React.createElement('span', { style: { fontSize: '0.95rem' } }, '🏆'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.88rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em' } }, 'Competitive Tiers'),
-                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '2px 6px', borderRadius: '3px', background: wrAlpha(TIER_COLORS[myTier], '22') } }, '★ ' + myTier),
+                    posture
+                        ? React.createElement('span', { title: 'GM Strategy: ' + (gm.modeLabel || gm.mode) + ' · ' + posture.sub, style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posture.col, padding: '2px 6px', borderRadius: '3px', background: wrAlpha(posture.col, '22'), border: '1px solid ' + wrAlpha(posture.col, '55') } }, '★ YOU · ' + posture.label + (myTier ? ' · ' + myTier.slice(0, 4) : ''))
+                        : (myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '2px 6px', borderRadius: '3px', background: wrAlpha(TIER_COLORS[myTier], '22') } }, '★ ' + myTier)),
                     analyticsButton(),
                 ),
                 React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, minHeight: 0, overflow: 'hidden' } },
@@ -284,7 +311,9 @@
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
                     React.createElement('span', { style: { fontSize: '1rem' } }, '🏆'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em' } }, 'Competitive Tiers'),
-                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '2px 6px', borderRadius: '3px', background: wrAlpha(TIER_COLORS[myTier], '22') } }, '★ ' + myTier),
+                    posture
+                        ? React.createElement('span', { title: 'GM Strategy: ' + (gm.modeLabel || gm.mode) + ' · ' + posture.sub, style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posture.col, padding: '2px 6px', borderRadius: '3px', background: wrAlpha(posture.col, '22'), border: '1px solid ' + wrAlpha(posture.col, '55') } }, '★ YOU · ' + posture.label + (myTier ? ' · ' + myTier.slice(0, 4) : ''))
+                        : (myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '2px 6px', borderRadius: '3px', background: wrAlpha(TIER_COLORS[myTier], '22') } }, '★ ' + myTier)),
                     analyticsButton(),
                 ),
                 // Tier rows
@@ -392,7 +421,9 @@
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
                     React.createElement('span', { style: { fontSize: '1.1rem' } }, '🏆'),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em' } }, 'Competitive Tiers'),
-                    myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '3px 8px', borderRadius: '4px', background: wrAlpha(TIER_COLORS[myTier], '22'), border: '1px solid ' + wrAlpha(TIER_COLORS[myTier], '55') } }, '★ YOU · ' + myTier),
+                    posture
+                        ? React.createElement('span', { title: 'GM Strategy: ' + (gm.modeLabel || gm.mode) + ' · ' + posture.sub, style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posture.col, padding: '3px 8px', borderRadius: '4px', background: wrAlpha(posture.col, '22'), border: '1px solid ' + wrAlpha(posture.col, '55') } }, '★ YOU · ' + posture.label + (myTier ? ' · ' + myTier + ' tier' : ''))
+                        : (myTier && React.createElement('span', { style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: TIER_COLORS[myTier], padding: '3px 8px', borderRadius: '4px', background: wrAlpha(TIER_COLORS[myTier], '22'), border: '1px solid ' + wrAlpha(TIER_COLORS[myTier], '55') } }, '★ YOU · ' + myTier)),
                     analyticsButton(),
                 ),
                 // 2-col grid: tier rows (left) | matrix + summary + histogram (right)
@@ -473,7 +504,7 @@
                                             // Bar
                                             React.createElement('div', { style: {
                                                 width: '100%', height: h + '%',
-                                                background: n > 0 ? 'linear-gradient(180deg, ' + col + ' 0%, ' + col + 'aa 100%)' : 'var(--ov-3, rgba(255,255,255,0.04))',
+                                                background: n > 0 ? 'linear-gradient(180deg, ' + col + ' 0%, ' + wrAlpha(col, 'AA') + ' 100%)' : 'var(--ov-3, rgba(255,255,255,0.04))',
                                                 opacity: !n ? 0.3 : isMine ? 1 : 0.65,
                                                 borderRadius: '3px 3px 0 0',
                                                 border: isMine ? '2px solid var(--k-ffffff, #ffffff)' : 'none',
