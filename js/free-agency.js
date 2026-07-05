@@ -364,9 +364,6 @@
         // GM-Office filters scope the recommendation surfaces (not the market pool).
         const gmFa = getGmFaFilters(currentLeague);
         const recPool = args.skipGmFilters ? availablePlayers : applyGmFaFilters(availablePlayers, gmFa);
-        // GM Strategy target positions float relevant FA adds to the top.
-        const gmEff = window.WR?.GmMode?.effects?.(currentLeague?.id || currentLeague?.league_id) || {};
-        const gmTargets = gmEff.targetPositions instanceof Set ? gmEff.targetPositions : new Set();
 
         const needPositions = (assess?.needs || []).slice(0, 3).map(n => n.pos).filter(Boolean);
         let recommendations = [];
@@ -398,8 +395,8 @@
             .sort((a, b) => (b.fitScore * 5000 + b.dhq + (b.ppg || 0) * 35) - (a.fitScore * 5000 + a.dhq + (a.ppg || 0) * 35));
         const priorityAdds = (recommendations.length ? recommendations : actionBoardPlayers)
             .map(decorateFaCandidate)
-            .map(x => ({ ...x, seeded: crazeSeed.has(String(x.pid)), isStrategicTarget: gmTargets.has(x.pos) }))
-            .sort((a, b) => (Number(b.seeded) - Number(a.seeded)) || (Number(b.isStrategicTarget) - Number(a.isStrategicTarget)) || ((b.fitScore * 5000 + b.dhq) - (a.fitScore * 5000 + a.dhq)))
+            .map(x => ({ ...x, seeded: crazeSeed.has(String(x.pid)) }))
+            .sort((a, b) => (Number(b.seeded) - Number(a.seeded)) || ((b.fitScore * 5000 + b.dhq) - (a.fitScore * 5000 + a.dhq)))
             .slice(0, 5);
         if (typeof window.App?.Intelligence?.publishRecommendations === 'function') {
             window.App.Intelligence.publishRecommendations('waiver', priorityAdds.map(x => x.intelligence).filter(Boolean), { surface: 'free-agency-action-board' });
@@ -1559,11 +1556,10 @@
 
                 {/* Dynamic grid — photo + Player + configured columns */}
                 {(() => {
-                    const gridTemplate = '32px minmax(150px, 1fr) ' + visibleFaCols.map(k => (faColumns[k]?.width || '44px')).join(' ');
-                    const tableMinWidth = 32 + 150 + 24 + visibleFaCols.reduce((s, k) => s + (parseInt(faColumns[k]?.width || '44', 10) || 44) + 4, 0);
-                    return <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', overflowX: 'auto' }}>
+                    const gridTemplate = '32px 1fr ' + visibleFaCols.map(k => (faColumns[k]?.width || '44px')).join(' ');
+                    return <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', overflow: 'hidden' }}>
                         {/* Header */}
-                        <div style={{ display: 'grid', gridTemplateColumns: gridTemplate, gap: '4px', padding: '8px 12px', minWidth: tableMinWidth + 'px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: gridTemplate, gap: '4px', padding: '8px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))' }}>
                             <span style={faHeaderStyle}></span>
                             <span style={faHeaderStyle} onClick={() => handleFaSort('name')}>Player{faSortIndicator('name')}</span>
                             {visibleFaCols.map(k => {
@@ -1576,7 +1572,7 @@
                             })}
                         </div>
                         {/* Body */}
-                        <div style={{ maxHeight: 'none', overflow: 'visible', minWidth: tableMinWidth + 'px' }}>
+                        <div style={{ maxHeight: 'none', overflow: 'visible' }}>
                             {sortedPlayers.map(({ pid, p, dhq }) => {
                                 const pos = normPos(p.position) || p.position;
                                 const st = statsData[pid] || {};

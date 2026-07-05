@@ -17,17 +17,10 @@
 (function() {
     const POLL_INTERVAL_MS = 5000;
     const STALE_AFTER_MS = POLL_INTERVAL_MS * 3;
-    // Picks are re-pulled every poll (they drive new-pick detection); the draft
-    // meta (status) and traded picks change far slower, so refresh those at most
-    // this often and reuse the last value in between.
-    const SLOW_REFRESH_MS = 15000;
     let _pollTimer = null;
     let _lastPickNo = 0;
     let _seenPickKeys = new Set();
     let _lastSuccessAt = 0;
-    let _lastSlowAt = 0;
-    let _lastMeta = null;
-    let _lastTradedPicks = null;
 
     function isRunning() {
         return !!_pollTimer;
@@ -48,9 +41,6 @@
         _lastPickNo = Number(opts.initialPickNo || 0);
         _seenPickKeys = new Set(opts.seenPickKeys || []);
         _lastSuccessAt = 0;
-        _lastSlowAt = 0;
-        _lastMeta = null;
-        _lastTradedPicks = null;
         const onStatus = typeof opts.onStatus === 'function' ? opts.onStatus : null;
         // MFL drafts mirror through window.MFL.fetchDraftStatus instead of Sleeper.
         // The draft id encodes league + year: 'mfl_draft_<leagueId>_<year>'.
@@ -90,44 +80,31 @@
                         mflSlots = Array.isArray(d._slots) ? d._slots : null;
                     }
                 } else {
-                    const fetchPicks = async () => {
-                        if (window.Sleeper?.fetchDraftPicks) return window.Sleeper.fetchDraftPicks(draftId);
+                    if (window.Sleeper?.fetchDraftPicks) {
+                        picks = await window.Sleeper.fetchDraftPicks(draftId);
+                    } else {
                         const resp = await fetch('https://api.sleeper.app/v1/draft/' + draftId + '/picks');
-                        return resp.ok ? resp.json() : null;
-                    };
-                    const fetchMeta = async () => {
-                        try {
-                            if (window.Sleeper?.fetchDraft) return await window.Sleeper.fetchDraft(draftId);
+                        if (resp.ok) picks = await resp.json();
+                    }
+                    try {
+                        if (window.Sleeper?.fetchDraft) {
+                            meta = await window.Sleeper.fetchDraft(draftId);
+                        } else {
                             const metaResp = await fetch('https://api.sleeper.app/v1/draft/' + draftId);
-                            return metaResp.ok ? await metaResp.json() : null;
-                        } catch (_) { return null; }
-                    };
-                    const fetchTp = async () => {
-                        try {
-                            if (window.Sleeper?.fetchDraftTradedPicks) return await window.Sleeper.fetchDraftTradedPicks(draftId);
+                            if (metaResp.ok) meta = await metaResp.json();
+                        }
+                    } catch (_) {}
+                    // Pick ownership can change between picks (managers trade picks live).
+                    // Re-pull the draft's traded picks every poll so upcoming-pick ownership
+                    // stays current during high-frequency trading. Non-fatal.
+                    try {
+                        if (window.Sleeper?.fetchDraftTradedPicks) {
+                            tradedPicks = await window.Sleeper.fetchDraftTradedPicks(draftId);
+                        } else {
                             const tpResp = await fetch('https://api.sleeper.app/v1/draft/' + draftId + '/traded_picks');
-                            return tpResp.ok ? await tpResp.json() : null;
-                        } catch (_) { return null; }
-                    };
-                    // Fetch all three concurrently (was three sequential awaits, so
-                    // poll latency was the SUM of three round-trips). Picks refresh
-                    // every poll; meta (status) + traded picks — which change far more
-                    // slowly — refresh at most every SLOW_REFRESH_MS and reuse the last
-                    // value in between. Pick ownership stays current enough for live
-                    // trading while cutting redundant per-poll round-trips.
-                    const nowTs = Date.now();
-                    const refreshSlow = !_lastSlowAt || (nowTs - _lastSlowAt) >= SLOW_REFRESH_MS;
-                    const [picksRes, metaRes, tpRes] = await Promise.all([
-                        fetchPicks(),
-                        refreshSlow ? fetchMeta() : Promise.resolve(_lastMeta),
-                        refreshSlow ? fetchTp() : Promise.resolve(_lastTradedPicks),
-                    ]);
-                    picks = picksRes;
-                    meta = metaRes;
-                    tradedPicks = tpRes;
-                    _lastMeta = meta;
-                    _lastTradedPicks = tradedPicks;
-                    if (refreshSlow) _lastSlowAt = nowTs;
+                            if (tpResp.ok) tradedPicks = await tpResp.json();
+                        }
+                    } catch (_) {}
                 }
                 if (picks == null) {
                     // Distinguish a dead/missing draft (null/404 from the fetch) from

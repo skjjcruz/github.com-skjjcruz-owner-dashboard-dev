@@ -425,10 +425,6 @@
     }
     window.ErrorBoundary = ErrorBoundary;
 
-    // Exposed so the live-draft Trade Desk can mount the same Find-a-Trade auto-proposer
-    // (full analyzer parity). Hoisted function declaration — safe to reference here.
-    window.TradeFinderTab = TradeFinderTab;
-
     function tradeFinderAcceptanceFloorFromSettings(settings = {}) {
         const sharedFloor = window.WR?.AlexSettings?.actionableTradeAcceptanceFloor?.(settings);
         if (Number.isFinite(Number(sharedFloor))) return Math.max(55, Math.min(90, Math.round(Number(sharedFloor))));
@@ -440,13 +436,10 @@
     }
 
     function currentTradeFinderAcceptanceFloor(settings) {
-        // GM Strategy is the single source of truth for the acceptance floor.
-        const gmFloor = window.WR?.GmMode?.effects?.()?.acceptanceFloor;
-        if (Number.isFinite(Number(gmFloor))) return Math.max(55, Math.min(90, Math.round(Number(gmFloor))));
         return tradeFinderAcceptanceFloorFromSettings(settings || window.WR?.AlexSettings?.get?.() || {});
     }
 
-    function TradeFinderTab({ allRosters, myRosterId, assessments, ownerDna, playersData, picksByOwner, getPlayerValue, getPickValue, calcOwnerPosture, calcPsychTaxes, calcAcceptanceLikelihood, DNA_TYPES, autoTarget, onAutoTargetConsumed, useCompactPicker }) {
+    function TradeFinderTab({ allRosters, myRosterId, assessments, ownerDna, playersData, picksByOwner, getPlayerValue, getPickValue, calcOwnerPosture, calcPsychTaxes, calcAcceptanceLikelihood, DNA_TYPES, autoTarget, onAutoTargetConsumed }) {
         const leagueSkin = window.App?.LeagueSkin?.getCurrent?.() || null;
         const valueShortLabel = leagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
         const [finderMode, setFinderMode] = React.useState('my');
@@ -457,21 +450,13 @@
         const autoTargetRef = React.useRef(false);
 
         React.useEffect(() => {
-            const onGm = () => setActionableAcceptanceFloor(currentTradeFinderAcceptanceFloor());
-            window.addEventListener('wr:gm-mode-changed', onGm);
-            let unsub;
-            if (window.WR?.AlexSettings?.subscribe) {
-                unsub = window.WR.AlexSettings.subscribe((next) => setActionableAcceptanceFloor(currentTradeFinderAcceptanceFloor(next)));
-            }
-            return () => { window.removeEventListener('wr:gm-mode-changed', onGm); if (unsub) unsub(); };
+            if (!window.WR?.AlexSettings?.subscribe) return undefined;
+            return window.WR.AlexSettings.subscribe((next) => setActionableAcceptanceFloor(currentTradeFinderAcceptanceFloor(next)));
         }, []);
 
-        const myPlayers = React.useMemo(() => {
-            const untouchable = window.WR?.GmMode?.effects?.()?.untouchable || new Set();
-            return (allRosters.find(r => r.roster_id === myRosterId)?.players || [])
-                .map(pid => ({ pid, name: playersData[pid]?.full_name || pid, pos: playersData[pid]?.position || '?', val: getPlayerValue(pid).value }))
-                .filter(p => p.val > 0 && !untouchable.has(String(p.pid))).sort((a,b) => b.val - a.val);
-        }, [allRosters, playersData, actionableAcceptanceFloor]);
+        const myPlayers = React.useMemo(() => (allRosters.find(r => r.roster_id === myRosterId)?.players || [])
+            .map(pid => ({ pid, name: playersData[pid]?.full_name || pid, pos: playersData[pid]?.position || '?', val: getPlayerValue(pid).value }))
+            .filter(p => p.val > 0).sort((a,b) => b.val - a.val), [allRosters, playersData]);
 
         const allLeaguePlayers = React.useMemo(() => {
             const list = [];
@@ -618,22 +603,11 @@
                 React.createElement('button', {onClick:()=>{setFinderMode('acquire');setFinderAsset(null);setFinderResults(null);setShowMoonshots(false);},style:{padding:'7px 16px',fontSize:'var(--text-body, 1rem)',fontFamily: 'var(--font-body)',textTransform:'uppercase',background:finderMode==='acquire'?'var(--gold)':'var(--ov-3, rgba(255,255,255,0.04))',color:finderMode==='acquire'?'var(--black)':'var(--silver)',border:'1px solid '+(finderMode==='acquire'?'var(--gold)':'var(--ov-5, rgba(255,255,255,0.08))'),borderRadius:'4px',cursor:'pointer'}}, 'Acquire a Player')
             ),
             React.createElement('div', {style:{fontSize:'var(--text-label, 0.75rem)',color:'var(--gold)',textTransform:'uppercase',marginBottom:'0.3rem',fontWeight:700}}, finderMode==='my'?'Select your player to shop':'Select a player to acquire'),
-            useCompactPicker
-                ? React.createElement('select', {
-                    value: finderAsset || '',
-                    onChange: (e) => { const v = e.target.value; if (!v) return; setFinderAsset(v); setFinderResults(null); setShowMoonshots(false); generateTrades(v, finderMode); },
-                    style: {width:'100%',minHeight:'38px',padding:'6px 8px',marginBottom:'1rem',background:'var(--ov-3, rgba(255,255,255,0.04))',border:'1px solid var(--ov-6, rgba(255,255,255,0.1))',borderRadius:'5px',color:'var(--white)',fontFamily:'var(--font-body)',fontSize:'0.74rem',cursor:'pointer'}
-                  },
-                    React.createElement('option', {value:''}, finderMode==='my'?'+ select your player to shop…':'+ select a player to acquire…'),
-                    ...(finderMode==='my'?myPlayers:allLeaguePlayers).slice(0,200).map(p=>
-                        React.createElement('option', {key:p.pid, value:p.pid}, p.name + ' · ' + p.pos + ' · ' + p.val.toLocaleString())
-                    )
-                  )
-                : React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'0.35rem',maxHeight:'200px',overflowY:'auto',marginBottom:'1rem',padding:'10px',background:'var(--ov-1, rgba(255,255,255,0.02))',borderRadius:'8px',border:'1px solid var(--acc-fill2, rgba(212,175,55,0.12))'}},
-                    ...(finderMode==='my'?myPlayers:allLeaguePlayers).slice(0,60).map(p=>
-                        React.createElement('button', {key:p.pid, onClick:()=>{setFinderAsset(p.pid);setFinderResults(null);setShowMoonshots(false);generateTrades(p.pid,finderMode);}, style:{padding:'5px 12px',fontSize:'var(--text-label, 0.75rem)',fontFamily: 'var(--font-body)',borderRadius:'4px',cursor:'pointer',background:finderAsset===p.pid?'var(--gold)':'var(--ov-3, rgba(255,255,255,0.04))',color:finderAsset===p.pid?'var(--black)':'var(--silver)',border:'1px solid '+(finderAsset===p.pid?'var(--gold)':'var(--ov-4, rgba(255,255,255,0.06))')}}, p.name+' '+p.val.toLocaleString())
-                    )
-                  ),
+            React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'0.35rem',maxHeight:'200px',overflowY:'auto',marginBottom:'1rem',padding:'10px',background:'var(--ov-1, rgba(255,255,255,0.02))',borderRadius:'8px',border:'1px solid var(--acc-fill2, rgba(212,175,55,0.12))'}},
+                ...(finderMode==='my'?myPlayers:allLeaguePlayers).slice(0,60).map(p=>
+                    React.createElement('button', {key:p.pid, onClick:()=>{setFinderAsset(p.pid);setFinderResults(null);setShowMoonshots(false);generateTrades(p.pid,finderMode);}, style:{padding:'5px 12px',fontSize:'var(--text-label, 0.75rem)',fontFamily: 'var(--font-body)',borderRadius:'4px',cursor:'pointer',background:finderAsset===p.pid?'var(--gold)':'var(--ov-3, rgba(255,255,255,0.04))',color:finderAsset===p.pid?'var(--black)':'var(--silver)',border:'1px solid '+(finderAsset===p.pid?'var(--gold)':'var(--ov-4, rgba(255,255,255,0.06))')}}, p.name+' '+p.val.toLocaleString())
+                )
+            ),
             finderResults && !finderResults.length ? React.createElement('div', {style:{color:'var(--silver)',fontSize:'var(--text-body, 1rem)',textAlign:'center',padding:'2rem'}}, 'No viable trades found within 20% value variance.') : null,
             finderResults && finderResults.length && !visibleFinderResults.length ? React.createElement('div', {style:{color:'var(--silver)',fontSize:'var(--text-body, 1rem)',textAlign:'center',padding:'2rem'}}, 'No actionable trades clear '+actionableAcceptanceFloor+'% acceptance.') : null,
             hiddenMoonshotCount ? React.createElement('button', {onClick:()=>setShowMoonshots(v=>!v), style:{padding:'6px 12px',fontSize:'var(--text-label, 0.75rem)',fontFamily:'var(--font-body)',textTransform:'uppercase',background:'var(--ov-3, rgba(255,255,255,0.04))',color:'var(--gold)',border:'1px solid var(--acc-line1, rgba(212,175,55,0.22))',borderRadius:'4px',cursor:'pointer',marginBottom:'0.75rem'}}, showMoonshots ? 'Hide moonshots' : 'Show '+hiddenMoonshotCount+' moonshot'+(hiddenMoonshotCount===1?'':'s')) : null,
