@@ -84,22 +84,6 @@
         });
     }
 
-    // Fetch-warm shared modules from <head> so they download in parallel while
-    // the (huge) inline stylesheet + body parse. Execution order is still owned
-    // by the document.write chain in loadMany — preload links never execute.
-    // URLs are built by the same src() used at load time, so they match exactly
-    // and the browser serves the later <script> straight from the preload cache.
-    function preloadMany(files) {
-        files.forEach(item => {
-            const href = Array.isArray(item) ? src(item[0], item[1]) : src(item, config.version);
-            const link = document.createElement('link');
-            link.rel = 'preload';
-            link.as = 'script';
-            link.href = href;
-            document.head.appendChild(link);
-        });
-    }
-
     function configure(next = {}) {
         if (next.localBase) config.localBase = next.localBase;
         if (next.remoteBase) config.remoteBase = next.remoteBase;
@@ -132,7 +116,6 @@
         src,
         load,
         loadMany,
-        preloadMany,
         isLocalMode,
         resolveBase,
     };

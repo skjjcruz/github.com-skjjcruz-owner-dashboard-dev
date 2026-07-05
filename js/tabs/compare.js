@@ -7,15 +7,6 @@
 //             window.App.normPos / POS_COLORS / peakWindows / calcPPG.
 // Exposes:    window.CompareTab
 
-// Session cache of the opponent-INDEPENDENT H2H raw data (the league-history
-// chain walk + each season's rosters + weekly matchup rows), keyed by root
-// league. Walking 12 previous_league_id hops + per-season rosters + ~14 weeks of
-// matchups is identical for every opponent — only the final meetings filter
-// differs — so a rival sweep used to re-download the whole chain once per rival.
-// Kept in memory (not localStorage) because raw matchup rows are large; the
-// compact per-opponent `meetings` result keeps its own localStorage cache.
-window._wrCompareRawCache = window._wrCompareRawCache || {};
-
 function CompareTab({
     currentLeague,
     leagueSkin,
@@ -78,17 +69,6 @@ function CompareTab({
         try { return localStorage.getItem('wr_compare_division_' + (leagueId || 'default')) || ''; } catch { return ''; }
     });
     const [h2hState, setH2hState] = React.useState({ loading: false, meetings: [], error: null, loadedFor: null });
-
-    // GM Strategy is the single source of truth — re-renders live on save.
-    const gm = window.WR.GmMode.useGmEffects(currentLeague);
-    const gmTargetPositions = gm.targetPositions || new Set();
-    const gmPosture = gm.marketPosture || 'hold';
-    const gmPostureFrame = (() => {
-        if (gmPosture === 'buy_low') return { label: 'Buy-Low Lens', hint: 'Strategy says hunt undervalued rooms in this matchup.', color: 'var(--win-green, var(--good))' };
-        if (gmPosture === 'sell_high') return { label: 'Sell-High Lens', hint: 'Strategy says cash surplus rooms while value is hot.', color: 'var(--gold)' };
-        if (gmPosture === 'exploit') return { label: 'Exploit Lens', hint: 'Strategy says press every edge and pounce on weakness.', color: 'var(--loss-red, var(--bad))' };
-        return { label: 'Hold Lens', hint: 'Strategy says stand pat — read the field before moving.', color: 'var(--silver)' };
-    })();
 
     React.useEffect(() => {
         const onOpenCompare = (event) => {
@@ -184,23 +164,21 @@ function CompareTab({
             }
         }
 
-        // Opponent-INDEPENDENT: walk the league-history chain and pull each
-        // season's rosters + weekly matchup rows. Cached in-session per root
-        // league so switching opponents (or sweeping rivals) reuses it instead of
-        // re-downloading the whole chain. The chain WALK stays sequential (each
-        // hop needs the prior previous_league_id); per-season fetches then run in
-        // parallel rather than season-by-season.
-        async function loadRawChain() {
-            const sleeperBase = 'https://api.sleeper.app/v1';
-            const cached = window._wrCompareRawCache[rootLeagueId];
-            if (cached && Date.now() - cached.ts < 6 * 60 * 60 * 1000 && Array.isArray(cached.seasons)) {
-                return cached.seasons;
-            }
+        async function loadHistoricalH2H() {
+            const cacheKey = 'wr_compare_h2h_v3_' + rootLeagueId + '_' + myOwnerId + '_' + theirOwnerId;
+            try {
+                const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+                if (cached && Date.now() - cached.ts < 6 * 60 * 60 * 1000 && Array.isArray(cached.meetings)) {
+                    return cached.meetings;
+                }
+            } catch {}
 
+            const sleeperBase = 'https://api.sleeper.app/v1';
             const chain = [];
             const seen = new Set();
             let lid = String(rootLeagueId);
             let hops = 0;
+
             while (lid && lid !== '0' && !seen.has(lid) && hops < 12) {
                 seen.add(lid);
                 const fetchedInfo = await fetchJson(sleeperBase + '/league/' + lid);
@@ -213,42 +191,16 @@ function CompareTab({
                 hops += 1;
             }
 
-            const seasons = (await Promise.all(chain.map(async seasonEntry => {
+            const meetings = [];
+            const currentSeason = Number(currentLeague?.season || 0);
+
+            for (const seasonEntry of chain) {
                 const info = seasonEntry.info || {};
                 const season = String(info.season || seasonEntry.season || '');
                 const rosters = sameId(seasonEntry.leagueId, rootLeagueId) && Array.isArray(currentLeague?.rosters)
                     ? currentLeague.rosters
                     : await fetchJson(sleeperBase + '/league/' + seasonEntry.leagueId + '/rosters');
-                if (!Array.isArray(rosters) || !rosters.length) return null;
-                const playoffStart = Number(info.settings?.playoff_week_start) || Number(currentLeague?.settings?.playoff_week_start) || 15;
-                const maxWeek = Math.max(1, Math.min(18, playoffStart - 1));
-                const weeks = Array.from({ length: maxWeek }, (_, i) => i + 1);
-                const weeklyMatchups = await Promise.all(weeks.map(w =>
-                    fetchJson(sleeperBase + '/league/' + seasonEntry.leagueId + '/matchups/' + w).then(rows => ({ week: w, rows: Array.isArray(rows) ? rows : [] }))
-                ));
-                return { leagueId: seasonEntry.leagueId, season, rosters, weeklyMatchups };
-            }))).filter(Boolean);
-
-            window._wrCompareRawCache[rootLeagueId] = { ts: Date.now(), seasons };
-            return seasons;
-        }
-
-        async function loadHistoricalH2H() {
-            const cacheKey = 'wr_compare_h2h_v3_' + rootLeagueId + '_' + myOwnerId + '_' + theirOwnerId;
-            try {
-                const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
-                if (cached && Date.now() - cached.ts < 6 * 60 * 60 * 1000 && Array.isArray(cached.meetings)) {
-                    return cached.meetings;
-                }
-            } catch {}
-
-            const seasons = await loadRawChain();
-            const meetings = [];
-            const currentSeason = Number(currentLeague?.season || 0);
-
-            for (const seasonEntry of seasons) {
-                const season = seasonEntry.season;
-                const rosters = seasonEntry.rosters;
+                if (!Array.isArray(rosters) || !rosters.length) continue;
 
                 const historicalMine = rosters.find(r => sameId(r.owner_id, myOwnerId))
                     || (sameId(seasonEntry.leagueId, rootLeagueId) ? rosters.find(r => sameId(r.roster_id, myRoster?.roster_id)) : null);
@@ -256,7 +208,14 @@ function CompareTab({
                     || (sameId(seasonEntry.leagueId, rootLeagueId) ? rosters.find(r => sameId(r.roster_id, theirRoster?.roster_id)) : null);
                 if (!historicalMine || !historicalTheirs) continue;
 
-                seasonEntry.weeklyMatchups.forEach(({ week, rows }) => {
+                const playoffStart = Number(info.settings?.playoff_week_start) || Number(currentLeague?.settings?.playoff_week_start) || 15;
+                const maxWeek = Math.max(1, Math.min(18, playoffStart - 1));
+                const weeks = Array.from({ length: maxWeek }, (_, i) => i + 1);
+                const weeklyMatchups = await Promise.all(weeks.map(w =>
+                    fetchJson(sleeperBase + '/league/' + seasonEntry.leagueId + '/matchups/' + w).then(rows => ({ week: w, rows: Array.isArray(rows) ? rows : [] }))
+                ));
+
+                weeklyMatchups.forEach(({ week, rows }) => {
                     const grouped = {};
                     rows.forEach(row => {
                         if (!row || row.roster_id == null || row.matchup_id == null) return;
@@ -1733,12 +1692,6 @@ function CompareTab({
                             <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.72, marginTop: '3px' }}>
                                 {biggestEdges[0] ? posLabel(biggestEdges[0].pos) : 'Roster'} is the biggest swing: {(biggestEdges[0]?.diff || 0) > 0 ? '+' : ''}{(biggestEdges[0]?.diff || 0).toLocaleString()} {valueShortLabel}.
                             </div>
-                            {gm.hasStrategy ? (
-                                <div title={gmPostureFrame.hint} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '7px', padding: '3px 9px', borderRadius: '999px', border: '1px solid ' + gmPostureFrame.color, background: 'rgba(0,0,0,0.28)' }}>
-                                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: gmPostureFrame.color, flexShrink: 0 }}></span>
-                                    <span style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850, color: gmPostureFrame.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{gmPostureFrame.label}</span>
-                                </div>
-                            ) : null}
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <div style={labelStyle}>Opponent</div>
@@ -1927,17 +1880,13 @@ function CompareTab({
                         const maxLen = Math.max(summary.myAtPos.length, summary.theirAtPos.length);
                         const total = Math.max(1, summary.myPosDHQ + summary.theirPosDHQ);
                         const myPosPct = summary.myPosDHQ / total * 100;
-                        const isTargetRoom = gmTargetPositions.has(String(summary.pos));
                         return (
-                            <div key={summary.pos} style={{ marginBottom: '12px', ...panelStyle, overflow: 'hidden', border: isTargetRoom ? '1px solid var(--acc-line2, rgba(212,175,55,0.35))' : panelStyle.border }}>
-                                <div style={{ padding: '9px 10px 10px', background: isTargetRoom ? 'var(--acc-fill1, rgba(212,175,55,0.06))' : (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
+                            <div key={summary.pos} style={{ marginBottom: '12px', ...panelStyle, overflow: 'hidden' }}>
+                                <div style={{ padding: '9px 10px 10px', background: (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '10px' }}>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-                                            <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: isTargetRoom ? 'var(--gold)' : posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
-                                            {isTargetRoom ? <span title="Target room from your GM Strategy — win this matchup here" style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850, color: 'var(--gold)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', letterSpacing: '0.04em' }}>TARGET</span> : null}
-                                        </span>
+                                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
                                         <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                            <span style={{ color: isTargetRoom ? 'var(--gold)' : summary.myPosDHQ >= summary.theirPosDHQ ? 'var(--good)' : 'var(--silver)', fontWeight: isTargetRoom ? 800 : 400 }}>You: {summary.myPosDHQ.toLocaleString()}</span>
+                                            <span style={{ color: summary.myPosDHQ >= summary.theirPosDHQ ? 'var(--good)' : 'var(--silver)' }}>You: {summary.myPosDHQ.toLocaleString()}</span>
                                             <span style={{ color: summary.theirPosDHQ >= summary.myPosDHQ ? 'var(--good)' : 'var(--silver)' }}>Them: {summary.theirPosDHQ.toLocaleString()}</span>
                                             <span style={{ fontWeight: 800, color: summary.diff > 0 ? 'var(--good)' : summary.diff < 0 ? 'var(--bad)' : 'var(--silver)' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
                                         </div>

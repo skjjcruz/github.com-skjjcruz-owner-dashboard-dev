@@ -73,10 +73,10 @@
 
         // Stats grid renderer (used by md/lg/tall/xxl)
         function statGrid(stats, cols) {
-            return React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(' + cols + ', minmax(0, 1fr))', gap: '6px', flexShrink: 0 } },
-                ...stats.map(s => React.createElement('div', { key: s.label, style: { background: 'var(--black)', border: '1px solid var(--ov-3, rgba(255,255,255,0.05))', borderRadius: '6px', padding: '8px 6px', textAlign: 'center', minWidth: 0, overflow: 'hidden' } },
-                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.15rem', fontWeight: 700, color: s.col, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, s.val),
-                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, s.label),
+            return React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(' + cols + ', 1fr)', gap: '6px', flexShrink: 0 } },
+                ...stats.map(s => React.createElement('div', { key: s.label, style: { background: 'var(--black)', border: '1px solid var(--ov-3, rgba(255,255,255,0.05))', borderRadius: '6px', padding: '8px 6px', textAlign: 'center' } },
+                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.15rem', fontWeight: 700, color: s.col } }, s.val),
+                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' } }, s.label),
                 )),
             );
         }
@@ -115,10 +115,7 @@
                     )),
                 ),
                 earnedTop.length > 0 && React.createElement('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' } },
-                    ...earnedTop.map(a => {
-                        const tc = window.WrAchievements.tierColor(a.tier);
-                        return React.createElement('span', { key: a.id, title: a.label + ' — ' + a.description, style: { fontSize: '0.78rem', padding: '2px 4px', background: wrAlpha(tc, '14'), border: '1px solid ' + wrAlpha(tc, '44'), borderRadius: '4px' } }, a.icon);
-                    }),
+                    ...earnedTop.map(a => React.createElement('span', { key: a.id, title: a.label + ' — ' + a.description, style: { fontSize: '0.78rem', padding: '2px 4px', background: 'rgba(124,107,248,0.1)', border: '1px solid rgba(124,107,248,0.3)', borderRadius: '4px' } }, a.icon)),
                 ),
             );
         }
@@ -176,10 +173,7 @@
 
         // ── TALL: stats + record bar + champ banner + season timeline + earned badges ──
         if (size === 'tall') {
-            // Cap earned chips — the full 14-badge catalog overflows the fixed
-            // 2x4 card and clips silently; xxl shows the complete list.
-            const earnedTop = evald.earned.slice(0, 8);
-            const earnedHidden = evald.earned.length - earnedTop.length;
+            const earnedTop = evald.earned;
             const inProgress = evald.unearned.filter(a => a.progress > 0 && a.progress < 1).slice(0, 3);
             return React.createElement('div', { style: base, onClick: jump },
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
@@ -210,7 +204,6 @@
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' } }, 'Earned · ' + earnedCount + '/' + totalCatalog),
                     React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px' } },
                         ...earnedTop.map(a => achievementChip(a)),
-                        earnedHidden > 0 ? React.createElement('div', { key: '_more', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '5px 8px', borderRadius: '6px', border: '1px dashed var(--ov-5, rgba(255,255,255,0.08))', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7 } }, '+' + earnedHidden + ' more in Trophy Room') : null,
                     ),
                 ),
                 // In-progress badges
@@ -232,10 +225,10 @@
             evald.unearned.forEach(a => { if (byTier[a.tier]) byTier[a.tier].unearned.push(a); });
 
             return React.createElement('div', { style: base, onClick: jump },
-                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, flexWrap: 'wrap' } },
+                React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 } },
                     React.createElement('span', { style: { fontSize: '1.2rem' } }, '🏆'),
-                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em', flex: 1, minWidth: 0 } }, 'My Trophies · Legacy'),
-                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontFamily: 'JetBrains Mono, monospace', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, mine.totalGames + ' games · ' + Math.round(mine.winPct) + '% · ' + earnedCount + '/' + totalCatalog + ' badges'),
+                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em', flex: 1 } }, 'My Trophies · Legacy'),
+                    React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontFamily: 'JetBrains Mono, monospace' } }, mine.totalGames + ' games · ' + Math.round(mine.winPct) + '% · ' + earnedCount + '/' + totalCatalog + ' badges'),
                 ),
                 statGrid(tallStats, 5),
                 // Champ + Runner-Up banners
@@ -254,7 +247,7 @@
                     ),
                 ),
                 // Bottom 2-col: Season timeline (left) + Achievements (right)
-                React.createElement('div', { style: { flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', overflow: 'hidden' } },
+                React.createElement('div', { style: { flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1.3fr)', gap: '12px', overflow: 'hidden' } },
                     // Season timeline
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' } },
                         React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' } }, 'Season Timeline'),
@@ -295,7 +288,7 @@
                                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: tc, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' } },
                                         window.WrAchievements.tierLabel(tier), ' · ', earned.length, '/', earned.length + unearned.length,
                                     ),
-                                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '4px' } },
+                                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px' } },
                                         ...earned.map(a => achievementChip(a)),
                                         ...unearned.map(a => achievementChip(a)),
                                     ),

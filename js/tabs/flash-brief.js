@@ -107,10 +107,6 @@ function IntelligenceBriefWidget({
 	  setActiveTab,
 	  navigateWidget,
 	}) {
-    // GM Strategy is the single source of truth — drives Alex's brief voice
-    // (alexPersonality) and the fallback waiver filters (faFilters).
-    const gm = window.WR.GmMode.useGmEffects(currentLeague);
-
     const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
     const myAssess = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
     const tier = (myAssess?.tier || 'UNKNOWN').toUpperCase();
@@ -167,22 +163,10 @@ function IntelligenceBriefWidget({
 	        const normPos = window.App?.normPos || (p => p);
         const rostered = new Set();
         (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
-        // GM Strategy FA filters — keep this rough fallback consistent with the FA tab.
-        const faF = gm.faFilters || null;
-        const faMinDhq = Number(faF?.minDhq) || 0;
-        const faMaxAge = Number(faF?.maxAge) || 0;
-        const faExclude = new Set((Array.isArray(faF?.excludePositions) ? faF.excludePositions : [])
-            .map(x => String(normPos(x) || x).toUpperCase()).filter(Boolean));
-        const passesGmFa = (pid, p, pos) => {
-            if (faMinDhq && (scores[pid] || 0) < faMinDhq) return false;
-            if (faExclude.has(String(pos).toUpperCase())) return false;
-            if (faMaxAge && Number(p.age) && Number(p.age) > faMaxAge) return false;
-            return true;
-        };
         const needPos = typeof needs[0] === 'string' ? needs[0] : needs[0]?.pos;
         if (!needPos) return null;
         const candidates = Object.entries(playersData || {})
-            .filter(([pid, p]) => !rostered.has(pid) && normPos(p.position) === needPos && p.team && p.active !== false && (scores[pid] || 0) >= 1500 && passesGmFa(pid, p, needPos))
+            .filter(([pid, p]) => !rostered.has(pid) && normPos(p.position) === needPos && p.team && p.active !== false && (scores[pid] || 0) >= 1500)
             .map(([pid, p]) => ({ pid, name: p.full_name || '', dhq: scores[pid] || 0, pos: needPos, team: p.team }))
             .sort((a, b) => b.dhq - a.dhq);
         if (!candidates.length && needs.length > 1) {
@@ -190,14 +174,14 @@ function IntelligenceBriefWidget({
                 const altPos = typeof needs[i] === 'string' ? needs[i] : needs[i]?.pos;
                 if (!altPos) continue;
                 const alt = Object.entries(playersData || {})
-                    .filter(([pid, p]) => !rostered.has(pid) && normPos(p.position) === altPos && p.team && p.active !== false && (scores[pid] || 0) >= 1500 && passesGmFa(pid, p, altPos))
+                    .filter(([pid, p]) => !rostered.has(pid) && normPos(p.position) === altPos && p.team && p.active !== false && (scores[pid] || 0) >= 1500)
                     .map(([pid, p]) => ({ pid, name: p.full_name || '', dhq: scores[pid] || 0, pos: altPos, team: p.team }))
                     .sort((a, b) => b.dhq - a.dhq);
                 if (alt.length) return alt[0];
             }
         }
         return candidates[0] || null;
-	    }, [rosterState.isUsable, needs, playersData, statsData, prevStatsData, myRoster, currentLeague, briefDraftInfo, scores, timeRecomputeTs, faModuleTick, gm.faFilters]);
+	    }, [rosterState.isUsable, needs, playersData, statsData, prevStatsData, myRoster, currentLeague, briefDraftInfo, scores, timeRecomputeTs, faModuleTick]);
 
     // Key drops (high-value players dropped in last 3 weeks)
     const keyDrops = useMemo(() => {
@@ -236,13 +220,7 @@ function IntelligenceBriefWidget({
     // Greeting based on time of day + personality
     const hour = new Date().getHours();
     const userName = window.S?.user?.display_name || window.S?.user?.username || 'Commander';
-    // GM Strategy's alexPersonality wins over the legacy wr_alex_style key.
-    // Map the strategy voice to the closest BRIEF_PERSONALITY preset; fall back
-    // to wr_alex_style / default only when the user has no GM Strategy yet.
-    const GM_VOICE_TO_BRIEF = { aggressive: 'closer', value_hunter: 'strategist', balanced: 'default' };
-    const alexStyle = (gm.hasStrategy && GM_VOICE_TO_BRIEF[gm.alexPersonality])
-        || localStorage.getItem('wr_alex_style')
-        || 'default';
+    const alexStyle = localStorage.getItem('wr_alex_style') || 'default';
     const p = BRIEF_PERSONALITY[alexStyle] || BRIEF_PERSONALITY.default;
     const greetingText = p.greeting(hour, userName);
 
