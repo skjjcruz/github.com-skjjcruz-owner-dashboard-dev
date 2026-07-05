@@ -15,9 +15,7 @@
 //   alertThreshold:    0-100  minimum confidence % to surface an insight
 //   maxAlertsPerWeek:  1-20   cap on surfaced insight count
 //   minPointsDelta:    0-10   smallest point swing needed for lineup-scope insights
-//   tradeAggression:   0-100  RETIRED AS MASTER — GM Strategy (WR.GmMode) now
-//                             owns the acceptance floor. Kept only so old
-//                             persisted blobs load and as a strategy-less fallback.
+//   tradeAggression:   0-100  controls trade package range and acceptance floor
 //   focus: {
 //     startSit:  bool
 //     trades:    bool
@@ -82,17 +80,7 @@
 
     function get() { return load(); }
 
-    // RETIRED AS MASTER: GM Strategy (WR.GmMode) is now the single source of
-    // truth for the trade acceptance floor. This defers to GmMode.effects when a
-    // strategy exists; the legacy tradeAggression-slider math only runs as the
-    // fallback for strategy-less leagues so old behavior is preserved there.
-    function actionableTradeAcceptanceFloor(settings, leagueId) {
-        try {
-            const eff = window.WR?.GmMode?.effects?.(leagueId);
-            if (eff && eff.hasStrategy && Number.isFinite(Number(eff.acceptanceFloor))) {
-                return Math.round(Number(eff.acceptanceFloor));
-            }
-        } catch (_) { /* fall through to legacy slider math */ }
+    function actionableTradeAcceptanceFloor(settings) {
         const source = settings && typeof settings === 'object' ? settings : load();
         const raw = Number(source?.tradeAggression);
         const aggression = Number.isFinite(raw)

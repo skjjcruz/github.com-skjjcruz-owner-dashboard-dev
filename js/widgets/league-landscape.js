@@ -24,33 +24,6 @@
         const cardStyle = window.WrTheme?.cardStyle?.() || {};
         const fs = (rem) => window.WrTheme?.fontSize?.(rem) || (rem + 'rem');
 
-        // GM Strategy is the single source of truth — frame the field by posture.
-        const gm = window.WR.GmMode.useGmEffects(currentLeague);
-        const posture = gm?.marketPosture || 'hold';
-        // buy_low → surface sellers/rebuilders (buy-FROM targets, low tiers);
-        // sell_high → surface buyers/contenders (sell-TO targets, high tiers).
-        const postureFrame = React.useMemo(() => {
-            if (!gm?.hasStrategy) return null;
-            if (posture === 'buy_low') return {
-                label: 'BUY-FROM TARGETS',
-                hint: 'Rebuilders to pry talent from',
-                accent: colors.positive || 'var(--win-green)',
-                tiers: new Set(['REBUILDING', 'CROSSROADS']),
-            };
-            if (posture === 'sell_high') return {
-                label: 'SELL-TO TARGETS',
-                hint: 'Contenders shopping for the stretch',
-                accent: colors.accent || 'var(--gold)',
-                tiers: new Set(['ELITE', 'CONTENDER']),
-            };
-            return null;
-        }, [gm?.hasStrategy, posture, colors.positive, colors.accent]);
-
-        function postureBadge() {
-            if (!postureFrame) return null;
-            return <span title={postureFrame.hint} style={{ fontSize: fs(0.52), padding: '1px 6px', borderRadius: 3, background: wrAlpha(postureFrame.accent, '18'), color: postureFrame.accent, border: '1px solid ' + wrAlpha(postureFrame.accent, '33'), fontWeight: 700, fontFamily: fonts.ui, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{postureFrame.label}</span>;
-        }
-
         const allAssess = React.useMemo(() => {
             if (typeof window.assessAllTeamsFromGlobal === 'function') return window.assessAllTeamsFromGlobal() || [];
             return [];
@@ -126,11 +99,6 @@
                     }}>
                         <span style={{ fontWeight: 700, color: colors.text }}>{txnCount}</span> league moves recently
                     </div>
-                    {postureFrame && (
-                        <div style={{ fontSize: fs(0.54), color: postureFrame.accent, fontFamily: fonts.ui, fontWeight: 700, letterSpacing: '0.04em' }}>
-                            {postureFrame.label}
-                        </div>
-                    )}
                 </div>
             );
         }
@@ -141,12 +109,12 @@
             const maxH = Math.max(...top5.map(a => a.healthScore || 0), 1);
             return (
                 <div onClick={onClick} style={{ ...cardStyle, padding: 'var(--card-pad, 12px 14px)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '0.95rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(0.85), fontWeight: 700, color: colors.accent, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Top of the League</span>
                         <span style={{ fontSize: fs(0.6), color: colors.textMuted, fontFamily: fonts.ui }}>You: #{myRank || '—'}</span>
                     </div>
-                    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
                         {top5.map((a, i) => {
                             const isMe = a.rosterId && (currentLeague?.rosters || []).find(r => r.roster_id === a.rosterId)?.owner_id === sleeperUserId;
                             const name = getOwnerName ? getOwnerName(a.rosterId) : ('Team ' + (i + 1));
@@ -155,7 +123,7 @@
                             return (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <span style={{ fontSize: fs(0.7), color: i < 3 ? colors.accent : colors.textMuted, fontWeight: 700, width: 14, textAlign: 'right', fontFamily: fonts.mono }}>{i + 1}</span>
-                                    <div style={{ flex: 1, minWidth: 0, position: 'relative', height: 16, borderRadius: theme.card?.radius === '0px' ? '0' : '3px', overflow: 'hidden', background: 'var(--ov-3, rgba(255,255,255,0.04))' }}>
+                                    <div style={{ flex: 1, minWidth: 0, position: 'relative', height: 18, borderRadius: theme.card?.radius === '0px' ? '0' : '3px', overflow: 'hidden', background: 'var(--ov-3, rgba(255,255,255,0.04))' }}>
                                         <div style={{ width: pct + '%', height: '100%', background: isMe ? colors.accent : tc, opacity: isMe ? 1 : 0.3, borderRadius: 'inherit' }} />
                                         <span style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', fontSize: fs(0.62), fontWeight: isMe ? 800 : 600, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%', fontFamily: fonts.ui }}>{isMe ? '★ ' : ''}{(name || '').slice(0, 16)}</span>
                                     </div>
@@ -214,14 +182,11 @@
                         const scores = window.App?.LI?.playerScores || {};
                         const roster = (currentLeague?.rosters || []).find(r => r.roster_id === a.rosterId);
                         const rosterDHQ = roster ? (roster.players || []).reduce((s, pid) => s + (scores[pid] || 0), 0) : 0;
-                        // Posture-driven target: rival in the posture's tier band (not me).
-                        const isTarget = !isMe && postureFrame && postureFrame.tiers.has(a.tier);
                         return (
-                            <div key={i} title={isTarget ? postureFrame.label + ' · ' + postureFrame.hint : undefined} style={{
+                            <div key={i} style={{
                                 display: 'flex', alignItems: 'center', gap: '6px', padding: compact ? '2px 0' : '3px 0',
                                 borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))',
-                                background: isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : (isTarget ? wrAlpha(postureFrame.accent, '0a') : 'transparent'),
-                                boxShadow: isTarget ? ('inset 2px 0 0 ' + postureFrame.accent) : 'none',
+                                background: isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent',
                             }}>
                                 <span style={{ fontSize: fs(0.62), color: i < 3 ? colors.accent : colors.textMuted, fontWeight: 700, width: 14, textAlign: 'right', fontFamily: fonts.mono }}>{i + 1}</span>
                                 <span style={{ flex: 1, fontSize: fs(0.66), fontWeight: isMe ? 700 : 500, color: isMe ? colors.accent : colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -267,7 +232,6 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(0.95), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>League Landscape</span>
-                        {postureBadge()}
                         <span style={{ fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui }}>{txnCount} moves</span>
                         {analyticsButton()}
                     </div>
@@ -290,7 +254,6 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1.1rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(1.0), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>League Landscape</span>
-                        {postureBadge()}
                         <span style={{ fontSize: fs(0.66), color: colors.textMuted, fontFamily: fonts.ui }}>{txnCount} moves</span>
                         {analyticsButton()}
                     </div>
@@ -326,17 +289,13 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(0.95), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>League Landscape</span>
-                        {postureBadge()}
                         <span style={{ fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui }}>{txnCount} moves · You #{myRank || '—'}</span>
                         {analyticsButton()}
                     </div>
                     <div style={{ marginBottom: '8px', flexShrink: 0 }}>{renderTierStrip()}</div>
                     <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' }}>
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
-                                <span style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: fonts.ui }}>Power Standings</span>
-                                {postureFrame && <span style={{ fontSize: fs(0.52), color: postureFrame.accent, fontFamily: fonts.ui, fontWeight: 600 }}>· {postureFrame.hint}</span>}
-                            </div>
+                            <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Power Standings</div>
                             {renderStandings(top12, { compact: true, cols: 'all' })}
                         </div>
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
@@ -368,7 +327,6 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1.1rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(1.05), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>League Landscape</span>
-                        {postureBadge()}
                         <span style={{ fontSize: fs(0.66), color: colors.textMuted, fontFamily: fonts.ui }}>{txnCount} moves · You #{myRank || '—'} of {total}</span>
                         {analyticsButton()}
                     </div>
@@ -377,10 +335,7 @@
                         {/* Left col: full standings + dhq chart */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0, minHeight: 0 }}>
                             <div style={{ minHeight: 0, overflow: 'hidden' }}>
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
-                                    <span style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: fonts.ui }}>Power Standings</span>
-                                    {postureFrame && <span style={{ fontSize: fs(0.54), color: postureFrame.accent, fontFamily: fonts.ui, fontWeight: 600 }}>· {postureFrame.hint}</span>}
-                                </div>
+                                <div style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Power Standings</div>
                                 {renderStandings(all, { compact: true, cols: 'all' })}
                             </div>
                             <div style={{ flexShrink: 0 }}>

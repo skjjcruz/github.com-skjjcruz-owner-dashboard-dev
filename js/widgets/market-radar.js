@@ -21,25 +21,6 @@
         const fs = (rem) => window.WrTheme?.fontSize?.(rem) || (rem + 'rem');
         const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
 
-        // ── GM Strategy (single source of truth) ──
-        const gm = window.WR.GmMode.useGmEffects(currentLeague);
-        const gmTargets = gm.targetPositions || new Set();        // positions to pursue
-        const gmFa = gm.faFilters || null;                        // FA-tab waiver filters
-        const posture = gm.marketPosture || 'hold';               // buy_low|sell_high|hold|exploit
-        // Mirrors free-agency.js gmFaPeakYears: peak years remaining for a pos/age.
-        const gmFaPeakYears = (pos, age) => {
-            const curve = (typeof window.App?.getAgeCurve === 'function' ? window.App.getAgeCurve(pos) : null)
-                || { peak: (window.App?.peakWindows || {})[pos] || [24, 29] };
-            const peakEnd = (curve.peak && curve.peak[1]) || 29;
-            return Math.max(0, peakEnd - (Number(age) || 25));
-        };
-        const POSTURE_LABEL = {
-            buy_low: 'BUY-LOW · target sellers',
-            sell_high: 'SELL-HIGH · target buyers',
-            exploit: 'EXPLOIT · target inefficiency',
-            hold: 'HOLD · mutual-fit deals',
-        };
-
         const myAssess = React.useMemo(() => {
             if (typeof window.assessTeamFromGlobal === 'function' && myRoster?.roster_id) {
                 return window.assessTeamFromGlobal(myRoster.roster_id);
@@ -71,19 +52,9 @@
                     const user = roster ? (currentLeague?.users || window.S?.leagueUsers || []).find(u => u.user_id === roster.owner_id) : null;
                     const name = user?.metadata?.team_name || user?.display_name || ('Team ' + a.rosterId);
                     const avatar = user?.avatar || null;
-                    // ── GM posture fit: nudge (don't replace) partner ordering ──
-                    // Re-frame WHO to approach by my market posture. A small bonus so
-                    // strategy-aligned partners float up without erasing compatibility.
-                    const win = a.window;
-                    const hurting = (a.healthScore || 0) < 40;       // undervalued / injured / panicking
-                    let postureFit = 0;
-                    if (posture === 'buy_low') postureFit = (win === 'REBUILDING' ? 1 : 0) + (hurting ? 1 : 0);
-                    else if (posture === 'sell_high') postureFit = (win === 'CONTENDING' ? 2 : 0);
-                    else if (posture === 'exploit') postureFit = hurting ? 2 : 0;
-                    else postureFit = (theirSurplusFillsMe.length && myStrengthsFillThem.length) ? 1 : 0; // hold: mutual fit
                     return {
                         ...a,
-                        compat, name, avatar, postureFit,
+                        compat, name, avatar,
                         theySurplus: theirSurplusFillsMe,         // their strengths that fill my needs
                         myOffers: myStrengthsFillThem,             // my strengths that fill their needs
                         theirNeeds: theirNeeds.slice(0, 3),
@@ -91,9 +62,9 @@
                     };
                 })
                 .filter(a => a.compat > 0)
-                .sort((a, b) => (b.compat + b.postureFit * 8) - (a.compat + a.postureFit * 8) || b.compat - a.compat)
+                .sort((a, b) => b.compat - a.compat)
                 .slice(0, 8);
-        }, [rosterState.isUsable, myAssess, allAssess, myRoster?.roster_id, posture]);
+        }, [rosterState.isUsable, myAssess, allAssess, myRoster?.roster_id]);
 
         const dealCount = tradeTargets.length;
         const topTarget = tradeTargets[0];
@@ -109,19 +80,11 @@
         }, [currentLeague, myRoster]);
 
         // Waiver targets (un-rostered, DHQ > threshold)
-        // GM faFilters (minDhq/maxAge/requirePrimeYears/excludePositions) are applied
-        // so this list matches the Free Agency tab's recommendation surface.
         const waiverTargets = React.useMemo(() => {
             if (!rosterState.isUsable) return [];
             const scores = window.App?.LI?.playerScores || {};
             const rostered = new Set();
             (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
-            const f = gmFa || {};
-            const exclude = (Array.isArray(f.excludePositions) ? f.excludePositions : [])
-                .map(p => String((window.App?.normPos?.(p)) || p || '').toUpperCase()).filter(Boolean);
-            const minDhq = Number(f.minDhq) || 0;
-            const maxAge = Number(f.maxAge) || 0;
-            const requirePrime = !!f.requirePrimeYears;
             return Object.entries(scores)
                 .filter(([pid]) => !rostered.has(pid) && scores[pid] > 1500)
                 .map(([pid, dhq]) => {
@@ -129,20 +92,12 @@
                     return {
                         pid, name: p.full_name || pid,
                         pos: window.App?.normPos?.(p.position) || p.position || '?',
-                        age: Number(p.age) || 0,
                         dhq, team: p.team || 'FA',
                     };
                 })
-                .filter(x => {
-                    if (minDhq && (Number(x.dhq) || 0) < minDhq) return false;
-                    if (exclude.includes(String(x.pos).toUpperCase())) return false;
-                    if (maxAge && x.age && x.age > maxAge) return false;
-                    if (requirePrime && !(gmFaPeakYears(x.pos, x.age) > 0)) return false;
-                    return true;
-                })
                 .sort((a, b) => b.dhq - a.dhq)
                 .slice(0, 12);
-        }, [rosterState.isUsable, currentLeague, playersData, gmFa]);
+        }, [rosterState.isUsable, currentLeague, playersData]);
 
         // Find a specific player from your surplus that fills their need
         const swapSuggestions = React.useMemo(() => {
@@ -269,9 +224,7 @@
                 <div onClick={onClick} style={{ ...cardStyle, padding: 'var(--card-pad, 12px 14px)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexShrink: 0 }}>
                         <span style={{ fontSize: '0.95rem' }}>📡</span>
-                        <span style={{ fontFamily: fonts.display, fontSize: fs(0.85), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Surplus Match</span>
-                        {gm.hasStrategy && <span title="GM Strategy posture" style={{ fontSize: fs(0.46), fontWeight: 700, color: colors.gold || 'var(--gold, #d4af37)', fontFamily: fonts.ui, letterSpacing: '0.05em', textTransform: 'uppercase', padding: '1px 5px', borderRadius: 3, background: wrAlpha(colors.gold || 'var(--gold, #d4af37)', '12') }}>{(posture || 'hold').replace('_', '-')}</span>}
-                        <span style={{ flex: 1 }} />
+                        <span style={{ fontFamily: fonts.display, fontSize: fs(0.85), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Surplus Match</span>
                         <span style={{ fontSize: fs(0.6), color: colors.textMuted, fontFamily: fonts.ui }}>{dealCount} fits</span>
                     </div>
                     {!top2.length && (
@@ -281,21 +234,17 @@
                     )}
                     {top2.length > 0 && (
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', minHeight: 0 }}>
-                            {top2.map((t, i) => {
-                                const hasTgt = (t.theySurplus || []).some(s => gmTargets.has(String(s)));
-                                const goldCol = colors.gold || 'var(--gold, #d4af37)';
-                                return (
-                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: hasTgt ? wrAlpha(goldCol, '10') : 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '4px', borderLeft: '2px solid ' + (hasTgt ? goldCol : (colors.purple || 'var(--k-7c6bf8, #7c6bf8)')) }}>
+                            {top2.map((t, i) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '4px', borderLeft: '2px solid ' + (colors.purple || 'var(--k-7c6bf8, #7c6bf8)') }}>
                                     {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0 }} alt="" /> : <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--ov-3, rgba(255,255,255,0.05))', flexShrink: 0 }} />}
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontSize: fs(0.7), fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
                                         <div style={{ fontSize: fs(0.6), color: colors.textMuted, fontFamily: fonts.ui }}>
-                                            surplus: <span style={{ color: hasTgt ? goldCol : colors.positive, fontWeight: hasTgt ? 800 : 700 }}>{t.theySurplus.join('/') || '—'}</span>
+                                            surplus: <span style={{ color: colors.positive, fontWeight: 700 }}>{t.theySurplus.join('/') || '—'}</span>
                                         </div>
                                     </div>
                                 </div>
-                                );
-                            })}
+                            ))}
                         </div>
                     )}
                 </div>
@@ -309,20 +258,6 @@
             const oneLine = !!opts.oneLine;
             const compatCol = t.compat >= 60 ? colors.positive : t.compat >= 30 ? colors.accent : colors.warn;
             const swap = swapSuggestions[t.rosterId || t.name];
-            // Surplus that lands a GM Strategy target position → gold-accented + bold.
-            const surplusHasTarget = (t.theySurplus || []).some(s => gmTargets.has(String(s)));
-            const goldCol = colors.gold || 'var(--gold, #d4af37)';
-            const renderSurplus = (defColor) => (t.theySurplus || []).length
-                ? (t.theySurplus || []).map((s, si) => {
-                    const hit = gmTargets.has(String(s));
-                    return (
-                        <React.Fragment key={si}>
-                            {si > 0 && <span style={{ color: colors.textFaint }}>/</span>}
-                            <span style={{ color: hit ? goldCol : defColor, fontWeight: hit ? 800 : 700 }}>{s}</span>
-                        </React.Fragment>
-                    );
-                })
-                : <span style={{ color: defColor, fontWeight: 700 }}>—</span>;
 
             if (oneLine) {
                 return (
@@ -330,15 +265,15 @@
                         display: 'flex', alignItems: 'center', gap: '6px',
                         padding: '3px 6px',
                         minHeight: '32px',
-                        background: surplusHasTarget ? wrAlpha(goldCol, '10') : 'var(--ov-1, rgba(255,255,255,0.02))',
+                        background: 'var(--ov-1, rgba(255,255,255,0.02))',
                         borderRadius: '4px',
-                        borderLeft: '2px solid ' + (surplusHasTarget ? goldCol : compatCol),
+                        borderLeft: '2px solid ' + compatCol,
                         cursor: 'pointer',
                     }}>
                         {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0 }} alt="" /> : <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--ov-3, rgba(255,255,255,0.05))', flexShrink: 0 }} />}
                         <span style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 80, maxWidth: 120 }}>{t.name}</span>
                         <span style={{ fontSize: fs(0.56), color: colors.textMuted, fontFamily: fonts.ui, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {renderSurplus(colors.positive)}
+                            <span style={{ color: colors.positive, fontWeight: 700 }}>{t.theySurplus.join('/') || '—'}</span>
                             {' for '}
                             <span style={{ color: colors.warn, fontWeight: 700 }}>{t.myOffers.join('/') || '—'}</span>
                         </span>
@@ -351,20 +286,19 @@
                 <div key={i} onClick={openTrades} style={{
                     padding: compact ? '4px 6px' : '6px 8px',
                     minHeight: '32px',
-                    background: surplusHasTarget ? wrAlpha(goldCol, '10') : 'var(--ov-1, rgba(255,255,255,0.02))',
+                    background: 'var(--ov-1, rgba(255,255,255,0.02))',
                     borderRadius: '4px',
-                    borderLeft: '2px solid ' + (surplusHasTarget ? goldCol : compatCol),
+                    borderLeft: '2px solid ' + compatCol,
                     marginBottom: '4px',
                     cursor: 'pointer',
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         {t.avatar ? <img src={avatarUrl(t.avatar)} style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0 }} alt="" /> : null}
                         <span style={{ flex: 1, fontSize: fs(compact ? 0.66 : 0.74), fontWeight: 700, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
-                        {surplusHasTarget && <span style={{ fontSize: fs(0.5), fontWeight: 700, color: goldCol, letterSpacing: '0.04em' }} title="Surplus matches a GM Strategy target position">TGT</span>}
                         <span style={{ fontSize: fs(0.62), fontWeight: 700, color: compatCol, fontFamily: fonts.mono }}>{t.compat}%</span>
                     </div>
                     <div style={{ fontSize: fs(compact ? 0.56 : 0.62), color: colors.textMuted, fontFamily: fonts.ui, marginTop: '1px' }}>
-                        their surplus: {renderSurplus(colors.positive)}
+                        their surplus: <span style={{ color: colors.positive, fontWeight: 700 }}>{t.theySurplus.join('/') || '—'}</span>
                         {' · '}
                         you offer: <span style={{ color: colors.warn, fontWeight: 700 }}>{t.myOffers.join('/') || '—'}</span>
                     </div>
@@ -380,13 +314,11 @@
         // ── Reusable waiver row ──
         function renderWaiver(p, i, compact) {
             const fillsNeed = myNeedPositions.includes(p.pos);
-            const isTarget = gmTargets.has(String(p.pos));   // GM Strategy pursue position
             return (
-                <div key={i} role="button" tabIndex={0} onClick={() => openCard(p.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(p.pid); } }} title={isTarget ? 'Strategy target position · open player card' : 'Open player card'} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px', minHeight: '32px', borderBottom: '1px solid var(--ov-1, rgba(255,255,255,0.02))', fontSize: fs(compact ? 0.62 : 0.66), cursor: 'pointer', background: isTarget ? wrAlpha(colors.gold || 'var(--gold, #d4af37)', '12') : 'transparent', borderLeft: isTarget ? '2px solid ' + (colors.gold || 'var(--gold, #d4af37)') : '2px solid transparent', marginLeft: isTarget ? '-4px' : 0 }}>
-                    <span style={{ flex: 1, fontWeight: isTarget ? 800 : 700, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: fonts.ui }}>{p.name}</span>
-                    <span style={{ fontSize: fs(0.5), padding: '0px 4px', borderRadius: 3, background: wrAlpha(window.App?.POS_COLORS?.[p.pos] || colors.accent, '22'), color: window.App?.POS_COLORS?.[p.pos] || colors.accent, fontWeight: 700 }}>{p.pos}</span>
-                    {isTarget && <span style={{ fontSize: fs(0.5), fontWeight: 700, color: colors.gold || 'var(--gold, #d4af37)' }} title="GM Strategy target position">TGT</span>}
-                    {!isTarget && fillsNeed && <span style={{ fontSize: fs(0.5), fontWeight: 700, color: colors.positive }}>NEED</span>}
+                <div key={i} role="button" tabIndex={0} onClick={() => openCard(p.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(p.pid); } }} title="Open player card" style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 0', minHeight: '32px', borderBottom: '1px solid var(--ov-1, rgba(255,255,255,0.02))', fontSize: fs(compact ? 0.62 : 0.66), cursor: 'pointer' }}>
+                    <span style={{ flex: 1, fontWeight: 700, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: fonts.ui }}>{p.name}</span>
+                    <span style={{ fontSize: fs(0.5), padding: '0px 4px', borderRadius: 3, background: (window.App?.POS_COLORS?.[p.pos] || colors.accent) + '22', color: window.App?.POS_COLORS?.[p.pos] || colors.accent, fontWeight: 700 }}>{p.pos}</span>
+                    {fillsNeed && <span style={{ fontSize: fs(0.5), fontWeight: 700, color: colors.positive }}>NEED</span>}
                     <span style={{ fontSize: fs(0.56), color: colors.textMuted, fontFamily: fonts.mono, minWidth: 28, textAlign: 'right' }}>{p.dhq >= 1000 ? (p.dhq / 1000).toFixed(1) + 'k' : p.dhq}</span>
                 </div>
             );
@@ -408,19 +340,14 @@
         }
 
         // ── Header ──
-        const postureLabel = POSTURE_LABEL[posture] || POSTURE_LABEL.hold;
         function header(opts = {}) {
             return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                     <span style={{ fontSize: opts.large ? '1.1rem' : '1rem' }}>📡</span>
-                    <span style={{ fontFamily: fonts.display, fontSize: fs(opts.large ? 1.05 : 0.95), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', letterSpacing: '0.07em', textTransform: 'uppercase' }}>Market Radar</span>
-                    {gm.hasStrategy && (
-                        <span title={'GM Strategy posture frames partner selection'} style={{ fontSize: fs(0.5), fontWeight: 700, color: colors.gold || 'var(--gold, #d4af37)', fontFamily: fonts.ui, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '1px 6px', borderRadius: 3, border: '1px solid ' + wrAlpha(colors.gold || 'var(--gold, #d4af37)', '40'), background: wrAlpha(colors.gold || 'var(--gold, #d4af37)', '12'), whiteSpace: 'nowrap' }}>{postureLabel}</span>
-                    )}
-                    <span style={{ flex: 1 }} />
+                    <span style={{ fontFamily: fonts.display, fontSize: fs(opts.large ? 1.05 : 0.95), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>Market Radar</span>
                     <span style={{ fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui }}>{dealCount} targets · ${faab.remaining}</span>
-                    <button onClick={openTrades} title="Open Trade Center" style={{ padding: '3px 8px', background: wrAlpha(colors.purple || 'var(--k-7c6bf8, #7c6bf8)', '1A'), color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', border: '1px solid ' + wrAlpha(colors.purple || 'var(--k-7c6bf8, #7c6bf8)', '47'), borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Trades</button>
-                    <button onClick={openFreeAgency} title="Open Free Agency" style={{ padding: '3px 8px', background: wrAlpha(colors.info || 'var(--k-3498db, #3498db)', '1A'), color: colors.info || 'var(--k-3498db, #3498db)', border: '1px solid ' + wrAlpha(colors.info || 'var(--k-3498db, #3498db)', '47'), borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>FA</button>
+                    <button onClick={openTrades} title="Open Trade Center" style={{ padding: '3px 8px', background: 'rgba(124,107,248,0.10)', color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', border: '1px solid rgba(124,107,248,0.28)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Trades</button>
+                    <button onClick={openFreeAgency} title="Open Free Agency" style={{ padding: '3px 8px', background: 'rgba(52,152,219,0.10)', color: colors.info || 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.28)', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>FA</button>
                 </div>
             );
         }
@@ -541,7 +468,7 @@
                     {/* Top strip: Surplus matrix | Leverage Board | FAAB context */}
                     <div style={{ marginBottom: '10px', flexShrink: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1.2fr) minmax(0, 1fr)', gap: '10px' }}>
                         {matrix.length > 0 ? (
-                            <div style={{ padding: '8px 10px', background: wrAlpha(colors.purple || 'var(--k-7c6bf8, #7c6bf8)', '0F'), border: '1px solid ' + wrAlpha(colors.purple || 'var(--k-7c6bf8, #7c6bf8)', '33'), borderRadius: '6px' }}>
+                            <div style={{ padding: '8px 10px', background: 'rgba(124,107,248,0.06)', border: '1px solid rgba(124,107,248,0.2)', borderRadius: '6px' }}>
                                 <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.purple || 'var(--k-7c6bf8, #7c6bf8)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Surplus by Position (your needs)</div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '6px' }}>
                                     {matrix.map((m, i) => (

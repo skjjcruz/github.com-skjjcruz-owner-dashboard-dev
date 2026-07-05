@@ -236,20 +236,6 @@
         const React = window.React;
         const h = React.createElement;
         const InsightCard = window.WR.InsightCard;
-        // GM Strategy is the source of truth. This is a hub-level cross-league card,
-        // so resolve the portfolio's representative posture from the first league
-        // (hook handles undefined) and feed it to the digest so server-side Alex
-        // tailors tone/recommendations. Live-updates on GM Strategy save.
-        const gm = window.WR.GmMode.useGmEffects((leagues || [])[0]);
-        const gmContext = React.useMemo(() => ({
-            mode: gm.mode,
-            modeLabel: gm.modeLabel,
-            alexPersonality: gm.alexPersonality,
-            marketPosture: gm.marketPosture,
-            timeline: gm.timeline,
-            targetPositions: Array.from(gm.targetPositions || new Set()),
-            hasStrategy: gm.hasStrategy,
-        }), [gm.mode, gm.modeLabel, gm.alexPersonality, gm.marketPosture, gm.timeline, gm.targetPositions, gm.hasStrategy]);
         // null = grounding still loading; built async because the roster
         // assessment may need the (cached) player DB + season stats.
         const [snapshots, setSnapshots] = React.useState(null);
@@ -269,7 +255,7 @@
             if (!snapshots || !snapshots.length) return;
             setState(prev => ({ ...prev, status: 'loading', error: null }));
             try {
-                const context = { leagues: snapshots, stateHash, gmStrategy: gmContext, ...(force ? { forceRefresh: true } : {}) };
+                const context = { leagues: snapshots, stateHash, ...(force ? { forceRefresh: true } : {}) };
                 const result = await window.OD.callAI({ type: 'dashboard_digest', context });
                 let insights = Array.isArray(result?.insights) ? result.insights : null;
                 if (!insights && typeof result?.analysis === 'string') {
@@ -295,7 +281,7 @@
                         : (e?.message || 'Could not generate insights right now.');
                 setState({ status: 'error', insights: null, error: msg });
             }
-        }, [snapshots, stateHash, key, gmContext]);
+        }, [snapshots, stateHash, key]);
 
         React.useEffect(() => {
             if (!snapshots || !snapshots.length) return;
@@ -320,21 +306,9 @@
             window.WR?.AIFeedback?.send?.({ leagueId: state.insights?.[idx]?.leagueId || null, surface: 'dashboard_digest', recId, action: 'dismissed' });
         };
 
-        // Light local framing: surface the portfolio's GM posture as a small accent.
-        const POSTURE_LABEL = { buy_low: 'Buy-Low Lens', sell_high: 'Sell-High Lens', hold: 'Hold Pattern', exploit: 'Exploit Mode' };
-        const gmFrame = gm.hasStrategy
-            ? (POSTURE_LABEL[gm.marketPosture] || gm.modeLabel || null)
-            : null;
-
         return h('div', { style: { marginBottom: '14px' } },
             h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
-                h('span', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase' } },
-                    "✨ Alex's Desk — Top Insights",
-                    gmFrame && h('span', {
-                        title: `Framed by your GM Strategy: ${gm.modeLabel}`,
-                        style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.06em', color: 'var(--silver)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '3px', padding: '1px 6px', opacity: 0.85 }
-                    }, gmFrame)
-                ),
+                h('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase' } }, "✨ Alex's Desk — Top Insights"),
                 h('button', {
                     onClick: () => !groundingPending && state.status !== 'loading' && generate(true),
                     title: 'Regenerate (uses one AI request)',
