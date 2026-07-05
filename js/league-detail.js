@@ -1441,10 +1441,30 @@
 
         useEffect(() => {
             if (activeTab === 'analytics' && !analyticsData && window.App?.LI_LOADED) {
-                const data = typeof runLeagueAnalytics === 'function' ? runLeagueAnalytics() : null;
-                setAnalyticsData(data);
+                // Defer the heavy synchronous analytics compute until the browser is
+                // idle, so the tab switch (and its highlight animation) paints first
+                // instead of freezing for ~1s while runLeagueAnalytics runs.
+                const run = () => {
+                    const data = typeof runLeagueAnalytics === 'function' ? runLeagueAnalytics() : null;
+                    setAnalyticsData(data);
+                };
+                const ric = window.requestIdleCallback;
+                const _id = ric ? ric(run, { timeout: 600 }) : setTimeout(run, 250);
+                return () => { (ric && window.cancelIdleCallback) ? window.cancelIdleCallback(_id) : clearTimeout(_id); };
             }
         }, [activeTab, analyticsData, timeRecomputeTs]);
+
+        // Warm the heavy Draft bundle (~1.26MB across 27 scripts) during idle after
+        // the app settles, so opening the Draft tab doesn't freeze the UI mid-tap.
+        // Uses requestIdleCallback (yields to interaction) with a setTimeout fallback.
+        useEffect(() => {
+            if (typeof window.wrLoadModuleGroup !== 'function') return;
+            if (typeof window.wrModuleGroupLoaded === 'function' && window.wrModuleGroupLoaded('draft')) return;
+            const warm = () => { try { window.wrLoadModuleGroup('draft'); } catch (e) {} };
+            const ric = window.requestIdleCallback;
+            const _id = ric ? ric(warm, { timeout: 5000 }) : setTimeout(warm, 3000);
+            return () => { (ric && window.cancelIdleCallback) ? window.cancelIdleCallback(_id) : clearTimeout(_id); };
+        }, []);
 
         // Auto-populate home page content when data is ready
         useEffect(() => {
