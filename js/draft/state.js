@@ -153,14 +153,6 @@
         const learning = opts.recapLearning || null;
         const gmMode = inferGmMode(leagueId, opts);
         const gmAdjust = gmModeDraftAdjustment(gmMode);
-        // GM Strategy aggression nudges in-draft trade frequency on top of mode
-        // (conservative trades less, aggressive trades more).
-        try {
-            const eff = window.WR?.GmMode?.effects?.(leagueId);
-            if (eff && Number.isFinite(eff.aggression)) {
-                gmAdjust.tradeActivity = (gmAdjust.tradeActivity || 0) + Math.round((eff.aggression - 0.52) * 40);
-            }
-        } catch (_) { /* ignore */ }
         let tuning = mergeDraftTuning(base, preset.tuning);
 
         DRAFT_TUNING_KEYS.forEach(key => {
@@ -691,20 +683,10 @@
             if (typeof window.getProspects === 'function') {
                 const prospects = window.getProspects();
                 if (prospects && prospects.length) {
-                    return prospects.map(p => {
+                    return prospects.slice(0, maxSize).map(p => {
                         const sleeper = matchSleeperRookie(p, playersData);
                         const sid = sleeper?.pid || p.sleeperId || p.player_id || p.playerId || p.pid;
                         const resolved = resolvePlayerDhq({ ...p, pid: sid, csv: p, player: sleeper?.player, name: sleeper?.player?.full_name || p.name });
-                        // Determine NFL experience. matchSleeperRookie only matches
-                        // years_exp===0 players, so a returning player (e.g. a 2nd-year
-                        // IDP that leaked into the prospect CSV) comes back as no match —
-                        // look it up by its resolved id so we still see its real
-                        // experience. No id / not in the player DB ⇒ incoming rookie.
-                        const sleeperPlayer = sleeper?.player
-                            || (sid != null ? (playersData || window.S?.players || {})[sid] : null)
-                            || null;
-                        const yearsExpRaw = sleeperPlayer?.years_exp ?? sleeperPlayer?.yearsExp;
-                        const yearsExp = Number.isFinite(Number(yearsExpRaw)) ? Number(yearsExpRaw) : null;
                         return {
                             pid: sid || p.pid,
                             csvPid: p.pid,
@@ -713,9 +695,6 @@
                             team: sleeper?.player?.team || '',
                             college: p.college || p.school || sleeper?.player?.college || '',
                             age: p.age || p.csv?.age || sleeper?.player?.age || null,
-                            yearsExp,
-                            years_exp: yearsExp,
-                            isRookie: yearsExp == null || yearsExp === 0,
                             dhq: resolved.value,
                             csv: p,
                             photoUrl: sleeper
@@ -730,14 +709,7 @@
                             source: resolved.source,
                             isCSV: true,
                         };
-                    })
-                        // Rookie pool = first-year players only. Drop any prospect that
-                        // resolved to a Sleeper player with NFL experience — those are
-                        // returning players (e.g. 2nd-year IDP scored on real production)
-                        // that don't belong on the rookie board.
-                        .filter(p => p.yearsExp == null || p.yearsExp === 0)
-                        .sort((a, b) => (b.dhq || 0) - (a.dhq || 0))
-                        .slice(0, maxSize);
+                    }).sort((a, b) => (b.dhq || 0) - (a.dhq || 0));
                 }
             }
             // Fall through to startup if CSV missing
@@ -2665,7 +2637,6 @@
             schemaVersion: 'draft-recap-v5',
             id: opts.id || ('recap_' + Date.now()),
             leagueId: state?.leagueId || '',
-            sleeperDraftId: state?.sleeperDraftId || null,
             season: state?.season || new Date().getFullYear(),
             mode: state?.mode || 'solo',
             variant: state?.variant || 'startup',
@@ -2695,40 +2666,6 @@
             ownerLearning,
             savedAt: Date.now(),
         };
-    }
-
-    // ── selectCurrentDraft — the league's "draft of record" ─────────────
-    // The single rule every draft surface should use to decide which Sleeper
-    // draft owns the room:
-    //   1. 'live'     — a draft is actively drafting.
-    //   2. 'review'   — the most recently completed draft, which STAYS current
-    //                   until genuinely superseded: another draft goes live, or
-    //                   a pre_draft draft is CREATED after this one finished.
-    //                   (A league that pre-schedules its next draft — e.g. a
-    //                   UDFA frenzy queued up before the rookie draft ran —
-    //                   must NOT evict the just-completed draft.)
-    //   3. 'upcoming' — the next scheduled pre_draft by start time.
-    // Returns { draft, reason } with reason 'live'|'review'|'upcoming'|'none'.
-    function selectCurrentDraft(drafts) {
-        const list = (Array.isArray(drafts) ? drafts : []).filter(d => d && d.draft_id);
-        if (!list.length) return { draft: null, reason: 'none' };
-        const live = list.find(d => d.status === 'drafting');
-        if (live) return { draft: live, reason: 'live' };
-        const completedAtOf = d => Number(d.last_picked || d.start_time || d.created || 0);
-        const latestComplete = list.filter(d => d.status === 'complete')
-            .sort((a, b) => completedAtOf(b) - completedAtOf(a))[0] || null;
-        const nextPre = list.filter(d => d.status === 'pre_draft')
-            .sort((a, b) => (Number(a.start_time) || Infinity) - (Number(b.start_time) || Infinity))[0] || null;
-        if (latestComplete) {
-            const completedAt = completedAtOf(latestComplete);
-            const superseded = list.some(d => d.status === 'pre_draft'
-                && String(d.draft_id) !== String(latestComplete.draft_id)
-                && Number(d.created || 0) > completedAt);
-            if (!superseded) return { draft: latestComplete, reason: 'review' };
-        }
-        if (nextPre) return { draft: nextPre, reason: 'upcoming' };
-        if (latestComplete) return { draft: latestComplete, reason: 'review' };
-        return { draft: list[0], reason: 'upcoming' };
     }
 
     function draftLearningKey(leagueId) {
@@ -3015,7 +2952,6 @@
         initialDraftState,
         normalizeLeagueTypeValue,
         detectDraftVariant,
-        selectCurrentDraft,
         buildPool,
         buildPickOrder,
         resolvePlayerDhq,
