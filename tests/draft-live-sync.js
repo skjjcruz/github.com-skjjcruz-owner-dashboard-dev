@@ -319,6 +319,26 @@ test('live sync confirms a manual pick that matched reality without duplicating 
   eq(reconciled.liveSync.reconciledCount, 1, 'reconcile counted');
 });
 
+test('live ownership update re-attributes only upcoming picks', () => {
+  const slotToRoster = { 1: { rosterId: 'A', ownerName: 'TeamA' }, 2: { rosterId: 'B', ownerName: 'TeamB' }, 3: { rosterId: 'C', ownerName: 'TeamC' } };
+  const order = ctx.DraftCC.state.buildPickOrder(2, 3, 'linear', slotToRoster, {});
+  const state = { pickOrder: order, currentIdx: 2 }; // first two picks already made
+  // Mid-draft trades: C's upcoming R1.3 -> Z, B's R2.2 -> W; A's already-made R1.1 -> X must be ignored.
+  const ownership = {
+    '1-1': { rosterId: 'X', ownerName: 'TeamX', traded: true },
+    '1-3': { rosterId: 'Z', ownerName: 'TeamZ', traded: true },
+    '2-2': { rosterId: 'W', ownerName: 'TeamW', traded: true },
+  };
+  const next = ctx.DraftCC.state.reducer(state, { type: 'UPDATE_LIVE_OWNERSHIP', pickOwnership: ownership });
+  eq(next.pickOrder[0].rosterId, 'A', 'already-made pick keeps its drafter');
+  eq(next.pickOrder[0].traded, false, 'already-made pick not retroactively marked traded');
+  eq(next.pickOrder[2].rosterId, 'Z', 'upcoming pick re-attributed to new owner');
+  eq(next.pickOrder[2].ownerName, 'TeamZ', 'upcoming owner name refreshed');
+  eq(next.pickOrder[4].rosterId, 'W', 'second upcoming pick re-attributed');
+  const again = ctx.DraftCC.state.reducer(next, { type: 'UPDATE_LIVE_OWNERSHIP', pickOwnership: ownership });
+  ok(again === next, 'no-op returns the same state when ownership is unchanged');
+});
+
 test('state stores staged live offers for handoff', () => {
   const initial = ctx.DraftCC.state.initialDraftState({ mode: 'live-sync', leagueId: 'L1', userRosterId: 1 });
   const withDrawer = ctx.DraftCC.state.reducer(initial, { type: 'OPEN_PROPOSER', targetRosterId: 2 });

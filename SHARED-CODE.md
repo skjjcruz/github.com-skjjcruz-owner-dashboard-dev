@@ -1,28 +1,34 @@
 # Shared Code Contract
 
-**ReconAI (`reconai/`) is the canonical owner of all shared logic.**
-War Room (`warroom/`) consumes it as a build-time vendored copy
-(`reconai-shared/`), synced from ReconAI at deploy time.
+**The `skjjcruz/DHQ-Shared` repo is the canonical owner of all shared
+engine logic.** Both War Room (`warroom/`) and ReconAI/Scout (`reconai/`) vendor
+these 38 modules into their own build at deploy time — neither app depends on the
+other's repo, and there is no runtime CDN dependency between them.
 
 ---
 
-## How shared code reaches War Room
+## Source of truth
 
-War Room **vendors** ReconAI's shared modules into `reconai-shared/` at
-**deploy time** and loads them same-origin through `js/shared/shared-loader.js`.
-The Pages deploy (`.github/workflows/deploy.yml`) checks out the ReconAI repo
-and runs `npm run sync:shared` so the artifact always ships a fresh copy.
+```
+skjjcruz/DHQ-Shared   (38 modules + manifest.json)
+```
 
-The legacy runtime CDN
-(`https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/`) is now a
-**debug-only escape hatch**, reachable with `?shared=remote`. Production no
-longer depends on the separate ReconAI Pages deploy being live. A change to a
-file in `reconai/shared/` reaches War Room on War Room's **next deploy**
-(which re-syncs), not on ReconAI's Pages deploy.
+(The C2 sandbox chain mirrors this layout with its own `C2-Football/dhq-shared`.)
+
+Each app copies these in at build time and on local `npm run dev`/`start` via its
+own sync script:
+
+- War Room — `scripts/sync-reconai-shared.cjs` (`npm run sync:shared`) →
+  `reconai-shared/` (dir name kept for historical reasons; the source is now
+  DHQ-Shared, not ReconAI).
+- ReconAI — `scripts/sync-shared.cjs` → `shared/` (the vendored modules are
+  gitignored; the Scout-only modules in `shared/` stay tracked).
+
+A change is live in each app after that app's own next deploy.
 
 ---
 
-## Shared Files (owned by ReconAI, consumed by War Room)
+## Shared Files (owned by dhq-shared, vendored by both apps)
 
 | File | Purpose | Key exports |
 |------|---------|-------------|
@@ -163,10 +169,10 @@ function.
 
 ## Making Changes
 
-- **Changing a shared constant** — edit `reconai/shared/constants.js` only. Verify the fallback value in `warroom/js/core.js` matches, then update it if needed.
-- **Changing `posColor()`** — update `POS_COLORS` in `constants.js`. `posColor()` delegates automatically.
-- **Adding a new shared function** — add to the appropriate `reconai/shared/` file, then add a fallback in `warroom/js/core.js` with the `|| fallback` pattern.
-- **Adding a new constant** — add to `reconai/shared/constants.js` and add a matching fallback in `warroom/js/core.js`.
+- **Changing a shared constant** — edit `constants.js` in the `dhq-shared` repo only. Verify the fallback value in `warroom/js/core.js` matches, then update it if needed.
+- **Changing `posColor()`** — update `POS_COLORS` in `dhq-shared/constants.js`. `posColor()` delegates automatically.
+- **Adding a new shared function** — add to the appropriate `dhq-shared` module, then add a fallback in `warroom/js/core.js` with the `|| fallback` pattern.
+- **Adding a new constant** — add to `dhq-shared/constants.js` and add a matching fallback in `warroom/js/core.js`.
 
 > Most fallbacks live in `warroom/js/core.js`, but some are co-located with
 > their consumer — e.g. `App.decayRates` is guarded in
@@ -204,10 +210,9 @@ the same shared `mfl-proxy` endpoint.
 - `tools/dhq-playground.html` can be opened directly in a browser to adjust league size, roster slots, scoring, and mode.
 - `npm run dhq:lab -- --data-file tools/dhq-sample-data.json` runs the same core from Node without app state.
 
-After editing any shared file in `reconai/shared/`: push to ReconAI `main`
-(refreshes ReconAI's own deploy), **and** redeploy War Room — its `deploy.yml`
-re-runs `npm run sync:shared` to re-vendor the updated copy. War Room does not
-pick up the change until its next deploy.
+After editing any shared module: `git push origin main` in `DHQ-Shared/`. Each
+app vendors the change on its next build (`npm run sync:shared`, which runs
+automatically on dev/build/deploy).
 
 ---
 

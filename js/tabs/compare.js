@@ -7,6 +7,15 @@
 //             window.App.normPos / POS_COLORS / peakWindows / calcPPG.
 // Exposes:    window.CompareTab
 
+// Session cache of the opponent-INDEPENDENT H2H raw data (the league-history
+// chain walk + each season's rosters + weekly matchup rows), keyed by root
+// league. Walking 12 previous_league_id hops + per-season rosters + ~14 weeks of
+// matchups is identical for every opponent — only the final meetings filter
+// differs — so a rival sweep used to re-download the whole chain once per rival.
+// Kept in memory (not localStorage) because raw matchup rows are large; the
+// compact per-opponent `meetings` result keeps its own localStorage cache.
+window._wrCompareRawCache = window._wrCompareRawCache || {};
+
 function CompareTab({
     currentLeague,
     leagueSkin,
@@ -23,6 +32,11 @@ function CompareTab({
     const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
     const valueLabel = resolvedLeagueSkin?.vocabulary?.valueLabel || 'DHQ Value';
     const leagueId = currentLeague?.league_id || currentLeague?.id || '';
+    // Scout-free vs Pro: free keeps the full raw compare — matrix, per-row
+    // leaders, age curves, duel totals headline, GM-lens chip. The buy/sell
+    // Action row + the field-verdict Read gate on this predicate (mirrors
+    // reconai compare-scout.js, which filters its Verdict row for free).
+    const isPro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
     // Redraft → build ROS values so roster-strength comparisons reflect
     // rest-of-season production (no-op → DHQ for dynasty/keeper).
     React.useMemo(() => {
@@ -69,6 +83,21 @@ function CompareTab({
         try { return localStorage.getItem('wr_compare_division_' + (leagueId || 'default')) || ''; } catch { return ''; }
     });
     const [h2hState, setH2hState] = React.useState({ loading: false, meetings: [], error: null, loadedFor: null });
+
+    // Phone tier (≤767): shared viewport seam (js/shared/viewport.js) — every
+    // phone-conditional style below keys off this so tablet/desktop never change.
+    const { isPhone } = window.WR.useViewport();
+
+    // GM Strategy is the single source of truth — re-renders live on save.
+    const gm = window.WR.GmMode.useGmEffects(currentLeague);
+    const gmTargetPositions = gm.targetPositions || new Set();
+    const gmPosture = gm.marketPosture || 'hold';
+    const gmPostureFrame = (() => {
+        if (gmPosture === 'buy_low') return { label: 'Buy-Low Lens', hint: 'Strategy says hunt undervalued rooms in this matchup.', color: 'var(--win-green, var(--good))' };
+        if (gmPosture === 'sell_high') return { label: 'Sell-High Lens', hint: 'Strategy says cash surplus rooms while value is hot.', color: 'var(--gold)' };
+        if (gmPosture === 'exploit') return { label: 'Exploit Lens', hint: 'Strategy says press every edge and pounce on weakness.', color: 'var(--loss-red, var(--bad))' };
+        return { label: 'Hold Lens', hint: 'Strategy says stand pat — read the field before moving.', color: 'var(--silver)' };
+    })();
 
     React.useEffect(() => {
         const onOpenCompare = (event) => {
@@ -164,21 +193,23 @@ function CompareTab({
             }
         }
 
-        async function loadHistoricalH2H() {
-            const cacheKey = 'wr_compare_h2h_v3_' + rootLeagueId + '_' + myOwnerId + '_' + theirOwnerId;
-            try {
-                const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
-                if (cached && Date.now() - cached.ts < 6 * 60 * 60 * 1000 && Array.isArray(cached.meetings)) {
-                    return cached.meetings;
-                }
-            } catch {}
-
+        // Opponent-INDEPENDENT: walk the league-history chain and pull each
+        // season's rosters + weekly matchup rows. Cached in-session per root
+        // league so switching opponents (or sweeping rivals) reuses it instead of
+        // re-downloading the whole chain. The chain WALK stays sequential (each
+        // hop needs the prior previous_league_id); per-season fetches then run in
+        // parallel rather than season-by-season.
+        async function loadRawChain() {
             const sleeperBase = 'https://api.sleeper.app/v1';
+            const cached = window._wrCompareRawCache[rootLeagueId];
+            if (cached && Date.now() - cached.ts < 6 * 60 * 60 * 1000 && Array.isArray(cached.seasons)) {
+                return cached.seasons;
+            }
+
             const chain = [];
             const seen = new Set();
             let lid = String(rootLeagueId);
             let hops = 0;
-
             while (lid && lid !== '0' && !seen.has(lid) && hops < 12) {
                 seen.add(lid);
                 const fetchedInfo = await fetchJson(sleeperBase + '/league/' + lid);
@@ -191,16 +222,42 @@ function CompareTab({
                 hops += 1;
             }
 
-            const meetings = [];
-            const currentSeason = Number(currentLeague?.season || 0);
-
-            for (const seasonEntry of chain) {
+            const seasons = (await Promise.all(chain.map(async seasonEntry => {
                 const info = seasonEntry.info || {};
                 const season = String(info.season || seasonEntry.season || '');
                 const rosters = sameId(seasonEntry.leagueId, rootLeagueId) && Array.isArray(currentLeague?.rosters)
                     ? currentLeague.rosters
                     : await fetchJson(sleeperBase + '/league/' + seasonEntry.leagueId + '/rosters');
-                if (!Array.isArray(rosters) || !rosters.length) continue;
+                if (!Array.isArray(rosters) || !rosters.length) return null;
+                const playoffStart = Number(info.settings?.playoff_week_start) || Number(currentLeague?.settings?.playoff_week_start) || 15;
+                const maxWeek = Math.max(1, Math.min(18, playoffStart - 1));
+                const weeks = Array.from({ length: maxWeek }, (_, i) => i + 1);
+                const weeklyMatchups = await Promise.all(weeks.map(w =>
+                    fetchJson(sleeperBase + '/league/' + seasonEntry.leagueId + '/matchups/' + w).then(rows => ({ week: w, rows: Array.isArray(rows) ? rows : [] }))
+                ));
+                return { leagueId: seasonEntry.leagueId, season, rosters, weeklyMatchups };
+            }))).filter(Boolean);
+
+            window._wrCompareRawCache[rootLeagueId] = { ts: Date.now(), seasons };
+            return seasons;
+        }
+
+        async function loadHistoricalH2H() {
+            const cacheKey = 'wr_compare_h2h_v3_' + rootLeagueId + '_' + myOwnerId + '_' + theirOwnerId;
+            try {
+                const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+                if (cached && Date.now() - cached.ts < 6 * 60 * 60 * 1000 && Array.isArray(cached.meetings)) {
+                    return cached.meetings;
+                }
+            } catch {}
+
+            const seasons = await loadRawChain();
+            const meetings = [];
+            const currentSeason = Number(currentLeague?.season || 0);
+
+            for (const seasonEntry of seasons) {
+                const season = seasonEntry.season;
+                const rosters = seasonEntry.rosters;
 
                 const historicalMine = rosters.find(r => sameId(r.owner_id, myOwnerId))
                     || (sameId(seasonEntry.leagueId, rootLeagueId) ? rosters.find(r => sameId(r.roster_id, myRoster?.roster_id)) : null);
@@ -208,14 +265,7 @@ function CompareTab({
                     || (sameId(seasonEntry.leagueId, rootLeagueId) ? rosters.find(r => sameId(r.roster_id, theirRoster?.roster_id)) : null);
                 if (!historicalMine || !historicalTheirs) continue;
 
-                const playoffStart = Number(info.settings?.playoff_week_start) || Number(currentLeague?.settings?.playoff_week_start) || 15;
-                const maxWeek = Math.max(1, Math.min(18, playoffStart - 1));
-                const weeks = Array.from({ length: maxWeek }, (_, i) => i + 1);
-                const weeklyMatchups = await Promise.all(weeks.map(w =>
-                    fetchJson(sleeperBase + '/league/' + seasonEntry.leagueId + '/matchups/' + w).then(rows => ({ week: w, rows: Array.isArray(rows) ? rows : [] }))
-                ));
-
-                weeklyMatchups.forEach(({ week, rows }) => {
+                seasonEntry.weeklyMatchups.forEach(({ week, rows }) => {
                     const grouped = {};
                     rows.forEach(row => {
                         if (!row || row.roster_id == null || row.matchup_id == null) return;
@@ -542,7 +592,7 @@ function CompareTab({
         else if (typeof window._wrSelectPlayer === 'function') window._wrSelectPlayer(pid);
     };
 
-    const pageStyle = { padding: 'var(--space-xl) var(--space-xl) 60px', maxWidth: '1540px', margin: '0 auto' };
+    const pageStyle = { padding: isPhone ? '12px 10px 60px' : 'var(--space-xl) var(--space-xl) 60px', maxWidth: '1540px', margin: '0 auto' };
     const panelStyle = { background: 'var(--black)', border: 'var(--card-border)', borderRadius: 'var(--card-radius)' };
     const labelStyle = { fontSize: 'var(--text-micro)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.66 };
     const mono = { fontFamily: 'JetBrains Mono, monospace' };
@@ -641,6 +691,7 @@ function CompareTab({
                             return (
                                 <button key={t.rosterId} onClick={() => toggleManualTeam(t.rosterId)} style={{
                                     padding: '8px 9px',
+                                    minHeight: isPhone ? '44px' : undefined,
                                     borderRadius: '6px',
                                     border: '1px solid ' + (manualActive ? 'var(--acc-line3, rgba(212,175,55,0.46))' : 'var(--ov-4, rgba(255,255,255,0.07))'),
                                     background: manualActive ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : active ? 'var(--ov-4, rgba(255,255,255,0.055))' : 'var(--ov-2, rgba(255,255,255,0.025))',
@@ -737,6 +788,11 @@ function CompareTab({
             { label: 'Best Room', value: strongest ? posLabel(strongest.pos) : '-', sub: strongest ? ((strongest.diff > 0 ? '+' : '') + strongest.diff.toLocaleString() + ' vs avg') : '-', color: 'var(--good)' },
             { label: 'Danger Room', value: weakest ? posLabel(weakest.pos) : '-', sub: weakest ? ((weakest.diff > 0 ? '+' : '') + weakest.diff.toLocaleString() + ' vs avg') : '-', color: weakest?.diff < 0 ? 'var(--bad)' : 'var(--gold)' },
         ];
+        // Phone column-set (plan D6): Field Ranking drops to the 4 decision
+        // columns (# · Team · Assets · Edge) at ≤767 — column-drop, not squish.
+        const rankGridCols = isPhone
+            ? '34px minmax(0,1.5fr) minmax(0,.75fr) minmax(0,.9fr)'
+            : '34px minmax(0,1.15fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.46fr) minmax(0,.4fr) minmax(0,.4fr) minmax(0,.62fr)';
         const fieldLead = focusProfile.isMine ? 'You' : focusProfile.name;
         const fieldRead = focusProfile.total >= fieldAvg
             ? (focusProfile.isMine ? 'You are above this field' : 'Focus is above field avg')
@@ -858,10 +914,17 @@ function CompareTab({
                     </div>
                     {positionBreakdowns.map(summary => {
                         const maxTotalAtPos = Math.max(1, ...summary.columns.map(col => col.total));
+                        // Phone: up to 4 team columns of player cells can't fit 375 —
+                        // panel becomes the horizontal scroll container and every row
+                        // (header included) shares one explicit px minimum so team
+                        // columns hold ≥140px instead of squishing.
+                        const bdCols = summary.columns.length;
+                        const bdGrid = isPhone ? ('40px repeat(' + bdCols + ', minmax(140px, 1fr))') : ('72px repeat(' + bdCols + ', minmax(0, 1fr))');
+                        const bdMinW = isPhone ? (60 + bdCols * 148) + 'px' : undefined; // 40px label + N*(140+8px gap) + 20px row padding (border-box)
                         return (
-                            <div key={'field-breakdown-' + summary.pos} style={{ ...panelStyle, overflow: 'hidden', marginBottom: '12px' }}>
-                                <div style={{ padding: '10px', background: (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '72px repeat(' + summary.columns.length + ', minmax(0, 1fr))', gap: '8px', alignItems: 'end' }}>
+                            <div key={'field-breakdown-' + summary.pos} style={{ ...panelStyle, marginBottom: '12px', ...(isPhone ? { overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' } : { overflow: 'hidden' }) }}>
+                                <div style={{ padding: '10px', minWidth: bdMinW, background: (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: bdGrid, gap: '8px', alignItems: 'end' }}>
                                         <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</div>
                                         {summary.columns.map(column => {
                                             const isLeader = summary.leaderId === column.profile.rosterId;
@@ -882,7 +945,7 @@ function CompareTab({
                                 {Array.from({ length: summary.maxLen }).map((_, rowIdx) => {
                                     const rowBestDhq = Math.max(0, ...summary.columns.map(column => column.players[rowIdx]?.dhq || 0));
                                     return (
-                                        <div key={summary.pos + '-row-' + rowIdx} style={{ display: 'grid', gridTemplateColumns: '72px repeat(' + summary.columns.length + ', minmax(0, 1fr))', gap: '8px', padding: '7px 10px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))', alignItems: 'stretch' }}>
+                                        <div key={summary.pos + '-row-' + rowIdx} style={{ display: 'grid', gridTemplateColumns: bdGrid, minWidth: bdMinW, gap: '8px', padding: '7px 10px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))', alignItems: 'stretch' }}>
                                             <div style={{ ...mono, color: 'var(--silver)', opacity: 0.56, fontSize: 'var(--text-micro, 0.6875rem)', alignSelf: 'center' }}>#{rowIdx + 1}</div>
                                             {summary.columns.map(column => (
                                                 <div key={summary.pos + '-' + rowIdx + '-' + column.profile.rosterId} style={{ minWidth: 0 }}>
@@ -939,8 +1002,8 @@ function CompareTab({
                             <div style={{ ...mono, color: 'var(--gold)', fontWeight: 850 }}>{profiles.length} teams</div>
                         </div>
                         <div style={{ display: 'grid', gap: '7px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1.15fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.46fr) minmax(0,.4fr) minmax(0,.4fr) minmax(0,.62fr)', gap: '8px', padding: '0 9px 2px', fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.54, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                <span>#</span><span>Team</span><span>Assets</span><span>Roster</span><span>Start</span><span>Picks</span><span>FAAB</span><span>Rooms</span><span>Edge</span>
+                            <div style={{ display: 'grid', gridTemplateColumns: rankGridCols, gap: '8px', padding: '0 9px 2px', fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.54, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                <span>#</span><span>Team</span><span>Assets</span>{isPhone ? null : <React.Fragment><span>Roster</span><span>Start</span><span>Picks</span><span>FAAB</span><span>Rooms</span></React.Fragment>}<span>Edge</span>
                             </div>
                             {sortedProfiles.map((profile, idx) => {
                                 const isFocus = sameId(profile.rosterId, focusProfile.rosterId);
@@ -948,13 +1011,14 @@ function CompareTab({
                                 const roomsLost = allPositions.filter(pos => (profile.posTotals[pos] || 0) < (focusProfile.posTotals[pos] || 0)).length;
                                 const diff = profile.totalAssets - focusProfile.totalAssets;
                                 return (
-                                    <div key={profile.rosterId} style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1.15fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.58fr) minmax(0,.46fr) minmax(0,.4fr) minmax(0,.4fr) minmax(0,.62fr)', gap: '8px', alignItems: 'center', padding: '8px 9px', borderRadius: '7px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-4, rgba(255,255,255,0.055))'), fontSize: '0.72rem' }}>
+                                    <div key={profile.rosterId} style={{ display: 'grid', gridTemplateColumns: rankGridCols, gap: '8px', alignItems: 'center', padding: '8px 9px', borderRadius: '7px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-4, rgba(255,255,255,0.055))'), fontSize: '0.72rem' }}>
                                         <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--silver)', fontWeight: 850 }}>#{idx + 1}</div>
                                         <div style={{ minWidth: 0 }}>
                                             <div style={{ color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
                                             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62 }}>{getDivisionName(profile.division)} - {profile.record}</div>
                                         </div>
                                         <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800 }}>{profile.totalAssets.toLocaleString()}</div>
+                                        {isPhone ? null : <React.Fragment>
                                         <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800 }}>{profile.total.toLocaleString()}</div>
                                         <div>
                                             <div style={{ ...mono, color: 'var(--silver)', fontWeight: 800 }}>{profile.starterTotal.toLocaleString()}</div>
@@ -965,6 +1029,7 @@ function CompareTab({
                                         <div style={{ color: isFocus ? 'var(--silver)' : roomsWon > roomsLost ? 'var(--bad)' : roomsWon < roomsLost ? 'var(--good)' : 'var(--silver)' }}>
                                             {isFocus ? (profile.isMine ? 'You' : 'Focus') : roomsWon + '-' + roomsLost}
                                         </div>
+                                        </React.Fragment>}
                                         <div style={{ minWidth: 0, color: isFocus ? (profile.isMine ? 'var(--gold)' : 'var(--silver)') : diff > 0 ? 'var(--bad)' : 'var(--good)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {isFocus ? (profile.topPlayer?.p?.full_name || 'Top player') : (diff > 0 ? '+' : '') + diff.toLocaleString()}
                                         </div>
@@ -976,12 +1041,21 @@ function CompareTab({
 
                     <div style={{ ...panelStyle, padding: '14px' }}>
                         <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', fontWeight: 850, color: 'var(--white)', letterSpacing: 0, marginBottom: '12px' }}>Position Heatmap</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(112px,1.2fr) repeat(8,minmax(38px,1fr))', gap: '5px', alignItems: 'stretch' }}>
-                            <div style={{ ...labelStyle }}>Team</div>
+                        {/* Phone (≤767): the grid's 456px track minimum can't fit — the grid
+                            itself becomes the scroll container with a sticky team column
+                            (My Roster pattern; zebra differs here, so each sticky cell paints
+                            its translucent fill over an opaque --black underlay instead of
+                            background:'inherit'). Tablet/desktop: identical to before. */}
+                        <div style={{ display: 'grid', gridTemplateColumns: (isPhone ? 'minmax(92px,1.2fr)' : 'minmax(112px,1.2fr)') + ' repeat(8,minmax(38px,1fr))', gap: '5px', alignItems: 'stretch', ...(isPhone ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' } : null) }}>
+                            {/* opacity:1 at phone — element opacity would make the sticky
+                                cell's opaque bg translucent and let scrolled cells bleed through */}
+                            <div style={{ ...labelStyle, ...(isPhone ? { position: 'sticky', left: 0, zIndex: 1, background: 'var(--black)', opacity: 1 } : null) }}>Team</div>
                             {allPositions.map(pos => <div key={pos} style={{ ...labelStyle, textAlign: 'center', color: posColors[pos] || 'var(--silver)' }}>{posLabel(pos)}</div>)}
-                            {sortedProfiles.map(profile => (
+                            {sortedProfiles.map(profile => {
+                                const teamFill = profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))';
+                                return (
                                 <React.Fragment key={'hm-' + profile.rosterId}>
-                                    <div style={{ padding: '7px 6px', borderRadius: '5px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))', color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
+                                    <div style={{ padding: '7px 6px', borderRadius: '5px', background: isPhone ? 'linear-gradient(' + teamFill + ', ' + teamFill + ') var(--black)' : teamFill, color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...(isPhone ? { position: 'sticky', left: 0, zIndex: 1 } : null) }}>{profile.name}</div>
                                     {allPositions.map(pos => {
                                         const val = profile.posTotals[pos] || 0;
                                         const isBest = bestByPos[pos] === profile.rosterId;
@@ -994,7 +1068,8 @@ function CompareTab({
                                         );
                                     })}
                                 </React.Fragment>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -1064,7 +1139,7 @@ function CompareTab({
                 {results.length ? (
                     <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 40, background: 'var(--black, #0b0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 14px 34px rgba(0,0,0,0.55)' }}>
                         {results.map(r => (
-                            <button key={r.pid} onClick={() => addComparePlayer(r.pid)} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '9px', padding: '8px 10px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))', cursor: 'pointer', textAlign: 'left' }}>
+                            <button key={r.pid} onClick={() => addComparePlayer(r.pid)} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '9px', padding: '8px 10px', minHeight: isPhone ? '44px' : undefined, background: 'transparent', border: 'none', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))', cursor: 'pointer', textAlign: 'left' }}>
                                 <img src={'https://sleepercdn.com/content/nfl/players/thumb/' + r.pid + '.jpg'} onError={e => e.target.style.display = 'none'} style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                                 <span style={{ flex: 1, minWidth: 0, color: 'var(--white)', fontSize: '0.8rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
                                 <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: posColors[r.pos] || 'var(--silver)', fontWeight: 800 }}>{posLabel(r.pos)} · {r.team}</span>
@@ -1083,11 +1158,13 @@ function CompareTab({
             const base = enrichFieldPlayer(pid);
             if (!base) return { pid: String(pid), missing: true };
             const meta = window.App?.LI?.playerMeta?.[pid] || window.App?.LI?.playerMeta?.[String(pid)] || {};
-            const pa = typeof window.getPlayerAction === 'function' ? window.getPlayerAction(pid) : null;
+            // Free: rec stays null — the seeded fallback is a rec too. The
+            // Action row/chip consumers render Pro-only below.
+            const pa = isPro && typeof window.getPlayerAction === 'function' ? window.getPlayerAction(pid) : null;
             const trend = meta.trend || 0;
-            const rec = pa ? String(pa.label).toUpperCase()
+            const rec = !isPro ? null : pa ? String(pa.label).toUpperCase()
                 : (base.valueYrs <= 0 && trend <= -10 ? 'SELL NOW' : base.valueYrs <= 0 ? 'SELL' : base.peakYrs <= 1 ? 'SELL' : base.dhq >= 7000 && base.peakYrs >= 3 ? 'HOLD CORE' : 'HOLD');
-            const recCol = rec.includes('SELL') ? 'var(--bad)' : rec.includes('BUY') ? 'var(--good)' : 'var(--gold)';
+            const recCol = rec && rec.includes('SELL') ? 'var(--bad)' : rec && rec.includes('BUY') ? 'var(--good)' : 'var(--gold)';
             const curve = typeof window.App?.getAgeCurve === 'function' ? window.App.getAgeCurve(base.pos) : { peak: [24, 29], decline: [30, 32] };
             const pLo = (curve.peak && curve.peak[0]) || 24;
             const pHi = (curve.peak && curve.peak[1]) || 29;
@@ -1145,7 +1222,7 @@ function CompareTab({
             const isLeader = multi && leader && String(leader.pid) === String(pl.pid);
             return (
                 <div key={'cmp-' + pl.pid} style={{ ...panelStyle, padding: 0, overflow: 'hidden', position: 'relative', border: isLeader ? '1px solid var(--acc-line3, rgba(212,175,55,0.46))' : panelStyle.border }}>
-                    <button title="Remove from compare" onClick={() => removeComparePlayer(pl.pid)} style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 2, width: '26px', height: '26px', borderRadius: '6px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1 }}>×</button>
+                    <button className="cmp-remove-x" title="Remove from compare" onClick={() => removeComparePlayer(pl.pid)} style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 2, width: '26px', height: '26px', borderRadius: '6px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1 }}>×</button>
                     <div
                         role="button"
                         tabIndex={0}
@@ -1182,10 +1259,12 @@ function CompareTab({
                         {statRow('Runway', pl.valueYrs > 0 ? pl.valueYrs + 'yr' : '—', multi && pl.valueYrs > 0 && pl.valueYrs === maxRunway)}
                         {statRow('Window', pl.phase.label, false, pl.phase.color)}
                         {statRow('Pos Rank', pl.posRank ? (posLabel(pl.pos) + ' #' + pl.posRank) : '—', multi && pl.posRank && pl.posRank === bestRank)}
+                        {isPro ? (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingTop: '9px', marginTop: '3px', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
                             <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Action</span>
                             <span style={{ ...mono, fontWeight: 850, fontSize: '0.72rem', color: pl.recCol, border: '1px solid ' + pl.recCol, borderRadius: '4px', padding: '2px 7px' }}>{pl.rec}</span>
                         </div>
+                        ) : null}
                         {pl.ctx ? <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '8px', lineHeight: 1.4 }}>{pl.ctx}</div> : null}
                     </div>
                 </div>
@@ -1230,7 +1309,16 @@ function CompareTab({
             const N = list.length;
             const depthOrd = (pl) => (typeof pl.p?.depth_chart_order === 'number') ? pl.p.depth_chart_order + 1 : 0;
             const trendDisp = (pl) => pl.trend ? ((pl.trend > 0 ? '↑ +' : '↓ ') + pl.trend) : 'Flat';
-            const gt = 'minmax(94px, 0.62fr) repeat(' + N + ', minmax(0, 1fr))';
+            // Phone (≤767): minmax(0,1fr) player columns compress to ~60px at 375
+            // instead of engaging the scroll container — hold a 110px floor per
+            // player column (two players still fit a 375 side-by-side; 3–4 scroll)
+            // and pin the metric-label column sticky-left. Desktop/tablet: unchanged.
+            const gt = isPhone
+                ? 'minmax(84px, 0.62fr) repeat(' + N + ', minmax(110px, 1fr))'
+                : 'minmax(94px, 0.62fr) repeat(' + N + ', minmax(0, 1fr))';
+            // Explicit px floor so every row spans the full scroll width (row
+            // borders stay continuous mid-scroll): 84px label + N*(110px + 10px gap).
+            const rowMinW = isPhone ? (84 + N * 120) + 'px' : undefined;
             const fieldMaxDhq = Math.max(0, ...list.map(p => p.dhq || 0));
 
             // Metric defs. dir high/low picks the winner; numeric rows also print a
@@ -1250,7 +1338,7 @@ function CompareTab({
                 mk('Pos Rank', 'low', p => p.posRank || 0, (p, v) => v ? (posLabel(p.pos) + ' #' + v) : '—', { countable: true }),
                 mk('Tier', 'none', p => p.dhq, (p) => p.tier.label, { colors: p => p.tier.color }),
                 mk('PPG', 'high', p => p.ppg || 0, (p, v) => v > 0 ? v : '—', { numeric: true, countable: true, gapFmt: n => n.toFixed(1) }),
-                mk('Value Trend', 'high', p => p.trend || 0, (p) => trendDisp(p), { countable: true }),
+                mk('PPG Trend', 'high', p => p.trend || 0, (p) => trendDisp(p), { countable: true }),
                 mk('Age', isRedraft ? 'none' : 'low', p => p.age || 0, (p, v) => v ? v + 'yo' : '—'),
                 mk('Dynasty Runway', isRedraft ? 'none' : 'high', p => p.valueYrs || 0, (p, v) => v > 0 ? v + 'yr' : '—', { countable: !isRedraft }),
                 mk('Peak Left', isRedraft ? 'none' : 'high', p => p.peakYrs || 0, (p, v) => v > 0 ? v + 'yr' : '—', { countable: !isRedraft }),
@@ -1258,7 +1346,8 @@ function CompareTab({
                 mk('Experience', 'none', p => p.yrsExp || 0, (p, v) => v + 'y'),
                 mk('Depth Chart', 'low', p => depthOrd(p), (p) => p.depthChart || '—'),
                 mk('Size', 'none', p => 0, (p) => p.htWt || '—'),
-                mk('Action', 'none', p => 0, (p) => p.rec, { colors: p => p.recCol }),
+                // Action = buy/sell verdict row → Pro; free compares raw values.
+                ...(isPro ? [mk('Action', 'none', p => 0, (p) => p.rec, { colors: p => p.recCol })] : []),
             ];
             if (list.some(p => p.ctx)) metrics.push(mk('Context', 'none', p => 0, (p) => p.ctx || '—', { wrap: true }));
 
@@ -1287,16 +1376,25 @@ function CompareTab({
             const byVal = [...list].sort((x, y) => (y.dhq || 0) - (x.dhq || 0));
             const top = byVal[0], second = byVal[1];
             const valGap = (top.dhq || 0) - (second?.dhq || 0);
-            const runwayLeader = [...list].sort((x, y) => (y.valueYrs || 0) - (x.valueYrs || 0))[0];
+            const byRunway = [...list].sort((x, y) => (y.valueYrs || 0) - (x.valueYrs || 0));
+            const runwayLeader = byRunway[0];
+            // Only claim "longest window/runway" when it's strictly longest and non-zero.
+            const runwayIsClear = (runwayLeader.valueYrs || 0) > 0 && (runwayLeader.valueYrs || 0) > (byRunway[1]?.valueYrs || 0);
             let verdict;
             if (isRedraft) {
                 verdict = valGap > 0
                     ? `${top.name} is the top play of the ${N} — +${valGap.toLocaleString()} ${valueShortLabel} on the next-best.`
                     : `${top.name} leads a tight field — separated by weekly scoring, not value.`;
-            } else if (runwayLeader.pid === top.pid || valGap === 0) {
-                verdict = `${top.name} leads the field — top ${valueShortLabel}${runwayLeader.pid === top.pid ? `, and the longest window (${top.valueYrs}yr)` : ''}.`;
+            } else if (valGap === 0) {
+                verdict = runwayIsClear
+                    ? `Dead even on ${valueShortLabel} at the top — ${runwayLeader.name} has the longest runway (${runwayLeader.valueYrs}yr).`
+                    : `Dead even on ${valueShortLabel} at the top — nothing separates the field on value.`;
+            } else if (runwayLeader.pid === top.pid) {
+                verdict = `${top.name} leads the field — top ${valueShortLabel}${runwayIsClear ? `, and the longest window (${top.valueYrs}yr)` : ''}.`;
             } else {
-                verdict = `${top.name} tops the field on value (+${valGap.toLocaleString()}), but ${runwayLeader.name} has the longest runway (${runwayLeader.valueYrs}yr) — value now vs upside later.`;
+                verdict = runwayIsClear
+                    ? `${top.name} tops the field on value (+${valGap.toLocaleString()}), but ${runwayLeader.name} has the longest runway (${runwayLeader.valueYrs}yr) — value now vs upside later.`
+                    : `${top.name} tops the field on value (+${valGap.toLocaleString()}).`;
             }
 
             const totalVal = list.reduce((s, p) => s + (p.dhq || 0), 0);
@@ -1307,7 +1405,7 @@ function CompareTab({
                 const k = leads[pl.pid] || 0;
                 return (
                     <div key={'hero-' + pl.pid} style={{ position: 'relative', textAlign: 'center', padding: '2px 2px 0', minWidth: 0 }}>
-                        <button title="Remove from compare" onClick={() => removeComparePlayer(pl.pid)} style={{ position: 'absolute', top: 0, right: 0, width: '22px', height: '22px', borderRadius: '6px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, zIndex: 2 }}>×</button>
+                        <button className="cmp-remove-x" title="Remove from compare" onClick={() => removeComparePlayer(pl.pid)} style={{ position: 'absolute', top: 0, right: 0, width: '22px', height: '22px', borderRadius: '6px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, zIndex: 2 }}>×</button>
                         <div role="button" tabIndex={0} title="Open full player card" onClick={() => openPlayerCard(pl.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlayerCard(pl.pid); } }} style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
                             <img src={'https://sleepercdn.com/content/nfl/players/thumb/' + pl.pid + '.jpg'} onError={e => e.target.style.display = 'none'} style={{ width: '46px', height: '46px', borderRadius: '50%', objectFit: 'cover', border: '2px solid ' + (isLead ? 'var(--gold)' : (posColors[pl.pos] || 'var(--silver)')) }} />
                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', maxWidth: '100%' }}>
@@ -1353,8 +1451,8 @@ function CompareTab({
                 const vals = m.values.map(v => Number(v) || 0);
                 const best = winners.size ? (m.dir === 'high' ? Math.max(...vals) : Math.min(...vals.filter(v => v > 0))) : 0;
                 return (
-                    <div key={m.label} style={{ display: 'grid', gridTemplateColumns: gt, gap: '10px', alignItems: m.wrap ? 'flex-start' : 'center', padding: '8px 2px', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.05))' }}>
-                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{m.label}</div>
+                    <div key={m.label} style={{ display: 'grid', gridTemplateColumns: gt, minWidth: rowMinW, gap: '10px', alignItems: m.wrap ? 'flex-start' : 'center', padding: isPhone ? '8px 0' : '8px 2px', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.05))' }}>
+                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em', ...(isPhone ? { position: 'sticky', left: 0, zIndex: 1, background: 'var(--black)', opacity: 1, alignSelf: 'stretch', display: 'flex', alignItems: m.wrap ? 'flex-start' : 'center', paddingLeft: '10px', paddingRight: '6px' } : null) }}>{m.label}</div>
                         {list.map((p, i) => {
                             const win = winners.has(i);
                             const col = win ? 'var(--good)' : (m.colors ? m.colors[i] : 'var(--white)');
@@ -1378,8 +1476,11 @@ function CompareTab({
             return (
                 <div>
                     <div style={{ ...panelStyle, padding: '14px 16px', marginBottom: '12px', background: 'linear-gradient(135deg, var(--acc-fill1, rgba(212,175,55,0.06)), rgba(52,152,219,0.045))' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: gt, gap: '10px', alignItems: 'end' }}>
-                            <div></div>
+                        {/* Phone: hero strip drops the (empty) label column and scrolls
+                            itself — the grid is its own scroll container here since this
+                            panel has no overflowX. */}
+                        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? ('repeat(' + N + ', minmax(120px, 1fr))') : gt, gap: '10px', alignItems: 'end', ...(isPhone ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '2px' } : null) }}>
+                            {isPhone ? null : <div></div>}
                             {list.map(heroCol)}
                         </div>
                         {totalVal > 0 ? (
@@ -1392,12 +1493,19 @@ function CompareTab({
                         ) : null}
                     </div>
 
+                    {/* Field verdict = framing advice (Q9) → Pro; free gets the lock-row teaser. */}
+                    {isPro ? (
                     <div style={{ ...panelStyle, padding: '12px 14px', marginBottom: '12px', borderLeft: '3px solid var(--gold)' }}>
                         <div style={{ ...labelStyle, color: 'var(--gold)', opacity: 1, marginBottom: '4px' }}>The Read</div>
                         <div style={{ fontSize: '0.9rem', color: 'var(--white)', lineHeight: 1.5 }}>{verdict}</div>
                     </div>
+                    ) : window.WrGatedMoreRow ? (
+                    <div style={{ marginBottom: '12px' }}>
+                        {React.createElement(window.WrGatedMoreRow, { title: 'The Read — field verdict', sub: 'Who to value now vs later — Pro calls the field.', feature: 'analytics_depth' })}
+                    </div>
+                    ) : null}
 
-                    <div style={{ ...panelStyle, padding: '4px 16px 12px', marginBottom: '12px', overflowX: 'auto' }}>
+                    <div style={{ ...panelStyle, padding: isPhone ? '4px 0 12px' : '4px 16px 12px', marginBottom: '12px', overflowX: 'auto', ...(isPhone ? { WebkitOverflowScrolling: 'touch' } : null) }}>
                         {metrics.map(renderRow)}
                     </div>
 
@@ -1438,7 +1546,7 @@ function CompareTab({
         return (
             <div>
                 {headerBlock}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
                     {slots}
                 </div>
             </div>
@@ -1447,12 +1555,16 @@ function CompareTab({
 
     return (
       <div style={pageStyle}>
+        {/* Phone tier (≤767) only — hit-slop for the small × remove glyphs
+            (26px/22px visuals stay; the tap area grows to ≥44px, plan D7:
+            hit-padding, not bigger buttons). Buttons are position:absolute,
+            so the ::after anchors to them without layout impact. */}
+        <style>{`
+            @media (max-width: 767px) {
+                .cmp-remove-x::after { content: ''; position: absolute; top: -11px; right: -11px; bottom: -11px; left: -11px; }
+            }
+        `}</style>
         <div className="wr-module-strip">
-          <div className="wr-module-context">
-            <span>Compare</span>
-            <strong>{compareScope === 'duel' ? 'Head to Head' : compareScope === 'group' ? 'Custom Group' : compareScope === 'division' ? 'Division View' : 'League Field'}</strong>
-            <em>Team edges, owner history, roster pressure, picks, and FAAB.</em>
-          </div>
           <div className="wr-module-actions">
             {renderScopeControls()}
             {compareScope === 'duel' ? (
@@ -1616,13 +1728,14 @@ function CompareTab({
                 streak = (streakResult === 'W' ? 'Won ' : streakResult === 'L' ? 'Lost ' : 'Tied ') + streakCount;
             }
 
+            const faabDiff = myFaab.remaining - theirFaab.remaining;
             const statCards = [
                 { label: valueLabel, value: (myAssetTotal - theirAssetTotal > 0 ? '+' : '') + (myAssetTotal - theirAssetTotal).toLocaleString(), sub: myAssetTotal.toLocaleString() + ' vs ' + theirAssetTotal.toLocaleString() + ' incl. picks', color: myAssetTotal >= theirAssetTotal ? 'var(--good)' : 'var(--bad)' },
                 { label: 'Roster ' + valueShortLabel, value: (myTotal - theirTotal > 0 ? '+' : '') + (myTotal - theirTotal).toLocaleString(), sub: myTotal.toLocaleString() + ' vs ' + theirTotal.toLocaleString(), color: myTotal >= theirTotal ? 'var(--good)' : 'var(--bad)' },
                 { label: 'Starter ' + valueShortLabel, value: (myStarterDhq - theirStarterDhq > 0 ? '+' : '') + (myStarterDhq - theirStarterDhq).toLocaleString(), sub: myStarterDhq.toLocaleString() + ' vs ' + theirStarterDhq.toLocaleString(), color: myStarterDhq >= theirStarterDhq ? 'var(--good)' : 'var(--bad)' },
                 { label: 'Pick Value', value: (pickValueDiff > 0 ? '+' : '') + pickValueDiff.toLocaleString(), sub: Math.round(myPickCapital.totalValue / 1000) + 'k vs ' + Math.round(theirPickCapital.totalValue / 1000) + 'k pick ' + valueShortLabel, color: pickValueDiff >= 0 ? 'var(--good)' : 'var(--bad)' },
                 { label: 'Pick Count', value: (pickCountDiff > 0 ? '+' : '') + pickCountDiff, sub: myPickCapital.count + ' picks vs ' + theirPickCapital.count + ' picks', color: pickCountDiff >= 0 ? 'var(--good)' : 'var(--bad)' },
-                { label: 'FAAB', value: myFaab.isFaab ? ((myFaab.remaining - theirFaab.remaining > 0 ? '+$' : '-$') + Math.abs(myFaab.remaining - theirFaab.remaining).toLocaleString()) : '—', sub: myFaab.isFaab ? '$' + myFaab.remaining + ' vs $' + theirFaab.remaining + ' left' : 'No FAAB budget', color: !myFaab.isFaab ? 'var(--silver)' : myFaab.remaining >= theirFaab.remaining ? 'var(--good)' : 'var(--bad)' },
+                { label: 'FAAB', value: myFaab.isFaab ? (faabDiff > 0 ? '+$' + faabDiff.toLocaleString() : faabDiff < 0 ? '-$' + Math.abs(faabDiff).toLocaleString() : '$0') : '—', sub: myFaab.isFaab ? '$' + myFaab.remaining + ' vs $' + theirFaab.remaining + ' left' : 'No FAAB budget', color: !myFaab.isFaab ? 'var(--silver)' : faabDiff > 0 ? 'var(--good)' : faabDiff < 0 ? 'var(--bad)' : 'var(--silver)' },
                 { label: 'Position Edges', value: youLead + '-' + theyLead, sub: 'rooms won', color: youLead >= theyLead ? 'var(--good)' : 'var(--bad)' },
                 { label: 'All-Time H2H', value: h2hState.loading ? 'Loading' : h2hWins + '-' + h2hLosses + (h2hTies ? '-' + h2hTies : ''), sub: meetings.length ? avgFor.toFixed(1) + '-' + avgAgainst.toFixed(1) + ' avg' : (h2hState.error || 'no meetings found'), color: h2hWins >= h2hLosses ? 'var(--good)' : 'var(--bad)' },
                 { label: 'Titles', value: myChamps + '-' + theirChamps, sub: 'championships', color: myChamps >= theirChamps ? 'var(--good)' : 'var(--bad)' },
@@ -1692,6 +1805,12 @@ function CompareTab({
                             <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.72, marginTop: '3px' }}>
                                 {biggestEdges[0] ? posLabel(biggestEdges[0].pos) : 'Roster'} is the biggest swing: {(biggestEdges[0]?.diff || 0) > 0 ? '+' : ''}{(biggestEdges[0]?.diff || 0).toLocaleString()} {valueShortLabel}.
                             </div>
+                            {gm.hasStrategy ? (
+                                <div title={gmPostureFrame.hint} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '7px', padding: '3px 9px', borderRadius: '999px', border: '1px solid ' + gmPostureFrame.color, background: 'rgba(0,0,0,0.28)' }}>
+                                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: gmPostureFrame.color, flexShrink: 0 }}></span>
+                                    <span style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850, color: gmPostureFrame.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{gmPostureFrame.label}</span>
+                                </div>
+                            ) : null}
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <div style={labelStyle}>Opponent</div>
@@ -1845,7 +1964,7 @@ function CompareTab({
                                     <div style={{ color: side.mine ? myColor : theirColor, fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{side.name}</div>
                                     <div style={{ ...mono, color: 'var(--white)', fontSize: '0.76rem', fontWeight: 850 }}>{side.assetTotal.toLocaleString()}</div>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
                                     <div>
                                         <div style={labelStyle}>Pick Value</div>
                                         <div style={{ ...mono, color: side.pickCapital.totalValue >= myPickCapital.totalValue ? 'var(--good)' : 'var(--silver)', fontWeight: 850 }}>{Math.round(side.pickCapital.totalValue / 1000)}k</div>
@@ -1880,13 +1999,17 @@ function CompareTab({
                         const maxLen = Math.max(summary.myAtPos.length, summary.theirAtPos.length);
                         const total = Math.max(1, summary.myPosDHQ + summary.theirPosDHQ);
                         const myPosPct = summary.myPosDHQ / total * 100;
+                        const isTargetRoom = gmTargetPositions.has(String(summary.pos));
                         return (
-                            <div key={summary.pos} style={{ marginBottom: '12px', ...panelStyle, overflow: 'hidden' }}>
-                                <div style={{ padding: '9px 10px 10px', background: (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
+                            <div key={summary.pos} style={{ marginBottom: '12px', ...panelStyle, overflow: 'hidden', border: isTargetRoom ? '1px solid var(--acc-line2, rgba(212,175,55,0.35))' : panelStyle.border }}>
+                                <div style={{ padding: '9px 10px 10px', background: isTargetRoom ? 'var(--acc-fill1, rgba(212,175,55,0.06))' : (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '10px' }}>
-                                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                                            <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: isTargetRoom ? 'var(--gold)' : posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
+                                            {isTargetRoom ? <span title="Target room from your GM Strategy — win this matchup here" style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850, color: 'var(--gold)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', letterSpacing: '0.04em' }}>TARGET</span> : null}
+                                        </span>
                                         <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                            <span style={{ color: summary.myPosDHQ >= summary.theirPosDHQ ? 'var(--good)' : 'var(--silver)' }}>You: {summary.myPosDHQ.toLocaleString()}</span>
+                                            <span style={{ color: isTargetRoom ? 'var(--gold)' : summary.myPosDHQ >= summary.theirPosDHQ ? 'var(--good)' : 'var(--silver)', fontWeight: isTargetRoom ? 800 : 400 }}>You: {summary.myPosDHQ.toLocaleString()}</span>
                                             <span style={{ color: summary.theirPosDHQ >= summary.myPosDHQ ? 'var(--good)' : 'var(--silver)' }}>Them: {summary.theirPosDHQ.toLocaleString()}</span>
                                             <span style={{ fontWeight: 800, color: summary.diff > 0 ? 'var(--good)' : summary.diff < 0 ? 'var(--bad)' : 'var(--silver)' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
                                         </div>

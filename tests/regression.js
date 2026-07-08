@@ -210,11 +210,14 @@ test('league format skin loads early and is published to every module surface', 
   ok(!indexHtml.includes('--black:#24114F;'), 'redraft shell should not replace black card surfaces with royal purple');
 });
 
-test('theme engine retains the sandbox-gating mechanism (light mode now generally available)', () => {
-  sourceHas(themeSrc, 'const SANDBOX_ONLY_THEMES = new Set([]);', 'light mode is no longer sandbox-gated; the gating mechanism is retained (empty set) for future in-development themes');
+test('light mode ships in production while sandbox theme gating stays intact', () => {
+  // Light mode left sandbox-only on 2026-06-04 (3b0e54c); the gate machinery
+  // stays so future in-development themes can be sandbox-gated by id.
+  sourceHas(themeSrc, 'const SANDBOX_ONLY_THEMES = new Set([]);', 'sandbox-only set must stay empty while no theme is under repair');
+  sourceHas(themeSrc, "id: 'light',", 'light theme definition must remain available');
   sourceHas(themeSrc, 'function isSandboxThemeMode()', 'theme engine must know whether sandbox-only themes can show');
   sourceHas(themeSrc, 'return Object.keys(THEMES).filter(themeId => isThemeAllowed(themeId));', 'normal theme list must hide sandbox-only themes');
-  sourceHas(themeSrc, 'WrTheme.current = normalizeThemeId(saved);', 'saved light mode must normalize away outside sandbox mode');
+  sourceHas(themeSrc, 'WrTheme.current = normalizeThemeId(saved);', 'saved sandbox-only themes must normalize away outside sandbox mode');
   sourceHas(themeSrc, 'isSandboxMode: function()', 'theme engine must expose sandbox-mode status for diagnostics');
 });
 
@@ -285,11 +288,11 @@ test('redraft shell, history, calendar, and analytics hide dynasty-only assumpti
   sourceHas(analyticsSrc, 'window.App?.LeagueSkin?.resolveDraftRounds?.({', 'analytics draft capital must use skin-aware draft rounds');
   sourceHas(analyticsSrc, "window.addEventListener('wr_history_loaded', onLoaded);", 'analytics must re-render when league history loads');
   sourceHas(analyticsSrc, 'window.WrHistory.loadIfMissing(currentLeague)', 'analytics must load league history without requiring Trophy Room first');
-  sourceHas(analyticsSrc, "kicker: 'Owned Picks'", 'analytics empty-draft fallback must surface owned draft capital (not championship/history filler)');
-  sourceHas(analyticsSrc, "kicker: 'Early Capital'", 'analytics empty-draft fallback must surface early-round capital');
-  sourceHas(analyticsSrc, "label: currentPicks.length + ' picks'", 'analytics draft build map must show resolved current owned picks');
-  sourceHas(analyticsSrc, 'Resolved from roster-slot skin rules', 'analytics draft tab must explain redraft round resolution');
-  sourceHas(leagueMapSrc, 'const shouldShowDraftPool = isPreDraftPhase || !!(resolvedLeagueSkin?.state?.isSeasonal', 'pre-draft redraft player table must use the player universe');
+  sourceHas(analyticsSrc, 'Draft Board Without Outcome History', 'analytics draft tab must show pick-capital fallback when draft outcomes are empty');
+  sourceHas(analyticsSrc, 'no historical pick trades, so trade-up modeling is disabled', 'analytics draft fallback must expose pick-trade reality');
+  sourceHas(analyticsSrc, "kicker: 'Owned Picks', label: currentPicks.length + ' picks'", 'analytics draft fallback must show resolved current owned picks');
+  sourceHas(analyticsSrc, "'Resolved from roster-slot skin rules'", 'analytics draft tab must explain redraft round resolution');
+  sourceHas(leagueMapSrc, 'const shouldShowDraftPool = isPreDraftPhase || !!(resolvedLeagueSkin?.state?.isSeasonal &&', 'pre-draft redraft player table must use the player universe');
   sourceHas(leagueMapSrc, "teamName: 'Draft Pool'", 'pre-draft redraft players should be labeled as draft pool');
   sourceHas(leagueMapSrc, 'const years = skinFeatures.showFuturePicks === false ? [leagueSeason] : [leagueSeason, leagueSeason + 1, leagueSeason + 2];', 'pick ledger must hide future years in redraft');
   sourceHas(leagueMapSrc, 'window.App?.LeagueSkin?.resolveDraftRounds?.({', 'pick ledger must use skin-aware draft rounds');
@@ -309,7 +312,7 @@ test('decision history renders complete trade assets and dedupes DHQ mirror rows
 test('model settings controls map to live behavior or clearly disabled future delivery', () => {
   sourceHas(alexSettingsSrc, 's.channel?.inApp === false', 'in-app notification setting must affect surfaced cards');
   sourceHas(alexSettingsSrc, 'insight.pointsDelta != null', 'min point delta setting must be enforced for point-swing insights');
-  sourceHas(alexSettingsSrc, 'function actionableTradeAcceptanceFloor(settings)', 'trade aggression must own the actionable trade acceptance floor');
+  sourceHas(alexSettingsSrc, 'function actionableTradeAcceptanceFloor(settings, leagueId)', 'trade aggression must own the actionable trade acceptance floor');
   sourceHas(alexSettingsSrc, 'return Math.round(75 - ((aggression - 50) / 50) * 20);', 'balanced trade aggression should default to a 75% acceptance floor and loosen upward');
   sourceHas(alexInsightsSrc, 'pointsDelta: Math.max(...lowWeekDeltas)', 'start/sit insight must expose a point delta for settings filtering');
   sourceHas(alexInsightsSrc, "chanChip('email', 'Email (coming soon)', { disabled: true", 'email notification control should be visibly disabled until wired');
@@ -320,18 +323,18 @@ test('Deal HQ reflects reviewed trade-center UX requirements', () => {
   ok(!tradeCalcSrc.includes('Trade command center'), 'Deal HQ should not render the removed hero command bar');
   ok(!tradeCalcSrc.includes('No surplus edge'), 'roster leverage empty state should use football-oriented wording');
   ok(!tradeCalcSrc.includes('they have ${theyHaveNeed}'), 'partner cards should not show the removed lanes-you-need sentence');
-  sourceHas(tradeCalcSrc, 'Roster Leverage', 'roster edge metric should be renamed');
+  ok(!tradeCalcSrc.includes('Roster Leverage'), 'the Deal HQ metrics strip stays cut from the Trade Desk');
   sourceHas(tradeCalcSrc, 'assetBrowserSorts', 'Deal HQ should expose an asset browser sort model');
   sourceHas(tradeCalcSrc, "key:'owner', label:'Owned Team'", 'asset browser should sort by current owned team');
   sourceHas(tradeCalcSrc, "key:'points', label:'Last FP'", 'asset browser should sort by last-season fantasy points');
   sourceHas(tradeCalcSrc, "key:'prime', label:'Prime Years'", 'asset browser should sort by prime years remaining');
-  sourceHas(tradeCalcSrc, 'Head-to-head trade history', 'partner dossier should include prior trades with the user');
+  sourceHas(tradeCalcSrc, '<b>Head-to-head vs me</b>', 'owner detail card must keep head-to-head trade history with the user');
   sourceHas(tradeCalcSrc, '<p><b>You got</b> {summarizeTradeAssets(received)}</p>', 'head-to-head received assets should have readable spacing');
   sourceHas(tradeCalcSrc, '<p><b>You sent</b> {summarizeTradeAssets(sent)}</p>', 'head-to-head sent assets should have readable spacing');
-  sourceHas(tradeCalcSrc, 'savedQueueRef.current || generatedPackagesRef.current', 'saved queue metric should jump to live queue content');
+  sourceHas(tradeCalcSrc, 'window.WrTradePipeline = { CAP, STATUSES, fromDeal, fromAlexCard, normalizeRow, normalizeAll, append };', 'saved deals must flow through the WrTradePipeline store');
   sourceHas(tradeCalcSrc, 'dealActionableAcceptanceFloor', 'Deal HQ should keep low-acceptance moonshots out of default package cards');
-  sourceHas(tradeCalcSrc, 'configuredActionableAcceptanceFloor(alexSettings)', 'Deal HQ should honor the GM strategy trade-aggression floor');
-  sourceHas(componentsSrc, 'currentTradeFinderAcceptanceFloor', 'Trade Finder should honor the same actionable acceptance floor');
+  sourceHas(tradeCalcSrc, 'const gmFloor = dealActionableAcceptanceFloor(_gmTuning);', 'Trade Desk must derive the actionable floor from GM strategy tuning');
+  sourceHas(tradeCalcSrc, 'const finderActionFloor = dealActionableAcceptanceFloor(finderTuning);', 'Trade Finder must honor the same actionable acceptance floor');
   ok(!componentsSrc.includes('ACTIONABLE_ACCEPTANCE_FLOOR = 45'), 'Trade Finder must not use the old 45% default floor');
   ok(!/className="tc-dhq-eyebrow"/.test(tradeCalcSrc), 'generated package cards should not render the old package-type header');
 });
@@ -494,7 +497,12 @@ test('dashboard mobile grid collapses every widget size to one safe column', () 
 test('dashboard tablet grid clamps xl/xxl spans to active columns', () => {
   const sizeSpan = extractSpanMap(dashboardSrc, 'sizeSpan');
   sourceHas(dashboardSrc, 'grid-template-columns:repeat(2,minmax(140px,1fr)) !important;', 'tablet two-column grid missing');
-  sourceHas(dashboardSrc, '.wr-dashboard-grid>.wr-widget[style*="span 4"]{', 'tablet span-4 selector missing');
+  // afdf24c: clamp targets data-widget-size, not [style*="span 4"], which also
+  // matched grid-ROW spans (tall/narrow) and stretched them across the grid.
+  sourceHas(dashboardSrc, 'data-widget-size={widget.size || \'\'}', 'widget shell must stamp data-widget-size for clamp selectors');
+  sourceHas(dashboardSrc, '.wr-dashboard-grid>.wr-widget[data-widget-size="xl"],', 'tablet xl clamp selector missing');
+  sourceHas(dashboardSrc, '.wr-dashboard-grid>.wr-widget[data-widget-size="xxl"]{', 'tablet xxl clamp selector missing');
+  ok(!dashboardSrc.includes('.wr-widget[style*="span 4"]{'), 'style-attribute span clamp must not return; it also matches row spans');
   sourceHas(dashboardSrc, 'grid-column:span 2 !important;', 'tablet span-4 clamp missing');
   for (const size of ['xl', 'xxl']) {
     eq(sizeSpan[size], 4, `${size} should request four columns on desktop`);
@@ -537,8 +545,12 @@ test('first-run tutorial waits for Home instead of interrupting navigated workfl
   sourceHas(leagueDetailSrc, 'window.shouldShowWRTutorial', 'tutorial should respect shouldShow before start');
 });
 
-test('empty Field Notes defaults to compact decision-log utility', () => {
-  sourceHas(leagueDetailSrc, "w = { ...w, size: 'slim' };", 'legacy Field Notes widget must migrate to the compact slim size');
+test('Field Notes stays a compact decision-log utility off the default board', () => {
+  // 0f5fa64 replaced the default board with the curiosity-first layout: Field
+  // Notes is no longer a default widget, but old saved defaults still migrate
+  // compact and the empty state keeps its decision-log framing.
+  sourceHas(leagueDetailSrc, "{ id: 'dw0', key: 'intel-brief',    size: 'tall' }", 'curiosity-first default board must anchor on Intel Brief');
+  ok(!leagueDetailSrc.includes("key: 'field-notes'"), 'Field Notes should stay off the default board');
   sourceHas(leagueDetailSrc, "w.key === 'field-notes' && w.id === 'dw1' && w.size === 'narrow'", 'old default Field Notes layouts should migrate compact');
   sourceHas(flashBriefSrc, 'No decisions logged yet', 'empty Field Notes should explain decision log state');
   sourceHas(flashBriefSrc, 'OPEN GM OFFICE', 'empty Field Notes should offer an action');

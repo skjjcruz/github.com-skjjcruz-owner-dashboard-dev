@@ -239,6 +239,13 @@
         const [tab, setTab] = useState(initialTab || 'overview');
         const [tagMenu, setTagMenu] = useState(false);
         const closeRef = useRef(null);
+        // Phone tier (<768): the card renders as a WR.Sheet bottom sheet
+        // instead of the centered 640px modal (plan D4). Hook comes from
+        // js/shared/viewport.js (plain script, always ahead of this babel
+        // file, so the branch is fixed for the page's lifetime) and is
+        // called before the `if (!p)` early return for hook-order safety.
+        const _useVp = window.WR && window.WR.useViewport;
+        const isPhone = _useVp ? !!_useVp().isPhone : false;
         const sleeperPlayer = playersData?.[pid];
 
         // Resolve a draft prospect for this card via window.findProspect (keyed by
@@ -297,6 +304,60 @@
             return hits.slice().sort((a, b) => (b.year || 0) - (a.year || 0));
         }, [pid, p?.full_name, p?.first_name, p?.last_name]);
 
+        // ── Scouting tab data — loaded lazily, only when that tab is open ──
+        const [gameLog, setGameLog] = useState(null);           // null = loading, [] = none
+        const [scoutNews, setScoutNews] = useState(null);       // { status, text }
+        const [scoutTick, setScoutTick] = useState(0);          // bumps when SOS / weather finish loading
+        useEffect(() => {
+            if (tab !== 'scouting' || !pid) return;
+            let alive = true;
+            const A = window.App || {};
+            const S = window.S || {};
+            const season = (S.nflState && S.nflState.season) || S.season || (new Date().getFullYear());
+            const scoring = scoringSettings
+                || ((S.leagues && S.leagues.find(l => l.league_id === S.currentLeagueId)) || {}).scoring_settings
+                || ((S.leagues && S.leagues[0]) || {}).scoring_settings || {};
+            const player = (playersData && playersData[pid]) || {};
+            // Warm the matchup engines so opponent + weather fill in when ready.
+            if (A.SOS && A.SOS.initialize && !A.SOS.ready) A.SOS.initialize(season, playersData, () => { if (alive) setScoutTick(t => t + 1); });
+            if (A.NflContext && A.NflContext.loadCurrent) A.NflContext.loadCurrent(season).then(() => { if (alive) setScoutTick(t => t + 1); }).catch(() => {});
+            // Game-by-game log.
+            if (A.GameLog && A.GameLog.buildPlayerLog) {
+                A.GameLog.buildPlayerLog(pid, season, { playersData, scoring }).then(r => { if (alive) setGameLog(r || []); }).catch(() => { if (alive) setGameLog([]); });
+            } else if (alive) setGameLog([]);
+            // Matchup-aware news (graceful — CTA if AI unavailable). Loads once per open.
+            if (scoutNews == null) {
+                // Trigger gate is the guarantee: a free BYOK user (S.apiKey set)
+                // routes dhqAI→provider and never touches the OD.callAI tripwire,
+                // so the auto-fire itself must be Pro-gated here.
+                if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+                    setScoutNews({ status: 'locked' });
+                } else {
+                    const AV = window.AlexVoice;
+                    const hasAI = (AV && AV.hasAI && AV.hasAI()) || (window.OD && typeof window.OD.callAI === 'function');
+                    if (!hasAI) setScoutNews({ status: 'off' });
+                    else {
+                        setScoutNews({ status: 'loading' });
+                        const week = (A.WeeklyProj && A.WeeklyProj.currentWeek && A.WeeklyProj.currentWeek()) || 1;
+                        const ctx = { pid, name: player.full_name || pid, team: player.team, pos: (A.normPos && A.normPos(player.position)) || player.position, age: player.age, season, week };
+                        // Prefer shared fetchDynastyRead: routes through OD.callAI
+                        // (shared weekly Supabase cache) with BYOK fallback +
+                        // format-aware client cache (dhq-shared/dhq-ai.js).
+                        const run = (typeof window.fetchDynastyRead === 'function')
+                            ? window.fetchDynastyRead(ctx, { fallback: '' })
+                            : (window.OD && typeof window.OD.callAI === 'function')
+                                ? window.OD.callAI({ type: 'dynasty_read', context: JSON.stringify(ctx) }).then(res => (res && (res.text || res.analysis || res.response)) || (typeof res === 'string' ? res : ''))
+                                : window.dhqAI('dynasty_read', '', JSON.stringify(ctx));
+                        Promise.resolve(run).then(txt => {
+                            const clean = window.AlexVoice ? window.AlexVoice.sanitize(String(txt || '')) : String(txt || '').trim();
+                            if (alive) setScoutNews(clean ? { status: 'done', text: clean } : { status: 'error' });
+                        }).catch(() => { if (alive) setScoutNews({ status: 'error' }); });
+                    }
+                }
+            }
+            return () => { alive = false; };
+        }, [tab, pid, scoutTick]);
+
         if (!p) return null;
 
         const pos = p.position || '?';
@@ -344,11 +405,15 @@
                 formatReasons: playerFormatReasons,
             })
             : null;
+        // Free/Pro seam: the BUY/SELL/HOLD verdict chip + roster recommendation
+        // are Pro reads; raw DHQ/PPG/tier/curve stay free. Fail-open when
+        // pro-gate.js isn't on the page.
+        const isPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
         const pa = typeof window.getPlayerAction === 'function' ? window.getPlayerAction(pid) : null;
         const rec = pa ? pa.label.toUpperCase() :
             (valueYrs <= 0 && trend <= -10 ? 'SELL NOW' : valueYrs <= 0 ? 'SELL' : peakYrs <= 1 ? 'SELL' : dhq >= 7000 && peakYrs >= 3 ? 'HOLD CORE' : 'HOLD');
         const recCol = rec.includes('SELL') ? 'var(--k-e74c3c, #e74c3c)' : rec.includes('BUY') ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-d4af37, #d4af37)';
-        const rosterRecommendation = typeof window.App?.Intelligence?.buildRosterRecommendation === 'function'
+        const rosterRecommendation = isPro && typeof window.App?.Intelligence?.buildRosterRecommendation === 'function'
             ? window.App.Intelligence.buildRosterRecommendation({
                 id: 'player_card_' + pid,
                 pid,
@@ -387,6 +452,9 @@
         // "Alex NFL Fit" — deterministic real-situation read from the engine's
         // signals (depth-chart role, named blockers + PPG, status, trend). No LLM
         // here to keep card opens cheap; the draft board layers a live read on top.
+        // Seeded-template Alex verdict copy ("upside hold, not a weekly starter")
+        // → Pro at render (clean absence), matching draft-room's teamFitInsight
+        // gate; the raw dhqContext facts line above it stays free.
         const nflFit = (() => {
             try { return window.App?.computeNFLFit?.(pid, { pos, player: p, dhq }) || null; }
             catch (e) { return null; }
@@ -449,16 +517,20 @@
         // ── Overview section ──────────────────────────────────────
         function OverviewTab() {
             const compressed = compressHistory(historyRows || []);
+            // Action verdict cell is Pro; free gets the raw 4-stat row (clean absence).
+            const statCells = [
+                { v: dhq > 0 ? dhq.toLocaleString() : '—', l: 'DHQ', c: dhqCol },
+                { v: ppg || '—', l: 'PPG (curr)', c: ppg >= 10 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-d0d0d0, #d0d0d0)' },
+                { v: peakYrs > 0 ? peakYrs + 'yr' : valueYrs + 'yr', l: peakYrs > 0 ? 'Peak Left' : 'Value Left', c: peakCol },
+                { v: tier.label, l: 'Tier', c: tier.color },
+            ];
+            if (isPro) statCells.push({ v: rec, l: 'Action', c: recCol });
             return React.createElement(React.Fragment, null,
-                // Stats grid
-                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
-                    [
-                        { v: dhq > 0 ? dhq.toLocaleString() : '—', l: 'DHQ', c: dhqCol },
-                        { v: ppg || '—', l: 'PPG (curr)', c: ppg >= 10 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-d0d0d0, #d0d0d0)' },
-                        { v: peakYrs > 0 ? peakYrs + 'yr' : valueYrs + 'yr', l: peakYrs > 0 ? 'Peak Left' : 'Value Left', c: peakCol },
-                        { v: tier.label, l: 'Tier', c: tier.color },
-                        { v: rec, l: 'Action', c: recCol },
-                    ].map((s, i) => React.createElement('div', { key: i, style: { textAlign: 'center' } },
+                // Stats grid. Phone: 2-col reflow (D4) — statCells is 4 (free)
+                // or 5 (Pro, +Action) tiles; an odd last tile spans full width
+                // so the Pro verdict cell reads as the decision row.
+                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(' + statCells.length + ', 1fr)', gap: '8px', padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
+                    statCells.map((s, i) => React.createElement('div', { key: i, style: { textAlign: 'center', gridColumn: (isPhone && statCells.length % 2 === 1 && i === statCells.length - 1) ? '1 / -1' : undefined } },
                         React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.05rem', fontWeight: 700, color: s.c } }, s.v),
                         React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, s.l)
                     ))
@@ -475,7 +547,7 @@
                         lineHeight: 1.45,
                     }
                 }, dhqContext),
-                nflFit && nflFit.narrative && React.createElement('div', {
+                isPro && nflFit && nflFit.narrative && React.createElement('div', {
                     style: {
                         margin: '10px 20px 0',
                         padding: '9px 11px',
@@ -520,8 +592,9 @@
                         React.createElement('span', null, '36')
                     )
                 ),
-                // Attributes row (depth chart clarified, no "News" button)
-                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
+                // Attributes row (depth chart clarified, no "News" button).
+                // Phone: 2x2 instead of 4-across (~80px cells at 375 otherwise).
+                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '10px', padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
                     [
                         { l: 'Experience', v: (p.years_exp || 0) + ' yr' + ((p.years_exp || 0) === 1 ? '' : 's') },
                         { l: 'NFL Depth Chart', v: depthChart || '—' },
@@ -582,12 +655,107 @@
             if (typeof InlineCareerStats !== 'function') {
                 return React.createElement('div', { style: { padding: '28px 20px', color: 'var(--silver)', opacity: 0.6 } }, 'Stats module not loaded.');
             }
-            return React.createElement('div', { style: { padding: '14px 20px' } },
+            // Phone: the career-stats tables can outgrow 375px — this wrapper
+            // owns the horizontal scroll so the sheet body never pans sideways.
+            return React.createElement('div', { style: { padding: '14px 20px', ...(isPhone ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch', maxWidth: '100%' } : null) } },
                 React.createElement(InlineCareerStats, {
                     pid, pos, player: p,
                     scoringSettings: sc,
                     statsData
                 })
+            );
+        }
+
+        // ── Scouting tab: this-week matchup + injury + usage + game log + news ──
+        function ScoutingTab() {
+            const A = window.App || {};
+            const GREEN = 'var(--k-2ecc71, #2ecc71)', AMBER = 'var(--k-f0a500, #f0a500)', RED = 'var(--k-e74c3c, #e74c3c)', SILVER = 'var(--silver)';
+            const week = (A.WeeklyProj && A.WeeklyProj.currentWeek && A.WeeklyProj.currentWeek()) || 1;
+            const teamU = String(team || '').toUpperCase();
+            const opp = (A.SOS && A.SOS.schedule && A.SOS.schedule[week] && A.SOS.schedule[week][teamU]) || null;
+            const ctx = (A.NflContext && A.NflContext.teamWeekCtx) ? A.NflContext.teamWeekCtx(team, week) : null;
+            const weather = ctx && ctx.weather, vegas = ctx && ctx.vegas, home = ctx ? ctx.home : null;
+            const ranks = A.SOS && A.SOS.defenseRankings;
+            const dvpRank = (opp && ranks && ranks[opp]) ? ranks[opp]['vs' + nPos] : null;
+            const dvp = dvpRank ? (dvpRank >= 25 ? { t: 'Great matchup', c: GREEN } : dvpRank >= 20 ? { t: 'Favorable', c: GREEN } : dvpRank >= 12 ? { t: 'Neutral', c: SILVER } : dvpRank >= 7 ? { t: 'Tough', c: AMBER } : { t: 'Hard', c: RED }) : null;
+            const avail = (A.StartSit && A.StartSit.availability) ? A.StartSit.availability(p.injury_status) : { available: !p.injury_status, mult: 1 };
+            const usage = (A.GameLog && A.GameLog.usageSeries && gameLog && gameLog.length) ? A.GameLog.usageSeries(gameLog, nPos) : null;
+            const sectionStyle = { padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' };
+            const hdrStyle = { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '8px' };
+            const wxText = weather ? (weather.indoor ? 'Dome' : ([weather.temp != null ? Math.round(weather.temp) + '°' : null, weather.display].filter(Boolean).join(' '))) : null;
+
+            return React.createElement(React.Fragment, null,
+                React.createElement('div', { style: sectionStyle },
+                    React.createElement('div', { style: hdrStyle }, 'Week ' + week + ' Matchup'),
+                    opp ? React.createElement('div', null,
+                        React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } },
+                            React.createElement('span', { style: { fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' } }, (home ? 'vs ' : '@ ') + opp),
+                            dvp ? React.createElement('span', { style: { fontSize: 'var(--text-label, 0.8rem)', fontWeight: 700, color: dvp.c } }, dvp.t + (dvpRank ? ' (D#' + dvpRank + ' vs ' + nPos + ')' : '')) : null
+                        ),
+                        React.createElement('div', { style: { display: 'flex', gap: '14px', marginTop: '6px', fontSize: 'var(--text-label, 0.78rem)', color: 'var(--text-muted)' } },
+                            (vegas && vegas.impliedTotal) ? React.createElement('span', { key: 'it' }, 'Team total ' + Math.round(vegas.impliedTotal)) : null,
+                            (vegas && vegas.spread != null) ? React.createElement('span', { key: 'sp' }, 'Spread ' + (vegas.spread > 0 ? '+' : '') + vegas.spread) : null,
+                            wxText ? React.createElement('span', { key: 'wx' }, wxText) : null
+                        )
+                    ) : React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 } }, 'Opponent not set yet (off-season or schedule pending).')
+                ),
+                p.injury_status ? React.createElement('div', { style: sectionStyle },
+                    React.createElement('div', { style: hdrStyle }, 'Injury'),
+                    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
+                        React.createElement('span', { style: { padding: '3px 10px', borderRadius: '5px', fontWeight: 800, fontSize: 'var(--text-label, 0.75rem)', color: avail.available ? AMBER : RED, border: '1px solid ' + (avail.available ? 'rgba(240,165,0,0.4)' : 'rgba(231,76,60,0.4)') } }, String(p.injury_status).toUpperCase()),
+                        React.createElement('span', { style: { fontSize: 'var(--text-label, 0.8rem)', color: 'var(--text-muted)' } }, avail.available ? ('~' + Math.round((avail.mult || 1) * 100) + '% expected') : 'Not expected to play')
+                    )
+                ) : null,
+                usage ? React.createElement('div', { style: sectionStyle },
+                    React.createElement('div', { style: hdrStyle }, 'Usage'),
+                    React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: '10px' } },
+                        React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' } }, usage.avg),
+                        React.createElement('span', { style: { fontSize: 'var(--text-label, 0.78rem)', color: 'var(--text-muted)' } }, usage.label + ' · last: ' + usage.series.slice(-6).map(x => x.v).join(', '))
+                    )
+                ) : null,
+                React.createElement('div', { style: sectionStyle },
+                    React.createElement('div', { style: hdrStyle }, 'This Season · Game by Game'),
+                    gameLog == null
+                        ? React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 } }, 'Loading game log…')
+                        : (gameLog.filter(r => r.played || r.isBye).length === 0
+                            ? React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 } }, 'No games logged yet this season.')
+                            : React.createElement('div', { style: { display: 'flex', flexDirection: 'column' } },
+                                gameLog.map(r => {
+                                    if (!r.played && !r.isBye) return null;
+                                    const ks = (A.GameLog && r.statLine) ? A.GameLog.keyStats(r.statLine, nPos) : [];
+                                    return React.createElement('div', { key: r.week, style: { display: 'grid', gridTemplateColumns: '28px 44px 46px 1fr', gap: '8px', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))' } },
+                                        React.createElement('span', { style: { fontSize: 'var(--text-label, 0.72rem)', color: 'var(--silver)', fontWeight: 700 } }, 'W' + r.week),
+                                        React.createElement('span', { style: { fontSize: 'var(--text-label, 0.74rem)', color: 'var(--text-muted)' } }, r.isBye ? 'BYE' : (r.opp || '—')),
+                                        React.createElement('span', { style: { textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.82rem)', fontWeight: 700, color: r.isBye ? 'var(--silver)' : (r.pts >= 15 ? GREEN : r.pts != null ? 'var(--text-primary)' : 'var(--silver)') } }, r.isBye ? '—' : (r.pts != null ? r.pts.toFixed(1) : '—')),
+                                        React.createElement('span', { style: { fontSize: 'var(--text-label, 0.72rem)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, r.isBye ? 'Bye week' : ks.map(k => k.l + ' ' + k.v).join(' · '))
+                                    );
+                                })
+                            )
+                        )
+                ),
+                React.createElement('div', { style: { padding: '14px 20px' } },
+                    React.createElement('div', { style: hdrStyle }, 'Matchup News'),
+                    (!scoutNews || scoutNews.status === 'loading')
+                        ? React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 } }, 'Reading the latest…')
+                        : scoutNews.status === 'done'
+                            // Clamp the AI read to ~4 lines with a "Full read" expand
+                            // (de-busying rule: long-form stays behind a disclosure).
+                            ? (window.WR && window.WR.ClampedRead
+                                ? React.createElement(window.WR.ClampedRead, { text: scoutNews.text, maxHeight: 104, style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 }, fadeColor: 'var(--k-0a0b0d, #0a0b0d)' })
+                                : React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, scoutNews.text))
+                            : scoutNews.status === 'locked'
+                                ? React.createElement('button', {
+                                    onClick: () => { if (window.showProLaunchPage) window.showProLaunchPage(); else if (window.showUpgradePrompt) window.showUpgradePrompt('dynasty_read_ai'); },
+                                    style: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%', textAlign: 'left', padding: '9px 11px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '7px', cursor: 'pointer' }
+                                },
+                                    React.createElement('span', { 'aria-hidden': true, style: { fontSize: '0.9rem' } }, '🔒'),
+                                    React.createElement('span', { style: { flex: 1, fontSize: 'var(--text-label, 0.82rem)', color: 'var(--silver)' } }, 'Live matchup news is a Pro read.'),
+                                    React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.72rem)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', border: '1px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius: '2px', padding: '2px 6px' } }, 'Pro')
+                                )
+                                : scoutNews.status === 'off'
+                                    ? React.createElement('div', { style: { fontSize: 'var(--text-label, 0.82rem)', color: 'var(--text-muted)' } }, 'Sign in (or add an AI key) to pull live matchup news.')
+                                    : React.createElement('div', { style: { fontSize: 'var(--text-label, 0.82rem)', color: 'var(--text-muted)' } }, 'No fresh news found.')
+                )
             );
         }
 
@@ -604,8 +772,8 @@
             animation: 'wrFadeIn 0.2s ease'
         };
 
-        return React.createElement('div', { style: backdrop, onClick: (e) => { if (e.target === e.currentTarget) onClose && onClose(); } },
-            React.createElement('div', { style: modal, onClick: (e) => e.stopPropagation() },
+        // Card content is tier-agnostic; only the shell differs (sheet vs modal).
+        const cardBody = React.createElement(React.Fragment, null,
                 // Hero
                 React.createElement('div', { style: { padding: '18px 20px', background: 'linear-gradient(135deg, var(--acc-fill2, rgba(212,175,55,0.10)), transparent 60%)', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', display: 'flex', gap: '14px', alignItems: 'center' } },
                     React.createElement('div', { className: 'wr-ring wr-ring-' + nPos, style: { width: '60px', height: '60px', borderRadius: '12px', overflow: 'hidden', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } },
@@ -634,9 +802,13 @@
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gold)', marginBottom: '4px' } }, '📝 Your scouting note'),
                     React.createElement('div', { style: { fontSize: 'var(--text-label, 0.8rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.45, whiteSpace: 'pre-wrap' } }, scoutNote)
                 ),
-                // Tabs
-                React.createElement('div', { style: { display: 'flex', gap: '2px', padding: '0 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
-                    ['overview', 'stats'].map(t =>
+                // Tabs. Phone: one-line momentum scroll strip (D4), scrollbar
+                // hidden via the shared .wr-hscroll rules from wr-primitives.
+                React.createElement('div', {
+                    className: isPhone ? 'wr-hscroll' : undefined,
+                    style: { display: 'flex', gap: '2px', padding: '0 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', ...(isPhone ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : null) }
+                },
+                    ['overview', 'stats', 'scouting'].map(t =>
                         React.createElement('button', {
                             key: t,
                             onClick: () => setTab(t),
@@ -644,15 +816,18 @@
                                 padding: '10px 14px', minHeight: '44px', background: 'transparent',
                                 border: 'none', borderBottom: tab === t ? '2px solid var(--gold)' : '2px solid transparent',
                                 color: tab === t ? 'var(--gold)' : 'var(--silver)',
-                                fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer'
+                                fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer',
+                                ...(isPhone ? { flexShrink: 0, whiteSpace: 'nowrap' } : null)
                             }
-                        }, t === 'overview' ? 'Overview' : 'Career Stats')
+                        }, t === 'overview' ? 'Overview' : t === 'stats' ? 'Career Stats' : 'Scouting')
                     )
                 ),
                 // Tab body
-                tab === 'overview' ? OverviewTab() : StatsTab(),
-                // Actions — Compare, Trade Finder, Tag As (no News button)
-                React.createElement('div', { style: { padding: '14px 20px', display: 'flex', gap: '8px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', position: 'relative' } },
+                tab === 'overview' ? OverviewTab() : tab === 'stats' ? StatsTab() : ScoutingTab(),
+                // Actions — Compare, Trade Finder, Tag As (no News button).
+                // Phone: the 4 buttons outgrow 375px — wrap instead of forcing
+                // the sheet body to pan sideways.
+                React.createElement('div', { style: { padding: '14px 20px', display: 'flex', gap: '8px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', position: 'relative', ...(isPhone ? { flexWrap: 'wrap' } : null) } },
                     React.createElement('button', { onClick: goCompare, style: btnStyle() }, 'Compare'),
                     React.createElement('button', { onClick: goTradeFinder, style: btnStyle('primary') }, isOnMyTeam ? 'Trade Finder' : 'Find Trade'),
                     React.createElement('button', { onClick: () => setTagMenu(!tagMenu), style: btnStyle() }, 'Tag As ▾'),
@@ -668,7 +843,17 @@
                     ) : null,
                     React.createElement('button', { onClick: onClose, style: btnStyle('ghost', { marginLeft: 'auto' }) }, 'Close')
                 )
-            )
+        );
+
+        // Phone (<768): full-width bottom sheet via the shared WR.Sheet
+        // primitive (plan D4). showClose:false — the hero already carries the
+        // card's own 44px ✕; the sheet adds grab-strip drag-down + scrim tap.
+        // Tablet/desktop: the centered 640px modal below, unchanged.
+        if (isPhone && window.WR && window.WR.Sheet) {
+            return React.createElement(window.WR.Sheet, { open: true, onClose: onClose, showClose: false }, cardBody);
+        }
+        return React.createElement('div', { style: backdrop, onClick: (e) => { if (e.target === e.currentTarget) onClose && onClose(); } },
+            React.createElement('div', { style: modal, onClick: (e) => e.stopPropagation() }, cardBody)
         );
     }
 

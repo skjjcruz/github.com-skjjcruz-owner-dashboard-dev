@@ -46,6 +46,14 @@
     const TrophyRoomTabLazy = wrLazyTab('trophies', 'Trophy Room', () => (typeof TrophyRoomTab === 'function' ? TrophyRoomTab : null));
     const AlexInsightsTabLazy = wrLazyTab('alex', "GM's Office", () => (typeof window.AlexInsightsTab === 'function' ? window.AlexInsightsTab : null));
     const CompareTabLazy = wrLazyTab('compare', 'Compare', () => (typeof window.CompareTab === 'function' ? window.CompareTab : null));
+    // My Team and Calendar are non-default tabs (the default in-league view is the
+    // dashboard), so their modules are deferred too — they no longer load at boot
+    // and only fetch on first open, like the tabs above. Removes ~68KB of JSX from
+    // the cold-load critical path. The thunks resolve the same top-level globals the
+    // deferred scripts define once the group reports ready.
+    const MyTeamTabLazy = wrLazyTab('myteam', 'My Team', () => (typeof MyTeamTab === 'function' ? MyTeamTab : null));
+    const CalendarTabLazy = wrLazyTab('calendar', 'Calendar', () => (typeof CalendarTab === 'function' ? CalendarTab : null));
+    const LineupTabLazy = wrLazyTab('lineup', 'Lineup', () => (typeof window.LineupTab === 'function' ? window.LineupTab : null));
 
     function escapeHtml(str) {
         return String(str)
@@ -287,6 +295,145 @@
     // END DRAFT TAB
     // ══════════════════════════════════════════════════════════════════════════
 
+    // ── League nav definition — SINGLE SOURCE OF TRUTH ──
+    // Consumed by BOTH the sidebar drawer (LeagueDetail render) and the
+    // phone bottom dock strip (PhoneDock below). Add/remove/gate items
+    // here only. `{ section }` rows render as sidebar dividers and are
+    // filtered out of the dock strip.
+    const NAV_ICON_PATHS = {
+        home: ['M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-8.5Z'],
+        roster: ['M12 3l7 3.5v5.2c0 4.5-3 7.5-7 8.3-4-.8-7-3.8-7-8.3V6.5L12 3Z', 'M8.7 12.2l2.1 2.1 4.5-4.7'],
+        gameday: ['M13 3 5 14h5l-1 7 8-11h-5l1-7Z'],
+        compare: ['M7 7h10M7 17h10', 'M9 4 6 7l3 3', 'M15 14l3 3-3 3'],
+        trade: ['M7 7h11m0 0-3-3m3 3-3 3', 'M17 17H6m0 0 3 3m-3-3 3-3'],
+        fa: ['M12 3v18', 'M7 7.5c0-1.8 2-3 5-3 2.8 0 4.8 1.2 4.8 3.4 0 2.4-2.2 3.2-4.8 3.2S7.2 12 7.2 14.4 9.4 18 12.3 18c2.3 0 4.2-.8 5.1-2.2'],
+        draft: ['M12 3l8 16H4L12 3Z', 'M12 8v5'],
+        analytics: ['M5 19V9', 'M12 19V5', 'M19 19v-7'],
+        film: ['M4 7h16v10H4z', 'M8 7l2-3h4l2 3', 'M10 11l4 2-4 2v-4Z'],
+        office: ['M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8Z', 'M9 8V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3', 'M4 12h16', 'M10 14h4'],
+        trophy: ['M8 4h8v4a4 4 0 0 1-8 0V4Z', 'M6 5H4v2a3 3 0 0 0 4 2', 'M18 5h2v2a3 3 0 0 1-4 2', 'M12 12v5', 'M8 21h8', 'M9 17h6'],
+        calendar: ['M5 5h14v15H5z', 'M8 3v4', 'M16 3v4', 'M5 9h14'],
+        strategy: ['M12 3l7 7-7 11-7-11 7-7Z', 'M12 8v5l3 2'],
+        settings: ['M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z', 'M12 3v2', 'M12 19v2', 'M3 12h2', 'M19 12h2', 'M5.6 5.6 7 7', 'M17 17l1.4 1.4', 'M18.4 5.6 17 7', 'M7 17l-1.4 1.4'],
+        legend: ['M4 5h16', 'M4 12h16', 'M4 19h16', 'M7 5v14', 'M11 5v14'],
+        refresh: ['M21 12a9 9 0 0 1-14.8 6.9', 'M3 12A9 9 0 0 1 17.8 5.1', 'M17 3v4h4', 'M7 21v-4H3'],
+    };
+    // showGameDay = the FINAL leagueSkin.features.showGameDay flag
+    // (callers apply the same `?? phase === 'in_season'` fallback in one place).
+    function buildLeagueNavItems(showGameDay) {
+        return [
+            { section: 'FRONT OFFICE' },
+            { label: 'Home', tab: 'dashboard', iconKey: 'home' },
+            { label: 'My Roster', tab: 'myteam', iconKey: 'roster' },
+            // Game Day Central — only surfaced for in-season leagues.
+            ...(showGameDay ? [{ label: 'Game Day', tab: 'lineup', iconKey: 'gameday' }] : []),
+            { label: 'Compare', tab: 'compare', iconKey: 'compare' },
+            { section: 'LEAGUE' },
+            { label: 'Trade Center', tab: 'trades', iconKey: 'trade' },
+            { label: 'Free Agency', tab: 'fa', iconKey: 'fa' },
+            { label: 'Draft', tab: 'draft', iconKey: 'draft' },
+            { label: 'Analytics', tab: 'analytics', iconKey: 'analytics' },
+            { section: 'DOSSIER' },
+            { label: 'GM\'s Office', tab: 'alex', iconKey: 'office' },
+            { label: 'Trophy Room', tab: 'trophies', iconKey: 'trophy' },
+            { section: 'SETTINGS' },
+            { label: 'Settings', tab: 'settings', iconKey: 'settings' },
+            { label: 'Legend', tab: 'legend', iconKey: 'legend' },
+        ];
+    }
+    // Shared active test (sidebar + dock): the Strategy editor lives under
+    // GM's Office, so 'strategy' lights the 'alex' item.
+    function navItemIsActive(item, activeTab) {
+        return !!item.tab && (activeTab === item.tab || (item.tab === 'alex' && activeTab === 'strategy'));
+    }
+
+    // ── Phone bottom dock (≤767 only) ──
+    // ONE fixed bottom row, Scout mobile-nav idiom: a sliding module strip
+    // of EVERY nav item from buildLeagueNavItems above (same array instance
+    // the sidebar maps — no 'More' slot; the hamburger drawer stays as
+    // redundant access), plus a PINNED Ask Alex peer item at the right end
+    // (gold-hairline left divider) that opens the Alex chat sheet — it
+    // replaces the FAB on phone. Returns null outside the phone tier and
+    // while the iOS keyboard is open (WR.useViewport kbOpen), so
+    // tablet/desktop render byte-identical; it STAYS mounted while the Alex
+    // sheet is open (sheet z 200 covers the dock at z 100 — expected).
+    // Visuals live in index.html's PHONE TIER block (.wr-phone-dock /
+    // .wr-dock-*); z + bottom offsets come from the fixed-layer registry
+    // (--wr-z-nav / --wr-tab-bar-h / --wr-bottom-inset — heights are the
+    // STATIC 56px / 48px landscape-compact CSS values, no JS measuring).
+    // The gate lives in this thin wrapper so PhoneDockInner's hooks
+    // mount/unmount cleanly.
+    function PhoneDock(props) {
+        const vp = window.WR.useViewport();
+        if (!vp.isPhone || vp.kbOpen) return null;
+        return <PhoneDockInner {...props} />;
+    }
+    function PhoneDockInner({ activeTab, navItems, onSelectTab, onAskAlex }) {
+        const stripRef = useRef(null);
+        const chips = navItems.filter(item => item.tab);
+
+        // Keep the active chip visible whenever the tab changes (sidebar,
+        // deep links, and dock taps all funnel through activeTab).
+        useEffect(() => {
+            const strip = stripRef.current;
+            if (!strip) return;
+            const chip = strip.querySelector('.wr-dock-chip.is-active');
+            if (chip && typeof chip.scrollIntoView === 'function') {
+                try { chip.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); }
+                catch (_) { /* older WebKit: options-object form unsupported */ }
+            }
+        }, [activeTab]);
+
+        // Edge-fade masks only where chips are actually cut off (.has-left /
+        // .has-right drive the CSS) — a static mask dims the last chip at
+        // full scroll and gives no "more this way" cue on the left.
+        useEffect(() => {
+            const strip = stripRef.current;
+            if (!strip) return;
+            const update = () => {
+                const max = strip.scrollWidth - strip.clientWidth;
+                strip.classList.toggle('has-left', strip.scrollLeft > 4);
+                strip.classList.toggle('has-right', strip.scrollLeft < max - 4);
+            };
+            update();
+            strip.addEventListener('scroll', update, { passive: true });
+            window.addEventListener('resize', update);
+            return () => { strip.removeEventListener('scroll', update); window.removeEventListener('resize', update); };
+        }, [navItems]);
+
+        return (
+            <nav className="wr-phone-dock" aria-label="Primary">
+                <div ref={stripRef} className="wr-dock-strip">
+                    {chips.map(item => {
+                        const isActive = navItemIsActive(item, activeTab);
+                        return (
+                            <button key={item.tab} type="button"
+                                className={'wr-dock-chip' + (isActive ? ' is-active' : '')}
+                                aria-current={isActive ? 'page' : undefined}
+                                onClick={() => onSelectTab(item.tab)}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    {(NAV_ICON_PATHS[item.iconKey] || NAV_ICON_PATHS.home).map((d, i) => <path key={i} d={d} />)}
+                                </svg>
+                                <span>{item.label}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+                {/* Ask Alex — pinned marquee peer item (Scout's AI slot
+                    precedent): never scrolls with the strip. Free tier sees
+                    it too — the 1/day quota is enforced in the send path,
+                    not here. */}
+                <button type="button" className="wr-dock-ask" onClick={onAskAlex}
+                    aria-label="Ask Alex — open chat">
+                    {window.AlexAvatar
+                        ? <span aria-hidden="true" style={{ display: 'inline-flex' }}><window.AlexAvatar size={20} /></span>
+                        : <span className="wr-dock-ask-glyph" aria-hidden="true">{'✦'}</span>}
+                    <span aria-hidden="true">ALEX</span>
+                </button>
+            </nav>
+        );
+    }
+
     // League Detail Component
     function LeagueDetail({ league, onBack, sleeperUserId, onOpenSettings, settingsProps = {}, activeTab: propActiveTab, onTabChange }) {
         const [loading, setLoading] = useState(true);
@@ -360,9 +507,24 @@
                 .then(rows => {
                     if (cancelled) return;
                     const drafts = Array.isArray(rows) ? rows : [];
-                    const active = drafts.find(d => d.status === 'drafting')
+                    // Draft-of-record rule (draft/state.js selectCurrentDraft):
+                    // live > unsuperseded latest complete ('review') > next
+                    // pre_draft — so a just-completed draft keeps a header entry
+                    // point ('View Draft Results') instead of vanishing.
+                    const sel = window.DraftCC?.state?.selectCurrentDraft?.(drafts);
+                    // DraftCC lives in the deferred 'draft' module group and this
+                    // effect runs once per league open — when it isn't loaded yet,
+                    // mirror the draft-of-record rule locally (live > next
+                    // pre_draft > most recently completed) so the completed-draft
+                    // "View Draft Results" chip still renders without the module.
+                    const localDraftOfRecord = () =>
+                        drafts.find(d => d.status === 'drafting')
                         || drafts.find(d => d.status === 'pre_draft')
+                        || drafts.filter(d => d.status === 'complete')
+                            .sort((a, b) => (Number(b.last_picked || b.start_time || b.created) || 0)
+                                - (Number(a.last_picked || a.start_time || a.created) || 0))[0]
                         || null;
+                    const active = sel !== undefined ? (sel.draft || null) : localDraftOfRecord();
                     setHeaderDraftInfo(active);
                 })
                 .catch(() => { if (!cancelled) setHeaderDraftInfo(null); });
@@ -378,6 +540,9 @@
         const headerDraftClock = useMemo(() => {
             if (!headerDraftInfo) return null;
             if (headerDraftInfo.status === 'drafting') return { label: 'Draft Live', clock: 'Now' };
+            // Completed draft of record: keep an entry point to the finished
+            // board (DraftTab's _wrOpenLiveDraft flag path rebuilds the results).
+            if (headerDraftInfo.status === 'complete') return { label: '', clock: 'View Draft Results' };
             if (!headerDraftInfo.start_time) return { label: 'Draft Upcoming', clock: 'Scheduled' };
             const diff = Number(headerDraftInfo.start_time) - headerClockNow;
             if (diff <= 0) return { label: 'Draft Upcoming', clock: 'Open' };
@@ -667,13 +832,6 @@
 	            ];
 	            if (module) {
 	                return React.createElement('div', { style: { padding: '10px 16px 16px', maxWidth: '1280px', margin: '0 auto' } },
-	                    React.createElement('div', { className: 'wr-module-strip' },
-	                        React.createElement('div', { className: 'wr-module-title' },
-	                            React.createElement('span', null, 'GUIDE'),
-	                            React.createElement('strong', null, 'Legend'),
-	                            React.createElement('em', null, 'Metric definitions, status language, and tool meanings for this league format.')
-	                        )
-	                    ),
 	                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' } },
 	                        ...quickItems.map(item => React.createElement('div', { key: item.term, style: { padding: '12px 13px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: '8px' } },
 	                            React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', marginBottom: '4px' } }, item.term),
@@ -767,15 +925,26 @@
                             const baseAge = p.age || 0;
                             const projAge = baseAge ? baseAge + delta : 0;
                             const baseDhq = originalScores[pid] || 0;
-                            // Derive YoY trend from prevAvg vs seasonAvg when both are available
-                            const pStats = window.S?.playerStats?.[pid];
-                            const trendMeta = (() => {
-                                const prev = pStats?.prevAvg;
-                                const cur  = pStats?.seasonAvg;
-                                if (prev > 0 && cur > 0) return { trend: (cur - prev) / prev };
-                                return undefined;
-                            })();
-                            const projDhq = projectPlayerValue(pid, baseDhq, baseAge, p.position || '', delta, trendMeta);
+                            // Only the scored players (a few hundred-thousand of the
+                            // ~12k DB) need the per-year projection math + stats
+                            // lookup. projectPlayerValue returns baseDhq unchanged
+                            // when baseDhq <= 0, so skipping it for zero-score players
+                            // is byte-identical while avoiding ~10k wasted passes per
+                            // time-machine tick.
+                            let projDhq;
+                            if (baseDhq > 0) {
+                                // Derive YoY trend from prevAvg vs seasonAvg when both are available
+                                const pStats = window.S?.playerStats?.[pid];
+                                const trendMeta = (() => {
+                                    const prev = pStats?.prevAvg;
+                                    const cur  = pStats?.seasonAvg;
+                                    if (prev > 0 && cur > 0) return { trend: (cur - prev) / prev };
+                                    return undefined;
+                                })();
+                                projDhq = projectPlayerValue(pid, baseDhq, baseAge, p.position || '', delta, trendMeta);
+                            } else {
+                                projDhq = baseDhq;
+                            }
                             projScores[pid] = projDhq;
                             projected[pid] = {
                                 ...p,
@@ -886,8 +1055,6 @@
         const [avatarKey, setAvatarKey] = useState(0); // force re-render when avatar changes
         const [welcomeMode, setWelcomeMode] = useState(false); // centered modal for first-time welcome
         const [showCornerToast, setShowCornerToast] = useState(false); // "I'll be down here" toast
-        const [heroStory, setHeroStory] = useState('');
-        const [aiStories, setAiStories] = useState([]);
         const [transactions, setTransactions] = useState([]);
         const [rankedTeams, setRankedTeams] = useState([]);
         const [dhqStatus, setDhqStatus] = useState({ loading: false, step: '', progress: 0 });
@@ -1315,6 +1482,32 @@
         }
         const [reconPanelOpen, setReconPanelOpen] = useState(false);
         const [reconExpanded, setReconExpanded] = useState(false);
+        // PhoneDock "Ask Alex" bar: after the sheet opens, best-effort focus
+        // of the chat composer input (ref attached below). iOS may keep the
+        // keyboard down — programmatic focus outside the original tap
+        // gesture doesn't reliably raise it — so opening the sheet alone is
+        // the guaranteed behavior; the focus is a progressive enhancement.
+        const reconComposerRef = useRef(null);
+        const reconComposerFocusPending = useRef(false);
+        useEffect(() => {
+            if (reconPanelOpen && reconComposerFocusPending.current) {
+                reconComposerFocusPending.current = false;
+                try { reconComposerRef.current && reconComposerRef.current.focus(); } catch (_) { /* no-op */ }
+            }
+        }, [reconPanelOpen]);
+        // ── Phone tier (≤767): the Alex chat renders as a full-width bottom
+        // sheet in all three modes (welcome / docked / expanded). Desktop and
+        // tablet keep the exact pre-existing floating-panel styles.
+        // WR.useViewport = js/shared/viewport.js (loaded before this file).
+        const alexVp = window.WR.useViewport();
+        const alexPhone = alexVp.isPhone;
+        // Keyboard lift: px gap reported by visualViewport while the iOS
+        // keyboard is up (0 when closed / off-phone). The sheet's bottom is
+        // offset by this so the composer stays visible above the keyboard.
+        const alexKb = (alexPhone && alexVp.kbOpen) ? alexVp.kbHeight : 0;
+        // Shared height cap for the phone sheet: dynamic viewport minus
+        // keyboard, notch (--sat) and an 8px top gap.
+        const alexSheetCap = 'calc(100dvh - ' + alexKb + 'px - var(--sat, 0px) - 8px)';
         const [showNotifications, setShowNotifications] = useState(false);
         // showAlerts removed — alerts now live on Brief tab
         const [briefDraftInfo, setBriefDraftInfo] = useState(null);
@@ -1381,6 +1574,27 @@
                 else { window.wrLogAction?.('\uD83D\uDCCA', 'Updated GM strategy', 'roster', { actionType: 'gm-strategy' }); }
             }
         }, [gmStrategy, currentLeague?.league_id, currentLeague?.id]);
+        // Remote/Scout strategy edits arrive as wr:gm-mode-changed (gm-mode.js
+        // bridges DhqEvents 'strategy:changed'). Adopt them into local gmStrategy
+        // state \u2014 which feeds the header GM badge + Alex AI context \u2014 when they
+        // target the open league. JSON-compare guards the echo: the persist
+        // effect above re-saves on every set, so identical payloads must no-op.
+        useEffect(() => {
+            const onGmChanged = (e) => {
+                const s = e?.detail?.strategy;
+                if (!s || typeof s !== 'object') return;
+                const leagueId = getCurrentLeagueId(currentLeague);
+                if (!leagueId) return;
+                if (s.leagueId != null && String(s.leagueId) !== String(leagueId)) return;
+                const next = normalizeGmStrategy(s, leagueId);
+                if (JSON.stringify(normalizeGmStrategy(gmStrategy, leagueId)) === JSON.stringify(next)) return;
+                // Synced-in change, not a deliberate local edit \u2014 skip the action log.
+                gmStrategyInitRef.current = true;
+                setGmStrategy(next);
+            };
+            window.addEventListener('wr:gm-mode-changed', onGmChanged);
+            return () => window.removeEventListener('wr:gm-mode-changed', onGmChanged);
+        }, [gmStrategy, currentLeague?.league_id, currentLeague?.id]);
 
         // Fetch draft info for Brief tab (Sleeper only — other platforms don't have this endpoint)
         useEffect(() => {
@@ -1445,16 +1659,6 @@
                 setAnalyticsData(data);
             }
         }, [activeTab, analyticsData, timeRecomputeTs]);
-
-        // Auto-populate home page content when data is ready
-        useEffect(() => {
-            if (rankedTeams.length > 0 && !heroStory) {
-                setHeroStory(computeDataDrivenHero());
-            }
-            if (rankedTeams.length > 0 && aiStories.length === 0) {
-                generateAiStories();
-            }
-        }, [rankedTeams, transactions]);
 
         // Keyboard shortcut: Cmd/Ctrl+K to toggle ReconAI panel
         useEffect(() => {
@@ -1588,11 +1792,43 @@
             }
         }, [standings, currentLeague, timeRecomputeTs, statsData]);
 
+        // ── Sync freshness (audit:refresh-stale step 7) ──
+        // wr:data-synced (dispatched by WR.Sync after each successful background
+        // revalidation) bumps syncedAt; the 60s tick keeps the sidebar's
+        // 'Synced Xm ago' readout aging even when nothing else re-renders.
+        const [syncedAt, setSyncedAt] = useState(() => window.WR?.Sync?.lastSyncedAt || null);
+        const [, setSyncTick] = useState(0);
+        useEffect(() => {
+            const onSynced = (e) => setSyncedAt(e?.detail?.at || Date.now());
+            window.addEventListener('wr:data-synced', onSynced);
+            const tick = setInterval(() => setSyncTick(t => t + 1), 60000);
+            return () => { window.removeEventListener('wr:data-synced', onSynced); clearInterval(tick); };
+        }, []);
+
+        // Monotonic load token — a new full load (league switch / manual
+        // refresh) invalidates any in-flight background revalidation from the
+        // previous load (same idea as the _wppFetchToken guard below).
+        const loadSeqRef = useRef(0);
+        // Last successful rolling weekly-points fetch (league-tagged). The block
+        // fires up to 18 parallel /matchups/{week} requests — background
+        // revalidations only re-run it when the week rolled or this is stale.
+        const wppFetchedAtRef = useRef({ ts: 0, leagueId: null });
+        // League closed / component unmounted: drop the background revalidator
+        // so WR.Sync stops syncing a dead closure (also resets its lastSyncedAt).
+        // Also bump loadSeqRef so any ALREADY in-flight background hydrate fails
+        // its token check and can't apply into a re-pointed window.S.
+        useEffect(() => () => {
+            loadSeqRef.current++;
+            window.WR?.Sync?.registerRevalidator?.(null);
+        }, []);
+
         useEffect(() => {
             loadLeagueDetails();
         }, [currentLeague]);
 
         async function loadLeagueDetails() {
+            // New full load supersedes any in-flight background revalidation.
+            const loadSeq = ++loadSeqRef.current;
             try {
                 // Clear assessment caches for THIS league so health scores compute fresh.
                 // Key by league ID — switching back to a previously-loaded league can
@@ -1677,278 +1913,51 @@
                     nflState,
                 });
 
-                // Pull enrichment out of _extras (Sleeper only — others empty)
-                const stats       = hydrated._extras?.stats       || {};
-                const projections = hydrated._extras?.projections || {};
-                const prevStats   = hydrated._extras?.prevStats   || {};
+                applyHydrated(hydrated, { provider, sleeperPlayers, nflState, currentWeek, myRosterData, background: false });
 
-                // Merge platform-specific extras into the Sleeper player DB.
-                // For Sleeper this is a no-op; for MFL/ESPN/Yahoo this adds
-                // IDP players and other platform-only records that the
-                // Sleeper DB doesn't have.
-                const players = { ...sleeperPlayers, ...(hydrated.players || {}) };
-
-                // Use the hydrated rosters — for non-Sleeper, these now have
-                // Sleeper-resolved player IDs (the whole point of the
-                // provider rebuild step). For Sleeper, these are the fresh
-                // fetchRosters result.
-                const rosters     = (hydrated.rosters && hydrated.rosters.length) ? hydrated.rosters : (currentLeague.rosters || []);
-                const leagueUsers = (hydrated.leagueUsers && hydrated.leagueUsers.length) ? hydrated.leagueUsers : (currentLeague.users || []);
-                const tradedPicks = hydrated.tradedPicks || [];
-                const matchupsData = hydrated.matchups || [];
-
-                // Patch currentLeague in place so downstream useEffects
-                // (computeRankings etc.) see the resolved rosters. React
-                // won't re-render from this mutation, but setStandings /
-                // setRankedTeams below trigger re-renders anyway.
-                currentLeague.rosters = rosters;
-                if (leagueUsers.length) currentLeague.users = leagueUsers;
-
-                // Re-resolve myRosterData now that rosters may have changed
-                const freshMyRoster = provider.id === 'mfl' && currentLeague._mflFranchiseId
-                    ? rosters.find(r => r.roster_id === currentLeague._mflFranchiseId)
-                    : rosters.find(r => r.owner_id === sleeperUserId) || myRosterData;
-                if (freshMyRoster && freshMyRoster !== myRosterData) setMyRoster(freshMyRoster);
-                const myRoster = freshMyRoster || myRosterData;
-
-                setStatsData(stats);
-                setProjectionsData(projections);
-                setStats2025Data(prevStats);
-                setPlayersData(players);
-                setLoadStage('Computing values...');
-
-                // Bridge to DHQ engine immediately
-                if (window.App) {
-                    if (!window.S) window.S = {};
-                    window.S.players = players;
-                    window.S.playerStats = {};
-                    window.S.rosters = rosters;
-                    window.S.leagueUsers = leagueUsers;
-                    window.S.leagues = [{ league_id: currentLeague.id, name: currentLeague.name, scoring_settings: currentLeague.scoring_settings, roster_positions: currentLeague.roster_positions, settings: currentLeague.settings }];
-                    // Invalidate any previously-loaded weekly points from a different
-                    // league before kicking off the fresh fetch below.
-                    if (window.S.weeklyPlayerPointsLeagueId && window.S.weeklyPlayerPointsLeagueId !== currentLeague.id) {
-                        window.S.weeklyPlayerPoints = {};
-                        window.S.weeklyPlayerPointsLeagueId = null;
-                    }
-                    window.S.currentLeagueId = currentLeague.id;
-                    window.S.season = activeYear;
-                    window.S.nflState = hydrated.nflState && Object.keys(hydrated.nflState).length ? hydrated.nflState : nflState;
-                    window.S.currentWeek = currentWeek;
-                    window.S.tradedPicks = window.App?.normalizeTradedPicks
-                        ? window.App.normalizeTradedPicks(rosters, tradedPicks)
-                        : tradedPicks;
-                    window.S.matchups = matchupsData;
-                    window.S.drafts = hydrated.drafts || [];
-                    // MFL: complete future-pick ownership (exact years/rounds) so the
-                    // Trade Center shows real future picks, not invented N-round sets.
-                    window.S._mflFuturePicks = hydrated._extras?.mflFuturePicks || null;
-
-                    // Rolling PPG — fetch all played weeks' matchups in parallel
-                    // so we can compute last-N-games PPG for each player. Runs
-                    // in the background; consumers listen for wr:weekly-points-loaded.
-                    // Only runs for Sleeper (other providers don't have this endpoint shape).
-                    // Single-flight + league-tagged: rapidly switching leagues must not
-                    // let a stale fetch from league A overwrite league B's results.
-                    const _wppLeagueId = currentLeague.id || currentLeague.league_id;
-                    if (provider.id === 'sleeper' && _wppLeagueId && currentWeek > 0) {
-                        const fetchToken = (window._wppFetchToken = (window._wppFetchToken || 0) + 1);
-                        const fetchLeagueId = _wppLeagueId;
-                        (async () => {
-                            try {
-                                const weeks = [];
-                                const maxWeek = Math.min(18, Math.max(1, currentWeek));
-                                for (let w = 1; w <= maxWeek; w++) weeks.push(w);
-                                const results = await Promise.all(weeks.map(w =>
-                                    fetch('https://api.sleeper.app/v1/league/' + fetchLeagueId + '/matchups/' + w)
-                                        .then(r => r.ok ? r.json() : [])
-                                        .catch(() => [])
-                                ));
-                                // Guard: abort if a newer fetch has started or the
-                                // active league has changed under us.
-                                if (fetchToken !== window._wppFetchToken) return;
-                                const activeLeagueId = window.S?.currentLeagueId;
-                                if (activeLeagueId && activeLeagueId !== fetchLeagueId) return;
-                                const wpp = {};
-                                weeks.forEach((w, i) => {
-                                    const wk = {};
-                                    (results[i] || []).forEach(m => {
-                                        if (m && m.players_points) {
-                                            Object.entries(m.players_points).forEach(([pid, pts]) => {
-                                                if (pts != null) wk[pid] = pts;
-                                            });
-                                        }
-                                    });
-                                    wpp[w] = wk;
-                                });
-                                window.S.weeklyPlayerPoints = wpp;
-                                window.S.weeklyPlayerPointsLeagueId = fetchLeagueId;
-                                window.dispatchEvent(new CustomEvent('wr:weekly-points-loaded', { detail: { leagueId: fetchLeagueId } }));
-                            } catch (e) { /* non-fatal */ }
-                        })();
-                    }
-                    window.S.myRosterId = myRoster?.roster_id;
-                    window.S.platform = provider.id;   // canonical marker
-                    const _isNonSleeper = provider.id !== 'sleeper';
-                    window.S.myUserId = _isNonSleeper
-                        ? (myRoster?.owner_id || currentLeague._mflFranchiseId || sleeperUserId)
-                        : sleeperUserId;
-                    const _userId = window.S.myUserId;
-                    const _userName = _isNonSleeper ? (myRoster?._owner_name || 'Owner') : (sleeperUsername || '');
-                    window.S.user = { user_id: _userId, display_name: _userName, username: _userName };
-
-                    // Bridge helper functions for dhq-ai.js context builders
-                    const _p = players || {};
-                    window.myR = () => (window.S.rosters || []).find(r => r.roster_id === window.S.myRosterId);
-                    window.pName = pid => _p[pid]?.full_name || pid;
-                    window.pPos = pid => _p[pid]?.position || '';
-                    window.pAge = pid => _p[pid]?.age || 0;
-                    window.pM = pos => { if (['DE','DT'].includes(pos)) return 'DL'; if (['CB','S','FS','SS'].includes(pos)) return 'DB'; if (['OLB','ILB','MLB'].includes(pos)) return 'LB'; return pos; };
-                    window.dynastyValue = pid => window.App?.LI?.playerScores?.[pid] || 0;
-                    window.getFAAB = () => {
-                        const league = window.S.leagues?.[0];
-                        const my = window.myR();
-                        const isFAAB = (league?.settings?.waiver_type === 2) || (league?.settings?.waiver_budget > 0);
-                        const budget = isFAAB ? (league?.settings?.waiver_budget || 0) : 0;
-                        const spent = my?.settings?.waiver_budget_used || 0;
-                        const minBid = isFAAB ? (league?.settings?.waiver_budget_min ?? 0) : 0;
-                        return { budget, spent, remaining: Math.max(0, budget - spent), isFAAB, minBid };
-                    };
-                    window.loadMentality = () => {
-                        const gm = window._wrGmStrategy || {};
-                        const modeMap = { contend: 'winnow', rebuild: 'rebuild', balanced: 'balanced' };
-                        return { mentality: modeMap[gm.mode] || 'balanced', neverDrop: (gm.untouchable || []).map(pid => _p[pid]?.full_name || pid).join(', '), notes: gm.notes || '' };
-                    };
-                    window.App.myR = window.myR;
-                    window.App.pName = window.pName;
-                    window.App.pPos = window.pPos;
-                    window.App.pAge = window.pAge;
-                    window.App.pM = window.pM;
-                    window.App.dynastyValue = window.dynastyValue;
-                    window.App.getFAAB = window.getFAAB;
-                    window.App.loadMentality = window.loadMentality;
-
-                    // Rolling PPG helper — returns avg points over the last N
-                    // games where the player actually played (> minPts threshold).
-                    // Uses window.S.weeklyPlayerPoints populated by the background
-                    // weekly fetch above. Returns 0 if no data yet.
-                    window.App.computeRollingPPG = function (pid, lastN, minPts) {
-                        const wpp = window.S?.weeklyPlayerPoints || {};
-                        const weeks = Object.keys(wpp).map(Number).sort((a, b) => b - a);
-                        const threshold = minPts == null ? 0.1 : minPts;
-                        const games = [];
-                        for (const w of weeks) {
-                            const pts = wpp[w]?.[pid];
-                            if (pts != null && pts >= threshold) {
-                                games.push(pts);
-                                if (games.length >= (lastN || 5)) break;
-                            }
+                // Register the background revalidator (audit:refresh-stale step 4).
+                // WR.Sync calls it on tab return / focus / in-season interval:
+                // re-hydrate with the memoized player DB + a FRESH nfl state, then
+                // re-apply. Stale-while-revalidate — background syncs never clear
+                // or reload LI (values keep their own 8h/manual cadence) and never
+                // touch loading/loadStage. loadSeq mirrors the _wppFetchToken
+                // pattern: a league switch or manual refresh invalidates any
+                // in-flight background sync from the previous load.
+                if (window.WR?.Sync?.registerRevalidator) {
+                    const bgLeagueId = currentLeague.id || currentLeague.league_id;
+                    window.WR.Sync.registerRevalidator(async () => {
+                        if (loadSeq !== loadSeqRef.current) return;
+                        const [bgPlayers, bgStateRaw] = await Promise.all([
+                            fetchAllPlayers().catch(() => sleeperPlayers),                 // memoized player DB
+                            fetchJSON(`${SLEEPER_BASE_URL}/state/nfl`).catch(() => ({})),  // always fresh — week-rollover source
+                        ]);
+                        const bgNfl = (bgStateRaw && Object.keys(bgStateRaw).length) ? bgStateRaw : (window.S?.nflState || nflState);
+                        const bgWeek = bgNfl?.display_week || bgNfl?.week || window.S?.currentWeek || currentWeek;
+                        const bgHydrated = await provider.hydrate(currentLeague, {
+                            sleeperPlayers: bgPlayers,
+                            currentWeek: bgWeek,
+                            currentSeason: currentLeague.season || activeYear,
+                            prevSeason: STATS_YEAR,
+                            nflState: bgNfl,
+                        });
+                        if (loadSeq !== loadSeqRef.current) return;
+                        if (window.S?.currentLeagueId && String(window.S.currentLeagueId) !== String(bgLeagueId)) return;
+                        // Integrity gate (background only): hydrate's inner fetches
+                        // degrade to {}/[] on failure, so a network blip could
+                        // otherwise overwrite live on-screen data with empties and
+                        // still count as a successful sync. If core datasets came
+                        // back empty while the current state has them, THROW so
+                        // WR.Sync.refresh records a failed sync (lastSyncedAt stays
+                        // honest) and the stale-but-real data stays up.
+                        const _bgRosters = bgHydrated?.rosters || [];
+                        const _bgUsers = bgHydrated?.leagueUsers || [];
+                        const _haveRosters = !!(window.S?.rosters?.length || currentLeague.rosters?.length);
+                        const _haveUsers = !!(window.S?.leagueUsers?.length || currentLeague.users?.length);
+                        if ((_haveRosters && !_bgRosters.length) || (_haveUsers && !_bgUsers.length)) {
+                            throw new Error('Background revalidation returned empty rosters/users — keeping current data');
                         }
-                        if (!games.length) return 0;
-                        return +(games.reduce((a, b) => a + b, 0) / games.length).toFixed(1);
-                    };
-
-                    // BYO keys are session-only; migrate and clear older localStorage keys.
-                    ['dynastyhq_ai_provider', 'dynastyhq_ai_key', 'dynastyhq_ai_model', 'dynastyhq_xai_key', 'dynastyhq_provider', 'dynastyhq_gemini_key', 'dynastyhq_anthropic_key'].forEach(name => {
-                        try {
-                            const value = localStorage.getItem(name);
-                            if (value && !sessionStorage.getItem(name)) sessionStorage.setItem(name, value);
-                            localStorage.removeItem(name);
-                        } catch (_) {}
+                        applyHydrated(bgHydrated, { provider, sleeperPlayers: bgPlayers, nflState: bgNfl, currentWeek: bgWeek, myRosterData, background: true });
                     });
-                    const savedProvider = sessionStorage.getItem('dynastyhq_ai_provider') || sessionStorage.getItem('dynastyhq_provider') || 'gemini';
-                    const savedKey = sessionStorage.getItem('dynastyhq_ai_key') || sessionStorage.getItem('dynastyhq_' + savedProvider + '_key') || sessionStorage.getItem('dynastyhq_gemini_key') || sessionStorage.getItem('dynastyhq_anthropic_key') || '';
-                    if (savedKey) { window.S.aiProvider = savedProvider; window.S.apiKey = savedKey; }
-
-                    // Bridge stats data — use prevStats (2025) as base, overlay current season
-                    Object.entries(prevStats).forEach(([pid, s]) => {
-                        if (!window.S.playerStats[pid]) window.S.playerStats[pid] = {};
-                        const pts = calcRawPts(s);
-                        const gp = s.gp || 0;
-                        window.S.playerStats[pid].prevTotal = pts ? Math.round(pts * 10) / 10 : 0;
-                        window.S.playerStats[pid].prevAvg = gp > 0 ? Math.round(pts / gp * 10) / 10 : 0;
-                        window.S.playerStats[pid].prevRawStats = s;
-                    });
-                    // Overlay current season stats if available
-                    Object.entries(stats).forEach(([pid, s]) => {
-                        if (!window.S.playerStats[pid]) window.S.playerStats[pid] = {};
-                        const pts = calcRawPts(s);
-                        const gp = s.gp || 0;
-                        if (gp > 0) {
-                            window.S.playerStats[pid].seasonTotal = pts ? Math.round(pts * 10) / 10 : 0;
-                            window.S.playerStats[pid].seasonAvg = Math.round(pts / gp * 10) / 10;
-                        }
-                    });
-
-                    // Mirror to SeasonContext so tab components can use React state
-                    setSeasonCtxData({
-                        season: activeYear,
-                        playerStats: window.S.playerStats,
-                        tradedPicks: tradedPicks || [],
-                        rosters: currentLeague.rosters || [],
-                        myRosterId: myRosterData?.roster_id || null,
-                        lastUpdated: Date.now(),
-                    });
-                }
-
-                setLoadStage('Building league intelligence...');
-
-                // Flatten hydrated transactions (already bucketed by week
-                // from the provider) and merge in DHQ historical trades.
-                // This replaces the old per-platform transaction fetch.
-                let allTxns = [];
-                Object.values(hydrated.transactions || {}).forEach(wk => {
-                    allTxns = allTxns.concat(wk || []);
-                });
-                allTxns.sort((a, b) => (b.created || 0) - (a.created || 0));
-
-                // Merge DHQ historical trades (pre-analyzed with value data)
-                // Deduplicate by timestamp so the provider's recent txns
-                // aren't doubled.
-                if (window.App?.LI?.tradeHistory?.length > 0) {
-                    const existingTradeTs = new Set(allTxns.filter(t => t.type === 'trade').map(t => t.created || 0));
-                    const histTrades = window.App.LI.tradeHistory
-                        .filter(t => !existingTradeTs.has(t.ts || 0))
-                        .map(t => ({ ...t, type: 'trade', status: 'complete', created: t.ts || 0, _fromDHQ: true }));
-                    allTxns = [...allTxns, ...histTrades].sort((a, b) => (b.created || 0) - (a.created || 0));
-                }
-
-                // Populate window.S.transactions keyed by week for
-                // free-agency.js / flash-brief.js consumers.
-                if (window.S) {
-                    const txnsByWeek = {};
-                    allTxns.forEach(t => {
-                        const key = 'w' + (t.leg ?? t.week ?? 0);
-                        if (!txnsByWeek[key]) txnsByWeek[key] = [];
-                        txnsByWeek[key].push(t);
-                    });
-                    window.S.transactions = txnsByWeek;
-                }
-                let visibleTxns = allTxns.slice(0, 50);
-                if (!visibleTxns.some(t => t.type === 'trade')) {
-                    const firstTrade = allTxns.find(t => t.type === 'trade');
-                    if (firstTrade) visibleTxns = [...visibleTxns.slice(0, 49), firstTrade];
-                }
-                setTransactions(visibleTxns);
-
-                // Trending — if the provider supplied it (Sleeper), use that;
-                // otherwise fall back to Sleeper's global trending endpoint
-                // so all platforms see league-wide trends.
-                if (hydrated.trending?.adds || hydrated.trending?.drops) {
-                    setTrending({
-                        adds: hydrated.trending.adds || [],
-                        drops: hydrated.trending.drops || [],
-                    });
-                } else if (window.Sleeper?.fetchTrending) {
-                    (async () => {
-                        try {
-                            const [adds, drops] = await Promise.all([
-                                window.Sleeper.fetchTrending('add', 24, 15),
-                                window.Sleeper.fetchTrending('drop', 24, 15),
-                            ]);
-                            setTrending({ adds: adds || [], drops: drops || [] });
-                        } catch (e) { window.wrLog && window.wrLog('trending.fetch', e); }
-                    })();
                 }
 
                 // Paint the dashboard shell before DHQ starts, then await DHQ.
@@ -2023,6 +2032,305 @@
                 setError(err.message || 'Failed to load league details');
                 setLoading(false);
                 setLoadStage('');
+            }
+        }
+
+        // ── applyHydrated (audit:refresh-stale step 4) ──────────────────
+        // Commits a provider.hydrate() result to React state + the window.S
+        // bridge. Shared by the full loadLeagueDetails path and the WR.Sync
+        // background revalidator. background:true = stale-while-revalidate
+        // refresh: skips the load-stage UI and NEVER touches LeagueIntel —
+        // rosters/matchups/transactions stay fresh while DHQ values keep
+        // their own 8h/manual cadence. Errors propagate to the caller
+        // (loadLeagueDetails' catch sets the error UI; WR.Sync logs).
+        function applyHydrated(hydrated, { provider, sleeperPlayers, nflState, currentWeek, myRosterData, background = false }) {
+            // Pull enrichment out of _extras (Sleeper only — others empty)
+            const stats       = hydrated._extras?.stats       || {};
+            const projections = hydrated._extras?.projections || {};
+            const prevStats   = hydrated._extras?.prevStats   || {};
+
+            // Merge platform-specific extras into the Sleeper player DB.
+            // For Sleeper this is a no-op; for MFL/ESPN/Yahoo this adds
+            // IDP players and other platform-only records that the
+            // Sleeper DB doesn't have.
+            const players = { ...sleeperPlayers, ...(hydrated.players || {}) };
+
+            // Use the hydrated rosters — for non-Sleeper, these now have
+            // Sleeper-resolved player IDs (the whole point of the
+            // provider rebuild step). For Sleeper, these are the fresh
+            // fetchRosters result.
+            const rosters     = (hydrated.rosters && hydrated.rosters.length) ? hydrated.rosters : (currentLeague.rosters || []);
+            const leagueUsers = (hydrated.leagueUsers && hydrated.leagueUsers.length) ? hydrated.leagueUsers : (currentLeague.users || []);
+            const tradedPicks = hydrated.tradedPicks || [];
+            const matchupsData = hydrated.matchups || [];
+
+            // Patch currentLeague in place so downstream useEffects
+            // (computeRankings etc.) see the resolved rosters. React
+            // won't re-render from this mutation, but setStatsData /
+            // setSeasonCtxData below trigger re-renders anyway.
+            currentLeague.rosters = rosters;
+            if (leagueUsers.length) currentLeague.users = leagueUsers;
+
+            // Re-resolve myRosterData now that rosters may have changed
+            const freshMyRoster = provider.id === 'mfl' && currentLeague._mflFranchiseId
+                ? rosters.find(r => r.roster_id === currentLeague._mflFranchiseId)
+                : rosters.find(r => r.owner_id === sleeperUserId) || myRosterData;
+            if (freshMyRoster && freshMyRoster !== myRosterData) setMyRoster(freshMyRoster);
+            const myRoster = freshMyRoster || myRosterData;
+
+            setStatsData(stats);
+            setProjectionsData(projections);
+            setStats2025Data(prevStats);
+            setPlayersData(players);
+            if (!background) setLoadStage('Computing values...');
+
+            // Bridge to DHQ engine immediately
+            if (window.App) {
+                if (!window.S) window.S = {};
+                // Week rollover (audit:refresh-stale step 5): S.currentWeek is
+                // captured at league open; when a background sync sees a new NFL
+                // week we bump timeRecomputeTs below so PlayerValue._ros (keyed
+                // on week) invalidates and rankings/analytics recompute.
+                const weekRolled = background && window.S.currentWeek != null && currentWeek !== window.S.currentWeek;
+                window.S.players = players;
+                window.S.playerStats = {};
+                window.S.rosters = rosters;
+                window.S.leagueUsers = leagueUsers;
+                window.S.leagues = [{ league_id: currentLeague.id, name: currentLeague.name, scoring_settings: currentLeague.scoring_settings, roster_positions: currentLeague.roster_positions, settings: currentLeague.settings }];
+                // Invalidate any previously-loaded weekly points from a different
+                // league before kicking off the fresh fetch below.
+                if (window.S.weeklyPlayerPointsLeagueId && window.S.weeklyPlayerPointsLeagueId !== currentLeague.id) {
+                    window.S.weeklyPlayerPoints = {};
+                    window.S.weeklyPlayerPointsLeagueId = null;
+                }
+                window.S.currentLeagueId = currentLeague.id;
+                window.S.season = activeYear;
+                window.S.nflState = hydrated.nflState && Object.keys(hydrated.nflState).length ? hydrated.nflState : nflState;
+                window.S.currentWeek = currentWeek;
+                window.S.tradedPicks = window.App?.normalizeTradedPicks
+                    ? window.App.normalizeTradedPicks(rosters, tradedPicks)
+                    : tradedPicks;
+                window.S.matchups = matchupsData;
+                window.S.drafts = hydrated.drafts || [];
+                // MFL: complete future-pick ownership (exact years/rounds) so the
+                // Trade Center shows real future picks, not invented N-round sets.
+                window.S._mflFuturePicks = hydrated._extras?.mflFuturePicks || null;
+
+                // Rolling PPG — fetch all played weeks' matchups in parallel
+                // so we can compute last-N-games PPG for each player. Runs
+                // in the background; consumers listen for wr:weekly-points-loaded.
+                // Only runs for Sleeper (other providers don't have this endpoint shape).
+                // Single-flight + league-tagged: rapidly switching leagues must not
+                // let a stale fetch from league A overwrite league B's results.
+                const _wppLeagueId = currentLeague.id || currentLeague.league_id;
+                // Background syncs (~5min focus cadence): skip the 18-fetch
+                // weekly-points reload unless the week rolled or the last
+                // successful fetch for THIS league is older than ~15 minutes.
+                // Foreground (league open / manual refresh) always runs.
+                const _wppFresh = wppFetchedAtRef.current.leagueId === _wppLeagueId
+                    && (Date.now() - wppFetchedAtRef.current.ts) < 15 * 60 * 1000;
+                const _wppSkipBg = background && !weekRolled && _wppFresh;
+                if (provider.id === 'sleeper' && _wppLeagueId && currentWeek > 0 && !_wppSkipBg) {
+                    const fetchToken = (window._wppFetchToken = (window._wppFetchToken || 0) + 1);
+                    const fetchLeagueId = _wppLeagueId;
+                    (async () => {
+                        try {
+                            const weeks = [];
+                            const maxWeek = Math.min(18, Math.max(1, currentWeek));
+                            for (let w = 1; w <= maxWeek; w++) weeks.push(w);
+                            const results = await Promise.all(weeks.map(w =>
+                                fetch('https://api.sleeper.app/v1/league/' + fetchLeagueId + '/matchups/' + w)
+                                    .then(r => r.ok ? r.json() : [])
+                                    .catch(() => [])
+                            ));
+                            // Guard: abort if a newer fetch has started or the
+                            // active league has changed under us.
+                            if (fetchToken !== window._wppFetchToken) return;
+                            const activeLeagueId = window.S?.currentLeagueId;
+                            if (activeLeagueId && activeLeagueId !== fetchLeagueId) return;
+                            const wpp = {};
+                            weeks.forEach((w, i) => {
+                                const wk = {};
+                                (results[i] || []).forEach(m => {
+                                    if (m && m.players_points) {
+                                        Object.entries(m.players_points).forEach(([pid, pts]) => {
+                                            if (pts != null) wk[pid] = pts;
+                                        });
+                                    }
+                                });
+                                wpp[w] = wk;
+                            });
+                            window.S.weeklyPlayerPoints = wpp;
+                            window.S.weeklyPlayerPointsLeagueId = fetchLeagueId;
+                            wppFetchedAtRef.current = { ts: Date.now(), leagueId: fetchLeagueId };
+                            window.dispatchEvent(new CustomEvent('wr:weekly-points-loaded', { detail: { leagueId: fetchLeagueId } }));
+                        } catch (e) { /* non-fatal */ }
+                    })();
+                }
+                window.S.myRosterId = myRoster?.roster_id;
+                window.S.platform = provider.id;   // canonical marker
+                const _isNonSleeper = provider.id !== 'sleeper';
+                window.S.myUserId = _isNonSleeper
+                    ? (myRoster?.owner_id || currentLeague._mflFranchiseId || sleeperUserId)
+                    : sleeperUserId;
+                const _userId = window.S.myUserId;
+                const _userName = _isNonSleeper ? (myRoster?._owner_name || 'Owner') : (sleeperUsername || '');
+                window.S.user = { user_id: _userId, display_name: _userName, username: _userName };
+
+                // Bridge helper functions for dhq-ai.js context builders
+                const _p = players || {};
+                window.myR = () => (window.S.rosters || []).find(r => r.roster_id === window.S.myRosterId);
+                window.pName = pid => _p[pid]?.full_name || pid;
+                window.pPos = pid => _p[pid]?.position || '';
+                window.pAge = pid => _p[pid]?.age || 0;
+                window.pM = pos => { if (['DE','DT'].includes(pos)) return 'DL'; if (['CB','S','FS','SS'].includes(pos)) return 'DB'; if (['OLB','ILB','MLB'].includes(pos)) return 'LB'; return pos; };
+                window.dynastyValue = pid => window.App?.LI?.playerScores?.[pid] || 0;
+                window.getFAAB = () => {
+                    const league = window.S.leagues?.[0];
+                    const my = window.myR();
+                    const isFAAB = (league?.settings?.waiver_type === 2) || (league?.settings?.waiver_budget > 0);
+                    const budget = isFAAB ? (league?.settings?.waiver_budget || 0) : 0;
+                    const spent = my?.settings?.waiver_budget_used || 0;
+                    const minBid = isFAAB ? (league?.settings?.waiver_budget_min ?? 0) : 0;
+                    return { budget, spent, remaining: Math.max(0, budget - spent), isFAAB, minBid };
+                };
+                window.loadMentality = () => {
+                    const gm = window._wrGmStrategy || {};
+                    const modeMap = { contend: 'winnow', rebuild: 'rebuild', balanced: 'balanced' };
+                    return { mentality: modeMap[gm.mode] || 'balanced', neverDrop: (gm.untouchable || []).map(pid => _p[pid]?.full_name || pid).join(', '), notes: gm.notes || '' };
+                };
+                window.App.myR = window.myR;
+                window.App.pName = window.pName;
+                window.App.pPos = window.pPos;
+                window.App.pAge = window.pAge;
+                window.App.pM = window.pM;
+                window.App.dynastyValue = window.dynastyValue;
+                window.App.getFAAB = window.getFAAB;
+                window.App.loadMentality = window.loadMentality;
+
+                // Rolling PPG helper — returns avg points over the last N
+                // games where the player actually played (> minPts threshold).
+                // Uses window.S.weeklyPlayerPoints populated by the background
+                // weekly fetch above. Returns 0 if no data yet.
+                window.App.computeRollingPPG = function (pid, lastN, minPts) {
+                    const wpp = window.S?.weeklyPlayerPoints || {};
+                    const weeks = Object.keys(wpp).map(Number).sort((a, b) => b - a);
+                    const threshold = minPts == null ? 0.1 : minPts;
+                    const games = [];
+                    for (const w of weeks) {
+                        const pts = wpp[w]?.[pid];
+                        if (pts != null && pts >= threshold) {
+                            games.push(pts);
+                            if (games.length >= (lastN || 5)) break;
+                        }
+                    }
+                    if (!games.length) return 0;
+                    return +(games.reduce((a, b) => a + b, 0) / games.length).toFixed(1);
+                };
+
+                // BYO keys are session-only; migrate and clear older localStorage keys.
+                ['dynastyhq_ai_provider', 'dynastyhq_ai_key', 'dynastyhq_ai_model', 'dynastyhq_xai_key', 'dynastyhq_provider', 'dynastyhq_gemini_key', 'dynastyhq_anthropic_key'].forEach(name => {
+                    try {
+                        const value = localStorage.getItem(name);
+                        if (value && !sessionStorage.getItem(name)) sessionStorage.setItem(name, value);
+                        localStorage.removeItem(name);
+                    } catch (_) {}
+                });
+                const savedProvider = sessionStorage.getItem('dynastyhq_ai_provider') || sessionStorage.getItem('dynastyhq_provider') || 'gemini';
+                const savedKey = sessionStorage.getItem('dynastyhq_ai_key') || sessionStorage.getItem('dynastyhq_' + savedProvider + '_key') || sessionStorage.getItem('dynastyhq_gemini_key') || sessionStorage.getItem('dynastyhq_anthropic_key') || '';
+                if (savedKey) { window.S.aiProvider = savedProvider; window.S.apiKey = savedKey; }
+
+                // Bridge stats data — use prevStats (2025) as base, overlay current season
+                Object.entries(prevStats).forEach(([pid, s]) => {
+                    if (!window.S.playerStats[pid]) window.S.playerStats[pid] = {};
+                    const pts = calcRawPts(s);
+                    const gp = s.gp || 0;
+                    window.S.playerStats[pid].prevTotal = pts ? Math.round(pts * 10) / 10 : 0;
+                    window.S.playerStats[pid].prevAvg = gp > 0 ? Math.round(pts / gp * 10) / 10 : 0;
+                    window.S.playerStats[pid].prevRawStats = s;
+                });
+                // Overlay current season stats if available
+                Object.entries(stats).forEach(([pid, s]) => {
+                    if (!window.S.playerStats[pid]) window.S.playerStats[pid] = {};
+                    const pts = calcRawPts(s);
+                    const gp = s.gp || 0;
+                    if (gp > 0) {
+                        window.S.playerStats[pid].seasonTotal = pts ? Math.round(pts * 10) / 10 : 0;
+                        window.S.playerStats[pid].seasonAvg = Math.round(pts / gp * 10) / 10;
+                    }
+                });
+
+                // Mirror to SeasonContext so tab components can use React state
+                setSeasonCtxData({
+                    season: activeYear,
+                    playerStats: window.S.playerStats,
+                    tradedPicks: tradedPicks || [],
+                    rosters: currentLeague.rosters || [],
+                    myRosterId: myRosterData?.roster_id || null,
+                    lastUpdated: Date.now(),
+                });
+
+                if (weekRolled) setTimeRecomputeTs(Date.now());
+            }
+
+            if (!background) setLoadStage('Building league intelligence...');
+
+            // Flatten hydrated transactions (already bucketed by week
+            // from the provider) and merge in DHQ historical trades.
+            // This replaces the old per-platform transaction fetch.
+            let allTxns = [];
+            Object.values(hydrated.transactions || {}).forEach(wk => {
+                allTxns = allTxns.concat(wk || []);
+            });
+            allTxns.sort((a, b) => (b.created || 0) - (a.created || 0));
+
+            // Merge DHQ historical trades (pre-analyzed with value data)
+            // Deduplicate by timestamp so the provider's recent txns
+            // aren't doubled.
+            if (window.App?.LI?.tradeHistory?.length > 0) {
+                const existingTradeTs = new Set(allTxns.filter(t => t.type === 'trade').map(t => t.created || 0));
+                const histTrades = window.App.LI.tradeHistory
+                    .filter(t => !existingTradeTs.has(t.ts || 0))
+                    .map(t => ({ ...t, type: 'trade', status: 'complete', created: t.ts || 0, _fromDHQ: true }));
+                allTxns = [...allTxns, ...histTrades].sort((a, b) => (b.created || 0) - (a.created || 0));
+            }
+
+            // Populate window.S.transactions keyed by week for
+            // free-agency.js / flash-brief.js consumers.
+            if (window.S) {
+                const txnsByWeek = {};
+                allTxns.forEach(t => {
+                    const key = 'w' + (t.leg ?? t.week ?? 0);
+                    if (!txnsByWeek[key]) txnsByWeek[key] = [];
+                    txnsByWeek[key].push(t);
+                });
+                window.S.transactions = txnsByWeek;
+            }
+            let visibleTxns = allTxns.slice(0, 50);
+            if (!visibleTxns.some(t => t.type === 'trade')) {
+                const firstTrade = allTxns.find(t => t.type === 'trade');
+                if (firstTrade) visibleTxns = [...visibleTxns.slice(0, 49), firstTrade];
+            }
+            setTransactions(visibleTxns);
+
+            // Trending — if the provider supplied it (Sleeper), use that;
+            // otherwise fall back to Sleeper's global trending endpoint
+            // so all platforms see league-wide trends.
+            if (hydrated.trending?.adds || hydrated.trending?.drops) {
+                setTrending({
+                    adds: hydrated.trending.adds || [],
+                    drops: hydrated.trending.drops || [],
+                });
+            } else if (window.Sleeper?.fetchTrending) {
+                (async () => {
+                    try {
+                        const [adds, drops] = await Promise.all([
+                            window.Sleeper.fetchTrending('add', 24, 15),
+                            window.Sleeper.fetchTrending('drop', 24, 15),
+                        ]);
+                        setTrending({ adds: adds || [], drops: drops || [] });
+                    } catch (e) { window.wrLog && window.wrLog('trending.fetch', e); }
+                })();
             }
         }
 
@@ -2192,110 +2500,6 @@
             return user?.display_name || user?.username || 'Unknown';
         }
 
-        function computeDataDrivenHero() {
-            const parts = [];
-            if (rankedTeams.length) {
-                const top = rankedTeams[0];
-                const myRank = rankedTeams.findIndex(t => t.userId === sleeperUserId) + 1;
-                parts.push(top.displayName + ' leads the power rankings with a ' + top.healthScore + ' health score and ' + top.wins + '-' + top.losses + ' record.');
-                if (myRank && myRank !== 1) {
-                    const me = rankedTeams[myRank - 1];
-                    parts.push('You sit at #' + myRank + ' (' + me.wins + '-' + me.losses + ') with ' + (me.totalDHQ||0).toLocaleString() + ' total DHQ.');
-                } else if (myRank === 1) {
-                    parts.push('You hold the top spot in the league.');
-                }
-            }
-            const recentTrade = transactions.find(t => t.type === 'trade');
-            if (recentTrade) {
-                const addPids = Object.keys(recentTrade.adds || {});
-                const names = addPids.slice(0, 2).map(pid => getPlayerName(pid)).filter(Boolean).join(' and ');
-                if (names) parts.push('Latest trade: ' + names + ' changed hands between ' + getOwnerName(recentTrade.roster_ids?.[0]) + ' and ' + getOwnerName(recentTrade.roster_ids?.[1]) + '.');
-            }
-            return parts.join(' ') || 'Welcome to your Dynasty HQ. League intelligence is loading.';
-        }
-
-        async function generateHeroStory() {
-            // Try AI first, fall back to data-driven
-            if (typeof dhqAI === 'function' || typeof window.dhqAI === 'function' || typeof window.callClaude === 'function') {
-                setHeroStory('Generating...');
-                try {
-                    const fmtPreamble = window.WR?.AIContext?.buildFormatPreamble?.(currentLeague) || '';
-                    const ctx = fmtPreamble + (typeof dhqContext === 'function' ? dhqContext(true) : '');
-                    const prompt = "Write a 3-4 sentence sports journalist narrative about the current state of this dynasty league. Focus on the biggest storyline this week — trades, injuries, power shifts, or playoff implications. Write in the style of The Athletic — dramatic, informed, specific. Use owner names and player names when possible.";
-                    const aiFn = typeof dhqAI === 'function' ? dhqAI : window.dhqAI;
-                    const reply = await aiFn('home-chat', prompt, ctx);
-                    if (reply) { setHeroStory(reply); return; }
-                } catch(e) { console.warn('Hero story AI failed, using data-driven:', e); }
-            }
-            setHeroStory(computeDataDrivenHero());
-        }
-
-        async function generateAiStories() {
-            setAiStories([{ icon: '\u23F3', category: 'Generating...', headline: 'Analyzing league data...', body: '' }]);
-            try {
-                const stories = [];
-                const trades = transactions.filter(t => t.type === 'trade');
-                if (trades.length > 0) {
-                    const bigTrade = trades[0];
-                    const addPids = Object.keys(bigTrade.adds || {});
-                    const addNames = addPids.slice(0, 3).map(pid => getPlayerName(pid)).join(', ');
-                    const totalVal = addPids.reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0);
-                    stories.push({
-                        icon: '\uD83E\uDD1D', category: 'Trade of the Week',
-                        headline: addNames ? addNames + ' change hands in blockbuster deal' : 'Latest trade shakes up league landscape',
-                        body: getOwnerName(bigTrade.roster_ids?.[0]) + ' and ' + getOwnerName(bigTrade.roster_ids?.[1]) + ' swapped ' + addPids.length + ' player' + (addPids.length !== 1 ? 's' : '') + '. Combined DHQ value: ' + totalVal.toLocaleString() + '.'
-                    });
-                } else {
-                    stories.push({ icon: '\uD83E\uDD1D', category: 'Trade Watch', headline: 'Trade market remains quiet', body: 'No trades completed recently. The league is in a holding pattern.' });
-                }
-                if (rankedTeams.length > 0) {
-                    const top = rankedTeams[0];
-                    const bottom = rankedTeams[rankedTeams.length - 1];
-                    stories.push({
-                        icon: '\uD83D\uDCCA', category: 'Power Shift',
-                        headline: top.displayName + ' holds the top spot in power rankings',
-                        body: 'Health score of ' + top.healthScore + ' and ' + top.totalDHQ.toLocaleString() + ' total DHQ. ' + top.displayName + ' leads at ' + top.wins + '-' + top.losses + '. ' + bottom.displayName + ' trails at #' + rankedTeams.length + '.'
-                    });
-                }
-                if (myRoster?.players?.length) {
-	                    const agingPlayers = myRoster.players
-	                        .map(pid => ({ pid, player: playersData[pid], dhq: window.App?.LI?.playerScores?.[pid] || 0 }))
-	                        .filter(p => {
-                                if (!p.player || p.dhq <= 1000) return false;
-                                const valueEnd = typeof window.App?.getValueWindowEnd === 'function'
-                                    ? window.App.getValueWindowEnd(p.player.position)
-                                    : ((window.App.peakWindows || {})[p.player.position] || [24, 29])[1];
-                                return p.player.age > valueEnd;
-                            })
-                        .sort((a,b) => b.dhq - a.dhq)
-                        .slice(0, 3);
-                    if (agingPlayers.length > 0) {
-                        const names = agingPlayers.map(p => (p.player.full_name || getPlayerName(p.pid)) + ' (' + p.player.age + ')').join(', ');
-	                        stories.push({ icon: '\u23F0', category: 'Aging Watch', headline: 'Your veterans past the value window', body: names + ' \u2014 high-value assets past their position curve. Consider selling high before value erodes.' });
-                    } else {
-                        stories.push({ icon: '\uD83C\uDF31', category: 'Youth Movement', headline: 'Your roster skews young', body: 'No significant aging concerns. Your dynasty foundation is built for the long haul.' });
-                    }
-                }
-                if (typeof dhqAI === 'function' && window.App?.LI_LOADED) {
-                    try {
-                        const ctx = (window.WR?.AIContext?.buildFormatPreamble?.(currentLeague) || '') + dhqContext(true);
-                        const reply = await dhqAI('home-chat', 'Write one punchy 2-sentence sports headline and body about the most interesting dynasty angle in this league right now. Focus on a specific team or player. Format exactly: HEADLINE: [headline]\\nBODY: [body]', ctx);
-                        if (reply) {
-                            const headlineMatch = reply.match(/HEADLINE:\s*(.+)/i);
-                            const bodyMatch = reply.match(/BODY:\s*(.+)/is);
-                            if (headlineMatch) {
-                                stories.push({ icon: '\uD83E\uDD16', category: 'AI Insight', headline: headlineMatch[1].trim(), body: bodyMatch ? bodyMatch[1].trim() : reply });
-                            }
-                        }
-                    } catch(e) { window.wrLog('aiStory.generate', e); }
-                }
-                setAiStories(stories.slice(0, 3));
-            } catch(e) {
-                console.warn('AI stories error:', e);
-                setAiStories([{ icon: '\u26A0\uFE0F', category: 'Error', headline: 'Could not generate stories', body: 'Please try again later.' }]);
-            }
-        }
-
         // GM Onboarding wizard — conversational strategy setup
         function startGmOnboarding() {
           if (gmOnboardStep > 0) return;
@@ -2386,6 +2590,13 @@
               ]);
             }
             setGmOnboardStep(5);
+            // Free: never auto-fire AI (BYOK routes dhqAI straight to the
+            // provider, bypassing the OD.callAI tripwire) — free gets the
+            // designed canned ack instead of the AI assessment.
+            if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+              setReconMessages(prev => [...prev, { role: 'assistant', content: 'Strategy locked in. Let\'s get to work — ask me anything. — Alex' }]);
+              return;
+            }
             // Generate strategy assessment
             setReconMessages(prev => [...prev, { role: 'assistant', content: '...' }]);
             (async () => {
@@ -2414,10 +2625,8 @@
                         record: myRoster?.settings ? `${myRoster.settings.wins}-${myRoster.settings.losses}` : '',
                         needs: (assessment?.needs || []).map(n => n.urgency === 'deficit' ? `${n.pos}*` : n.pos),
                         strengths: assessment?.strengths || [],
-                        // Distinguishes "assessed, zero needs" from "no assessment" so the
-                        // edge function knows whether the roster engine's verdict is present.
-                        hasAssessment: !!assessment,
-                        gmStrategy: [gmStrategy?.mode, gmStrategy?.riskTolerance && `${gmStrategy.riskTolerance} risk`].filter(Boolean).join(', '),
+                        // gmStrategy rides in from buildStructuredBase (the canonical
+                        // WR.GmMode.promptBlock serialization) — no legacy override here.
                         myRoster: diagRoster,
                       };
                       const result = await window.OD.callAI({ type: 'team_diagnosis', context });
@@ -2460,13 +2669,29 @@
 	            module: activeTab,
 	            metadata: { chars: text.trim().length },
 	          });
-	          // Free tier: 1 AI call per day
-          if (!canUseAI()) {
-            setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to Dynasty HQ for unlimited AI access.' }]);
-            return;
+	          // Free tier (owner ruling 2026-07-05): ONE Ask Alex send per day on
+          // the existing AI_DAILY counter. canUseAI() can't enforce this — it
+          // trusts the server whenever hasServerAI() and only ever limited the
+          // paid 'scout' tier — and BYOK (S.apiKey) never touches the server,
+          // so the counter is checked here at the send seam.
+          let isFreeCountedSend = false;
+          if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+            const dayKey = window.App.WR_KEYS.AI_DAILY(new Date().toISOString().split('T')[0]);
+            if (parseInt(window.App.WrStorage.get(dayKey, '0')) >= 1) {
+              setReconInput('');
+              setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'That\'s my one free scouting call for today — I\'m back tomorrow. Dynasty HQ Pro gets you unlimited Ask Alex, plus verdicts, optimizers and the full intel suite.' }]);
+              return;
+            }
+            isFreeCountedSend = true; // counted after the reply lands — a provider error must not burn the one daily send
+          } else {
+            // Paid/trial: untouched — legacy scout-tier limit + server-side rate limiting.
+            if (!canUseAI()) {
+              setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to Scout ($4.99/mo) or Dynasty HQ ($9.99/mo) for unlimited AI access.' }]);
+              return;
+            }
+            // Only track local daily use if NOT using server AI (server handles its own rate limiting)
+            if (!(typeof hasServerAI === 'function' && hasServerAI())) trackAIUse();
           }
-          // Only track local daily use if NOT using server AI (server handles its own rate limiting)
-          if (!(typeof hasServerAI === 'function' && hasServerAI())) trackAIUse();
           setReconInput('');
           const userMsg = { role: 'user', content: text.trim() };
           setReconMessages(prev => [...prev, userMsg, { role: 'assistant', content: '...' }]);
@@ -2476,11 +2701,22 @@
             if (window._leagueDocsContext) {
                 context += '\n\n--- LEAGUE DOCUMENTS ---\n' + window._leagueDocsContext;
             }
-            // Phase 1: inject GM mode preamble so Alex's advice matches the GM's strategy
+            // GM Strategy directive — dhqContext() above already serializes the
+            // committed strategy into its canonical [GM_STRATEGY] block (the same
+            // WR.GmMode.promptBlock output), so never prepend a second copy here.
+            // Only when that block is absent (dhq-ai not loaded, or no strategy
+            // saved yet) fall back to the local prepend / mode-only preset.
             try {
-                const gm = window.WR?.GmMode?.describe?.(gmStrategy?.mode);
-                if (gm && gm.prompt) {
-                    context = '--- GM MODE DIRECTIVE ---\n' + gm.prompt + '\n\n' + context;
+                if (!context.includes('[GM_STRATEGY]')) {
+                    const gmBlock = window.WR?.GmMode?.promptBlock?.(currentLeague?.league_id || currentLeague?.id);
+                    if (gmBlock) {
+                        context = '--- GM STRATEGY DIRECTIVE ---\n' + gmBlock + '\n\n' + context;
+                    } else {
+                        const gm = window.WR?.GmMode?.describe?.(gmStrategy?.mode);
+                        if (gm && gm.prompt) {
+                            context = '--- GM MODE DIRECTIVE ---\n' + gm.prompt + '\n\n' + context;
+                        }
+                    }
                 }
             } catch (e) { /* ignore */ }
             // Format + quality preamble — the generic dhqAI path can't detect
@@ -2507,6 +2743,7 @@
               : typeof callClaude === 'function'
                 ? await callClaude(messages)
                 : 'AI not available. Add an API key in Settings.';
+            if (isFreeCountedSend && (typeof dhqAI === 'function' || typeof callClaude === 'function')) trackAIUse();
             setReconMessages(prev => {
               const updated = [...prev];
               updated[updated.length - 1] = { role: 'assistant', content: reply };
@@ -2583,19 +2820,29 @@
 
         if (loading) {
             return (
-                <div className="app-container" style={{ paddingBottom: '60px' }}>
+                <div className="app-container wr-skel-shell" style={{ paddingBottom: '60px' }}>
+                    {/* Phone tier (≤767): no dead 160px rail — full-width single column.
+                        !important beats the inline styles below; tablet (768–1023) and
+                        desktop keep the rail exactly as-is. */}
+                    <style>{`@media(max-width:767px){
+                        .wr-skel-shell{padding-bottom:calc(60px + var(--sab, env(safe-area-inset-bottom, 0px))) !important}
+                        .wr-skel-rail{display:none !important}
+                        .wr-skel-main{margin-left:0 !important;padding:calc(16px + var(--sat, env(safe-area-inset-top, 0px))) 12px 24px !important}
+                        .wr-skel-kpis{grid-template-columns:repeat(auto-fit,minmax(120px,1fr)) !important}
+                        .wr-skel-cols{grid-template-columns:1fr !important}
+                    }`}</style>
                     {/* Skeleton left nav */}
-                    <div style={{ position:'fixed', left:0, top:0, bottom:0, width:'160px', background:'var(--black)', borderRight:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', padding:'16px 0', zIndex:100 }}>
-                        <div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1.3rem', color:'var(--gold)', padding:'0 16px', marginBottom:'20px' }}>DYNASTY HQ</div>
+                    <div className="wr-skel-rail" style={{ position:'fixed', left:0, top:0, bottom:0, width:'160px', background:'var(--black)', borderRight:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', padding:'16px 0', zIndex:100 }}>
+                        <div className="wr-wordmark" style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1.3rem', color:'var(--gold)', padding:'0 16px', marginBottom:'20px' }}>DYNASTY HQ</div>
                         {['Home','My Team','League','Analytics','Trades','Free Agency','Draft'].map((label,i) => (
                             <div key={i} style={{ padding:'10px 16px', fontSize:'var(--text-body, 1rem)', fontFamily: 'var(--font-body)', color: i===0?'var(--gold)':'var(--ov-8, rgba(255,255,255,0.3))', borderLeft: i===0?'3px solid var(--gold)':'3px solid transparent', background: i===0?'var(--acc-fill2, rgba(212,175,55,0.12))':'transparent' }}>{label}</div>
                         ))}
                     </div>
                     {/* Skeleton main content */}
-                    <div style={{ marginLeft:'160px', padding:'24px 32px' }}>
+                    <div className="wr-skel-main" style={{ marginLeft:'160px', padding:'24px 32px' }}>
                         <div style={{ fontFamily:'Rajdhani, sans-serif', fontSize:'1.1rem', color:'var(--gold)', marginBottom:'16px' }}>{currentLeague.name}</div>
                         {/* KPI skeleton row */}
-                        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:'12px', marginBottom:'24px' }}>
+                        <div className="wr-skel-kpis" style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:'12px', marginBottom:'24px' }}>
                             <SkeletonKPI /><SkeletonKPI /><SkeletonKPI /><SkeletonKPI /><SkeletonKPI />
                         </div>
                         {/* Hero skeleton */}
@@ -2605,7 +2852,7 @@
                             <div className="skel skel-line" style={{ width:'50%' }} />
                         </div>
                         {/* Two-column skeleton */}
-                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'16px' }}>
+                        <div className="wr-skel-cols" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'16px' }}>
                             <div className="skel-card"><div className="skel skel-line" style={{width:'40%',marginBottom:'12px'}} /><SkeletonRows count={5} /></div>
                             <div className="skel-card"><div className="skel skel-line" style={{width:'40%',marginBottom:'12px'}} /><SkeletonRows count={5} /></div>
                         </div>
@@ -2858,23 +3105,9 @@
         }
 
         const sidebarWidth = sidebarCollapsed ? 72 : 176;
-        const iconPaths = {
-            home: ['M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-8.5Z'],
-            roster: ['M12 3l7 3.5v5.2c0 4.5-3 7.5-7 8.3-4-.8-7-3.8-7-8.3V6.5L12 3Z', 'M8.7 12.2l2.1 2.1 4.5-4.7'],
-            compare: ['M7 7h10M7 17h10', 'M9 4 6 7l3 3', 'M15 14l3 3-3 3'],
-            trade: ['M7 7h11m0 0-3-3m3 3-3 3', 'M17 17H6m0 0 3 3m-3-3 3-3'],
-            fa: ['M12 3v18', 'M7 7.5c0-1.8 2-3 5-3 2.8 0 4.8 1.2 4.8 3.4 0 2.4-2.2 3.2-4.8 3.2S7.2 12 7.2 14.4 9.4 18 12.3 18c2.3 0 4.2-.8 5.1-2.2'],
-            draft: ['M12 3l8 16H4L12 3Z', 'M12 8v5'],
-            analytics: ['M5 19V9', 'M12 19V5', 'M19 19v-7'],
-            film: ['M4 7h16v10H4z', 'M8 7l2-3h4l2 3', 'M10 11l4 2-4 2v-4Z'],
-            office: ['M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8Z', 'M9 8V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3', 'M4 12h16', 'M10 14h4'],
-            trophy: ['M8 4h8v4a4 4 0 0 1-8 0V4Z', 'M6 5H4v2a3 3 0 0 0 4 2', 'M18 5h2v2a3 3 0 0 1-4 2', 'M12 12v5', 'M8 21h8', 'M9 17h6'],
-            calendar: ['M5 5h14v15H5z', 'M8 3v4', 'M16 3v4', 'M5 9h14'],
-            strategy: ['M12 3l7 7-7 11-7-11 7-7Z', 'M12 8v5l3 2'],
-            settings: ['M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z', 'M12 3v2', 'M12 19v2', 'M3 12h2', 'M19 12h2', 'M5.6 5.6 7 7', 'M17 17l1.4 1.4', 'M18.4 5.6 17 7', 'M7 17l-1.4 1.4'],
-            legend: ['M4 5h16', 'M4 12h16', 'M4 19h16', 'M7 5v14', 'M11 5v14'],
-            refresh: ['M21 12a9 9 0 0 1-14.8 6.9', 'M3 12A9 9 0 0 1 17.8 5.1', 'M17 3v4h4', 'M7 21v-4H3'],
-        };
+        // Icon paths live at module scope (NAV_ICON_PATHS, above PhoneDock)
+        // so the sidebar and the phone dock strip draw the same glyphs.
+        const iconPaths = NAV_ICON_PATHS;
         const renderNavIcon = (key) => React.createElement('svg', {
             className: 'wr-sidebar-icon',
             viewBox: '0 0 24 24',
@@ -2886,15 +3119,22 @@
             'aria-hidden': 'true',
         }, ...(iconPaths[key] || iconPaths.home).map((d, idx) => React.createElement('path', { key: idx, d })));
 
+        // Nav definition — single source of truth (module-scope
+        // buildLeagueNavItems). The sidebar maps this array below and the
+        // SAME array instance feeds the PhoneDock strip at the bottom of
+        // this render, so the two surfaces can never drift.
+        const navItems = buildLeagueNavItems(leagueSkin?.features?.showGameDay ?? (leagueSkin?.phase === 'in_season'));
+
         const _seasonCtxValue = { ...seasonCtxData, leagueSkin, selectPlayer };
         const leagueSkinClassName = leagueSkin?.theme?.className || (leagueSkin?.type ? 'wr-league-skin-' + leagueSkin.type : 'wr-league-skin-default');
 
         return (
           <window.App.SeasonContext.Provider value={_seasonCtxValue}>
             <div className={'app-container ' + leagueSkinClassName} data-league-skin-type={leagueSkin?.type || 'unknown'} data-league-skin-theme={leagueSkin?.theme?.id || 'war-room-default'} onWheel={rerouteWheelToPage} style={{ paddingBottom: '60px' }}>
-                {/* DHQ Loading Bubble */}
+                {/* DHQ Loading Bubble — .wr-dhq-bubble: phone tier repoints it
+                    above the bottom dock (index.html PHONE TIER block). */}
                 {dhqStatus.loading && (
-                    <div style={{
+                    <div className="wr-dhq-bubble" style={{
                         position: 'fixed', bottom: '24px', left: '80px', zIndex: 300,
                         background: 'var(--black)', border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))',
                         borderRadius: '16px', padding: '16px 20px', minWidth: '280px',
@@ -2928,12 +3168,16 @@
                     </div>
                 )}
 
-                {/* Mobile hamburger toggle */}
-                <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+                {/* Mobile hamburger toggle \u2014 hidden while the phone Alex sheet is
+                    open (it would paint above the sheet and toggle the drawer
+                    invisibly beneath it). Redundant access on phone \u2014 the dock
+                    strip covers every nav item \u2014 but kept as the drawer's
+                    familiar entry point. */}
+                {!(alexPhone && reconPanelOpen) && <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
                     display: 'none', position: 'fixed', top: 'calc(10px + var(--wr-dev-banner-height, 0px))', left: '10px', zIndex: 201,
                     background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px',
                     padding: '6px 10px', cursor: 'pointer', color: 'var(--gold)', fontSize: '1.2rem', lineHeight: 1
-                }} className="wr-hamburger">{sidebarOpen ? '\u2715' : '\u2630'}</button>
+                }} className="wr-hamburger">{sidebarOpen ? '\u2715' : '\u2630'}</button>}
                 <style>{`@media(max-width:1023px){
                     html,body,#root{max-width:100%;overflow-x:clip;overflow-y:visible}
                     .wr-hamburger{display:block !important}
@@ -2942,14 +3186,13 @@
                     .wr-main-content{margin-left:0 !important;width:100% !important;max-width:100vw;overflow-x:clip;overflow-y:visible;box-sizing:border-box;padding-top:var(--wr-dev-banner-height,0px)}
                 }
                 @media(max-width:767px){
-                    /* Compact header: title+SWITCH on row 1, then ALL badges
-                       share one wrapping row instead of one row each (the old
-                       grid burned ~25% of the screen on stacked single chips). */
-                    .wr-league-header-row{display:flex !important;flex-wrap:wrap !important;align-items:center !important;gap:5px 6px !important;padding-left:42px}
-                    .wr-league-header-row .header-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-body, 1rem) !important;line-height:1.2}
-                    .wr-league-switch{flex-shrink:0}
-                    .wr-gm-mode-badge,.wr-league-type-badge,.wr-league-phase-badge{flex:0 1 auto;max-width:100%;min-width:0}
-                    .wr-draft-header-clock{flex-basis:100%;max-width:100%;min-width:0;overflow:hidden}
+                    .wr-league-header-row{display:grid !important;grid-template-columns:minmax(0,1fr) auto;align-items:start !important;gap:6px 8px !important;padding-left:42px}
+                    .wr-league-header-row .header-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-body, 1rem) !important;line-height:1.2}
+                    .wr-league-switch{grid-column:2;grid-row:1}
+                    .wr-gm-mode-badge{grid-column:1 / 3;justify-self:start;max-width:100%;min-width:0}
+                    .wr-league-type-badge{grid-column:1 / 3;grid-row:3;justify-self:start;max-width:100%;min-width:0}
+                    .wr-league-phase-badge{grid-column:1 / 3;grid-row:4;justify-self:start;max-width:100%;min-width:0}
+                    .wr-draft-header-clock{grid-column:1 / 3;grid-row:5;justify-self:start;max-width:100%;min-width:0;overflow:hidden}
                     .wr-draft-header-clock>span{max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
                     .wr-draft-header-clock>strong{flex-shrink:0}
                     .header{padding-top:0.4rem !important;padding-bottom:0.4rem !important}
@@ -2990,9 +3233,8 @@
                     {/* Logo — click to go home */}
                     <div className="wr-sidebar-brand" onClick={onBack} style={{ padding: '0 14px', marginBottom: sidebarCollapsed ? '10px' : '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} title="Back to Dynasty HQ home">
                       <img src={iconSrc} alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: '6px' }} onError={e => { e.target.style.display = 'none'; }} />
-                      <div className="wr-sidebar-wordmark" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.0, minWidth: 0 }}>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.1em', whiteSpace: 'nowrap', textAlign: 'center' }}>DYNASTY</div>
-                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', color: 'var(--gold)', letterSpacing: '0.1em', whiteSpace: 'nowrap', textAlign: 'center' }}>HQ</div>
+                      <div className="wr-sidebar-wordmark">
+                        <div className="wr-wordmark" style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', lineHeight: 1.1 }}>DYNASTY HQ</div>
                       </div>
                       {(() => {
                         const champs = window.App?.LI?.championships || {};
@@ -3072,25 +3314,10 @@
                         );
                     })}
 
-                    {/* Nav items — grouped: FRONT OFFICE / LEAGUE / DOSSIER / SETTINGS. */}
-                    {[
-                        { section: 'FRONT OFFICE' },
-                        { label: 'Home', tab: 'dashboard', iconKey: 'home' },
-                        { label: 'My Roster', tab: 'myteam', iconKey: 'roster' },
-                        { label: 'Compare', tab: 'compare', iconKey: 'compare' },
-                        { section: 'LEAGUE' },
-                        { label: 'Trade Center', tab: 'trades', iconKey: 'trade' },
-                        { label: 'Free Agency', tab: 'fa', iconKey: 'fa' },
-                        { label: 'Draft', tab: 'draft', iconKey: 'draft' },
-                        { label: 'Analytics', tab: 'analytics', iconKey: 'analytics' },
-                        { section: 'DOSSIER' },
-                        { label: 'GM\'s Office', tab: 'alex', iconKey: 'office' },
-                        { label: 'Trophy Room', tab: 'trophies', iconKey: 'trophy' },
-                        { label: 'Calendar', tab: 'calendar', iconKey: 'calendar' },
-                        { section: 'SETTINGS' },
-                        { label: 'Settings', tab: 'settings', iconKey: 'settings' },
-                        { label: 'Legend', tab: 'legend', iconKey: 'legend' },
-                    ].map((item, i) => {
+                    {/* Nav items — grouped: FRONT OFFICE / LEAGUE / DOSSIER / SETTINGS.
+                        Definition = buildLeagueNavItems (module scope) — the
+                        same navItems array also drives the PhoneDock strip. */}
+                    {navItems.map((item, i) => {
                         if (item.section) {
                             // Hairline divider only — section labels removed for a
                             // cleaner list. The grouping rhythm still reads via the
@@ -3101,7 +3328,7 @@
                                 <div key={i} className="wr-sidebar-divider" style={{ height: '1px', margin: '8px 16px', background: 'var(--ov-4, rgba(255,255,255,0.06))' }} aria-hidden="true" />
                             );
                         }
-                        const isActive = item.tab && (activeTab === item.tab || (item.tab === 'alex' && activeTab === 'strategy'));
+                        const isActive = navItemIsActive(item, activeTab);
                         return (
                         <button key={i} onClick={() => { setSidebarOpen(false); item.tab ? setActiveTab(item.tab) : item.action ? item.action() : window.location.href = item.url; }}
                             className="wr-sidebar-nav-btn"
@@ -3135,18 +3362,43 @@
                     {/* Spacer */}
                     <div style={{ flex: 1 }}></div>
 
-                    {/* Sync Status */}
-                    <div className="wr-sidebar-extra" style={{ fontSize: 'var(--text-body, 1rem)', color: window.App?.LI_LOADED ? 'var(--k-2ecc71, #2ecc71)' : 'var(--silver)', textAlign: 'center', fontFamily: 'var(--font-body)', opacity: 0.7, marginBottom: '4px' }}>
-                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: window.App?.LI_LOADED ? 'var(--k-2ecc71, #2ecc71)' : 'var(--silver)', margin: '0 auto 2px' }}></div>
-                        {window.App?.LI_LOADED ? 'Synced' : 'Loading'}
-                    </div>
+                    {/* Sync Status — live freshness readout (audit:refresh-stale step 7) */}
+                    {(() => {
+                        const syncBase = window.WR?.Sync?.lastSyncedAt || syncedAt;
+                        const liReady = !!window.App?.LI_LOADED;
+                        let label, color;
+                        if (!liReady || !syncBase) {
+                            label = liReady ? 'Synced' : 'Loading';
+                            color = liReady ? 'var(--k-2ecc71, #2ecc71)' : 'var(--silver)';
+                        } else {
+                            const ageMs = Math.max(0, Date.now() - syncBase);
+                            const mins = Math.floor(ageMs / 60000);
+                            label = mins < 1 ? 'Synced just now'
+                                : mins < 60 ? 'Synced ' + mins + 'm ago'
+                                : 'Synced ' + Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm ago';
+                            const staleMs = window.WR?.Sync?.STALE_MS || 5 * 60 * 1000;
+                            color = ageMs > 30 * 60 * 1000 ? 'var(--k-e74c3c, #e74c3c)'
+                                : ageMs >= staleMs ? 'var(--k-f0a500, #f0a500)'
+                                : 'var(--k-2ecc71, #2ecc71)';
+                        }
+                        return (
+                            <div className="wr-sidebar-extra" title="Auto-refreshes when you return to the tab. Click Refresh Data for a full rebuild (values + history)." style={{ fontSize: 'var(--text-body, 1rem)', color, textAlign: 'center', fontFamily: 'var(--font-body)', opacity: 0.7, marginBottom: '4px' }}>
+                                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: color, margin: '0 auto 2px' }}></div>
+                                {label}
+                            </div>
+                        );
+                    })()}
 
                     {/* Refresh Button */}
                     <button onClick={async () => {
                         try {
                             Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
-                            try { sessionStorage.removeItem('fw_players_cache'); } catch(e) { window.wrLog('refresh.sessionClear', e); }
-                            window._wrPlayersCache = null;
+                            // Real cache clears (audit:refresh-stale step 2): the old
+                            // `window._wrPlayersCache = null` never touched core.js's
+                            // closure-scoped cache, and the sessionStorage key was a
+                            // relic of the pre-IndexedDB players cache.
+                            window.App?.clearDataCaches?.();
+                            window.Sleeper?.clearSeasonCaches?.();
                             if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; window._liLoading = false; }
                         } catch(e) { window.wrLog('refresh.cleanup', e); }
                         await loadLeagueDetails();
@@ -3183,6 +3435,8 @@
                         <div className="header-title" style={{ fontSize: '1.05rem', minWidth: 0, maxWidth: 'min(460px, 100%)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentLeague.name}</div>
                         <button className="wr-league-switch" onClick={onBack} style={{ padding: '4px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'var(--acc-fill2, rgba(212,175,55,0.10))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>SWITCH</button>
                         {(() => {
+                            // Redraft leagues don't surface the GM Mode badge (it's dynasty-flavored).
+                            if (leagueSkin?.type === 'redraft') return null;
                             const gm = window.WR?.GmMode?.describe?.(gmStrategy?.mode || 'compete');
                             if (!gm) return null;
                             return React.createElement('button', {
@@ -3250,12 +3504,17 @@
                             tabIndex: 0,
                             title: headerDraftInfo?.status === 'drafting'
                                 ? 'Jump to Follow Live Draft'
-                                : (headerDraftInfo?.start_time ? 'Open the Draft module · ' + new Date(headerDraftInfo.start_time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Open the Draft module'),
+                                : headerDraftInfo?.status === 'complete'
+                                    ? 'View the completed draft results'
+                                    : (headerDraftInfo?.start_time ? 'Open the Draft module · ' + new Date(headerDraftInfo.start_time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Open the Draft module'),
                             onClick: () => {
-                                const live = headerDraftInfo?.status === 'drafting';
-                                if (live) window._wrOpenLiveDraft = true;
+                                // 'drafting' jumps into the live mirror; 'complete' jumps to
+                                // the finished board — DraftTab's _wrOpenLiveDraft flag path
+                                // honors both statuses.
+                                const jump = headerDraftInfo?.status === 'drafting' || headerDraftInfo?.status === 'complete';
+                                if (jump) window._wrOpenLiveDraft = true;
                                 setActiveTab('draft');
-                                if (live) window.dispatchEvent(new CustomEvent('wr:open-live-draft'));
+                                if (jump) window.dispatchEvent(new CustomEvent('wr:open-live-draft'));
                             },
                             onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } },
                             style: {
@@ -3271,7 +3530,7 @@
                                 cursor: 'pointer'
                             }
                         },
-                            React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.78 } }, headerDraftClock.label),
+                            headerDraftClock.label ? React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.78 } }, headerDraftClock.label) : null,
                             React.createElement('strong', { style: { color: 'var(--white)', fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-label, 0.75rem)' } }, headerDraftClock.clock)
                         )}
                     </div>
@@ -3296,18 +3555,55 @@
                     background: 'rgba(0,0,0,0.4)', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))',
                     position: 'sticky', top: 0, zIndex: 50
                 }}>
-                    {/* Year pills */}
-                    <div className="wr-time-years" style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', minWidth: 0 }}>
-                        {timeYears.map(yr =>
-                            <button key={yr} onClick={() => handleTimeYearChange(yr)} style={{
-                                padding: '4px 10px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
-                                fontWeight: timeYear === yr ? 700 : 400,
-                                background: timeYear === yr ? 'var(--gold)' : 'var(--ov-2, rgba(255,255,255,0.03))',
-                                color: timeYear === yr ? 'var(--black)' : 'var(--silver)',
-                                border: timeYear === yr ? '1px solid var(--gold)' : '1px solid var(--ov-4, rgba(255,255,255,0.06))',
-                                borderRadius: '4px', cursor: 'pointer', transition: 'all 0.15s'
-                            }}>{yr}</button>
-                        )}
+                    {/* Year pills — grouped as a timeline: past · current · projected */}
+                    <div className="wr-time-years" style={{ display: 'flex', alignItems: 'center', gap: '3px', flexWrap: 'wrap', minWidth: 0 }}>
+                        {(() => {
+                            const pastYears = timeYears.filter(y => y < currentSeason);
+                            const currentAndFuture = timeYears.filter(y => y >= currentSeason);
+                            return (
+                                <React.Fragment>
+                                    {pastYears.length > 0 && (
+                                        <React.Fragment>
+                                            <select value={isHistoricalYear ? timeYear : ''} onChange={e => { if (e.target.value) handleTimeYearChange(Number(e.target.value)); }} title="Past seasons" style={{
+                                                padding: '4px 8px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                                                fontWeight: isHistoricalYear ? 700 : 400,
+                                                background: isHistoricalYear ? 'var(--gold)' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                                                color: isHistoricalYear ? 'var(--black)' : 'var(--silver)',
+                                                border: '1px solid ' + (isHistoricalYear ? 'var(--gold)' : 'var(--ov-4, rgba(255,255,255,0.06))'),
+                                                opacity: isHistoricalYear ? 1 : 0.8,
+                                                borderRadius: '4px', cursor: 'pointer', outline: 'none'
+                                            }}>
+                                                <option value="" style={{ background: 'var(--black)', color: 'var(--white)' }}>Past seasons</option>
+                                                {pastYears.map(yr => <option key={yr} value={yr} style={{ background: 'var(--black)', color: 'var(--white)' }}>{yr}</option>)}
+                                            </select>
+                                            {currentAndFuture.length > 0 && <span aria-hidden="true" style={{ width: 1, height: 18, margin: '0 5px', background: 'var(--ov-5, rgba(255,255,255,0.12))', alignSelf: 'center' }} />}
+                                        </React.Fragment>
+                                    )}
+                                    {currentAndFuture.map((yr, i) => {
+                                        const kind = yr > currentSeason ? 'future' : 'current';
+                                        const prev = currentAndFuture[i - 1];
+                                        const prevKind = prev == null ? null : (prev > currentSeason ? 'future' : 'current');
+                                        const selected = timeYear === yr;
+                                        let bg, color, border, weight = selected ? 700 : 400, opacity = 1;
+                                        if (selected) { bg = 'var(--gold)'; color = 'var(--black)'; border = '1px solid var(--gold)'; }
+                                        else if (kind === 'future') { bg = 'rgba(69,183,209,0.06)'; color = 'var(--k-45b7d1, #45b7d1)'; border = '1px solid rgba(69,183,209,0.25)'; }
+                                        else { bg = 'var(--acc-fill2, rgba(212,175,55,0.12))'; color = 'var(--gold)'; border = '1px solid var(--acc-line2, rgba(212,175,55,0.4))'; weight = 700; }
+                                        return (
+                                            <React.Fragment key={yr}>
+                                                {prevKind && prevKind !== kind && (
+                                                    <span aria-hidden="true" style={{ width: 1, height: 18, margin: '0 5px', background: 'var(--ov-5, rgba(255,255,255,0.12))', alignSelf: 'center' }} />
+                                                )}
+                                                <button onClick={() => handleTimeYearChange(yr)} title={kind === 'future' ? yr + ' — projected' : yr + ' — current season'} style={{
+                                                    padding: '4px 10px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                                                    fontWeight: weight, background: bg, color: color, border: border, opacity,
+                                                    borderRadius: '4px', cursor: 'pointer', transition: 'all 0.15s'
+                                                }}>{yr}</button>
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </React.Fragment>
+                            );
+                        })()}
                     </div>
                     {/* Compact year dropdown — replaces the pill strip at ≤1023px (CSS-toggled) */}
                     <select className="wr-time-years-select" value={timeYear} onChange={e => handleTimeYearChange(Number(e.target.value))} aria-label="Season year" style={{
@@ -3315,7 +3611,17 @@
                         fontWeight: 700, background: 'var(--gold)', color: 'var(--black)', border: '1px solid var(--gold)',
                         borderRadius: '4px', cursor: 'pointer', minHeight: '32px'
                     }}>
-                        {timeYears.map(yr => <option key={yr} value={yr} style={{ background: 'var(--black)', color: 'var(--white)' }}>{yr}{yr === currentSeason ? ' • current' : ''}</option>)}
+                        {(() => {
+                            const opt = (yr) => <option key={yr} value={yr} style={{ background: 'var(--black)', color: 'var(--white)' }}>{yr}{yr === currentSeason ? ' • current' : ''}</option>;
+                            const past = timeYears.filter(y => y < currentSeason);
+                            const cur = timeYears.filter(y => y === currentSeason);
+                            const future = timeYears.filter(y => y > currentSeason);
+                            return [
+                                past.length ? <optgroup key="p" label="Past seasons">{past.map(opt)}</optgroup> : null,
+                                cur.length ? <optgroup key="c" label="Current">{cur.map(opt)}</optgroup> : null,
+                                future.length ? <optgroup key="f" label="Projected">{future.map(opt)}</optgroup> : null,
+                            ];
+                        })()}
                     </select>
                     {/* League name/team-count moved to the main header to avoid duplication. */}
                     <div className="wr-time-spacer" style={{ marginLeft: 'auto' }}></div>
@@ -3389,7 +3695,7 @@
                         initialSubTab={tradeSubTab}
                         onSubTabConsumed={() => setTradeSubTab(null)}
                     />
-                ) : activeTab === 'myteam' ? <MyTeamTab
+                ) : activeTab === 'myteam' ? <MyTeamTabLazy
                     myRoster={myRoster}
                     currentLeague={currentLeague}
                     leagueSkin={leagueSkin}
@@ -3422,6 +3728,17 @@
                     timeRecomputeTs={timeRecomputeTs}
                     setTimeRecomputeTs={setTimeRecomputeTs}
                     getAcquisitionInfo={getAcquisitionInfo}
+                /> : activeTab === 'lineup' ? <LineupTabLazy
+                    myRoster={myRoster}
+                    currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
+                    playersData={playersData}
+                    statsData={statsData}
+                    stats2025Data={stats2025Data}
+                    sleeperUserId={sleeperUserId}
+                    gmStrategy={gmStrategy}
+                    setActiveTab={setActiveTab}
+                    timeRecomputeTs={timeRecomputeTs}
                 /> : activeTab === 'league' ? <LeagueMapTabLazy
                     leagueViewTab={leagueViewTab}
                     setLeagueViewTab={setLeagueViewTab}
@@ -3494,16 +3811,13 @@
                     sendReconMessage={sendReconMessage}
                     timeRecomputeTs={timeRecomputeTs}
                     viewMode={viewMode}
-                /> : activeTab === 'trophies' ? <TrophyRoomTabLazy
+                /> : (activeTab === 'trophies' || activeTab === 'calendar') ? <TrophyRoomTabLazy
                     currentLeague={currentLeague}
                     leagueSkin={leagueSkin}
                     playersData={playersData}
                     myRoster={myRoster}
                     sleeperUserId={sleeperUserId}
-                /> : activeTab === 'calendar' ? <CalendarTab
-                    currentLeague={currentLeague}
-                    leagueSkin={leagueSkin}
-                    myRoster={myRoster}
+                    initialView={activeTab === 'calendar' ? 'calendar' : null}
                 /> : activeTab === 'settings' ? (
                     typeof window.SettingsModule === 'function'
                         ? React.createElement(window.SettingsModule, settingsProps)
@@ -3566,8 +3880,27 @@
                 }}
             />}
 
-            {/* Alex Ingram Chat — centered welcome or bottom-right */}
-            {reconPanelOpen && <div style={welcomeMode ? {
+            {/* Alex Ingram Chat — centered welcome or bottom-right.
+                Phone (≤767): all three modes collapse into ONE full-width
+                bottom sheet (top-rounded, gold hairline top, keyboard-aware
+                via the alexKb bottom offset). Tablet/desktop: untouched. */}
+            {reconPanelOpen && <div style={alexPhone ? {
+              position: 'fixed', left: 0, right: 0, bottom: alexKb ? (alexKb + 'px') : 0,
+              width: '100%',
+              height: (!welcomeMode && reconExpanded) ? alexSheetCap : 'auto',
+              maxHeight: welcomeMode ? 'min(600px, ' + alexSheetCap + ')'
+                : reconExpanded ? alexSheetCap
+                : 'min(70dvh, ' + alexSheetCap + ')',
+              background: 'var(--k-0a0b0d, #0a0b0d)',
+              border: 'none',
+              borderTop: '2px solid ' + (welcomeMode ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--acc-line2, rgba(212,175,55,0.3))'),
+              borderRadius: '16px 16px 0 0',
+              zIndex: welcomeMode ? 300 : 'var(--wr-z-sheet, 200)',
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 -12px 48px rgba(0,0,0,0.6), 0 0 0 1px var(--acc-fill2, rgba(212,175,55,0.1))',
+              animation: 'wrFadeIn 0.2s ease',
+              transition: 'bottom 0.2s ease'
+            } : welcomeMode ? {
               position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
               width: '480px', maxHeight: '600px',
               background: 'var(--k-0a0b0d, #0a0b0d)', border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))',
@@ -3604,10 +3937,10 @@
                   <AlexAvatar size={30} />
                 </div>
                 <div>
-                  <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--gold)', letterSpacing: '0.04em', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>{(() => { const k = localStorage.getItem('wr_alex_avatar') || 'brain'; const m = { brain:'\u{1F9E0}', target:'\u{1F3AF}', chart:'\u{1F4CA}', football:'\u{1F3C8}', bolt:'\u26A1', fire:'\u{1F525}', medal:'\u{1F396}\uFE0F', trophy:'\u{1F3C6}' }; return m[k] || ''; })()}Alex Ingram</div>
+                  <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--gold)', letterSpacing: '0.04em', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>Alex Ingram</div>
                   <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5 }}>AI General Manager</div>
                 </div>
-                <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)' }}>Cmd+K</span>
+                {!alexPhone && <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)' }}>Cmd+K</span>}
                 <span style={{ flex: 1 }}></span>
                 {reconMessages.length > 1 && (
                   <button onClick={() => {
@@ -3621,11 +3954,11 @@
                 )}
                 <button onClick={() => setReconExpanded(v => !v)} title={reconExpanded ? 'Collapse' : 'Expand'} aria-label={reconExpanded ? 'Collapse panel' : 'Expand panel'} style={{
                   background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-                  fontSize: '1rem', padding: '2px', lineHeight: 1
+                  fontSize: '1rem', padding: alexPhone ? '10px' : '2px', lineHeight: 1
                 }}>{reconExpanded ? '−' : '⛶'}</button>
-                <button onClick={() => { setReconPanelOpen(false); setReconExpanded(false); }} style={{
+                <button onClick={() => { setReconPanelOpen(false); setReconExpanded(false); }} aria-label="Close chat" style={{
                   background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-                  fontSize: '1rem', padding: '2px'
+                  fontSize: '1rem', padding: alexPhone ? '10px' : '2px'
                 }}>&#10005;</button>
               </div>
 
@@ -3667,11 +4000,13 @@
                 ))}
               </div>
 
-              {/* Messages */}
+              {/* Messages — phone: no fixed cap (the sheet's maxHeight governs);
+                  scrolls independently with iOS momentum + contained overscroll. */}
               <div style={{
                 flex: 1, overflow: 'auto', padding: '10px 12px',
                 display: 'flex', flexDirection: 'column', gap: '6px',
-                maxHeight: reconExpanded ? 'none' : '320px'
+                maxHeight: (reconExpanded || alexPhone) ? 'none' : '320px',
+                ...(alexPhone ? { WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' } : {})
               }}>
                 {reconMessages.map((msg, i) => (
                   msg.role === 'user' ? (
@@ -3761,9 +4096,18 @@
                                     }}>Copy DM</button>
                                   )}
                                   <button onClick={() => {
-                                    const saved = LeagueStorage.get(LEAGUE_WR_KEYS.SAVED_TRADES(currentLeague?.league_id)) || [];
-                                    saved.push({ ...tradeCard, savedAt: Date.now() });
-                                    LeagueStorage.set(LEAGUE_WR_KEYS.SAVED_TRADES(currentLeague?.league_id), saved.slice(-20));
+                                    // Save into the Trade Log pipeline (WrTradePipeline schema, cap 60 —
+                                    // canonical helpers live in trade-calc.js). trade-calc.js is a DEFERRED
+                                    // script (data-wr-defer="trade"), so if it hasn't loaded yet, write the
+                                    // legacy card shape — WrTradePipeline.normalizeAll migrates it to the
+                                    // schema on the next Trade Log read. Fallback cap mirrors WrTradePipeline.CAP.
+                                    const lid = currentLeague?.league_id;
+                                    if (!lid) return;
+                                    const P = window.WrTradePipeline;
+                                    if (P) { P.append(lid, P.fromAlexCard(tradeCard)); return; }
+                                    const saved = LeagueStorage.get(LEAGUE_WR_KEYS.SAVED_TRADES(lid)) || [];
+                                    saved.unshift({ ...tradeCard, savedAt: Date.now() });
+                                    LeagueStorage.set(LEAGUE_WR_KEYS.SAVED_TRADES(lid), saved.slice(0, 60));
                                   }} style={{
                                     padding: '5px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)',
                                     background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)',
@@ -3823,25 +4167,32 @@
                 ))}
               </div>
 
-              {/* Input */}
+              {/* Input — phone: --sab clearance while the keyboard is closed
+                  (the sheet is keyboard-lifted when open, so plain 10px then),
+                  16px input font (no iOS zoom-on-focus), 44px send target. */}
               <div style={{
-                padding: '10px 12px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.07))',
-                display: 'flex', gap: '8px', background: 'var(--k-111318, #111318)', borderRadius: '0 0 14px 14px'
+                padding: alexPhone ? ('10px 12px ' + (alexKb ? '10px' : 'calc(10px + var(--sab, 0px))')) : '10px 12px',
+                borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.07))',
+                display: 'flex', gap: '8px', background: 'var(--k-111318, #111318)',
+                borderRadius: alexPhone ? '0' : '0 0 14px 14px'
               }}>
                 <input
+                  ref={reconComposerRef}
                   value={reconInput}
                   onChange={e => setReconInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') sendReconMessage(reconInput); }}
                   placeholder="Ask anything..."
                   style={{
                     flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                    color: 'var(--text-primary)', fontSize: 'var(--text-body, 1rem)', fontFamily: 'inherit'
+                    color: 'var(--text-primary)', fontSize: alexPhone ? '16px' : 'var(--text-body, 1rem)', fontFamily: 'inherit'
                   }}
                 />
                 <button onClick={() => sendReconMessage(reconInput)} style={{
                   background: 'linear-gradient(135deg, var(--k-7c6bf8, #7c6bf8), var(--k-9b8afb, #9b8afb))',
-                  border: 'none', borderRadius: '8px', width: '32px', height: '32px',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  border: 'none', borderRadius: '8px',
+                  width: alexPhone ? '44px' : '32px', height: alexPhone ? '44px' : '32px',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  ...(alexPhone ? { flexShrink: 0 } : {})
                 }}>
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="white" strokeWidth="2.5">
                     <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -3850,9 +4201,12 @@
               </div>
             </div>}
 
-            {/* "I'll be down here" toast */}
+            {/* "I'll be down here" toast — .wr-corner-toast: phone tier lifts
+                it above the bottom dock via --wr-bottom-inset (points at the
+                dock's pinned Ask Alex item there; at the FAB on
+                tablet/desktop). */}
             {showCornerToast && (
-              <div style={{
+              <div className="wr-corner-toast" style={{
                 position: 'fixed', bottom: '82px', right: '24px',
                 background: 'var(--k-0a0b0d, #0a0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
                 borderRadius: '12px', padding: '10px 16px', zIndex: 202,
@@ -3866,8 +4220,11 @@
               </div>
             )}
 
-            {/* Alex Ingram Bubble Button — bottom right corner */}
-            <button onClick={() => { setReconPanelOpen(!reconPanelOpen); setWelcomeMode(false); }} style={{
+            {/* Alex Ingram Bubble Button — bottom right corner. Tablet +
+                desktop ONLY: on phone the PhoneDock's pinned Ask Alex item
+                is the entry point (same open path), so the FAB never
+                renders there. */}
+            {!alexPhone && <button className="wr-alex-fab" onClick={() => { setReconPanelOpen(!reconPanelOpen); setWelcomeMode(false); }} style={{
               position: 'fixed', bottom: '24px', right: '24px',
               width: '52px', height: '52px', borderRadius: '14px',
               background: reconPanelOpen ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
@@ -3881,7 +4238,19 @@
                 ? <span style={{ color: 'var(--gold)', fontSize: '1.2rem' }}>&#10005;</span>
                 : <AlexAvatar size={48} />
               }
-            </button>
+            </button>}
+
+            {/* Phone bottom dock (≤767 only) — null on tablet/desktop and
+                while the iOS keyboard is open. ONE row: sliding strip of
+                EVERY sidebar nav item (same navItems array — single source
+                of truth) + the pinned Ask Alex item at the right end
+                (replaces the FAB on phone; same open path as the FAB). */}
+            <PhoneDock
+                activeTab={activeTab}
+                navItems={navItems}
+                onSelectTab={(tab) => { setSidebarOpen(false); setActiveTab(tab); }}
+                onAskAlex={() => { reconComposerFocusPending.current = true; setReconPanelOpen(true); setWelcomeMode(false); }}
+            />
 
             </div>
           </window.App.SeasonContext.Provider>

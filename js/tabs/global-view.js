@@ -1305,22 +1305,16 @@ function buildEmpireActionQueue(model, rolodex) {
     return actions.slice(0, 8);
 }
 
-// buildEmpireBrief — short deterministic empire summary in Alex's register.
+// buildEmpireBrief — Alex's Empire lead: the single focus sentence only.
+// The portfolio totals live in the KPI header tiles and the ranked moves sit
+// in the Priority Queue panel beside this — the brief never restates either.
 // (Synchronous template for now; AlexVoice/AI upgrade tracked separately.)
 function buildEmpireBrief(model, userName) {
     if (!model || !model.totals) return '';
-    const t = model.totals;
     const topSignal = (model.signals || []).find(s => s.type !== 'data' && s.type !== 'balance');
-    const valueStr = t.totalDHQ > 0 ? empireCompact(t.totalDHQ) + ' DHQ' : 'value still loading';
-    const recStr = t.totalRecord ? t.totalRecord.wins + '–' + t.totalRecord.losses : '';
-    const mix = t.contenders + ' contending / ' + t.rebuilds + ' rebuilding';
-    const lead = 'Across your ' + t.leagues + ' league' + (t.leagues === 1 ? '' : 's')
-        + ' you’re holding ' + valueStr + (recStr ? ' on a ' + recStr + ' record' : '') + ' — ' + mix + '.';
-    const focus = topSignal
-        ? ' Top of my list: ' + topSignal.title.toLowerCase() + (topSignal.metric ? ' (' + topSignal.metric + ')' : '') + '.'
-        : ' No single risk is dominating the portfolio right now.';
-    const close = ' I’ve queued the highest-leverage moves on the right.';
-    return lead + focus + close;
+    return topSignal
+        ? 'Top of my list: ' + topSignal.title.toLowerCase() + (topSignal.metric ? ' (' + topSignal.metric + ')' : '') + '.'
+        : 'No single risk is dominating the portfolio right now.';
 }
 
 function empireCompact(value) {

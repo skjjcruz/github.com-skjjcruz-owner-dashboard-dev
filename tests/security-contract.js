@@ -110,6 +110,7 @@ test('shared security helper provides CORS, rate limits, audit, and admin role c
   ].forEach(fragment => ok(shared.includes(fragment), `missing ${fragment}`));
   ok(!shared.includes("'Access-Control-Allow-Origin':  '*'"), 'shared CORS must not default to wildcard');
   ok(shared.includes('https://c2-football.github.io'), 'GitHub Pages origin should be allowed by default');
+  ok(shared.includes('https://skjjcruz.github.io'), 'production Pages origin (skjjcruz) should be allowed by default');
   ok(shared.includes('https://warroom.skjjcruz.com'), 'custom War Room origin should be allowed by default');
   ok(shared.includes("['SUPABASE_JWT_SECRET', 'JWT_SECRET']"), 'Sleeper token verifier should allow the configured JWT_SECRET fallback');
 });

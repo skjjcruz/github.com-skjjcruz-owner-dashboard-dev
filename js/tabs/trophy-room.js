@@ -4,15 +4,30 @@
 // Data from analytics-engine.js buildOwnerHistory() + LI.championships.
 // ══════════════════════════════════════════════════════════════════
 
-function TrophyRoomTab({ currentLeague, playersData, myRoster, sleeperUserId }) {
+function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleeperUserId, initialView }) {
     const { useState, useMemo, useEffect } = React;
     const [selectedOwner, setSelectedOwner] = useState(null);
-    const [view, setView] = useState('league'); // 'league' | 'personal' | 'chronicles' | 'import'
+    // View can be deep-linked: an explicit initialView prop (stale ?tab=calendar
+    // links) or a one-shot window._wrTrophyView set by the Home calendar widget.
+    const [view, setView] = useState(() => {
+        if (initialView) return initialView;
+        try { const v = window._wrTrophyView; if (v) { delete window._wrTrophyView; return v; } } catch (e) {}
+        return 'league';
+    }); // 'league' | 'personal' | 'alltime' | 'chronicles' | 'import' | 'calendar'
     const [importText, setImportText] = useState('');
     const [importStatus, setImportStatus] = useState(''); // '' | 'parsing' | 'done' | 'error'
     const [recapStatus, setRecapStatus] = useState(''); // '' | 'generating' | 'done'
     const [recapText, setRecapText] = useState('');
     const leagueId = currentLeague?.id || currentLeague?.league_id || '';
+
+    // Scout-free vs Pro (gate-map row 16): all history/records browsing,
+    // custom events, and manual chronicle browsing stay free; the two AI
+    // triggers (chronicles parse, season recap) are Pro. wrIsPro only.
+    const isPro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
+    const openProUpsell = (feature) => {
+        if (window.showProLaunchPage) window.showProLaunchPage();
+        else if (window.showUpgradePrompt) window.showUpgradePrompt(feature);
+    };
 
     // ── Export as image ──
     async function exportAsImage(elementId, filename) {
@@ -696,6 +711,9 @@ function TrophyRoomTab({ currentLeague, playersData, myRoster, sleeperUserId }) 
     }
 
     async function parseChronicles() {
+        // AI trigger gate (D9 row 10): never fires for free — BYOK users
+        // would otherwise reach the provider directly via callClaude.
+        if (!isPro) { openProUpsell('league-chronicles'); return; }
         if (!importText.trim()) return;
         setImportStatus('parsing');
         try {
@@ -755,9 +773,10 @@ ${importText.substring(0, 8000)}`;
                     style: { width: '100%', minHeight: '200px', padding: '12px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '8px', color: 'var(--white)', fontSize: '0.78rem', fontFamily: 'JetBrains Mono, monospace', resize: 'vertical', boxSizing: 'border-box' }
                 }),
                 React.createElement('button', {
-                    onClick: parseChronicles, disabled: importStatus === 'parsing' || !importText.trim(),
+                    // Free: button stays live but opens the Pro upsell (parseChronicles gates).
+                    onClick: parseChronicles, disabled: importStatus === 'parsing' || (isPro && !importText.trim()),
                     style: { width: '100%', marginTop: '10px', padding: '10px', background: importStatus === 'parsing' ? 'var(--silver)' : 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 700, cursor: importStatus === 'parsing' ? 'wait' : 'pointer', fontFamily: 'inherit' }
-                }, importStatus === 'parsing' ? 'Alex is parsing...' : importStatus === 'done' ? 'Imported!' : importStatus === 'error' ? 'Error \u2014 Try Again' : 'Import with Alex'),
+                }, !isPro ? '\ud83d\udd12 Import with Alex \u2014 Pro' : importStatus === 'parsing' ? 'Alex is parsing...' : importStatus === 'done' ? 'Imported!' : importStatus === 'error' ? 'Error \u2014 Try Again' : 'Import with Alex'),
             ),
         );
     }
@@ -1036,6 +1055,8 @@ ${importText.substring(0, 8000)}`;
     // SEASON RECAP GENERATOR
     // ══════════════════════════════════════════════════════════════
     async function generateSeasonRecap() {
+        // AI trigger gate (D9 row 11): never fires for free (BYOK included).
+        if (!isPro) { openProUpsell('season-recap'); return; }
         setRecapStatus('generating');
         try {
             const season = currentLeague?.season || new Date().getFullYear();
@@ -1071,6 +1092,18 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
     }
 
     // ══════════════════════════════════════════════════════════════
+    // CALENDAR VIEW — League Calendar folded in from its old sidebar tab.
+    // Renders the full CalendarTab (defined in js/tabs/calendar.js).
+    // ══════════════════════════════════════════════════════════════
+    function renderCalendarView() {
+        const Cal = (typeof CalendarTab === 'function' ? CalendarTab : window.CalendarTab);
+        if (typeof Cal !== 'function') {
+            return React.createElement('div', { style: { color: 'var(--silver)', padding: '20px', textAlign: 'center', fontSize: '0.82rem' } }, 'Calendar unavailable.');
+        }
+        return React.createElement(Cal, { currentLeague, leagueSkin, myRoster });
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // MAIN RENDER
     // ══════════════════════════════════════════════════════════════
     const tabBtn = (label, tabKey, clickOverride) => React.createElement('button', {
@@ -1084,24 +1117,30 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
             tabBtn('League', 'league'),
             tabBtn('My Trophies', 'personal', () => { setView('personal'); if (!selectedOwner) setSelectedOwner(myRoster?.roster_id); }),
             tabBtn('All-Time', 'alltime'),
+            tabBtn('Calendar', 'calendar'),
             chronicles && tabBtn('Chronicles', 'chronicles'),
             tabBtn('Import', 'import'),
             view === 'league' && React.createElement('button', {
                 key: 'recap-btn',
                 onClick: generateSeasonRecap, disabled: recapStatus === 'generating',
                 style: { marginLeft: 'auto', padding: '6px 12px', minHeight: '44px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '6px', color: 'var(--gold)', fontSize: '0.7rem', fontWeight: 700, cursor: recapStatus === 'generating' ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
-            }, recapStatus === 'generating' ? 'Alex is writing…' : '✨ Season Recap'),
+            }, !isPro ? '🔒 Season Recap — Pro' : recapStatus === 'generating' ? 'Alex is writing…' : '✨ Season Recap'),
         ),
 
-        // Season Recap result card (only shown after generation)
+        // Season Recap result card (only shown after generation). Long-form
+        // starts collapsed past ~12 lines (268px ≈ 12 × 1.7-line-height) with
+        // a "Full read" expand — the de-busying long-form rule.
         view === 'league' && recapStatus === 'done' && recapText && React.createElement('div', { style: { ...cardStyle, whiteSpace: 'pre-wrap' } },
             React.createElement('div', { style: headerStyle }, 'SEASON RECAP'),
-            React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.7 } }, recapText),
+            (window.WR && window.WR.ClampedRead)
+                ? React.createElement(window.WR.ClampedRead, { text: recapText, maxHeight: 268, style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.7 }, fadeColor: 'var(--black, #000)' })
+                : React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.7 } }, recapText),
         ),
 
         view === 'league' ? renderLeagueView()
             : view === 'personal' ? renderPersonalView()
             : view === 'alltime' ? renderAllTimeView()
+            : view === 'calendar' ? renderCalendarView()
             : view === 'chronicles' ? renderChroniclesView()
             : view === 'import' ? renderImportView()
             : renderLeagueView(),

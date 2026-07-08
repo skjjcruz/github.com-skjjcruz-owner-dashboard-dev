@@ -31,6 +31,15 @@ function resolveWidgetDestination(target) {
     return WIDGET_DESTINATIONS[target] || target;
 }
 
+// Gate metadata per module (shared seam — dashboard picker AND per-widget
+// render both consume it):
+//   pro: true       → free users get a compact teaser card, never the widget
+//   pro: false      → renders for everyone (splits, if any, live inside the
+//                     widget file — e.g. roster-pulse tier badge/action plan)
+//   proFeature      → tier.js FEATURES value string driving upgrade copy;
+//                     the gate CONDITION is always window.wrIsPro()
+//   formatFlag: null → reserved: the dynasty track fills this with the
+//                     league-format flag that hides/shows the module
 const WIDGET_MODULES = {
     'intel-brief': {
         label: 'Intel Brief',
@@ -40,6 +49,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['md', 'lg', 'tall', 'xl', 'xxl'],
         clickTarget: {},
+        pro: true, proFeature: 'briefing_reasoning', formatFlag: null,
     },
     'roster-pulse': {
         label: 'Roster Pulse',
@@ -53,6 +63,39 @@ const WIDGET_MODULES = {
         ],
         sizes: ['sm', 'md', 'lg', 'tall', 'xxl'],
         clickTarget: { sm: 'myteam', md: 'myteam' },
+        // Split widget: raw KPI numbers free; tier verdict badge + action-plan
+        // recs gated inside roster-pulse.js
+        pro: false, formatFlag: null,
+    },
+    'lineup-check': {
+        label: 'Lineup Check',
+        icon: '🧮',
+        description: 'Optimal vs current lineup — points left on your bench this week',
+        accent: () => T().color?.('accent') || 'var(--k-d4af37, #d4af37)',
+        metrics: [],
+        sizes: ['sm', 'md', 'lg'],
+        clickTarget: { sm: 'lineup', md: 'lineup', lg: 'lineup' },
+        pro: true, proFeature: 'startsit_depth', formatFlag: null,
+    },
+    'window-forecast': {
+        label: 'Window Forecast',
+        icon: '⏳',
+        description: 'When each position group ages out — cliffs + sell-by list',
+        accent: () => T().color?.('warn') || 'var(--k-f0a500, #f0a500)',
+        metrics: [],
+        sizes: ['sm', 'md', 'lg', 'tall'],
+        clickTarget: { sm: 'myteam', md: 'myteam' },
+        pro: true, proFeature: 'analytics_depth', formatFlag: null,
+    },
+    'gap-plan': {
+        label: 'Gap Plan',
+        icon: '🧩',
+        description: 'Positional gaps in player counts vs elite tier teams',
+        accent: () => T().color?.('negative') || 'var(--k-e74c3c, #e74c3c)',
+        metrics: [],
+        sizes: ['sm', 'md', 'lg'],
+        clickTarget: { sm: 'myteam' },
+        pro: true, proFeature: 'analytics_depth', formatFlag: null,
     },
     'window-forecast': {
         label: 'Window Forecast',
@@ -80,6 +123,9 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'tall', 'xl', 'xxl'],
         clickTarget: { sm: 'analytics', md: 'analytics' },
+        // Free widget: tier verdicts/posture-target reads gated inside
+        // league-landscape.js
+        pro: false, formatFlag: null,
     },
     'league-standings': {
         label: 'League Standings',
@@ -89,6 +135,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['md', 'lg'],
         clickTarget: { md: 'analytics' },
+        pro: false, formatFlag: null,
     },
     'transaction-ticker': {
         label: 'Transaction Ticker',
@@ -98,6 +145,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['md', 'lg'],
         clickTarget: {},
+        pro: false, formatFlag: null,
     },
     'market-radar': {
         label: 'Market Radar',
@@ -107,6 +155,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'xl', 'xxl'],
         clickTarget: { sm: 'trades', md: 'trades' },
+        pro: true, proFeature: 'faab_intelligence', formatFlag: null,
     },
     'draft-capital': {
         label: 'Draft Capital',
@@ -116,6 +165,9 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'xxl'],
         clickTarget: { sm: 'draft', md: 'draft' },
+        // Free widget: xxl "Pick Strategy" rec panel gated inside
+        // draft-capital.js
+        pro: false, formatFlag: null,
     },
     'field-notes': {
         label: 'Field Notes',
@@ -125,6 +177,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['slim', 'narrow', 'lg', 'tall'],
         clickTarget: {},
+        pro: false, formatFlag: null,
     },
     // Phase 3: League intelligence surfaced to Home (ex-League Map widgets)
     'competitive-tiers': {
@@ -135,6 +188,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'tall', 'xxl'],
         clickTarget: { sm: 'analytics', md: 'analytics' },
+        pro: true, proFeature: 'analytics_depth', formatFlag: null,
     },
     'power-rankings': {
         label: 'Power Rankings',
@@ -144,6 +198,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'tall', 'xxl'],
         clickTarget: { sm: 'analytics', md: 'analytics' },
+        pro: false, formatFlag: null, // ranking, not advice (owner Q7)
     },
     // SI-3: Tag-driven widgets — surface My Roster tags into Home
     'trade-block': {
@@ -154,6 +209,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'tall'],
         clickTarget: { sm: 'myteam', md: 'myteam' },
+        pro: false, formatFlag: null, // user's own tags
     },
     'cut-candidates': {
         label: 'Cut Candidates',
@@ -163,6 +219,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'tall'],
         clickTarget: { sm: 'myteam', md: 'myteam' },
+        pro: false, formatFlag: null, // user's own tags
     },
     'waiver-targets': {
         label: 'Waiver Targets',
@@ -172,6 +229,7 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'tall'],
         clickTarget: { sm: 'fa', md: 'fa' },
+        pro: false, formatFlag: null, // user's own tags
     },
     // Phase 9: My Trophies widget — surfaces user's championship count + HOF inductees
     'my-trophies': {
@@ -182,6 +240,19 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['sm', 'md', 'lg', 'tall', 'xxl'],
         clickTarget: { sm: 'trophies', md: 'trophies' },
+        pro: false, formatFlag: null,
+    },
+    // League Calendar widget — next league date + agenda (draft, deadline,
+    // playoffs, waivers). Lives in the Trophy Room; opens its Calendar sub-view.
+    'league-calendar': {
+        label: 'League Calendar',
+        icon: '🗓️',
+        description: 'Next league date + a running agenda — draft, deadline, playoffs, waivers',
+        accent: () => T().color?.('info') || 'var(--k-3498db, #3498db)',
+        metrics: [],
+        sizes: ['sm', 'md', 'lg', 'tall', 'xl', 'xxl'],
+        clickTarget: { sm: 'trophies', md: 'trophies' },
+        pro: false, formatFlag: null,
     },
 };
 
@@ -230,6 +301,9 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
     const [selectedSize, setSelectedSize] = React.useState(editWidget?.size || null);
     const [selectedMetric, setSelectedMetric] = React.useState(editWidget?.primaryMetric || null);
     const [hoverModule, setHoverModule] = React.useState(null);
+    // Free/Pro (fail-open) — Pro modules stay pickable for free users (adding
+    // one renders the teaser card); the picker just labels what's locked.
+    const pickerPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
 
     const mod = selectedModule ? WIDGET_MODULES[selectedModule] : null;
 
@@ -258,9 +332,19 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             animation: 'wrFadeIn 0.18s ease',
         }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-            <style>{`@keyframes wrFadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
+            <style>{`@keyframes wrFadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+                /* Phone tier: the Primary Stat chips are ~26px tall from their
+                   inline 4px padding — 44px touch targets at ≤767 only (glyph
+                   size unchanged; hit-height only). ≥768 untouched. */
+                @media(max-width:767px){
+                    .wr-picker-metric-chip{ min-height:44px; }
+                }`}</style>
 
-            <div style={{
+            {/* .wr-widget-picker-panel/-body: phone tier (index.html ≤767 CSS) makes
+                the step body scrollable — 18 modules at 2 columns (~345px panel)
+                overflow the overflow:hidden panel and are unreachable otherwise.
+                No visual change ≥768 (classes unstyled there). */}
+            <div className="wr-widget-picker-panel" style={{
                 background: 'var(--k-0d0d0d, #0d0d0d)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
                 borderRadius: '20px', width: 'min(600px, 92vw)', maxHeight: '90vh',
                 overflow: 'hidden', display: 'flex', flexDirection: 'column',
@@ -289,7 +373,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
 
                 {/* Step 1: Module grid — 3×2 compact, no scroll */}
                 {step === 'module' && (
-                    <div style={{ padding: '16px 20px' }}>
+                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px' }}>
                             {Object.entries(WIDGET_MODULES).map(([key, m]) => (
                                 <button key={key}
@@ -306,6 +390,11 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                                     <div style={{ fontSize: '1.5rem', marginBottom: '4px', lineHeight: 1 }}>{m.icon}</div>
                                     <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: 'var(--white)', letterSpacing: '0.04em', marginBottom: '2px' }}>{m.label}</div>
                                     <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, lineHeight: 1.3 }}>{m.description}</div>
+                                    {m.pro && !pickerPro && (
+                                        <div style={{ marginTop: '5px' }}>
+                                            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', border: '1px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius: '2px', padding: '1px 6px' }}>🔒 Pro</span>
+                                        </div>
+                                    )}
                                 </button>
                             ))}
                         </div>
@@ -314,7 +403,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
 
                 {/* Step 2: Size picker — compact, no scroll */}
                 {step === 'size' && mod && (
-                    <div style={{ padding: '16px 20px' }}>
+                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px' }}>
                         {/* Module info — compact */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', padding: '10px 14px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px' }}>
                             <span style={{ fontSize: '1.4rem' }}>{mod.icon}</span>
@@ -361,7 +450,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                                     {mod.metrics.map(m => {
                                         const accentCol = typeof mod.accent === 'function' ? mod.accent() : mod.accent;
                                         return (
-                                            <button key={m.key} onClick={() => setSelectedMetric(m.key)} style={{
+                                            <button key={m.key} className="wr-picker-metric-chip" onClick={() => setSelectedMetric(m.key)} style={{
                                                 padding: '4px 10px', borderRadius: '14px', cursor: 'pointer',
                                                 border: '1px solid ' + (selectedMetric === m.key ? (accentCol || 'var(--gold)') : 'var(--ov-6, rgba(255,255,255,0.1))'),
                                                 background: selectedMetric === m.key ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
@@ -422,11 +511,24 @@ function DashboardPanel({
     const [pickerOpen, setPickerOpen] = React.useState(false);
     const [editingWidget, setEditingWidget] = React.useState(null); // { widgetId, widget }
     const [dragIdx, setDragIdx] = React.useState(null);
+    // Phone/touch tier (plan Phase 2 item 11): HTML5 DnD never fires on iOS
+    // Safari, so coarse-pointer/phone gets ▲/▼ move controls in the widget
+    // shell (same selectedWidgets order the DnD writes). Fine-pointer desktop
+    // keeps drag-only — no new buttons there.
+    const dashViewport = window.WR.useViewport();
+    const touchReorder = dashViewport.isPhone || dashViewport.isCoarse;
     const [starredWidgets, setStarredWidgets] = React.useState(() => window.WrStarWidget?.getAll() || []);
     const navigateWidget = React.useCallback((target) => {
         const tab = resolveWidgetDestination(target);
         if (tab && setActiveTab) setActiveTab(tab);
     }, [setActiveTab]);
+    // Redraft → build ROS values so dashboard rankings/tiers/widgets reflect
+    // rest-of-season production (no-op → DHQ for dynasty/keeper).
+    React.useMemo(() => {
+        try { window.App?.PlayerValue?.ensureRos?.({ leagueId: currentLeague?.league_id || currentLeague?.id, league: currentLeague, playersData, statsData, priorData: prevStatsData, skin: resolvedLeagueSkin }); }
+        catch (e) { if (window.wrLog) window.wrLog('dashboard.ensureRos', e); }
+        return null;
+    }, [currentLeague, playersData, statsData, prevStatsData]);
 
     React.useEffect(() => {
         const handler = () => setStarredWidgets(window.WrStarWidget?.getAll() || []);
@@ -478,9 +580,25 @@ function DashboardPanel({
     const rajFont = theme.fonts?.display || 'Rajdhani, sans-serif';
     const dmFont = theme.fonts?.ui || 'DM Sans, sans-serif';
 
+    // ── Free/Pro gate (fail-open) — consumed by renderWidget + KPI annotations ──
+    const wrPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+
     // ── KPI value helper ──
     function kv(key) {
         try { return computeKpiValue(key); } catch { return { value: '—', sub: '', color: S }; }
+    }
+
+    // KPI annotations phrase interpretations/recs ("Championship caliber",
+    // "sell aging assets") — Pro only; the raw value keeps rendering.
+    function kpiAnn(key, value) {
+        return (wrPro && typeof getKpiAnnotation === 'function') ? getKpiAnnotation(key, value) : '';
+    }
+
+    // ── Module accent resolver — WIDGET_MODULES.accent is a function,
+    // passing it raw into a style prop silently drops the declaration ──
+    function modAccent(mod) {
+        const a = mod?.accent;
+        return (typeof a === 'function' ? a() : a) || G;
     }
 
     // ── Trend arrow from spark data ──
@@ -496,14 +614,15 @@ function DashboardPanel({
     // ── Percentile badge from rank string like "#3/12" ──
     function percentileBadge(valueStr, accent) {
         if (!valueStr) return null;
-        const m = String(valueStr).match(/#?(\d+)\s*[/\-of]+\s*(\d+)/i);
+        const m = String(valueStr).match(/#?(\d+)\s*(?:\/|of)\s*(\d+)/i);
         if (!m) return null;
         const rank = parseInt(m[1]), total = parseInt(m[2]);
-        if (!total) return null;
+        if (!total || rank > total) return null;
         const pct = Math.round((rank / total) * 100);
         const label = pct <= 25 ? 'Top 25%' : pct <= 50 ? 'Top 50%' : pct <= 75 ? 'Top 75%' : 'Bottom 25%';
         const col = pct <= 25 ? 'var(--k-2ecc71, #2ecc71)' : pct <= 50 ? G : pct <= 75 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
-        return <span style={{ fontSize: 'var(--text-label, 0.75rem)', padding: '1px 5px', borderRadius: '3px', background: `${col}18`, color: col, fontWeight: 700, marginLeft: '4px', fontFamily: dmFont }}>{label}</span>;
+        const bg = typeof wrAlpha === 'function' ? wrAlpha(col, '18') : 'var(--ov-2, rgba(255,255,255,0.03))';
+        return <span style={{ fontSize: 'var(--text-label, 0.75rem)', padding: '1px 5px', borderRadius: '3px', background: bg, color: col, fontWeight: 700, marginLeft: '4px', fontFamily: dmFont }}>{label}</span>;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -512,9 +631,9 @@ function DashboardPanel({
     function SmallKpiCard({ kpiKey, primaryMetric }) {
         const key = primaryMetric || kpiKey;
         const val = kv(key);
-        const ann = typeof getKpiAnnotation === 'function' ? getKpiAnnotation(key, val.value) : '';
+        const ann = kpiAnn(key, val.value);
         const mod = WIDGET_MODULES[kpiKey];
-        const accentColor = mod?.accent || G;
+        const accentColor = modAccent(mod);
         return (
             <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', gap: '6px', position: 'relative' }}>
                 {/* Module badge */}
@@ -551,8 +670,9 @@ function DashboardPanel({
 
         const key = primaryMetric || mod.metrics?.[0]?.key;
         if (!key) return null;
+        const accent = modAccent(mod);
         const val = kv(key);
-        const ann = typeof getKpiAnnotation === 'function' ? getKpiAnnotation(key, val.value) : '';
+        const ann = kpiAnn(key, val.value);
         const metaLabel = mod.metrics.find(m => m.key === key)?.label || key;
 
         // Secondary metrics for context
@@ -562,7 +682,7 @@ function DashboardPanel({
             <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column' }}>
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                    <div style={{ fontFamily: rajFont, fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: mod.accent, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                    <div style={{ fontFamily: rajFont, fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: accent, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
                         {mod.icon} {mod.label}
                     </div>
                     <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.5, fontFamily: dmFont }}>{metaLabel}</div>
@@ -572,13 +692,13 @@ function DashboardPanel({
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '6px' }}>
                     <span style={{ fontFamily: monoFont, fontSize: '1.8rem', fontWeight: 700, color: val.color || W, lineHeight: 1 }}>{val.value}</span>
                     {trendArrow(val.sparkData, val.color)}
-                    {percentileBadge(val.value, mod.accent)}
+                    {percentileBadge(val.value, accent)}
                 </div>
 
                 {/* Sparkline */}
                 {typeof Sparkline !== 'undefined' && val.sparkData && val.sparkData.length > 2 && (
                     <div style={{ marginBottom: '6px' }}>
-                        {React.createElement(Sparkline, { data: val.sparkData, width: 200, height: 28, color: val.color || mod.accent })}
+                        {React.createElement(Sparkline, { data: val.sparkData, width: 200, height: 28, color: val.color || accent })}
                     </div>
                 )}
 
@@ -617,15 +737,16 @@ function DashboardPanel({
         if (moduleKey === 'intel-brief') return renderIntelligenceBrief('lg');
         if (moduleKey === 'field-notes') return renderFieldNotes('lg');
 
+        const accent = modAccent(mod);
         const allMetrics = mod.metrics.map(m => ({ ...m, val: kv(m.key) }));
         const primaryKey = primaryMetric || mod.metrics?.[0]?.key;
         const primaryVal = kv(primaryKey);
-        const ann = typeof getKpiAnnotation === 'function' ? getKpiAnnotation(primaryKey, primaryVal.value) : '';
+        const ann = kpiAnn(primaryKey, primaryVal.value);
 
         // League context for bar chart — find roster value for comparison
         const allDHQs = (() => {
             const LI = window.App?.LI || {};
-            const scores = LI.playerScores || {};
+            const scores = window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : (LI.playerScores || {});
             return (currentLeague?.rosters || []).map(r => ({
                 rid: r.roster_id,
                 dhq: (r.players || []).reduce((s, pid) => s + (scores[pid] || 0), 0),
@@ -639,14 +760,14 @@ function DashboardPanel({
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                     <span style={{ fontSize: '1.1rem' }}>{mod.icon}</span>
-                    <span style={{ fontFamily: rajFont, fontSize: '1rem', fontWeight: 700, color: mod.accent, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{mod.label}</span>
+                    <span style={{ fontFamily: rajFont, fontSize: '1rem', fontWeight: 700, color: accent, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{mod.label}</span>
                 </div>
 
                 {/* Primary stat hero */}
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
                     <span style={{ fontFamily: monoFont, fontSize: '2rem', fontWeight: 700, color: primaryVal.color || W, lineHeight: 1 }}>{primaryVal.value}</span>
                     {trendArrow(primaryVal.sparkData, primaryVal.color)}
-                    {percentileBadge(primaryVal.value, mod.accent)}
+                    {percentileBadge(primaryVal.value, accent)}
                 </div>
                 {ann && <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: G, fontFamily: dmFont, fontWeight: 600, lineHeight: 1.4, marginBottom: '10px' }}>{ann}</div>}
 
@@ -670,9 +791,9 @@ function DashboardPanel({
                         {allDHQs.slice(0, 6).map(t => (
                             <div key={t.rid} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <div style={{ flex: 1, height: '6px', background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '3px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', width: `${(t.dhq / maxDHQ) * 100}%`, background: t.isMe ? mod.accent : 'var(--ov-7, rgba(255,255,255,0.2))', borderRadius: '3px', transition: 'width 0.3s' }} />
+                                    <div style={{ height: '100%', width: `${(t.dhq / maxDHQ) * 100}%`, background: t.isMe ? accent : 'var(--ov-7, rgba(255,255,255,0.2))', borderRadius: '3px', transition: 'width 0.3s' }} />
                                 </div>
-                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, color: t.isMe ? mod.accent : S, opacity: t.isMe ? 1 : 0.6, minWidth: '32px', textAlign: 'right' }}>{(t.dhq / 1000).toFixed(0)}k</div>
+                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, color: t.isMe ? accent : S, opacity: t.isMe ? 1 : 0.6, minWidth: '32px', textAlign: 'right' }}>{(t.dhq / 1000).toFixed(0)}k</div>
                             </div>
                         ))}
                     </div>
@@ -720,7 +841,9 @@ function DashboardPanel({
     // TRANSACTION TICKER
     // ══════════════════════════════════════════════════════════════
     function renderTransactionTicker(size) {
-        const transactionLimit = size === 'lg' ? 8 : 5;
+        // Row budget per size: each entry is ~46px (2 lines). md = 1 grid row
+        // (160px) fits 2 entries after the header; lg (2 rows, ~330px) fits 5.
+        const transactionLimit = size === 'lg' ? 5 : 2;
         let visibleTransactions = (transactions || []).slice(0, transactionLimit);
         if (size === 'lg' && !visibleTransactions.some(t => t.type === 'trade')) {
             const firstTrade = (transactions || []).find(t => t.type === 'trade');
@@ -803,13 +926,38 @@ function DashboardPanel({
                 },
             };
         }
+        // Sleeper trades carry every traded player in BOTH adds{} (keyed to the
+        // receiving roster) and drops{} (keyed to the sending roster) — without
+        // a side split a 2-for-2 renders '+A +B -A -B'. Render the trade from
+        // roster_ids[0]'s perspective (the owner named on the row): + what they
+        // received, - what they sent. Non-trades are one-sided already.
+        function tickerAddPids(txn) {
+            const pids = Object.keys(txn.adds || {});
+            if (txn.type !== 'trade' || txn.roster_ids?.[0] == null) return pids;
+            return pids.filter(pid => String(txn.adds[pid]) === String(txn.roster_ids[0]));
+        }
+        function tickerDropPids(txn) {
+            const pids = Object.keys(txn.drops || {});
+            if (txn.type !== 'trade' || txn.roster_ids?.[0] == null) return pids;
+            return pids.filter(pid => String(txn.drops[pid]) === String(txn.roster_ids[0]));
+        }
+        const hiddenCount = Math.max(0, (transactions || []).length - visibleTransactions.length);
         return (
-            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', maxHeight: size === 'lg' ? '100%' : '300px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', maxHeight: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ fontFamily: rajFont, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.07em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     📰 TRANSACTION TICKER
+                    {hiddenCount > 0 && (
+                        <span role="button" tabIndex={0} title="Open League Analytics"
+                            onClick={() => navigateWidget && navigateWidget('analytics')}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateWidget && navigateWidget('analytics'); } }}
+                            style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: S, opacity: 0.7, fontFamily: dmFont, letterSpacing: 0, textTransform: 'none', cursor: 'pointer' }}>
+                            +{hiddenCount} more →
+                        </span>
+                    )}
                 </div>
+                <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
                 {(!transactions || transactions.length === 0) ? (
-                    <SkeletonRows count={6} />
+                    <SkeletonRows count={size === 'lg' ? 5 : 2} />
                 ) : visibleTransactions.map((txn, ti) => (
                     <div key={ti} {...tickerTradeProps(txn)} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))', cursor: txn.type === 'trade' ? 'pointer' : 'default', outline: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', flexWrap: 'wrap' }}>
@@ -824,13 +972,13 @@ function DashboardPanel({
                             )}
                         </div>
                         <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: W, paddingLeft: '42px' }}>
-                            {Object.keys(txn.adds || {}).map(pid => (
+                            {tickerAddPids(txn).map(pid => (
                                 <span key={'a'+pid} style={{ color: 'var(--good)', cursor: 'pointer', marginRight: '5px' }}
                                     {...tickerPlayerProps(pid)}>
                                     +{getPlayerName(pid)}
                                 </span>
                             ))}
-                            {Object.keys(txn.drops || {}).map(pid => (
+                            {tickerDropPids(txn).map(pid => (
                                 <span key={'d'+pid} style={{ color: 'var(--bad)', cursor: 'pointer', marginRight: '5px' }}
                                     {...tickerPlayerProps(pid)}>
                                     -{getPlayerName(pid)}
@@ -843,6 +991,7 @@ function DashboardPanel({
                         </div>
                     </div>
                 ))}
+                </div>
             </div>
         );
     }
@@ -852,6 +1001,9 @@ function DashboardPanel({
     // ══════════════════════════════════════════════════════════════
     function renderStandings(size) {
         const isOffseason = currentLeague?.status === 'complete' || currentLeague?.status === 'pre_draft';
+        const isCompact = size === 'md';
+        // skjjcruz production keeps division-grouped standings on the dashboard
+        // (explicitly preserved in the prod sync — do not replace with the flat list).
         const divisions = {};
         (standings || []).forEach(t => { const div = t.division || 0; if (!divisions[div]) divisions[div] = []; divisions[div].push(t); });
         const divKeys = Object.keys(divisions).sort((a, b) => a - b);
@@ -860,7 +1012,6 @@ function DashboardPanel({
         if (hasDivisions && currentLeague?.metadata) {
             divKeys.forEach(dk => { divNameMap[dk] = currentLeague.metadata['division_' + dk + '_name'] || currentLeague.metadata['division_' + dk] || ('Division ' + dk); });
         }
-        const isCompact = size === 'md';
 
         return (
             <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', overflow: 'hidden' }}>
@@ -890,7 +1041,7 @@ function DashboardPanel({
                         }).slice(0, isCompact ? 5 : 8).map((team, idx) => {
                             const isMe = team.userId === sleeperUserId;
                             const roster = currentLeague?.rosters?.find(r => r.owner_id === team.userId);
-                            const totalDHQ = roster?.players?.reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0) || 0;
+                            const totalDHQ = roster?.players?.reduce((s, pid) => s + ((window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid) : (window.App?.LI?.playerScores?.[pid] || 0))), 0) || 0;
                             const user = (currentLeague?.users || []).find(u => u.user_id === team.userId);
                             const avatarId = user?.avatar;
                             const avatarUrl = avatarId ? `https://sleepercdn.com/avatars/thumbs/${avatarId}` : null;
@@ -935,6 +1086,19 @@ function DashboardPanel({
         const [showGear, setShowGear] = React.useState(isTouch);
         const sizeSpan = { sm: 'span 1', slim: 'span 1', narrow: 'span 1', md: 'span 2', lg: 'span 2', tall: 'span 2', xl: 'span 4', xxl: 'span 4' };
         const rowSpan = { sm: 'span 1', slim: 'span 2', narrow: 'span 4', md: 'span 1', lg: 'span 2', tall: 'span 4', xl: 'span 2', xxl: 'span 4' };
+
+        // Touch reorder: move this widget one slot earlier/later in the same
+        // layout array the desktop drag-and-drop mutates.
+        function moveWidget(delta) {
+            const to = idx + delta;
+            if (to < 0 || to >= selectedWidgets.length) return;
+            const updated = [...selectedWidgets];
+            const [moved] = updated.splice(idx, 1);
+            updated.splice(to, 0, moved);
+            setSelectedWidgets(updated);
+        }
+        const canMoveUp = idx > 0;
+        const canMoveDown = idx < selectedWidgets.length - 1;
 
         return (
             <div
@@ -1010,6 +1174,65 @@ function DashboardPanel({
                             transition: 'all 0.12s', pointerEvents: 'none',
                         }}>✕</span></button>
                 )}
+
+                {/* Touch reorder ▲/▼ — HTML5 drag events never fire on iOS
+                    Safari, so coarse-pointer/phone reorders with these instead.
+                    44px hit areas (glyph circle stays 22px, hit-padding only),
+                    same float row as the gear/remove affordance. Fine-pointer
+                    desktop never renders them (touchReorder false). */}
+                {showGear && touchReorder && [
+                    { glyph: '▼', delta: 1, ok: canMoveDown, right: '77px', label: 'Move widget down' },
+                    { glyph: '▲', delta: -1, ok: canMoveUp, right: '121px', label: 'Move widget up' },
+                ].map(b => (
+                    <button
+                        key={b.glyph}
+                        onClick={e => { e.stopPropagation(); if (b.ok) moveWidget(b.delta); }}
+                        disabled={!b.ok}
+                        aria-label={b.label}
+                        title={b.label}
+                        style={{
+                            position: 'absolute', top: '-11px', right: b.right,
+                            width: '44px', height: '44px', padding: 0,
+                            border: 'none', background: 'transparent',
+                            cursor: b.ok ? 'pointer' : 'default', fontSize: 'var(--text-label, 0.75rem)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            zIndex: 5, opacity: b.ok ? 1 : 0.35,
+                        }}
+                    ><span style={{
+                            width: '22px', height: '22px', borderRadius: '50%',
+                            border: '1px solid var(--ov-6, rgba(255,255,255,0.15))',
+                            background: 'var(--surf-solid, rgba(10,10,10,0.85))', backdropFilter: 'blur(4px)',
+                            color: S, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.12s', pointerEvents: 'none',
+                        }}>{b.glyph}</span></button>
+                ))}
+            </div>
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // PRO TEASER CARD — rendered in place of a Pro widget for free
+    // users: title + lock + one-line what-you-get + upgrade CTA.
+    // Lives inside WidgetShell so layout editing stays free.
+    // ══════════════════════════════════════════════════════════════
+    function WidgetProTeaser({ moduleKey }) {
+        const mod = WIDGET_MODULES[moduleKey];
+        const openUpsell = () => {
+            if (window.showProLaunchPage) window.showProLaunchPage();
+            else if (window.showUpgradePrompt) window.showUpgradePrompt(mod?.proFeature || '');
+        };
+        return (
+            <div style={{ ...cardBase, borderLeft: '3px solid var(--gold)', padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                    <span style={{ fontSize: '1rem', flexShrink: 0 }}>{mod?.icon}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontFamily: rajFont, fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: W, letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mod?.label || moduleKey}</span>
+                    <span aria-hidden="true" style={{ fontSize: '0.85rem', flexShrink: 0 }}>🔒</span>
+                    <span style={{ fontFamily: monoFont, fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '0.08em', textTransform: 'uppercase', color: G, border: '1px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius: '2px', padding: '1px 6px', flexShrink: 0 }}>Pro</span>
+                </div>
+                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{mod?.description}</div>
+                <button onClick={openUpsell} style={{ marginTop: 'auto', alignSelf: 'flex-start', padding: '6px 12px', minHeight: '32px', background: 'var(--gold)', color: 'var(--k-1a1000, #1a1000)', border: 'none', borderRadius: '2px', fontFamily: monoFont, fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                    Unlock with Pro
+                </button>
             </div>
         );
     }
@@ -1023,6 +1246,15 @@ function DashboardPanel({
         // v2 click targets use the module's clickTarget map; fall back to legacy
         const mod = WIDGET_MODULES[key];
         const clickTab = resolveWidgetDestination(mod?.clickTarget?.[size] || mod?.clickTarget?.sm || null);
+
+        // ── Free/Pro gate (WIDGET_MODULES.pro) — teaser card, never blank ──
+        if (mod?.pro && !wrPro) {
+            return (
+                <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
+                    <WidgetProTeaser moduleKey={key} />
+                </WidgetShell>
+            );
+        }
 
         // ── Delegate to module-specific external widgets if available ──
         const externalWidget = resolveExternalWidget(key, size, primaryMetric);
@@ -1089,6 +1321,12 @@ function DashboardPanel({
                 playersData, computeKpiValue, setActiveTab, navigateWidget,
             });
         }
+        // Lineup Check → LineupCheckWidget (js/widgets/lineup-check.js)
+        if (moduleKey === 'lineup-check' && typeof window.LineupCheckWidget === 'function') {
+            return React.createElement(window.LineupCheckWidget, {
+                size, myRoster, currentLeague, playersData, statsData, prevStatsData, setActiveTab, navigateWidget,
+            });
+        }
         // Window Forecast → WindowForecastWidget (js/widgets/window-forecast.js)
         if (moduleKey === 'window-forecast' && typeof window.WindowForecastWidget === 'function') {
             return React.createElement(window.WindowForecastWidget, {
@@ -1147,6 +1385,10 @@ function DashboardPanel({
         // Phase 9: My Trophies widget
         if (moduleKey === 'my-trophies' && typeof window.MyTrophiesWidget === 'function') {
             return React.createElement(window.MyTrophiesWidget, { size, myRoster, currentLeague, setActiveTab, navigateWidget });
+        }
+        // League Calendar widget (js/widgets/league-calendar.js)
+        if (moduleKey === 'league-calendar' && typeof window.LeagueCalendarWidget === 'function') {
+            return React.createElement(window.LeagueCalendarWidget, { size, currentLeague, leagueSkin, myRoster, setActiveTab, navigateWidget });
         }
         // No external widget — fall through to generic renderers
         return null;
@@ -1207,7 +1449,10 @@ function DashboardPanel({
                     <span style={{ fontSize: '1.1rem' }}>✨</span>
                     <div style={{ flex: 1, lineHeight: 1.5 }}>
                         <strong style={{ color: G }}>This dashboard is yours to customize.</strong>
-                        {' '}Hover any widget to resize or remove it. Drag to reorder. Click <strong>+ Add Widget</strong> to build your layout.
+                        {touchReorder
+                            ? ' Tap the ⚙ on any widget to resize it, ✕ to remove, ▲▼ to reorder. Tap '
+                            : ' Hover any widget to resize or remove it. Drag to reorder. Click '}
+                        <strong>+ Add Widget</strong> to build your layout.
                     </div>
                     <button onClick={dismissHint} style={{
                         padding: '5px 14px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: dmFont, fontWeight: 600,
@@ -1242,7 +1487,10 @@ function DashboardPanel({
                     .wr-dashboard-grid>.wr-widget{
                         min-width:0;
                     }
-                    .wr-dashboard-grid>.wr-widget[style*="span 4"]{
+                    /* Target full-width sizes by data attribute — [style*="span 4"]
+                       also matches grid-ROW spans (tall/narrow), stretching them wrong */
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xl"],
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xxl"]{
                         grid-column:span 2 !important;
                     }
                 }
@@ -1254,8 +1502,8 @@ function DashboardPanel({
                     .wr-dashboard-grid>.wr-add-widget{
                         min-width:0;
                     }
-                    .wr-dashboard-grid>.wr-widget[style*="span 3"],
-                    .wr-dashboard-grid>.wr-widget[style*="span 4"]{
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xl"],
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xxl"]{
                         grid-column:span 2 !important;
                     }
                 }
@@ -1267,7 +1515,8 @@ function DashboardPanel({
                     .wr-dashboard-grid>.wr-add-widget{
                         min-width:0;
                     }
-                    .wr-dashboard-grid>.wr-widget[style*="span 4"]{
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xl"],
+                    .wr-dashboard-grid>.wr-widget[data-widget-size="xxl"]{
                         grid-column:span 3 !important;
                     }
                 }

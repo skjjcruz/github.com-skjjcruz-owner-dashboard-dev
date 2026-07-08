@@ -13,8 +13,14 @@
 //   WR.ConfChip    — AI-confidence chip (auto-classifies pct → HIGH/MED/LOW)
 //   WR.DeltaLine   — "↑ +4.1%" / "↓ 2000 → 1850" delta renderer
 //   WR.InsightCard — severity-tagged behavioral card with CTA
+//   WR.ClampedRead — long-read disclosure: max-height clamp + fade + "Full read"
+//   WR.Sheet       — phone (<768) bottom-sheet wrapper (plan D4/D5); at
+//                    tablet/desktop it renders `desktop` (or bare children)
+//                    so callers keep their existing centered-modal path
 //
-// Depends on: React (loaded globally).
+// Depends on: React (loaded globally). WR.Sheet additionally reads
+// WR.useViewport from js/shared/viewport.js (a plain script that runs
+// before this babel chain — presence is fixed for the page's lifetime).
 // ══════════════════════════════════════════════════════════════════
 
 (function () {
@@ -256,6 +262,217 @@
         );
     }
 
+    // ── ClampedRead ───────────────────────────────────────────────
+    // Long-read disclosure, extracted from the My Roster Dynasty Read
+    // pattern (js/tabs/my-team.js): clamps content to `maxHeight` px with
+    // a gradient fade + "▾ Full read" toggle. Only clamps when the content
+    // actually overflows (short reads render in full, zero extra chrome).
+    //   text      — plain string content (styled via `style`), OR
+    //   children  — pre-styled content nodes (text wins if both given).
+    //   maxHeight — collapsed height in px (default 104 ≈ 4 lines).
+    //   style     — style object for the content div (both modes).
+    //   fadeColor — color the fade dissolves into (match the surface bg).
+    // Consume guarded: window.WR?.ClampedRead (script-order safety).
+    function ClampedRead({ text, children, maxHeight, style, fadeColor }) {
+        const limit = maxHeight || 104;
+        const [open, setOpen] = React.useState(false);
+        const [overflow, setOverflow] = React.useState(false);
+        const ref = React.useRef(null);
+        // Measure the UNclamped inner div (it grows freely inside the hidden-
+        // overflow wrapper, so scrollHeight is the true content height). The
+        // ResizeObserver catches async content swaps (AI text replacing a
+        // template) and container reflow without extra deps.
+        React.useLayoutEffect(() => {
+            const el = ref.current;
+            if (!el) return;
+            const measure = () => setOverflow(el.scrollHeight > limit + 8);
+            measure();
+            if (typeof ResizeObserver === 'undefined') return;
+            const ro = new ResizeObserver(measure);
+            ro.observe(el);
+            return () => ro.disconnect();
+        }, [text, limit]);
+        const clamped = overflow && !open;
+        const fade = fadeColor || 'var(--surf-solid, rgba(12,12,18,0.99))';
+        return h('div', null,
+            h('div', { style: { position: 'relative', maxHeight: clamped ? limit + 'px' : 'none', overflow: clamped ? 'hidden' : 'visible' } },
+                h('div', { ref: ref, style: style }, text != null ? text : children),
+                clamped ? h('div', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '38px', background: 'linear-gradient(180deg, transparent, ' + fade + ')', pointerEvents: 'none' } }) : null
+            ),
+            overflow ? h('button', {
+                onClick: (e) => { e.stopPropagation(); setOpen(v => !v); },
+                style: { marginTop: '6px', fontSize: '0.72rem', color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }
+            }, open ? '▴ Show less' : '▾ Full read') : null
+        );
+    }
+
+    // ── Sheet (phone bottom sheet — plan D4/D5) ───────────────────
+    // Full-width bottom sheet at the phone tier (<768). Contract:
+    //   open      — render gate; false → null.
+    //   onClose   — called by scrim tap, ✕, and drag-down past ~80px.
+    //   title     — optional mono micro-caps header label.
+    //   children  — sheet content; the sheet BODY is the scroll container.
+    //   height    — max height, default '85dvh' (D9 landscape-safe cap).
+    //   showClose — default true (44px ✕ in the header row); pass false
+    //               when the content carries its own 44px close control
+    //               (e.g. the player-card hero ✕) to avoid a duplicate.
+    //   desktop   — optional element returned at ≥768; defaults to bare
+    //               children. Callers normally branch on
+    //               WR.useViewport().isPhone and keep their existing
+    //               centered-modal markup for tablet/desktop, so the
+    //               desktop path here is only a rotation-mid-open safety.
+    // Keyboard (D5): when WR.useViewport reports kbOpen, the sheet lifts
+    // by kbHeight (bottom offset) and its max-height shrinks so content
+    // compresses instead of hiding under the keyboard; any input focused
+    // inside the body re-centers after a ~320ms keyboard-settle delay.
+    // Body scroll is locked while a phone sheet is open. z sits at
+    // var(--wr-z-sheet, 200) — above the phone dock (100), below toasts.
+    function ensureSheetCss() {
+        if (document.getElementById('wr-sheet-css')) return;
+        const st = document.createElement('style');
+        st.id = 'wr-sheet-css';
+        st.textContent = [
+            '@keyframes wrSheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}',
+            '@keyframes wrSheetScrim{from{opacity:0}to{opacity:1}}',
+            /* Shared: horizontal scroll strips (tab strips, chip rows) hide their scrollbar. */
+            '.wr-hscroll{scrollbar-width:none}',
+            '.wr-hscroll::-webkit-scrollbar{display:none}',
+            /* Media/charts inside a sheet never force horizontal scroll (D4). */
+            '.wr-sheet-body img,.wr-sheet-body svg,.wr-sheet-body canvas{max-width:100%}',
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(st);
+    }
+
+    function Sheet({ open, onClose, title, children, height, showClose, desktop }) {
+        // Hook-order safety: viewport.js is a plain script loaded before the
+        // babel chain, so this branch is fixed for the page's lifetime.
+        const useVp = window.WR && window.WR.useViewport;
+        const vp = useVp ? useVp() : { isPhone: false, kbOpen: false, kbHeight: 0 };
+        const sheetRef = React.useRef(null);
+        const dragRef = React.useRef(null);
+        const locked = !!(open && vp.isPhone);
+        React.useEffect(() => {
+            if (!locked) return undefined;
+            const prev = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+            return () => { document.body.style.overflow = prev; };
+        }, [locked]);
+
+        if (!open) return null;
+        if (!vp.isPhone) return (desktop !== undefined ? desktop : children) || null;
+
+        ensureSheetCss();
+        // Landscape phones (SE at 667×375 stays in the phone tier): the 85dvh
+        // default leaves ~320px — take the full height; the kbOpen min() at
+        // the style site still shrinks it when a keyboard is up.
+        const maxH = vp.height <= 520 ? '100dvh' : (height || '85dvh');
+        const lift = vp.kbOpen ? vp.kbHeight : 0;
+        const hasHeaderRow = !!title || showClose !== false;
+
+        // Drag-to-dismiss on the grab strip: ref-based (no re-render per move);
+        // >80px pull releases into onClose, anything less springs back.
+        function onGrabStart(e) {
+            if (!e.touches || e.touches.length !== 1) return;
+            dragRef.current = { y0: e.touches[0].clientY, dy: 0 };
+            if (sheetRef.current) sheetRef.current.style.transition = 'none';
+        }
+        function onGrabMove(e) {
+            const d = dragRef.current;
+            if (!d || !e.touches || !e.touches.length) return;
+            d.dy = Math.max(0, e.touches[0].clientY - d.y0);
+            if (sheetRef.current) sheetRef.current.style.transform = 'translateY(' + d.dy + 'px)';
+        }
+        function onGrabEnd() {
+            const d = dragRef.current;
+            dragRef.current = null;
+            const el = sheetRef.current;
+            if (el) el.style.transition = '';
+            if (d && d.dy > 80) { if (onClose) onClose(); }
+            else if (el) el.style.transform = '';
+        }
+        // D5 contract: focused input re-centers in the (scrolling) sheet body
+        // after the iOS keyboard settles. React's onFocus bubbles (focusin).
+        function onBodyFocus(e) {
+            const t = e.target;
+            if (!t || !/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+            setTimeout(() => {
+                try { if (t.isConnected) t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { /* noop */ }
+            }, 320);
+        }
+
+        return h('div', {
+            className: 'wr-sheet-backdrop',
+            style: {
+                position: 'fixed', inset: 0,
+                zIndex: 'var(--wr-z-sheet, 200)',
+                background: 'rgba(3, 4, 7, 0.6)',
+                animation: 'wrSheetScrim 0.18s ease',
+                // iOS ignores body overflow:hidden for touch — the scrim is a
+                // pure tap target, so killing its touch gestures stops drags
+                // from rubber-banding the page behind the sheet.
+                touchAction: 'none',
+            },
+            onClick: (e) => { if (e.target === e.currentTarget && onClose) onClose(); },
+        },
+            h('div', {
+                ref: sheetRef,
+                className: 'wr-sheet',
+                role: 'dialog',
+                'aria-modal': 'true',
+                style: {
+                    position: 'absolute', left: 0, right: 0, bottom: lift + 'px',
+                    display: 'flex', flexDirection: 'column',
+                    maxHeight: vp.kbOpen ? 'min(' + maxH + ', calc(100dvh - ' + (lift + 12) + 'px))' : maxH,
+                    background: 'var(--k-0a0b0d, #0a0b0d)',
+                    borderTop: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
+                    borderRadius: '14px 14px 0 0',
+                    boxShadow: '0 -18px 60px rgba(0,0,0,0.7)',
+                    animation: 'wrSheetUp 0.24s cubic-bezier(0.22, 0.9, 0.32, 1)',
+                    transition: 'bottom 0.2s ease, max-height 0.2s ease',
+                },
+            },
+                h('div', {
+                    className: 'wr-sheet-grab',
+                    style: {
+                        flex: 'none', position: 'relative',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                        minHeight: hasHeaderRow ? '44px' : '24px',
+                        padding: hasHeaderRow ? '10px 10px 2px 16px' : '0',
+                        touchAction: 'none',
+                    },
+                    onTouchStart: onGrabStart,
+                    onTouchMove: onGrabMove,
+                    onTouchEnd: onGrabEnd,
+                    onTouchCancel: onGrabEnd,
+                },
+                    h('div', {
+                        'aria-hidden': 'true',
+                        style: { position: 'absolute', top: '6px', left: '50%', transform: 'translateX(-50%)', width: '38px', height: '4px', borderRadius: '2px', background: 'var(--ov-6, rgba(255,255,255,0.16))' }
+                    }),
+                    title
+                        ? h('div', {
+                            style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', paddingTop: '8px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                        }, title)
+                        : (hasHeaderRow ? h('span') : null),
+                    showClose !== false ? h('button', {
+                        onClick: onClose,
+                        'aria-label': 'Close',
+                        style: { background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '6px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+                    }, '✕') : null
+                ),
+                h('div', {
+                    className: 'wr-sheet-body',
+                    onFocus: onBodyFocus,
+                    style: {
+                        flex: '1 1 auto', minHeight: 0,
+                        overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain',
+                        paddingBottom: 'calc(12px + var(--sab, env(safe-area-inset-bottom, 0px)))',
+                    },
+                }, children)
+            )
+        );
+    }
+
     window.WR = window.WR || {};
     window.WR.Card = Card;
     window.WR.Badge = Badge;
@@ -264,4 +481,9 @@
     window.WR.DeltaLine = DeltaLine;
     window.WR.Kpi = Kpi;
     window.WR.InsightCard = InsightCard;
+    window.WR.ClampedRead = ClampedRead;
+    window.WR.Sheet = Sheet;
+    // Inject the shared sheet/hscroll CSS up front (idempotent) so the
+    // .wr-hscroll scrollbar-hiding rules exist before any consumer renders.
+    ensureSheetCss();
 })();

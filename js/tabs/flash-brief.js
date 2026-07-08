@@ -8,84 +8,60 @@
 
 function ordinal(n) { const s = ['th','st','nd','rd']; const v = n % 100; return n + (s[(v-20)%10] || s[v] || s[0]); }
 
-const BRIEF_PERSONALITY = {
-    default: {
-        greeting: (t, name) => (t < 12 ? 'Good morning' : t < 17 ? 'Good afternoon' : 'Good evening') + ', ' + name + '.',
-        elite: (rank, hs) => "Your roster is elite — top of the food chain right now.",
-        contender: (rank, hs) => "Your roster's sitting in solid shape — " + ordinal(rank) + " in the league with a health score of " + hs + ". You're right in the mix.",
-        crossroads: (rank, hs) => "You're at a crossroads — ranked " + ordinal(rank) + " with a health score of " + hs + ". Some decisions coming up that'll define your direction.",
-        rebuilding: (rank, hs) => "Rebuilding mode — ranked " + ordinal(rank) + ". Health score is " + hs + ". But that's where the opportunity is.",
-        waiver: (name, pos, dhq) => "I've been watching the wire — " + name + " is sitting out there unclaimed.",
-        trade: (count) => "I've mapped out the owners in your league. A few look ripe for a deal.",
-        draft: (days, date) => "Draft is " + days + " day" + (days !== 1 ? 's' : '') + " out. Time to sharpen your board.",
-        rank: (rank, tier) => "You're #" + rank + " in the league pecking order right now.",
-    },
-    general: {
-        greeting: (t, name) => name + ". Listen up.",
-        elite: (rank, hs) => "Health score " + hs + ". That's dominance. Don't get comfortable — maintain that edge.",
-        contender: (rank, hs) => "Ranked " + ordinal(rank) + ". Health score " + hs + ". Solid, but solid doesn't win championships. Push harder.",
-        crossroads: (rank, hs) => "Ranked " + ordinal(rank) + ". Health score " + hs + ". You're at a crossroads and I need you to make a decision. Now.",
-        rebuilding: (rank, hs) => "Ranked " + ordinal(rank) + ". Health score " + hs + ". We're in rebuild mode. That means discipline, not panic.",
-        waiver: (name, pos, dhq) => name + " is available on the wire. Pick him up before your opponents wake up.",
-        trade: (count) => "I've profiled every owner in this league. Time to exploit their weaknesses.",
-        draft: (days, date) => days + " days until the draft. You better have your board locked in.",
-        rank: (rank, tier) => "You're " + ordinal(rank) + ". " + (rank <= 3 ? "Good. Stay hungry." : "Not good enough. Let's fix it."),
-    },
-    enthusiast: {
-        greeting: (t, name) => "Hey! " + (t < 12 ? 'Good morning' : t < 17 ? 'Good afternoon' : 'Good evening') + "! LET'S GO, " + name + "!",
-        elite: (rank, hs) => "ELITE! Man, you are COOKING right now! Health score " + hs + " — that's what I'm talking about!",
-        contender: (rank, hs) => "Dude, " + ordinal(rank) + " in the league! Health score " + hs + "! You've got JUICE right now, let's keep it rolling!",
-        crossroads: (rank, hs) => "Okay okay okay — ranked " + ordinal(rank) + ", health score " + hs + ". We're at a CROSSROADS but that's where the MAGIC happens!",
-        rebuilding: (rank, hs) => "Alright, " + ordinal(rank) + " place, health score " + hs + " — REBUILDING BABY! This is where you lay the foundation for something SPECIAL!",
-        waiver: (name, pos, dhq) => "OH MAN — " + name + " is just sitting there on the wire! You GOTTA grab this guy!",
-        trade: (count) => "I've been studying every owner in this league and I am FIRED UP about some trade targets!",
-        draft: (days, date) => "DRAFT IN " + days + " DAYS! Oh man I love this time of year! Let's get your board DIALED IN!",
-        rank: (rank, tier) => "You're #" + rank + "! " + (rank <= 3 ? "TOP THREE BABY!" : "Let's CLIMB!"),
-    },
-    bayou: {
-        greeting: (t, name) => "Mornin', cher. How we doin' today, " + name + "?",
-        elite: (rank, hs) => "Boy I tell you what, this roster is NASTY good. Health score " + hs + ". Ain't nobody touchin' us right now.",
-        contender: (rank, hs) => "We sittin' at " + ordinal(rank) + ", health score " + hs + ". That's a good gumbo right there — just need a little more seasoning.",
-        crossroads: (rank, hs) => "We at a crossroads, " + ordinal(rank) + " place, health score " + hs + ". Time to fish or cut bait, ya heard me?",
-        rebuilding: (rank, hs) => "Look, we " + ordinal(rank) + " right now. Health score " + hs + ". But down here we know how to build somethin' from nothin'.",
-        waiver: (name, pos, dhq) => name + " just fell off somebody's bayou boat and landed right on the wire. Go get 'em.",
-        trade: (count) => "I been watchin' these owners real close. Got a few that's ready to make a deal.",
-        draft: (days, date) => "Draft's " + days + " days out. Time to set them trotlines and see what we catch.",
-        rank: (rank, tier) => "We #" + rank + " in the peckin' order. " + (rank <= 3 ? "Top of the food chain, baby!" : "We comin' for 'em."),
-    },
-    wit: {
-        greeting: (t, name) => (t < 12 ? 'Morning' : t < 17 ? 'Afternoon' : 'Evening') + ", " + name + ". Your opponents didn't get any smarter overnight.",
-        elite: (rank, hs) => "Elite tier. Health score " + hs + ". Try not to let it go to your head — though I suppose your leaguemates already have.",
-        contender: (rank, hs) => ordinal(rank) + " place, health score " + hs + ". Solid enough to be dangerous, not quite good enough to be cocky about it.",
-        crossroads: (rank, hs) => "Ranked " + ordinal(rank) + ", health score " + hs + ". You're at a crossroads — which, historically, is where people make their worst decisions. Let's not do that.",
-        rebuilding: (rank, hs) => ordinal(rank) + " place. Health score " + hs + ". Rebuilding. The good news? It's hard to get worse. The bad news? Your leaguemates know it too.",
-        waiver: (name, pos, dhq) => name + " is sitting on the waiver wire like a forgotten lunch. Someone's going to eat eventually — might as well be you.",
-        trade: (count) => "I've studied every owner in your league. Some of them actually think they're good at this.",
-        draft: (days, date) => days + " days to the draft. Plenty of time for your opponents to overthink their boards.",
-        rank: (rank, tier) => "#" + rank + " in the league. " + (rank <= 3 ? "Not bad. Almost impressive." : "Room for improvement, as they say diplomatically."),
-    },
-    closer: {
-        greeting: (t, name) => "Let's go to work, " + name + ".",
-        elite: (rank, hs) => "Elite. Period. Health score " + hs + ". Now protect it.",
-        contender: (rank, hs) => ordinal(rank) + " place. Health score " + hs + ". You play to win the game.",
-        crossroads: (rank, hs) => ordinal(rank) + ". Health score " + hs + ". Crossroads. Make a decision and commit. No half-measures.",
-        rebuilding: (rank, hs) => ordinal(rank) + ". Health score " + hs + ". Rebuilding. You don't build a house by wishing — you lay bricks. Let's go.",
-        waiver: (name, pos, dhq) => name + " is on the wire. Go get him. Done.",
-        trade: (count) => "Owners profiled. Weaknesses identified. Time to make moves.",
-        draft: (days, date) => days + " days. Draft. Be ready.",
-        rank: (rank, tier) => "#" + rank + ". " + (rank <= 3 ? "Keep it." : "Change it."),
-    },
-    strategist: {
-        greeting: (t, name) => (t < 12 ? 'Good morning' : t < 17 ? 'Good afternoon' : 'Good evening') + ", " + name + ". Let's review the board.",
-        elite: (rank, hs) => "Health score " + hs + ". Elite positioning. Portfolio is optimized — focus shifts to sustaining competitive advantage.",
-        contender: (rank, hs) => "Position: " + ordinal(rank) + ". Health score: " + hs + ". Contender-class roster. Key variable: positional gaps and trade leverage.",
-        crossroads: (rank, hs) => "Position: " + ordinal(rank) + ". Health score: " + hs + ". Crossroads classification. Decision matrix: commit to competing or pivot to accumulation.",
-        rebuilding: (rank, hs) => "Position: " + ordinal(rank) + ". Health score: " + hs + ". Rebuild phase. Optimal strategy: maximize asset acquisition, minimize win-now spending.",
-        waiver: (name, pos, dhq) => "Waiver wire analysis: " + name + " at " + pos + " (DHQ " + dhq.toLocaleString() + ") available. Addresses your positional deficit.",
-        trade: (count) => "Owner analysis complete. " + count + " trade scenarios identified with positive expected value.",
-        draft: (days, date) => "T-minus " + days + " days to draft. Board calibration recommended.",
-        rank: (rank, tier) => "League position: " + ordinal(rank) + ". Classification: " + tier + ".",
-    },
+// Phone tier (≤767, plan Phase 2 item 11 wave 1): the xl brief splits into
+// two ~160px columns at 375 (prose | 2×2 action grid) and the xxl KPI /
+// position strips cut ~343px of content into 6–8 cells of ~40-50px. Stack
+// the xl split and re-wrap the strips to 3×2 / 4×2. Injected once at load;
+// !important beats the inline grid styles. ≥768 (tablet/desktop) unchanged.
+(function injectBriefPhoneCss() {
+    if (typeof document === 'undefined' || document.getElementById('wr-brief-phone-css')) return;
+    const st = document.createElement('style');
+    st.id = 'wr-brief-phone-css';
+    st.textContent = '@media(max-width:767px){' +
+        '.wr-ib-xl-body{grid-template-columns:minmax(0,1fr) !important;}' +
+        '.wr-ib-xl-actions{grid-template-columns:minmax(0,1fr) !important;}' +
+        '.wr-ib-kpi-strip{grid-template-columns:repeat(3,1fr) !important;}' +
+        '.wr-ib-pos-strip{grid-template-columns:repeat(4,1fr) !important;}' +
+        '}';
+    document.head.appendChild(st);
+})();
+
+// The four tier-message keys (elite/contender/crossroads/rebuilding) are
+// POOLS — AlexVoice.pick chooses one per league+week seed, so the read is
+// stable across re-renders but the phrasing rolls when the week does.
+// Greeting/waiver/trade/draft/rank stay single-variant by design (owner
+// call, de-busying plan Q4 — wider seeding waits for the hybrid-AI voice).
+// One canonical Alex voice (owner ruling 2026-07-08): the 7-preset
+// BRIEF_PERSONALITY table (selected via wr_alex_style / GM alexPersonality
+// through GM_VOICE_TO_BRIEF) is retired — this is the single voice for
+// everyone. Stored wr_alex_style / strategy alexPersonality values are
+// ignored here: tolerated, never migrated.
+const BRIEF_VOICE = {
+    greeting: (t, name) => (t < 12 ? 'Good morning' : t < 17 ? 'Good afternoon' : 'Good evening') + ', ' + name + '.',
+    elite: [
+        (rank, hs) => "Your roster is elite — top of the food chain right now.",
+        (rank, hs) => "This roster is the class of the league — the target's on your back now.",
+        (rank, hs) => "Elite territory. Everyone else is chasing you.",
+    ],
+    contender: [
+        (rank, hs) => "Your roster's sitting in solid shape — " + ordinal(rank) + " in the league with a health score of " + hs + ". You're right in the mix.",
+        (rank, hs) => "You're a legit contender — " + ordinal(rank) + " with a health score of " + hs + ", well within striking distance.",
+        (rank, hs) => "Sitting " + ordinal(rank) + " with a health score of " + hs + " — one sharp move could tip this your way.",
+    ],
+    crossroads: [
+        (rank, hs) => "You're at a crossroads — ranked " + ordinal(rank) + " with a health score of " + hs + ". Some decisions coming up that'll define your direction.",
+        (rank, hs) => "Ranked " + ordinal(rank) + ", health score " + hs + " — you could push in or pull back, and I'd rather we choose than drift.",
+        (rank, hs) => "This is a fork-in-the-road roster — " + ordinal(rank) + ", health score " + hs + ". The next move sets your direction.",
+    ],
+    rebuilding: [
+        (rank, hs) => "Rebuilding mode — ranked " + ordinal(rank) + ". Health score is " + hs + ". But that's where the opportunity is.",
+        (rank, hs) => "You're rebuilding from " + ordinal(rank) + " with a health score of " + hs + " — the goal right now is assets, not wins.",
+        (rank, hs) => "Ranked " + ordinal(rank) + ", health score " + hs + ". Rebuilds reward patience — stack picks and youth.",
+    ],
+    waiver: (name, pos, dhq) => "I've been watching the wire — " + name + " is sitting out there unclaimed.",
+    trade: (count) => "I've mapped out the owners in your league. A few look ripe for a deal.",
+    draft: (days, date) => "Draft is " + days + " day" + (days !== 1 ? 's' : '') + " out. Time to sharpen your board.",
+    rank: (rank, tier) => "You're #" + rank + " in the league pecking order right now.",
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -107,6 +83,12 @@ function IntelligenceBriefWidget({
 	  setActiveTab,
 	  navigateWidget,
 	}) {
+    // GM Strategy is the single source of truth for plan substance — drives
+    // the strategy-frame lead line and the fallback waiver filters (faFilters).
+    // Its legacy alexPersonality field no longer selects a voice — one
+    // canonical Alex (owner ruling 2026-07-08).
+    const gm = window.WR.GmMode.useGmEffects(currentLeague);
+
     const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
     const myAssess = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
     const tier = (myAssess?.tier || 'UNKNOWN').toUpperCase();
@@ -163,10 +145,22 @@ function IntelligenceBriefWidget({
 	        const normPos = window.App?.normPos || (p => p);
         const rostered = new Set();
         (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
+        // GM Strategy FA filters — keep this rough fallback consistent with the FA tab.
+        const faF = gm.faFilters || null;
+        const faMinDhq = Number(faF?.minDhq) || 0;
+        const faMaxAge = Number(faF?.maxAge) || 0;
+        const faExclude = new Set((Array.isArray(faF?.excludePositions) ? faF.excludePositions : [])
+            .map(x => String(normPos(x) || x).toUpperCase()).filter(Boolean));
+        const passesGmFa = (pid, p, pos) => {
+            if (faMinDhq && (scores[pid] || 0) < faMinDhq) return false;
+            if (faExclude.has(String(pos).toUpperCase())) return false;
+            if (faMaxAge && Number(p.age) && Number(p.age) > faMaxAge) return false;
+            return true;
+        };
         const needPos = typeof needs[0] === 'string' ? needs[0] : needs[0]?.pos;
         if (!needPos) return null;
         const candidates = Object.entries(playersData || {})
-            .filter(([pid, p]) => !rostered.has(pid) && normPos(p.position) === needPos && p.team && p.active !== false && (scores[pid] || 0) >= 1500)
+            .filter(([pid, p]) => !rostered.has(pid) && normPos(p.position) === needPos && p.team && p.active !== false && (scores[pid] || 0) >= 1500 && passesGmFa(pid, p, needPos))
             .map(([pid, p]) => ({ pid, name: p.full_name || '', dhq: scores[pid] || 0, pos: needPos, team: p.team }))
             .sort((a, b) => b.dhq - a.dhq);
         if (!candidates.length && needs.length > 1) {
@@ -174,14 +168,38 @@ function IntelligenceBriefWidget({
                 const altPos = typeof needs[i] === 'string' ? needs[i] : needs[i]?.pos;
                 if (!altPos) continue;
                 const alt = Object.entries(playersData || {})
-                    .filter(([pid, p]) => !rostered.has(pid) && normPos(p.position) === altPos && p.team && p.active !== false && (scores[pid] || 0) >= 1500)
+                    .filter(([pid, p]) => !rostered.has(pid) && normPos(p.position) === altPos && p.team && p.active !== false && (scores[pid] || 0) >= 1500 && passesGmFa(pid, p, altPos))
                     .map(([pid, p]) => ({ pid, name: p.full_name || '', dhq: scores[pid] || 0, pos: altPos, team: p.team }))
                     .sort((a, b) => b.dhq - a.dhq);
                 if (alt.length) return alt[0];
             }
         }
         return candidates[0] || null;
-	    }, [rosterState.isUsable, needs, playersData, statsData, prevStatsData, myRoster, currentLeague, briefDraftInfo, scores, timeRecomputeTs, faModuleTick]);
+	    }, [rosterState.isUsable, needs, playersData, statsData, prevStatsData, myRoster, currentLeague, briefDraftInfo, scores, timeRecomputeTs, faModuleTick, gm.faFilters]);
+
+    // Sell-rule trips — rostered players whose position/age trips a GM sell
+    // rule or sell-position (untouchables excluded). Feeds the 'GM plan says
+    // move them' action below; same parse the My Roster nudge uses.
+    const sellRuleTrips = useMemo(() => {
+        if (!gm.hasStrategy || !rosterState.isUsable) return [];
+        const normPos = window.App?.normPos || (p => p);
+        const parseRule = window.GMStrategy?.parseSellRule;
+        const rules = (gm.sellRules || [])
+            .map(r => { try { return parseRule ? parseRule(r) : null; } catch (_) { return null; } })
+            .filter(r => r && (r.pos || r.ageAbove));
+        const sellPos = gm.sellPositions instanceof Set ? gm.sellPositions : new Set();
+        const unt = gm.untouchable instanceof Set ? gm.untouchable : new Set();
+        if (!rules.length && !sellPos.size) return [];
+        return (myRoster?.players || []).map(pid => {
+            if (unt.has(String(pid))) return null;
+            const p = playersData?.[pid];
+            if (!p) return null;
+            const pos = normPos(p.position) || p.position;
+            const trips = sellPos.has(pos) || rules.some(r => (!r.pos || r.pos === pos) && (!r.ageAbove || (Number(p.age) && Number(p.age) >= r.ageAbove)));
+            if (!trips) return null;
+            return { pid, name: p.full_name || pid, pos, dhq: scores[pid] || 0 };
+        }).filter(Boolean).sort((a, b) => b.dhq - a.dhq).slice(0, 3);
+    }, [gm.hasStrategy, gm.sellRules, gm.sellPositions, gm.untouchable, myRoster, playersData, scores, rosterState.isUsable]);
 
     // Key drops (high-value players dropped in last 3 weeks)
     const keyDrops = useMemo(() => {
@@ -210,76 +228,88 @@ function IntelligenceBriefWidget({
         return { days, hours, date: new Date(briefDraftInfo.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) };
     }, [briefDraftInfo]);
 
-    // Active trades in league
+    // Active trades in league — the brief says "recently", so window to the
+    // last ~3 week buckets and skip DHQ-merged historical trades (_fromDHQ),
+    // which can span prior seasons.
     const activeTrades = useMemo(() => {
         const txns = window.S?.transactions || {};
-        const flat = Array.isArray(txns) ? txns : Object.values(txns).flat();
-        return flat.filter(t => t.type === 'trade').length;
+        const curWeek = window.S?.currentWeek || 1;
+        let n = 0;
+        for (let w = curWeek; w >= Math.max(0, curWeek - 2); w--) {
+            ((txns['w' + w]) || []).forEach(t => { if (t.type === 'trade' && !t._fromDHQ) n++; });
+        }
+        return n;
     }, []);
 
-    // Greeting based on time of day + personality
+    // Greeting based on time of day — one canonical Alex voice (2026-07-08):
+    // the GM_VOICE_TO_BRIEF / wr_alex_style persona selection is retired.
     const hour = new Date().getHours();
     const userName = window.S?.user?.display_name || window.S?.user?.username || 'Commander';
-    const alexStyle = localStorage.getItem('wr_alex_style') || 'default';
-    const p = BRIEF_PERSONALITY[alexStyle] || BRIEF_PERSONALITY.default;
+    const p = BRIEF_VOICE;
     const greetingText = p.greeting(hour, userName);
 
     // Build Alex's conversational briefing
     const needPos = needs.length ? (typeof needs[0] === 'string' ? needs[0] : needs[0]?.pos) : '';
+    // Seeded tier read: stable within a league+week (no flicker across
+    // re-renders), fresh phrasing when the week rolls over.
+    const tierSeed = String(currentLeague?.league_id || currentLeague?.id || 'wr') + ':w' + (window.S?.currentWeek || 0) + ':' + tier;
+    const pickTier = (pool) => {
+        const arr = Array.isArray(pool) ? pool : [pool];
+        const fn = (window.AlexVoice && typeof window.AlexVoice.pick === 'function') ? window.AlexVoice.pick(tierSeed, arr) : arr[0];
+        return typeof fn === 'function' ? fn(myRank, hs) : String(fn || '');
+    };
+    // UNKNOWN tier = assessment hasn't loaded — never let it fall through to
+    // the rebuilding copy ('ranked 0th, health score 0' as fact). Same for a
+    // known tier with no rank yet: don't interpolate ordinal(0).
     const tierMsg = !rosterState.isUsable ? (rosterState.brief || 'Roster sync incomplete. I paused roster, trade, waiver, and league-rank recommendations until player IDs finish loading.')
-        : tier === 'ELITE' ? p.elite(myRank, hs)
-        : tier === 'CONTENDER' ? p.contender(myRank, hs)
-        : tier === 'CROSSROADS' ? p.crossroads(myRank, hs)
-        : p.rebuilding(myRank, hs);
-
-    // Portfolio vs league average
-    const portfolioComparison = (() => {
-        const myDHQ = (myRoster?.players || []).reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0);
-        const allDHQs = (currentLeague?.rosters || []).map(r => (r.players || []).reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0));
-        const avgDHQ = allDHQs.length ? allDHQs.reduce((a, b) => a + b, 0) / allDHQs.length : 0;
-        if (avgDHQ > 0) {
-            const pct = Math.round((myDHQ - avgDHQ) / avgDHQ * 100);
-            return pct > 0 ? `Your portfolio is ${pct}% above league average.` : pct < 0 ? `Your portfolio trails the league average by ${Math.abs(pct)}%.` : '';
-        }
-        return '';
-    })();
+        : (!myAssess || tier === 'UNKNOWN') ? 'Still syncing your league read — I’ll have your tier, rank, and health score once the data lands.'
+        : tier === 'ELITE' ? pickTier(p.elite)
+        : myRank <= 0 ? ('Your roster reads ' + tier + ' with a health score of ' + hs + ' — league rank is still syncing.')
+        : tier === 'CONTENDER' ? pickTier(p.contender)
+        : tier === 'CROSSROADS' ? pickTier(p.crossroads)
+        : pickTier(p.rebuilding);
 
     // AlexSettings focus areas — the narrative fragments are gated by whichever
     // areas the user has enabled, so turning off "trades" or "waivers" in
     // Alex Insights quiets those lines here too.
     const alexFocus = (window.WR?.AlexSettings?.get?.()?.focus) || { trades: true, waivers: true, gmStyle: true };
 
-    // Full briefing text — used at tall/xl/xxl
-    let briefText = tierMsg;
-    if (rosterState.isUsable) {
-        if (portfolioComparison) briefText += ' ' + portfolioComparison;
-        if (elites > 0 && alexFocus.gmStyle !== false) briefText += ` You've got ${elites} elite player${elites > 1 ? 's' : ''} anchoring the roster.`;
-        if (needPos && alexFocus.gmStyle !== false) briefText += ` Your biggest gap is at ${needPos} — I've been keeping an eye on options for you.`;
-        if (activeTrades > 0 && alexFocus.trades !== false) briefText += ` ${activeTrades} trade${activeTrades > 1 ? 's have' : ' has'} gone down in the league recently. Worth watching who's moving what.`;
-        if (budget > 0 && alexFocus.waivers !== false) briefText += ` You've got $${faabRemaining} of $${budget} FAAB left to work with.`;
-    }
+    // ONE strategy-frame lead sentence (owner rule: frame only — never restate
+    // adjacent KPIs). Built from the committed GM plan, not the roster grade.
+    const TIMELINE_FRAME = { '1_year': 'all-in on this season', '2_3_years': 'building for a 2-3 year window', 'dynasty_long': 'playing the long game' };
+    const strategyFrame = gm.hasStrategy
+        ? 'Your plan: ' + (gm.modeLabel || gm.mode) + ', ' + (TIMELINE_FRAME[gm.timeline] || 'on your timeline') + ' — everything below is read against that.'
+        : '';
+
+    // Brief prose at tall/xl/default: strategy frame (lead) + tier read, and
+    // nothing else. Elites, gaps, trades, and FAAB all render as KPIs or
+    // action rows on this same widget — never narrated twice (de-busying
+    // rule: prose is a lead, not a summary).
+    const briefText = strategyFrame ? strategyFrame + ' ' + tierMsg : tierMsg;
 
     // Three-sentence summary — fits a 160px-tall md row, no scroll
     const threeSentence = (() => {
         if (!rosterState.isUsable) return tierMsg + ' ' + rosterState.message;
-        const parts = [tierMsg];
+        const parts = [];
+        if (strategyFrame) parts.push(strategyFrame);
+        parts.push(tierMsg);
         if (needPos && alexFocus.gmStyle !== false) parts.push(`Biggest gap: ${needPos}.`);
         else if (elites > 0) parts.push(`${elites} elite anchor${elites > 1 ? 's' : ''}.`);
         if (waiverTarget && alexFocus.waivers !== false) parts.push(`${waiverTarget.name} (${waiverTarget.pos}) sitting on the wire.`);
-        else if (draftCountdown) parts.push(`Draft in ${draftCountdown.days} day${draftCountdown.days !== 1 ? 's' : ''}.`);
+        else if (draftCountdown) parts.push(draftCountdown.days === 0 ? 'Draft is today.' : `Draft in ${draftCountdown.days} day${draftCountdown.days !== 1 ? 's' : ''}.`);
         else if (activeTrades > 0 && alexFocus.trades !== false) parts.push(`${activeTrades} recent trade${activeTrades > 1 ? 's' : ''} in your league.`);
-        else parts.push(`Ranked ${ordinal(myRank)} in the league.`);
+        else if (myRank > 0) parts.push(`Ranked ${ordinal(myRank)} in the league.`);
+        else parts.push('League rank still syncing.');
         return parts.slice(0, 3).join(' ');
     })();
 
     // One-sentence headline — used at lg
     const oneSentence = tierMsg;
 
-    const alexAvatar = (() => {
-        const key = localStorage.getItem('wr_alex_avatar') || 'brain';
-        const map = { brain:'\u{1F9E0}', target:'\u{1F3AF}', chart:'\u{1F4CA}', football:'\u{1F3C8}', bolt:'\u26A1', fire:'\u{1F525}', medal:'\u{1F396}\uFE0F', trophy:'\u{1F3C6}' };
-        return map[key] || '\u{1F9E0}';
-    })();
+    // Header avatar renders via the canonical AlexAvatar component
+    // (components.js photo/badge vocabulary). Legacy emoji ids stored on
+    // wr_alex_avatar fall back to the default badge inside the renderer —
+    // no broken images.
 
     const cardStyle = { background: 'var(--black)', border: 'var(--card-border, 1px solid var(--acc-line1, rgba(212,175,55,0.2)))', borderRadius: 'var(--card-radius, 10px)', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
     const goTo = (target) => {
@@ -299,13 +329,16 @@ function IntelligenceBriefWidget({
             detail: rosterState.message + ' ' + rosterState.detail,
         });
     } else {
+    // GM Strategy annotation: flag the waiver target when it fills a position
+    // the plan says to acquire (same tag FA's priority adds compute).
+    const waiverIsGmTarget = !!(waiverTarget && gm.hasStrategy && gm.targetPositions instanceof Set && gm.targetPositions.has(String(waiverTarget.pos)));
     if (alexFocus.waivers !== false && waiverTarget) {
         actions.push({
             icon: '🎯', tab: 'fa',
 	            title: p.waiver(waiverTarget.name, waiverTarget.pos, waiverTarget.dhq),
 	            detail: [
 	                React.createElement('span', { key: 'n', style: { color: 'var(--gold)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }, onClick: e => { e.stopPropagation(); if (typeof window.openPlayerModal === 'function' && waiverTarget.pid) window.openPlayerModal(waiverTarget.pid); } }, waiverTarget.name),
-	                ` · ${waiverTarget.pos} · DHQ ${waiverTarget.dhq.toLocaleString()} · ${waiverTarget.why || ('Fills your ' + waiverTarget.pos + ' gap.')}`,
+	                ` · ${waiverTarget.pos} · DHQ ${waiverTarget.dhq.toLocaleString()} · ${waiverTarget.why || ('Fills your ' + waiverTarget.pos + ' gap.')}${waiverIsGmTarget ? ' · GM plan: target position' : ''}`,
 	            ],
 	        });
     }
@@ -322,6 +355,18 @@ function IntelligenceBriefWidget({
             ],
         });
     }
+    // Sell-rule action — the GM plan's own move. Rebuild / sell-high plans
+    // act on sells FIRST (front of the queue); otherwise it slots ahead of
+    // the generic trade CTA.
+    if (alexFocus.trades !== false && sellRuleTrips.length > 0) {
+        const sellAction = {
+            icon: '📉', tab: 'myteam',
+            title: sellRuleTrips.length + ' rostered player' + (sellRuleTrips.length > 1 ? 's trip' : ' trips') + ' your sell rules.',
+            detail: sellRuleTrips.map(t => t.name + ' (' + t.pos + ')').join(', ') + ' — your GM plan says move ' + (sellRuleTrips.length > 1 ? 'them' : 'him') + ' while the value holds.',
+        };
+        if (gm.mode === 'rebuild' || gm.marketPosture === 'sell_high') actions.unshift(sellAction);
+        else actions.push(sellAction);
+    }
     if (alexFocus.trades !== false) {
         actions.push({
             icon: '🔄', tab: 'trades',
@@ -332,14 +377,16 @@ function IntelligenceBriefWidget({
     if (alexFocus.draft !== false && draftCountdown) {
         actions.push({
             icon: '📋', tab: 'draft',
-            title: p.draft(draftCountdown.days, draftCountdown.date),
+            // '0 days out' reads wrong — inside 24h the draft is today.
+            title: draftCountdown.days === 0 ? 'Draft is today. Time to lock in your board.' : p.draft(draftCountdown.days, draftCountdown.date),
             detail: `${draftCountdown.date} · I've got your scouting report ready when you are.`,
         });
     }
     actions.push({
         icon: '🏆', tab: 'analytics',
-        title: p.rank(myRank, tier),
-        detail: `${tier} tier · See where everyone else stands.`,
+        // No rank/tier claims until the assessment has actually landed.
+        title: (myRank > 0 && tier !== 'UNKNOWN') ? p.rank(myRank, tier) : 'League standings still syncing — see how the field stacks up.',
+        detail: (tier !== 'UNKNOWN' ? `${tier} tier · ` : '') + 'See where everyone else stands.',
     });
     }
 
@@ -375,10 +422,40 @@ function IntelligenceBriefWidget({
         const tight = !!opts.tight;
         return React.createElement('div', { style: { padding: tight ? '8px 14px 6px' : '20px 20px 0', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', paddingBottom: tight ? '6px' : '12px', flexShrink: 0 } },
             React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: tight ? '0.62rem' : '0.72rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: tight ? '2px' : '4px', display: 'flex', alignItems: 'center', gap: '6px' } },
-                React.createElement('span', { style: { fontSize: tight ? '0.8rem' : '0.9rem' } }, alexAvatar),
+                window.AlexAvatar ? React.createElement(window.AlexAvatar, { size: tight ? 14 : 16 }) : null,
                 'INTELLIGENCE BRIEFING',
             ),
             React.createElement('div', { style: { fontSize: tight ? '0.92rem' : '1.2rem', fontWeight: 700, color: 'var(--white)' } }, greetingText),
+        );
+    }
+
+    // ── FREE TEASER (all sizes) — Scout Today-brief precedent ────────
+    // Free sees the greeting + section titles with counts only: the tier
+    // read (tierMsg/briefText) and the action recs (waiver target, trade
+    // steers, CTAs) never reach the DOM. Defense-in-depth behind the
+    // dashboard registry gate (WIDGET_MODULES['intel-brief'].pro).
+    const briefPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+    if (!briefPro) {
+        const tight = size === 'md' || size === 'lg' || size === 'xl';
+        const teaserRows = [
+            { label: "Alex's read", count: '1 briefing' },
+            { label: 'Action items', count: actions.length + ' queued' },
+        ];
+        return React.createElement('div', { style: cardStyle },
+            header({ tight }),
+            React.createElement('div', { style: { padding: tight ? '10px 14px' : '14px 20px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden' } },
+                ...teaserRows.map((r, i) => React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '7px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '2px', flexShrink: 0 } },
+                    React.createElement('span', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em' } }, r.label),
+                    React.createElement('span', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, fontFamily: "'JetBrains Mono', monospace" } }, r.count),
+                )),
+                typeof window.WrGatedMoreRow === 'function'
+                    ? React.createElement(window.WrGatedMoreRow, {
+                        title: 'Unlock the full brief',
+                        sub: "Alex's roster read + " + actions.length + ' prioritized action' + (actions.length === 1 ? '' : 's'),
+                        feature: 'briefing_reasoning',
+                    })
+                    : null,
+            ),
         );
     }
 
@@ -424,9 +501,9 @@ function IntelligenceBriefWidget({
         const top4 = actions.slice(0, 4);
         return React.createElement('div', { style: cardStyle },
             header({ tight: true }),
-            React.createElement('div', { className: 'fb-split-grid', style: { padding: '10px 14px', flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' } },
+            React.createElement('div', { className: 'wr-ib-xl-body', style: { padding: '10px 14px', flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' } },
                 React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.65, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 9, WebkitBoxOrient: 'vertical' } }, briefText),
-                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', minHeight: 0 } },
+                React.createElement('div', { className: 'wr-ib-xl-actions', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', minHeight: 0 } },
                     ...top4.map((a, i) => renderActionBtn(a, 'xl-' + i, { compact: true, titleClamp: 2 })),
                 ),
             ),
@@ -450,7 +527,7 @@ function IntelligenceBriefWidget({
         return React.createElement('div', { style: cardStyle },
             header(),
             React.createElement('div', { style: { padding: '14px 20px', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden' } },
-                React.createElement('div', { className: 'fb-kpi-grid', style: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px', flexShrink: 0 } },
+                React.createElement('div', { className: 'wr-ib-kpi-strip', style: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px', flexShrink: 0 } },
                     ...kpis.map((k, i) => React.createElement('div', {
                         key: i,
                         style: { background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', padding: '8px 6px', textAlign: 'center' },
@@ -461,7 +538,7 @@ function IntelligenceBriefWidget({
                 ),
                 React.createElement('div', { style: { flexShrink: 0 } },
                     React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' } }, 'Position Health'),
-                    React.createElement('div', { className: 'fb-pos-grid', style: { display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '6px' } },
+                    React.createElement('div', { className: 'wr-ib-pos-strip', style: { display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '6px' } },
                         ...posBars.map((pb, i) => React.createElement('div', { key: i, style: { textAlign: 'center' } },
                             React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--silver)' } }, pb.pos),
                             React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1rem', fontWeight: 700, color: pb.col, lineHeight: 1, margin: '2px 0' } }, pb.grade),
@@ -472,15 +549,12 @@ function IntelligenceBriefWidget({
                         )),
                     ),
                 ),
-                React.createElement('div', { className: 'fb-split-grid', style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' } },
-                    React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 } },
-                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Alex\u2019s Read'),
-                        React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.7, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 7, WebkitBoxOrient: 'vertical' } }, briefText),
-                    ),
-                    React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 } },
-                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Action Items'),
-                        ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'xxl-' + i, { compact: true, titleClamp: 2 })),
-                    ),
+                // "Alex's Read" column dropped (de-busying Q2): its prose only
+                // restated the KPI row above. Actions stand alone, full width,
+                // non-compact so the detail lines carry the specifics.
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: 0, overflow: 'hidden' } },
+                    React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Action Items'),
+                    ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'xxl-' + i)),
                 ),
             ),
         );

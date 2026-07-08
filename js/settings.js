@@ -5,56 +5,38 @@
     // ── Sub-components (hooks require stable component boundaries) ──
 
     function AlexTab({ sectionStyle, sectionTitle }) {
-        const styles = window.ALEX_STYLES || { default: { name: 'Default', tone: 'Confident but not arrogant. Direct, data-driven, with personality.' }, general: { name: 'The General', tone: 'Intense, demanding, motivational. Short powerful sentences.' }, enthusiast: { name: 'The Enthusiast', tone: 'Excitable, passionate, full of energy. Uses vivid football jargon.' }, bayou: { name: 'The Bayou', tone: 'Folksy, raw, passionate. Southern warmth and earthiness.' }, wit: { name: 'The Wit', tone: 'Sarcastic, confident, clever. Sharp tongue and sharper mind.' }, closer: { name: 'The Closer', tone: 'Direct, emphatic, no-nonsense. Every sentence is declarative.' }, strategist: { name: 'The Strategist', tone: 'Calculated, competitive, analytical. Cold precision.' } };
-        const [currentStyle, setCurrentStyleLocal] = React.useState(localStorage.getItem('wr_alex_style') || 'default');
-        const [currentAvatar, setCurrentAvatar] = React.useState(localStorage.getItem('wr_alex_avatar') || 'brain');
+        // One canonical Alex voice (owner ruling 2026-07-08): the coaching-style
+        // picker (ALEX_STYLES / wr_alex_style) is retired. Any stored
+        // wr_alex_style value is ignored by readers — tolerated, never migrated.
+        // Avatar vocabulary is unified on components.js ALEX_AVATARS (photo ids:
+        // badge/exec/analyst/coach/scout) — the set the chat/GMMessage renderer
+        // (AlexAvatar) actually displays. Legacy emoji ids (brain/target/chart/…)
+        // stored on wr_alex_avatar normalize to 'badge' (no broken images).
+        const avatars = window.ALEX_AVATARS || [{ id: 'badge', label: 'Gold Badge', src: null }];
+        const readAvatar = () => {
+            const id = localStorage.getItem('wr_alex_avatar') || 'badge';
+            return avatars.some(a => a.id === id) ? id : 'badge';
+        };
+        const [currentAvatar, setCurrentAvatar] = React.useState(readAvatar);
         return (<>
-        <div style={sectionStyle}>
-            <div style={sectionTitle}>COMMUNICATION STYLE</div>
-            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem' }}>Choose how Alex communicates. This affects all AI responses — briefings, chat, trade analysis, draft scouting.</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {Object.entries(styles).map(([key, style]) => (
-                    <button key={key} onClick={() => { localStorage.setItem('wr_alex_style', key); setCurrentStyleLocal(key); }}
-                        style={{
-                            padding: '12px 14px', textAlign: 'left',
-                            background: currentStyle === key ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-1, rgba(255,255,255,0.02))',
-                            border: currentStyle === key ? '2px solid var(--gold)' : '1px solid var(--ov-5, rgba(255,255,255,0.08))',
-                            borderRadius: '10px', cursor: 'pointer', transition: 'all 0.15s',
-                        }}>
-                        <div style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: currentStyle === key ? 'var(--gold)' : 'var(--white)', marginBottom: '3px' }}>
-                            {style.name} {currentStyle === key && '\u2713'}
-                        </div>
-                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.4 }}>
-                            {style.tone.substring(0, 120)}{style.tone.length > 120 ? '...' : ''}
-                        </div>
-                    </button>
-                ))}
-            </div>
-            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5, marginTop: '8px' }}>Changes take effect on next page load.</div>
-        </div>
         <div style={sectionStyle}>
             <div style={sectionTitle}>AVATAR</div>
             <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem' }}>Choose Alex's look. Displayed in briefings and chat.</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-                {[
-                    { key: 'brain', emoji: '\u{1F9E0}', label: 'The Analyst' },
-                    { key: 'target', emoji: '\u{1F3AF}', label: 'The Scout' },
-                    { key: 'chart', emoji: '\u{1F4CA}', label: 'The Strategist' },
-                    { key: 'football', emoji: '\u{1F3C8}', label: 'The Coach' },
-                    { key: 'bolt', emoji: '\u26A1', label: 'The Spark' },
-                    { key: 'fire', emoji: '\u{1F525}', label: 'The Motivator' },
-                    { key: 'medal', emoji: '\u{1F396}\uFE0F', label: 'The General' },
-                    { key: 'trophy', emoji: '\u{1F3C6}', label: 'The Winner' },
-                ].map(av => {
-                    const isActive = currentAvatar === av.key;
-                    return <button key={av.key} onClick={() => { localStorage.setItem('wr_alex_avatar', av.key); setCurrentAvatar(av.key); }}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px' }}>
+                {avatars.map(av => {
+                    const isActive = currentAvatar === av.id;
+                    return <button key={av.id} onClick={() => { localStorage.setItem('wr_alex_avatar', av.id); setCurrentAvatar(av.id); }}
                         style={{
                             padding: '12px 8px', textAlign: 'center',
                             background: isActive ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-1, rgba(255,255,255,0.02))',
                             border: isActive ? '2px solid var(--gold)' : '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                             borderRadius: '10px', cursor: 'pointer',
                         }}>
-                        <div style={{ fontSize: '1.6rem', marginBottom: '4px' }}>{av.emoji}</div>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
+                            {av.src
+                                ? <img src={av.src} alt="" style={{ width: '44px', height: '44px', borderRadius: '8px', objectFit: 'cover', border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))' }} />
+                                : <div style={{ width: '44px', height: '44px', borderRadius: '8px', background: 'linear-gradient(135deg, var(--k-d4af37, #d4af37), var(--k-b8941e, #b8941e))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'var(--k-0a0a0a, #0a0a0a)', fontFamily: 'Rajdhani, sans-serif' }}>AI</div>}
+                        </div>
                         <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: isActive ? 'var(--gold)' : 'var(--silver)' }}>{av.label}</div>
                     </button>;
                 })}
@@ -148,7 +130,7 @@
         </>);
     }
 
-    function SettingsContent({ onClose, initDisplayName, onDisplayNameSave, leagueMates, mode = 'modal', accountOnly = false }) {
+    function SettingsContent({ onClose, initDisplayName, onDisplayNameSave, leagueMates, mode = 'modal', accountOnly = false, phoneSheet = false }) {
         const [settingsTab, setSettingsTab] = React.useState('account');
         const [showPw, setShowPw] = React.useState(false);
         const [pwMsg, setPwMsg] = React.useState('');
@@ -182,11 +164,9 @@
         function goToManagePlan() {
             window.location.href = 'onboarding.html?manage=true';
         }
-
-        function handleCancelPlan() {
-            if (!confirm('Open plan management to cancel or change your plan?')) return;
-            goToManagePlan();
-        }
+        // No Stripe customer portal exists yet — onboarding.html?manage=true is the
+        // plan wizard, so nothing here may claim to be a cancellation ('Cancel'
+        // affordances were merged into the honest 'Change Plan' button, 2026-07-06).
 
         function handleDisplayNameSave() {
             if (typeof onDisplayNameSave === 'function') onDisplayNameSave(displayName);
@@ -263,9 +243,14 @@
         const btnPrimary = { flex: 1, padding: '0.6rem', minHeight: '44px', background: 'var(--gold)', border: 'none', borderRadius: '6px', color: 'var(--black)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' };
         const btnOutline = { flex: 1, padding: '0.6rem', minHeight: '44px', background: 'transparent', border: '1px solid var(--gold)', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' };
         const isModule = mode === 'module';
+        // phoneSheet (≤767 via WR.Sheet in SettingsModal): the sheet owns the
+        // border/radius/scroll/safe-area chrome, so the content shell goes flat
+        // and full-width. Desktop/tablet keep the centered 720px dialog untouched.
         const shellStyle = isModule
             ? { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: '10px', padding: '1.1rem', width: '100%', boxSizing: 'border-box', boxShadow: '0 12px 28px rgba(0,0,0,0.22)' }
-            : { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '3px solid var(--gold)', borderRadius: '12px', padding: '1.5rem', maxWidth: 'min(720px, calc(100vw - 48px))', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', maxHeight: '90vh', overflowY: 'auto' };
+            : phoneSheet
+                ? { background: 'transparent', padding: '0.25rem 1rem 1rem', width: '100%', boxSizing: 'border-box' }
+                : { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '3px solid var(--gold)', borderRadius: '12px', padding: '1.5rem', maxWidth: 'min(720px, calc(100vw - 48px))', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', maxHeight: '90vh', overflowY: 'auto' };
 
         if (isModule) {
             const moduleSectionStyle = { ...sectionStyle, marginBottom: '0.7rem', background: 'var(--ov-2, rgba(255,255,255,0.025))' };
@@ -273,13 +258,6 @@
             const moduleColumnStyle = { minWidth: 0 };
             return (
                 <div className="wr-settings-module-screen" style={{ width: '100%' }}>
-                    <div className="wr-module-strip" style={{ marginBottom: '12px' }}>
-                        <div>
-                            <span>Settings</span>
-                            <strong>Account and app controls</strong>
-                            <em>Logged in as {sleeperUsername}</em>
-                        </div>
-                    </div>
                     {isGiftedAccount && (
                         <div style={{ marginBottom: '12px', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', padding: '0.55rem 0.75rem', borderRadius: '6px' }}>
                             Gifted account - change your password below.
@@ -409,7 +387,6 @@
                                     <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: 'var(--text-label, 0.75rem)' }}>Upgrade</button>
                                     <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Change Plan</button>
                                     <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Gift Sub</button>
-                                    <button onClick={handleCancelPlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)', borderColor: 'rgba(231,76,60,0.35)', color: 'var(--k-e74c3c, #e74c3c)' }}>Cancel</button>
                                 </div>
                             </div>
                             <div style={moduleSectionStyle}>
@@ -454,14 +431,16 @@
             const ini = String(displayName || uname || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '★';
             const labelStyle = { fontFamily: 'var(--font-title)', fontSize: 'var(--text-label, 0.8rem)', letterSpacing: '0.1em', color: 'var(--silver)', textTransform: 'uppercase', marginBottom: '8px' };
             return (
-                <div className="wr-settings-modal wr-account-modal" style={{ background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid var(--gold)', borderRadius: '14px', maxWidth: 'min(440px, calc(100vw - 40px))', width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,0.7)', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+                <div className="wr-settings-modal wr-account-modal" style={phoneSheet
+                    ? { background: 'transparent', width: '100%', boxSizing: 'border-box' }
+                    : { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid var(--gold)', borderRadius: '14px', maxWidth: 'min(440px, calc(100vw - 40px))', width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,0.7)', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '18px 18px 14px', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.18))' }}>
                         <div style={{ width: '44px', height: '44px', borderRadius: '50%', border: '1.5px solid var(--gold)', background: 'var(--black)', color: 'var(--gold)', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{ini}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.15rem', letterSpacing: '0.1em', color: 'var(--gold)' }}>ACCOUNT</div>
                             <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Signed in as {uname || '—'}{isGiftedAccount ? ' · gifted' : ''}</div>
                         </div>
-                        <button onClick={onClose} aria-label="Close" style={{ flexShrink: 0, width: '32px', height: '32px', borderRadius: '8px', background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', color: 'var(--silver)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
+                        <button onClick={onClose} aria-label="Close" style={{ flexShrink: 0, width: phoneSheet ? '44px' : '32px', height: phoneSheet ? '44px' : '32px', borderRadius: '8px', background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', color: 'var(--silver)', fontSize: '1.2rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
                     </div>
                     <div style={{ padding: '16px 18px 18px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
                         <div>
@@ -490,6 +469,16 @@
                             </div>
                             <button onClick={goToManagePlan} style={{ ...btnOutline, flex: 'none', padding: '0.5rem 0.9rem' }}>Manage</button>
                         </div>
+                        {/* Community / Discord — hidden until the owner sets WR_DISCORD_URL (js/app.js) */}
+                        {window.WR_DISCORD_URL && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: '10px' }}>
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={labelStyle}>Community</div>
+                                    <div style={{ marginTop: '2px', fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: 'var(--white)' }}>Dynasty HQ Discord</div>
+                                </div>
+                                <a href={window.WR_DISCORD_URL} target="_blank" rel="noopener" style={{ ...btnOutline, flex: 'none', padding: '0.5rem 0.9rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Join</a>
+                            </div>
+                        )}
                         <button onClick={handleLogout} style={{ padding: '0.8rem', background: 'rgba(231,76,60,0.14)', border: '1px solid rgba(231,76,60,0.4)', borderRadius: '10px', color: 'var(--k-fca5a5, #fca5a5)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>Sign out</button>
                     </div>
                 </div>
@@ -549,7 +538,7 @@
                     {/* Phase 10: Leaguemate Access card removed per user feedback (2026-04-18) */}
                     </>)}
 
-                    {/* ══ ALEX TAB — Coaching Style + Avatar ══ */}
+                    {/* ══ ALEX TAB — Avatar + GM Briefing replay ══ */}
                     {settingsTab === 'alex' && <AlexTab sectionStyle={sectionStyle} sectionTitle={sectionTitle} />}
 
                     {/* ══ DISPLAY TAB ══ */}
@@ -622,7 +611,6 @@
                             <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: 'var(--text-label, 0.75rem)' }}>Upgrade</button>
                             <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Change Plan</button>
                             <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Gift Sub</button>
-                            <button onClick={handleCancelPlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)', borderColor: 'rgba(231,76,60,0.35)', color: 'var(--k-e74c3c, #e74c3c)' }}>Cancel</button>
                         </div>
                         <div style={{ marginTop: '0.6rem', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', textAlign: 'center' }}>Manage your Dynasty HQ subscription</div>
                     </div>
@@ -681,10 +669,26 @@
     }
 
     function SettingsModal(props) {
-        return (
+        // Phone (≤767): the centered dialog becomes a WR.Sheet bottom sheet —
+        // keyboard lift, body-scroll lock, safe-area bottom padding, and
+        // drag/scrim dismiss come from the primitive (plan D4 "sheet policy").
+        // showClose=false + no title: both content variants carry their own
+        // headers and close controls (accountOnly header ×, full modal SETTINGS
+        // h2 + bottom Close), so the sheet contributes only the grab strip.
+        // Sheet renders the `desktop` element unchanged at ≥768, so tablet and
+        // desktop are untouched; the availability check is page-constant (no
+        // conditional-hook hazard).
+        const overlay = (
             <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={props.onClose}>
                 <SettingsContent {...props} mode="modal" />
             </div>
+        );
+        const Sheet = window.WR && window.WR.Sheet;
+        if (!Sheet) return overlay;
+        return (
+            <Sheet open={true} onClose={props.onClose} showClose={false} height="92dvh" desktop={overlay}>
+                <SettingsContent {...props} mode="modal" phoneSheet={true} />
+            </Sheet>
         );
     }
 

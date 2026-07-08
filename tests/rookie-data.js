@@ -8,16 +8,20 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 
 function resolveRookieDataRoot() {
-  const sharedSource = process.env.RECONAI_SHARED_SOURCE;
+  const sharedSource = process.env.SHARED_SOURCE || process.env.RECONAI_SHARED_SOURCE;
   const candidates = [
+    sharedSource,
     sharedSource && path.resolve(sharedSource, '..'),
-    path.resolve(ROOT, '..', 'reconai'),
+    path.resolve(ROOT, '..', 'dhq-shared'),
     path.resolve(ROOT, 'reconai-shared'),
+    path.resolve(ROOT, '..', 'reconai'),
   ].filter(Boolean);
 
-  return candidates.find(candidate => fs.existsSync(path.join(candidate, 'shared', 'rookie-data.js')))
-    || candidates.find(candidate => fs.existsSync(path.join(candidate, 'rookie-data.js')))
-    || null;
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, 'shared', 'rookie-data.js'))) return candidate;
+    if (fs.existsSync(path.join(candidate, 'rookie-data.js'))) return candidate;
+  }
+  return null;
 }
 
 let passed = 0;

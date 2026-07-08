@@ -38,7 +38,9 @@
         const myRid = myRoster?.roster_id;
 
         // Trade success: net DHQ delta across all trades I was part of.
-        let tradeNetDhq = 0, tradeCount = 0;
+        // tradeWins = trades with a positive net for me — the real per-trade
+        // win rate (never a fabricated 100/65/40 heuristic).
+        let tradeNetDhq = 0, tradeCount = 0, tradeWins = 0;
         (LI.tradeHistory || []).forEach(t => {
             if (!t.sides || !t.sides[myRid]) return;
             tradeCount++;
@@ -49,7 +51,9 @@
                 if (String(rid) === String(myRid)) return;
                 (side.players || []).forEach(pid => { myOut += LI.playerScores?.[pid] || 0; });
             });
-            tradeNetDhq += (myIn - myOut);
+            const net = myIn - myOut;
+            tradeNetDhq += net;
+            if (net > 0) tradeWins++;
         });
 
         // Waiver hit rate: % of waiver/FA adds still on my roster.
@@ -82,7 +86,7 @@
 
         // Best decision type: whichever hit rate is highest and has a sample.
         const candidates = [
-            { label: 'TRADES',  pct: tradeCount >= 3 && tradeNetDhq > 0 ? 100 : (tradeCount >= 1 ? (tradeNetDhq > 0 ? 65 : 40) : null) },
+            { label: 'TRADES',  pct: tradeCount >= 1 ? Math.round((tradeWins / tradeCount) * 100) : null },
             { label: 'WAIVERS', pct: waiverHitPct },
             { label: 'DRAFT',   pct: draftHitPct },
         ].filter(c => c.pct != null).sort((a, b) => b.pct - a.pct);
@@ -156,7 +160,10 @@
             out.push({
                 focus: 'trades', severity: 'opportunity', confidence: 78,
                 title: 'You trade less than half as often as your league',
-                body: 'You\u2019ve been part of ' + kpis.tradeCount + ' trade' + (kpis.tradeCount === 1 ? '' : 's') + ' vs. a league average of ~' + Math.round(leagueTradeAvg) + '. Your analytical style tends to translate into good trades \u2014 you\u2019re leaving value on the table.',
+                // Only claim their trades are good when the ledger says so.
+                body: kpis.tradeCount + ' trade' + (kpis.tradeCount === 1 ? '' : 's') + ' against a league average of ~' + Math.round(leagueTradeAvg) + ' \u2014 ' + (kpis.tradeNetDhq > 0
+                    ? 'you win when you deal, so more reps is value you\u2019re leaving on the table.'
+                    : 'more reps on the trade market is the fastest lever you\u2019re not pulling.'),
                 ctaLabel: 'Explore trade targets',
             });
         }
@@ -164,7 +171,7 @@
             out.push({
                 focus: 'trades', severity: 'edge', confidence: 84,
                 title: 'Your trades net +' + (kpis.tradeNetDhq / 1000).toFixed(1) + 'k DHQ across ' + kpis.tradeCount + ' deals',
-                body: 'You\u2019re a net winner on trade value. Keep hunting deals \u2014 this is your highest-ROI activity.',
+                body: 'Keep hunting deals \u2014 this is your highest-ROI activity.',
                 ctaLabel: 'Continue & scale',
             });
         }
@@ -172,7 +179,7 @@
             out.push({
                 focus: 'trades', severity: 'warning', confidence: 82,
                 title: 'Your trades are net -' + Math.abs(Math.round(kpis.tradeNetDhq / 1000)) + 'k DHQ',
-                body: 'Across ' + kpis.tradeCount + ' trades you\u2019re giving up more value than you receive. Run proposals through Trade Center\u2019s analyzer before accepting.',
+                body: 'Across ' + kpis.tradeCount + ' trades you\u2019re giving up more than you get \u2014 run proposals through the Trade Center analyzer before accepting.',
                 ctaLabel: 'Review trade history',
             });
         }
@@ -191,14 +198,14 @@
                 out.push({
                     focus: 'trades', severity: 'pattern', confidence: 72,
                     title: 'Most of your trades go through just 2 managers',
-                    body: Math.round(top2Share * 100) + '% of your ' + kpis.tradeCount + ' trades are concentrated with 2 partners out of ' + partners.length + ' total. Broadening the pool opens mismatched-need exchanges that tight partner loops miss.',
+                    body: Math.round(top2Share * 100) + '% of your ' + kpis.tradeCount + ' trades sit with 2 of ' + partners.length + ' partners — broaden the pool and the mismatched-need deals open up.',
                     ctaLabel: 'See all owners',
                 });
             } else if (partners.length >= Math.min(10, rosterCount - 2)) {
                 out.push({
                     focus: 'trades', severity: 'edge', confidence: 78,
                     title: 'You\u2019ve traded with ' + partners.length + ' different owners',
-                    body: 'Broad trade network across ' + kpis.tradeCount + ' deals. You\u2019re reading the whole league, not just a couple of usual suspects \u2014 exactly why your trade DHQ net is positive.',
+                    body: 'You\u2019re working the whole room across ' + kpis.tradeCount + ' deals, not a couple of usual suspects \u2014 breadth is where mismatched needs surface.',
                     ctaLabel: 'Keep hunting',
                 });
             }
@@ -208,7 +215,7 @@
             out.push({
                 focus: 'trades', severity: 'edge', confidence: 75,
                 title: 'You\u2019re a high-volume trader (' + kpis.tradeCount + ' deals)',
-                body: 'Most managers in this league sit under 20. Your activity alone is a signal you read the market differently. Stay disciplined \u2014 volume without net value is churn.',
+                body: 'Most managers in this league sit under 20 deals \u2014 stay disciplined, volume without net value is churn.',
                 ctaLabel: 'Open Trade Center',
             });
         }
@@ -218,7 +225,7 @@
             out.push({
                 focus: 'waivers', severity: 'edge', confidence: 80,
                 title: 'You retain ' + kpis.waiverHitPct + '% of your waiver adds',
-                body: 'That\u2019s above league-average stickiness. Your FA targeting instincts are working \u2014 keep adding aggressively at the position-scarcity windows.',
+                body: 'That\u2019s above league-average stickiness \u2014 keep adding aggressively at the position-scarcity windows.',
                 ctaLabel: 'Continue & scale',
             });
         }
@@ -226,7 +233,7 @@
             out.push({
                 focus: 'waivers', severity: 'pattern', confidence: 78,
                 title: 'Your waiver retention rate is ' + kpis.waiverHitPct + '%',
-                body: Math.round(kpis.waiverTotal - kpis.waiverKept) + ' of ' + kpis.waiverTotal + ' waiver/FA adds were dropped within weeks. Slow down and run DHQ + tier checks before burning FAAB.',
+                body: Math.round(kpis.waiverTotal - kpis.waiverKept) + ' of ' + kpis.waiverTotal + ' waiver/FA adds were dropped within weeks — run DHQ + tier checks before burning FAAB.',
                 ctaLabel: 'Review FAAB log',
             });
         }
@@ -248,7 +255,7 @@
                 out.push({
                     focus: 'waivers', severity: 'opportunity', confidence: 72,
                     title: 'You\u2019re sitting on ' + Math.round((1 - spentPct) * 100) + '% of your FAAB',
-                    body: 'League average is ' + Math.round(leagueAvgPct * 100) + '% spent. Unspent FAAB at season end is zero value \u2014 bid aggressively on the 2\u20133 impact adds you\u2019re tracking.',
+                    body: 'League average is ' + Math.round(leagueAvgPct * 100) + '% spent \u2014 unspent FAAB is worth nothing in December, so bid aggressively on the impact adds you\u2019re tracking.',
                     ctaLabel: 'Open Free Agency',
                 });
             }
@@ -256,7 +263,7 @@
                 out.push({
                     focus: 'waivers', severity: 'warning', confidence: 70,
                     title: 'You\u2019ve burned ' + Math.round(spentPct * 100) + '% of your FAAB',
-                    body: 'Only $' + Math.round(budget * (1 - spentPct)) + ' left. Playoff-push adds are expensive \u2014 conserve for clear upgrades.',
+                    body: 'Only $' + Math.round(budget * (1 - spentPct)) + ' left \u2014 conserve it for clear playoff-push upgrades.',
                     ctaLabel: 'Review waiver log',
                 });
             }
@@ -269,7 +276,7 @@
             out.push({
                 focus: 'draft', severity: 'pattern', confidence: 82,
                 title: 'Your draft hit rate (' + kpis.draftHitPct + '%) trails starter caliber',
-                body: 'Only ' + kpis.draftHits + ' of ' + kpis.draftTotal + ' drafted players reached contributor DHQ (3000+). Consider leaning harder on DHQ rankings over gut in rounds 1\u20133.',
+                body: 'Only ' + kpis.draftHits + ' of ' + kpis.draftTotal + ' picks reached contributor DHQ (3000+) \u2014 lean harder on DHQ rankings over gut in rounds 1\u20133.',
                 ctaLabel: 'Review draft board',
             });
         }
@@ -277,7 +284,7 @@
             out.push({
                 focus: 'draft', severity: 'edge', confidence: 80,
                 title: 'Your drafts hit ' + kpis.draftHitPct + '% \u2014 elite',
-                body: kpis.draftHits + '/' + kpis.draftTotal + ' of your picks reached contributor DHQ. You\u2019re outdrafting the league. Prioritize draft capital in any trade.',
+                body: kpis.draftHits + '/' + kpis.draftTotal + ' picks reached contributor DHQ \u2014 you\u2019re outdrafting the league, so prioritize draft capital in any trade.',
                 ctaLabel: 'See pick values',
             });
         }
@@ -291,7 +298,7 @@
                 out.push({
                     focus: 'draft', severity: 'pattern', confidence: 74,
                     title: 'You draft ' + topPos[0] + ' ' + Math.round(topPos[1] / draftPicks.length * 100) + '% of the time',
-                    body: 'Over ' + draftPicks.length + ' career picks, ' + topPos[1] + ' went to ' + topPos[0] + '. Heavy concentration can starve depth at other positions \u2014 worth checking your roster-construction tier.',
+                    body: topPos[1] + ' of your ' + draftPicks.length + ' career picks went to ' + topPos[0] + ' \u2014 concentration that heavy starves depth elsewhere.',
                     ctaLabel: 'Open Roster Analytics',
                 });
             }
@@ -312,7 +319,7 @@
             out.push({
                 focus: 'gmStyle', severity: 'warning', confidence: 91,
 	                title: Math.round((agingDhq / totalDhq) * 100) + '% of your roster DHQ is past the value window',
-	                body: agingPids.length + ' players are beyond their position\u2019s valuable decline band. Sell windows are closing \u2014 cash in now or commit to a rebuild.',
+	                body: agingPids.length + ' players sit past their position\u2019s value window \u2014 cash in now or commit to the rebuild.',
                 ctaLabel: 'See aging assets',
             });
         }
@@ -326,14 +333,14 @@
             out.push({
                 focus: 'gmStyle', severity: 'warning', confidence: 85,
                 title: 'Your roster has zero elite-tier players',
-                body: 'Championship cores are built around 2\u20134 elites (7000+ DHQ or top-5 at their position). Without one, you\u2019re capped at \u201Cgood\u201D \u2014 accumulate picks and flip mid-tier depth for a cornerstone.',
+                body: 'Championship cores run on 2\u20134 elites (7000+ DHQ or top-5 at position) \u2014 flip mid-tier depth and picks for a cornerstone.',
                 ctaLabel: 'Find a cornerstone target',
             });
         } else if (eliteCount >= 4) {
             out.push({
                 focus: 'gmStyle', severity: 'edge', confidence: 80,
                 title: 'You hold ' + eliteCount + ' elite-tier players',
-                body: 'Championship-caliber concentration. Protect this core \u2014 prioritize ageing-RB insurance and depth at FLEX before chasing another star.',
+                body: 'Protect this core \u2014 prioritize ageing-RB insurance and FLEX depth before chasing another star.',
                 ctaLabel: 'Stabilize lineup',
             });
         }
@@ -347,7 +354,7 @@
             out.push({
                 focus: 'gmStyle', severity: 'opportunity', confidence: 76,
                 title: 'You\u2019re sitting on ' + risingPids.length + ' rising mid-tier players',
-                body: 'Pre-peak players at 4000+ DHQ are your highest-appreciation assets. If you aren\u2019t contending, bundle 2 of them for a proven elite now.',
+                body: 'Pre-peak 4000+ DHQ players are your highest-appreciation assets \u2014 if you aren\u2019t contending, bundle two for a proven elite now.',
                 ctaLabel: 'Explore consolidation trades',
             });
         }
@@ -370,7 +377,7 @@
                         focus: 'startSit', severity: 'pattern', confidence: 70,
                         pointsDelta: Math.max(...lowWeekDeltas),
                         title: lowWeeks + ' of ' + mine.length + ' weeks were 25%+ below your average',
-                        body: 'Lineup variance is eating wins. Either volatile plays or frequent start-sit misses. Use the Compare tab\u2019s matchup view to pre-commit starters.',
+                        body: 'Lineup variance is eating wins \u2014 pre-commit starters with the Compare tab\u2019s matchup view.',
                         ctaLabel: 'Open Compare',
                     });
                 }
@@ -387,7 +394,7 @@
             out.push({
                 focus: 'injury', severity: 'warning', confidence: 73,
                 title: injuredHigh.length + ' high-DHQ players are injured',
-                body: 'Contributor-tier assets stacked in Out/Doubtful/IR status. Deploy IR slots + hunt short-term-upside replacements before the news breaks league-wide.',
+                body: 'Deploy IR slots and hunt short-term-upside replacements before the news breaks league-wide.',
                 ctaLabel: 'Open Free Agency',
             });
         }
@@ -397,7 +404,7 @@
             out.push({
                 focus: 'gmStyle', severity: 'edge', confidence: 70,
                 title: 'You win value on the trade market without leaning on FAAB',
-                body: 'Only ' + Math.round((myFaab / budget) * 100) + '% of your FAAB spent but your trades net +' + Math.round((kpis.tradeNetDhq || 0) / 1000) + 'k DHQ across ' + kpis.tradeCount + ' deals. Trade-first managers tend to beat FAAB-first managers in dynasty \u2014 you\u2019re in the right bucket.',
+                body: 'Only ' + Math.round((myFaab / budget) * 100) + '% of your FAAB spent and still a positive trade ledger \u2014 trade-first managers beat FAAB-first in dynasty.',
                 ctaLabel: 'Keep trading',
             });
         }
@@ -407,14 +414,80 @@
             const p = playersData?.[pid];
             return p && (p.position === 'K' || p.position === 'DEF');
         });
-        if (streamables.length === 0 && currentLeague?.settings) {
+        // Only nag about K/DEF in leagues that actually start those slots.
+        const kdefSlots = (currentLeague?.roster_positions || []).some(s => {
+            const slot = String(s).toUpperCase();
+            return slot === 'K' || slot === 'DEF' || slot === 'DST' || slot === 'D/ST';
+        });
+        if (streamables.length === 0 && kdefSlots) {
             out.push({
                 focus: 'streaming', severity: 'opportunity', confidence: 60,
                 title: 'You don\u2019t roster a K or DEF',
-                body: 'Streaming these weekly based on matchup is fine \u2014 just don\u2019t leave the slot empty. Auto-pilot settings may cost you 6\u20138 pts per week.',
+                body: 'Stream them weekly by matchup \u2014 an empty slot can cost you 6\u20138 points a week.',
                 ctaLabel: 'Check Free Agency',
             });
         }
+
+        // ── GM Strategy alignment ────────────────────────────────
+        // Framed against the CHOSEN plan (WR.GmMode.effects), not the roster
+        // grade. Hard cap of 3 strategy cards here; AlexSettings.filterInsights
+        // still applies the global maxAlertsPerWeek cap downstream. Guarded —
+        // gm-mode.js is optional and this stays inert without a saved strategy.
+        try {
+            const gmFx = typeof window.WR?.GmMode?.effects === 'function'
+                ? window.WR.GmMode.effects(currentLeague?.league_id || currentLeague?.id)
+                : null;
+            if (gmFx && gmFx.hasStrategy) {
+                const gmCards = [];
+                // 1. Strategy drift — GMStrategy.recordAction logs moves that
+                // conflict with the plan; getDrift is that (previously unread) ledger.
+                const drift = window.GMStrategy?.getDrift?.() || { conflicts: [] };
+                const recentConflicts = (drift.conflicts || []).filter(c => Date.now() - (c.timestamp || 0) < 14 * 24 * 60 * 60 * 1000);
+                if (recentConflicts.length >= 2) {
+                    gmCards.push({
+                        focus: 'gmStyle', severity: 'warning', confidence: 82,
+                        title: recentConflicts.length + ' of your recent moves cut against your ' + gmFx.modeLabel + ' plan',
+                        body: 'Recommit to the plan or update it — a strategy you trade against steers every surface wrong'
+                            + (recentConflicts[0]?.reasons?.length ? ' (latest: ' + recentConflicts[0].reasons[0] + ')' : '') + '.',
+                        ctaLabel: 'Review GM Strategy',
+                    });
+                }
+                // 2. Aging core vs a long-horizon plan.
+                if ((gmFx.mode === 'rebuild' || gmFx.timeline === 'dynasty_long') && totalDhq > 0 && agingDhq / totalDhq > 0.2) {
+                    gmCards.push({
+                        focus: 'gmStyle', severity: 'warning', confidence: 78,
+                        title: Math.round((agingDhq / totalDhq) * 100) + '% of your value sits in vets your ' + gmFx.modeLabel + ' plan says to move',
+                        body: agingPids.length + ' player' + (agingPids.length === 1 ? ' sits' : 's sit') + ' past the value window — convert them to picks and youth before the market does it for you.',
+                        ctaLabel: 'Open Trade Center',
+                    });
+                }
+                // 3. Sell-rule / sell-position players still rostered.
+                const parseRule = window.GMStrategy?.parseSellRule;
+                const rules = (gmFx.sellRules || [])
+                    .map(r => { try { return parseRule ? parseRule(r) : null; } catch (_) { return null; } })
+                    .filter(r => r && (r.pos || r.ageAbove));
+                const sellPosSet = gmFx.sellPositions instanceof Set ? gmFx.sellPositions : new Set();
+                const untouchSet = gmFx.untouchable instanceof Set ? gmFx.untouchable : new Set();
+                if (rules.length || sellPosSet.size) {
+                    const flagged = myPlayers.filter(pid => {
+                        if (untouchSet.has(String(pid))) return false;
+                        const p = playersData?.[pid]; if (!p) return false;
+                        const pPos = window.App?.normPos?.(p.position) || p.position;
+                        if (sellPosSet.has(pPos)) return true;
+                        return rules.some(r => (!r.pos || r.pos === pPos) && (!r.ageAbove || (p.age && p.age >= r.ageAbove)));
+                    });
+                    if (flagged.length >= 2) {
+                        gmCards.push({
+                            focus: 'gmStyle', severity: 'opportunity', confidence: 74,
+                            title: flagged.length + ' rostered players trip your own sell rules',
+                            body: 'Shop the ones with real markets — sell rules only pay off when you act on them.',
+                            ctaLabel: 'See flagged players',
+                        });
+                    }
+                }
+                gmCards.slice(0, 3).forEach(c => out.push(c));
+            }
+        } catch (_) { /* strategy layer is optional */ }
 
         // Priority-sort (warning → edge → pattern → opportunity).
         const priority = { warning: 0, edge: 1, pattern: 2, opportunity: 3 };
@@ -547,8 +620,14 @@
         }
         if (!aiFn) return { error: 'AI not loaded' };
 
+        // GM Strategy — the canonical serialized plan; '' when none is saved.
+        // (The structured path above carries it via buildStructuredBase.)
+        let gmBlock = '';
+        try { gmBlock = window.WR?.GmMode?.promptBlock?.(currentLeague?.league_id || currentLeague?.id) || ''; } catch (_) {}
+
         const contextLines = [
             (window.WR?.AIContext?.buildFormatPreamble?.(currentLeague) || ''),
+            gmBlock ? 'GM STRATEGY (the owner’s committed plan — frame insights against it):\n' + gmBlock : '',
             'LEAGUE: ' + (currentLeague?.name || 'Dynasty') + ', ' + (currentLeague?.rosters?.length || 12) + ' teams',
             'TRADES: ' + (kpis.tradeCount || 0) + ' completed, net DHQ ' + (kpis.tradeNetDhq > 0 ? '+' : '') + Math.round((kpis.tradeNetDhq || 0) / 1000) + 'k',
             'WAIVERS: ' + (kpis.waiverHitPct != null ? (kpis.waiverHitPct + '% retention over ' + kpis.waiverTotal + ' adds') : 'n/a'),
@@ -558,6 +637,10 @@
             heuristicTitles && heuristicTitles.length ? 'ALREADY SURFACED:\n- ' + heuristicTitles.join('\n- ') : '',
         ].filter(Boolean).join('\n');
 
+        // Dynasty (E6): weekly start/sit + streaming leave the AI focus enum;
+        // the deterministic pattern cards stay (they read actual H2H results).
+        const allowRedraft = window.App?.Intelligence?.allowRedraftFeatures
+            ? window.App.Intelligence.allowRedraftFeatures(currentLeague) : true;
         const prompt = [
             'You are Alex, an analytical fantasy-football GM assistant. Generate EXACTLY 2 novel behavioral insights about this manager that are NOT already in the "ALREADY SURFACED" list.',
             'Look for unusual patterns in how they build their roster, manage trades, use waivers, or allocate draft capital. Prefer non-obvious findings over generic ones.',
@@ -566,9 +649,11 @@
             '[{',
             '  "severity": "warning" | "edge" | "pattern" | "opportunity",',
             '  "confidence": integer 50-95,',
-            '  "focus": "trades" | "waivers" | "draft" | "startSit" | "injury" | "streaming" | "gmStyle",',
+            '  "focus": ' + (allowRedraft
+                ? '"trades" | "waivers" | "draft" | "startSit" | "injury" | "streaming" | "gmStyle"'
+                : '"trades" | "waivers" | "draft" | "injury" | "gmStyle"') + ',',
             '  "title": "short headline, under 80 chars",',
-            '  "body": "2 sentences with a specific number or detail",',
+            '  "body": "1 sentence with a specific number or detail",',
             '  "ctaLabel": "action verb phrase, e.g. \'Open Trade Center\'"',
             '}]',
             '',
@@ -611,25 +696,6 @@
         }));
     }
 
-    // ── Hero ──────────────────────────────────────────────────────
-    function Hero({ active }) {
-        return h('div', { className: 'wr-module-strip' },
-            h('div', { className: 'wr-module-context' },
-                h('span', null, 'Office'),
-                h('strong', null, 'GM\'s Office'),
-                h('em', null, 'Strategy, alerts, weekly reads, and recommendation history.')
-            ),
-            h('div', {
-                className: 'wr-module-actions'
-            },
-                h('span', {
-                    className: 'wr-module-pill',
-                    style: active ? { color: 'var(--good)', borderColor: 'rgba(46,204,113,0.35)', background: 'rgba(46,204,113,0.08)' } : null
-                }, active ? 'Alex Active' : 'Alex Idle')
-            )
-        );
-    }
-
     // ── Sub-tab row ───────────────────────────────────────────────
     function SubTabs({ value, onChange, tabs }) {
         return h('div', { className: 'wr-module-nav', style: { margin: '0 0 var(--space-lg)' } },
@@ -642,19 +708,21 @@
     }
 
     // ── Overview sub-tab ──────────────────────────────────────────
-    function OverviewView({ kpis, insights, props, settings }) {
+    function OverviewView({ kpis, insights, props, settings, isPro = true, lockedInsightCount = 0 }) {
         const Kpi = window.WR.Kpi;
         const InsightCard = window.WR.InsightCard;
         const fmtK = (n) => n == null ? null : ((n > 0 ? '+' : '') + (n / 1000).toFixed(1) + 'k');
 
         // AI-generated insights — separate from heuristic insights, cached
         // for 24h, tagged with isAi so the card badge can distinguish them.
-        const [aiState, setAiState] = useState(() => loadCachedAiInsights(props));
+        // Free never loads (or decorates) the AI cache: the whole read layer
+        // is Pro (gate-map row 10) and no AI may fire for a free user.
+        const [aiState, setAiState] = useState(() => isPro ? loadCachedAiInsights(props) : { insights: [], ts: 0 });
         const [aiLoading, setAiLoading] = useState(false);
         const [aiError, setAiError] = useState(null);
         const decoratedAiInsights = React.useMemo(
-            () => decorateInsightRecommendations(aiState?.insights || [], props, kpis, 'ai'),
-            [aiState, props, kpis]
+            () => isPro ? decorateInsightRecommendations(aiState?.insights || [], props, kpis, 'ai') : [],
+            [aiState, props, kpis, isPro]
         );
         const aiInsights = React.useMemo(
             () => decoratedAiInsights.filter(x => !window.WR?.AlexSettings || window.WR.AlexSettings.shouldShow(x)),
@@ -663,15 +731,23 @@
         const merged = React.useMemo(() => [...insights, ...aiInsights], [insights, aiInsights]);
 
         useEffect(() => {
+            if (!isPro) return; // free publishes no recommendations app-wide
             publishInsightRecommendations(merged, 'gm-office-overview');
-        }, [merged]);
+        }, [merged, isPro]);
 
         useEffect(() => {
-            setAiState(loadCachedAiInsights(props));
+            setAiState(isPro ? loadCachedAiInsights(props) : { insights: [], ts: 0 });
             setAiError(null);
-        }, [props?.currentLeague?.id, props?.currentLeague?.league_id]);
+        }, [props?.currentLeague?.id, props?.currentLeague?.league_id, isPro]);
 
         const doGenerate = async () => {
+            // Trigger gate (D9 row 12): the button is hidden for free, but a
+            // BYOK user could still reach this path — never fire AI for free.
+            if (!isPro) {
+                if (window.showProLaunchPage) window.showProLaunchPage();
+                else if (window.showUpgradePrompt) window.showUpgradePrompt('briefing_reasoning');
+                return;
+            }
             setAiLoading(true); setAiError(null);
             const titles = insights.map(i => i.title);
             const r = await generateAiInsights(props, kpis, titles);
@@ -699,13 +775,20 @@
 
         return h(React.Fragment, null,
             h('div', { className: 'gm-office-kpi-grid' },
-                h(Kpi, {
+                // GM Grade is an A-F composite interpretation \u2014 Pro. The other
+                // tiles are the raw activity counts free keeps (gate-map row 10).
+                h(Kpi, isPro ? {
                     label: 'GM Grade',
                     value: gmGradeLetter(kpis.gmScore),
                     tone: gmGradeTone(kpis.gmScore),
                     sub: kpis.gmScore != null
                         ? (kpis.gmScore + '/100 \u00B7 ' + kpis.gmScoreSample + '-dim composite')
                         : 'Need more decision history',
+                } : {
+                    label: 'GM Grade',
+                    value: '\uD83D\uDD12',
+                    tone: 'mute',
+                    sub: 'Pro \u2014 Alex\u2019s composite grade',
                 }),
                 h(Kpi, {
                     label: 'Trade Net DHQ',
@@ -729,10 +812,12 @@
             h('div', { className: 'gm-office-section-head' },
                 h('h2', null, 'Behavioral Analysis'),
                 h('span', { className: 'gm-office-section-meta' },
-                    '\u2014 ' + merged.length + ' insight' + (merged.length === 1 ? '' : 's') + (aiInsights.length ? ' (' + aiInsights.length + ' AI)' : '')),
+                    '\u2014 ' + (isPro
+                        ? merged.length + ' insight' + (merged.length === 1 ? '' : 's') + (aiInsights.length ? ' (' + aiInsights.length + ' AI)' : '')
+                        : lockedInsightCount + ' insight' + (lockedInsightCount === 1 ? '' : 's'))),
                 // Spacer pushes the AI controls to the right
                 h('div', { className: 'gm-office-spacer' }),
-                h('button', {
+                isPro && h('button', {
                     onClick: doGenerate,
                     disabled: aiLoading,
                     style: {
@@ -761,15 +846,31 @@
             ),
             aiError && h('div', { style: { padding: '10px 14px', marginBottom: '12px', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '6px', fontSize: 'var(--text-body, 1rem)', color: 'var(--bad)' } },
                 'Alex couldn\u2019t generate insights: ', aiError),
-            merged.length === 0
+            // Free: section shell + one locked teaser row, zero real insight
+            // cards reach the DOM (mirrors reconai Field Log GM Insights).
+            !isPro
+                ? (window.WrGatedMoreRow
+                    ? h(window.WrGatedMoreRow, {
+                        title: 'Unlock Behavioral Analysis with Pro',
+                        sub: (lockedInsightCount > 0 ? lockedInsightCount + ' insight' + (lockedInsightCount === 1 ? '' : 's') + ' waiting \u2014 ' : '')
+                            + 'Alex\u2019s read on your trades, waivers, drafting, and roster patterns.',
+                        feature: 'briefing_reasoning',
+                    })
+                    : null)
+                : merged.length === 0
                 ? h(window.WR.Card, { padding: '24px' },
                     h('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.55, textAlign: 'center' } },
                         'No behavioral patterns detected yet. Alex needs a bit of trade / waiver / draft history before it can speak confidently.')
                 )
                 : h('div', { className: 'gm-office-insight-grid' },
-                    merged.map((ins, i) => h('div', { key: i, style: { position: 'relative' } },
+                    merged.map((ins, i) => {
+                        // Chips win: when the why-chips render under a card, the
+                        // body would just restate them — suppress it (never body
+                        // + why-chips together).
+                        const cardIns = ins.recommendationWhy?.length > 0 ? { ...ins, body: null } : ins;
+                        return h('div', { key: i, style: { position: 'relative' } },
                         h(InsightCard, ins.isAi ? {
-                            ...ins,
+                            ...cardIns,
                             // Learning loop: thumbs feed the ai_feedback rollup that
                             // tunes future prompts for this owner.
                             feedback: {
@@ -777,7 +878,7 @@
                                 onUp: () => sendInsightFeedback(ins, 'up'),
                                 onDown: () => sendInsightFeedback(ins, 'down'),
                             },
-                        } : ins),
+                        } : cardIns),
                         ins.recommendationWhy?.length > 0 && h('div', {
                             style: {
                                 display: 'flex', flexWrap: 'wrap', gap: '5px',
@@ -798,7 +899,8 @@
                             }, line))
                         ),
                         ins.isAi && h('div', { style: { position: 'absolute', top: 10, right: 10, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro)', fontWeight: 700, letterSpacing: '0.12em', padding: '2px 6px', borderRadius: '4px', background: 'rgba(124,107,248,0.2)', color: 'var(--purple)', border: '1px solid rgba(124,107,248,0.4)' } }, '\u2728 AI')
-                    ))
+                        );
+                    })
                 )
         );
     }
@@ -807,7 +909,7 @@
     // Deep-dive charts over the user's managerial history. Every panel
     // is computed from window.App.LI + window.S, with soft-fail empty
     // states when a panel's data source is thin.
-    function PatternsView({ props }) {
+    function PatternsView({ props, isPro = true }) {
         const { myRoster, currentLeague, playersData } = props || {};
         const LI = window.App?.LI || {};
         const myRid = myRoster?.roster_id;
@@ -933,18 +1035,18 @@
             const sd = 'ai-net:' + partners.length + ':' + top.name + ':' + top.count;
             if (partners.length >= 10 && top2Share < 0.5) {
                 return avPick(sd, [
-                    'You work the whole room \u2014 ' + partners.length + ' different partners. ' + top.name + ' is your go-to at ' + top.count + ' deals.',
-                    'Broad network here: ' + partners.length + ' partners, no real favorites. ' + top.name + ' shows up most at ' + top.count + ' deals.',
+                    'You work the whole room \u2014 ' + partners.length + ' different partners, with ' + top.name + ' your go-to at ' + top.count + ' deals.',
+                    'Broad network here: ' + partners.length + ' partners, no real favorites \u2014 ' + top.name + ' shows up most at ' + top.count + ' deals.',
                 ]);
             }
             if (top2Share >= 0.6) {
                 return avPick(sd, [
-                    'You\u2019re funneling ' + Math.round(top2Share * 100) + '% of your trades through just two managers. I\u2019d branch out \u2014 the best value usually hides with the people you\u2019re not talking to.',
-                    Math.round(top2Share * 100) + '% of your deals run through two guys. That\u2019s a narrow market \u2014 widen it and you\u2019ll find softer spots.',
+                    'You\u2019re funneling ' + Math.round(top2Share * 100) + '% of your trades through just two managers \u2014 the best value usually hides with the people you\u2019re not talking to.',
+                    Math.round(top2Share * 100) + '% of your deals run through two guys \u2014 widen that narrow market and you\u2019ll find softer spots.',
                 ]);
             }
             return avPick(sd, [
-                'Nice balance across ' + partners.length + ' partners. ' + top.name + ' is your most frequent counter at ' + top.count + ' deals.',
+                'Nice balance across ' + partners.length + ' partners \u2014 ' + top.name + ' is your most frequent counter at ' + top.count + ' deals.',
                 'You spread it around \u2014 ' + partners.length + ' partners, with ' + top.name + ' your most common (' + top.count + ' deals).',
             ]);
         })();
@@ -957,20 +1059,29 @@
             const biggestWinner = winners.length ? winners.reduce((a, b) => a.net > b.net ? a : b) : null;
             const sd = 'ai-val:' + partners.length + ':' + winners.length;
             if (biggestLoser && Math.abs(biggestLoser.net) >= 3000) {
+                // 'Solid overall' only when winners are an actual majority;
+                // otherwise frame the losing record honestly. The bars below
+                // already name who's up on you \u2014 don't restate them (Q5 cut).
+                if (winners.length * 2 > partners.length) {
+                    return avPick(sd, [
+                        'You come out ahead against ' + winners.length + ' of ' + partners.length + ' partners \u2014 run offers from the red bars through the analyzer before you say yes.',
+                        'Solid overall \u2014 up on ' + winners.length + ' of ' + partners.length + ' partners \u2014 but slow down on proposals from the red side of this chart.',
+                    ]);
+                }
                 return avPick(sd, [
-                    'You come out ahead against ' + winners.length + ' of ' + partners.length + ' partners \u2014 but ' + biggestLoser.name + ' has gotten you for ' + (Math.abs(biggestLoser.net) / 1000).toFixed(1) + 'k DHQ. Run their next offer through the analyzer before you say yes.',
-                    'Solid overall \u2014 ' + winners.length + ' of ' + partners.length + ' partners \u2014 but watch ' + biggestLoser.name + '. They\u2019re up ' + (Math.abs(biggestLoser.net) / 1000).toFixed(1) + 'k on you. Slow down on their proposals.',
+                    'You\u2019re only ahead against ' + winners.length + ' of ' + partners.length + ' partners \u2014 run every incoming offer through the analyzer before you say yes.',
+                    'The ledger only favors you against ' + winners.length + ' of ' + partners.length + ' partners \u2014 tighten up before the next yes.',
                 ]);
             }
             if (biggestWinner && winners.length >= partners.length / 2) {
                 return avPick(sd, [
-                    biggestWinner.name + ' has been your favorite mark (+' + (biggestWinner.net / 1000).toFixed(1) + 'k). Keep sending them offers \u2014 your edge there is real.',
-                    'You\u2019ve got ' + biggestWinner.name + '\u2019s number (+' + (biggestWinner.net / 1000).toFixed(1) + 'k). Stay on the offer side with them.',
+                    biggestWinner.name + ' has been your favorite mark (+' + (biggestWinner.net / 1000).toFixed(1) + 'k) \u2014 keep sending them offers.',
+                    'You\u2019ve got ' + biggestWinner.name + '\u2019s number (+' + (biggestWinner.net / 1000).toFixed(1) + 'k) \u2014 stay on the offer side with them.',
                 ]);
             }
             return avPick(sd, [
-                'Your trade value\u2019s scattered \u2014 nobody\u2019s really winning or losing. You\u2019re playing the market fair and square.',
-                'No clear edge or leak across partners. You\u2019re trading the whole league pretty evenly.',
+                'Your trade value\u2019s scattered \u2014 nobody\u2019s really winning or losing.',
+                'No clear edge or leak across partners \u2014 you\u2019re trading the whole league pretty evenly.',
             ]);
         })();
 
@@ -981,19 +1092,19 @@
             const sd = 'ai-hit:' + draftPicks.length + ':' + rate;
             if (rate === 0) {
                 return avPick(sd, [
-                    'None of your ' + draftPicks.length + ' tracked picks have hit contributor value yet. Your draft isn\u2019t the engine \u2014 your trades are. Lean into flipping rookies for proven vets.',
-                    'Rough drafting so far \u2014 0 of ' + draftPicks.length + ' picks at contributor DHQ. That\u2019s fine if you keep winning on the trade side; consider dealing picks for known production.',
+                    'None of your ' + draftPicks.length + ' tracked picks have hit contributor value yet \u2014 lean into flipping rookies for proven vets.',
+                    'Rough drafting so far \u2014 0 of ' + draftPicks.length + ' picks at contributor DHQ, so consider dealing picks for known production.',
                 ]);
             }
             if (rate >= 50) {
                 return avPick(sd, [
-                    rate + '% hit rate across ' + draftPicks.length + ' picks \u2014 that\u2019s elite. Hoard picks in trades; they compound in your hands.',
-                    'You draft. ' + rate + '% hits on ' + draftPicks.length + ' picks. I\u2019d be collecting picks every chance you get.',
+                    rate + '% hit rate across ' + draftPicks.length + ' picks is elite \u2014 hoard picks in trades, they compound in your hands.',
+                    'You draft: ' + rate + '% hits on ' + draftPicks.length + ' picks \u2014 I\u2019d be collecting picks every chance you get.',
                 ]);
             }
             return avPick(sd, [
-                rate + '% hit rate over ' + draftPicks.length + ' picks \u2014 middle of the pack. No single round has become your sweet spot yet.',
-                'You\u2019re right around average: ' + rate + '% on ' + draftPicks.length + ' picks. Nothing\u2019s jumped out as your money round.',
+                rate + '% hit rate over ' + draftPicks.length + ' picks is middle of the pack \u2014 no single round has become your sweet spot yet.',
+                'You\u2019re right around average \u2014 ' + rate + '% on ' + draftPicks.length + ' picks, with nothing jumping out as your money round.',
             ]);
         })();
 
@@ -1004,8 +1115,8 @@
             const sd = 'ai-pos:' + top.pos + ':' + topPct;
             if (topPct >= 40) {
                 return avPick(sd, [
-                    'You lean hard on ' + top.pos + ' \u2014 ' + topPct + '% of your picks. Either that\u2019s a real thesis or a blind spot; mixing it up next draft is cheap insurance.',
-                    top.pos + ' is clearly your comfort pick (' + topPct + '% of the board). Worth asking whether it\u2019s strategy or habit.',
+                    'You lean hard on ' + top.pos + ' \u2014 ' + topPct + '% of your picks \u2014 and mixing it up next draft is cheap insurance.',
+                    top.pos + ' is clearly your comfort pick (' + topPct + '% of the board) \u2014 worth asking whether it\u2019s strategy or habit.',
                 ]);
             }
             return avPick(sd, [
@@ -1029,16 +1140,24 @@
         // data views that fully live in the Analytics tab. These four are
         // all behavior-specific (about how you play, not raw league data).
         return h('div', null,
-            h('div', { style: { marginBottom: '14px', padding: '12px 16px', background: 'rgba(124,107,248,0.04)', border: '1px solid rgba(124,107,248,0.15)', borderRadius: 'var(--card-radius, 10px)' } },
-                h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--purple)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px', fontFamily: 'var(--font-title)' } }, 'How this differs from Analytics'),
-                h('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.85, lineHeight: 1.5 } },
-                    'Analytics shows raw numbers. Patterns is Alex reading those numbers back to you \u2014 every chart below includes Alex\u2019s take on what it means for your play style.')
-            ),
+            // Free keeps the raw charts (raw history); Alex's per-chart reads
+            // are the Pro layer, so the banner becomes the locked teaser.
+            // (Pro explainer box removed \u2014 the per-panel Alex strips make the
+            // difference from Analytics self-evident.)
+            isPro
+                ? null
+                : (window.WrGatedMoreRow
+                    ? h('div', { style: { marginBottom: '14px' } }, h(window.WrGatedMoreRow, {
+                        title: 'Alex\u2019s chart reads \u2014 Pro',
+                        sub: 'The charts stay free. Alex\u2019s take on what each one means for your play style is a Pro read.',
+                        feature: 'briefing_reasoning',
+                    }))
+                    : null),
             // Trade partners — volume
             h(Panel, {
                 title: 'Trade partners \u2014 who you deal with',
                 subtitle: partners.length + ' partner' + (partners.length === 1 ? '' : 's') + ' over ' + myTrades.length + ' trade' + (myTrades.length === 1 ? '' : 's'),
-                interpretation: tradePartnersInterp,
+                interpretation: isPro ? tradePartnersInterp : null,
                 empty: partners.length === 0 ? 'No trade history yet.' : null,
             },
                 partners.slice(0, 12).map(p => h(HBar, {
@@ -1054,7 +1173,7 @@
             h(Panel, {
                 title: 'Trade value \u2014 who you profit from',
                 subtitle: 'Net DHQ per partner; green = you won, red = they won',
-                interpretation: tradeValueInterp,
+                interpretation: isPro ? tradeValueInterp : null,
                 interpColor: partnerInterpColor,
                 empty: partners.length === 0 ? 'No trade history yet.' : null,
             },
@@ -1072,7 +1191,7 @@
             h(Panel, {
                 title: 'Draft hit rate by round',
                 subtitle: draftPicks.length + ' pick' + (draftPicks.length === 1 ? '' : 's') + ' tracked · contributor threshold 3000 DHQ',
-                interpretation: draftHitInterp,
+                interpretation: isPro ? draftHitInterp : null,
                 interpColor: draftHitInterpColor,
                 empty: draftPicks.length === 0 ? 'No draft history recorded yet.' : null,
             },
@@ -1089,7 +1208,7 @@
             h(Panel, {
                 title: 'Draft position mix',
                 subtitle: 'Where your picks land',
-                interpretation: draftPosInterp,
+                interpretation: isPro ? draftPosInterp : null,
                 empty: draftByPos.length === 0 ? 'No draft history recorded yet.' : null,
             },
                 draftByPos.map(p => h(HBar, {
@@ -1439,8 +1558,16 @@
 
     // ── Model Settings sub-tab ────────────────────────────────────
     function SettingsView({ settings, setSettings, leagueSkin, currentLeague }) {
+        // Trade aggression / acceptance floor lives in the GM Strategy editor
+        // (My Strategy sub-tab) — not here. Model Settings is Alex behavioral
+        // tuning only.
         const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
         const skinFeatures = resolvedLeagueSkin?.features || {};
+        // Dynasty (E6): the two weekly focus chips hide — unless the pref is
+        // currently ON, so users can still switch the deterministic pattern
+        // cards off (the chip disappears once toggled off).
+        const allowRedraft = window.App?.Intelligence?.allowRedraftFeatures
+            ? window.App.Intelligence.allowRedraftFeatures(currentLeague) : true;
         const baseDraftYear = String(parseInt(currentLeague?.season || new Date().getFullYear(), 10) || new Date().getFullYear());
         const draftYearOptions = [baseDraftYear, String(Number(baseDraftYear) + 1), String(Number(baseDraftYear) + 2)];
         const settingsIntro = resolvedLeagueSkin?.features?.showDynastyValue === false
@@ -1500,12 +1627,6 @@
             h('h3', { style: { fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: 'var(--text-title, 1.125rem)', margin: 0, letterSpacing: '0.01em', color: 'var(--white)' } }, label.title),
             h('span', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.55, fontFamily: 'var(--font-mono)' } }, label.sub),
         );
-        const tradeAggressionLabel = (v) => {
-            const stance = v <= 20 ? 'Conservative' : v <= 40 ? 'Cautious' : v <= 60 ? 'Balanced' : v <= 80 ? 'Bold' : 'Aggressive';
-            const floor = window.WR?.AlexSettings?.actionableTradeAcceptanceFloor?.({ tradeAggression: Number(v) }) || 75;
-            return stance + ' · ' + floor + '%+';
-        };
-
         const presetButton = (label, desc, getPatch) => h('button', {
             onClick: () => { const p = getPatch(); setSettings(p); saveSettings(p); },
             title: desc,
@@ -1545,12 +1666,12 @@
                 h(window.WR.Card, { padding: 'var(--card-pad-lg)' },
                     sectionTitle({ title: 'Focus areas', sub: 'Which categories Alex monitors' }),
                     h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } },
-                        focusChip('startSit', 'Start / Sit'),
+                        (allowRedraft || !!settings?.focus?.startSit) && focusChip('startSit', 'Start / Sit'),
                         focusChip('trades', 'Trades'),
                         focusChip('waivers', 'Waivers'),
                         focusChip('draft', 'Draft'),
                         focusChip('injury', 'Injury watch'),
-                        focusChip('streaming', 'Streaming'),
+                        (allowRedraft || !!settings?.focus?.streaming) && focusChip('streaming', 'Streaming'),
                         focusChip('gmStyle', 'GM style')
                     ),
                     h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '12px', lineHeight: 1.5 } },
@@ -1567,24 +1688,8 @@
                     )
                 ),
             ),
-            // ── Trade Calculator tuning ──
+            // ── Asset Priorities (trade acceptance % now lives in the GM Strategy editor) ──
             h('div', { className: 'gm-office-settings-grid', style: { marginTop: 'var(--card-gap)' } },
-                // Left column — Aggression
-                h(window.WR.Card, { padding: 'var(--card-pad-lg)' },
-                    sectionTitle({ title: 'Trade Calculator', sub: 'How aggressive Deal HQ builds packages' }),
-                    sliderRow('Trade aggression', 'Controls how wide the value-matching window is when generating packages. Balanced only auto-surfaces 75%+ offers; higher settings loosen that floor.', 'tradeAggression', 0, 100, 5,
-                        tradeAggressionLabel),
-                    h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.55, marginTop: '4px', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--font-title)', fontWeight: 700 } }, 'Quick presets'),
-                    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' } },
-                        presetButton('Conservative', 'Tight value · fair only',
-                            () => ({ ...settings, tradeAggression: 15 })),
-                        presetButton('Balanced', 'Default range',
-                            () => ({ ...settings, tradeAggression: 50 })),
-                        presetButton('Aggressive', 'Max range · hunt steals',
-                            () => ({ ...settings, tradeAggression: 100 })),
-                    ),
-                ),
-                // Right column — Asset Priorities
                 h(window.WR.Card, { padding: 'var(--card-pad-lg)' },
                     sectionTitle({ title: 'Asset Priorities', sub: 'What Deal HQ targets' }),
                     h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '14px', lineHeight: 1.45 } },
@@ -1696,12 +1801,21 @@
             return window.WR.AlexSettings.subscribe((next) => setSettings(next || loadSettings()));
         }, []);
 
+        // Scout-free vs Pro (gate-map row 10): free keeps the raw activity
+        // counts (KPI inputs), Decision History, Model Settings, and the raw
+        // Patterns charts; the read layer (GM Grade composite, behavioral
+        // insight cards + Intelligence decoration/publish, Alex chart reads,
+        // AI insights) is Pro. wrIsPro only — never canAccess/getTier.
+        const isPro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
+
         // Safe read of derived data — handle mid-load states
         const kpis = React.useMemo(() => computeKpis(props), [props.myRoster, props.currentLeague, props.timeRecomputeTs]);
         const rawInsightBase = React.useMemo(() => computeInsights(props, kpis), [kpis, props.myRoster, props.playersData]);
+        // Free: never decorate (Intelligence.buildBehavioralRecommendation is
+        // the rec engine) — the raw count alone feeds the locked teaser row.
         const rawInsights = React.useMemo(
-            () => decorateInsightRecommendations(rawInsightBase, props, kpis, 'heuristic'),
-            [rawInsightBase, props, kpis]
+            () => isPro ? decorateInsightRecommendations(rawInsightBase, props, kpis, 'heuristic') : [],
+            [rawInsightBase, props, kpis, isPro]
         );
         // Filter through AlexSettings — applies alertThreshold + focus areas + maxAlertsPerWeek.
         const insights = React.useMemo(() => {
@@ -1710,15 +1824,14 @@
         }, [rawInsights, settings]);
 
         return h('div', { className: 'gm-office-shell wr-fade-in' },
-            h(Hero, { active: !!(window.App?.LI_LOADED) }),
             h(SubTabs, {
                 value: activeSubTab,
                 onChange: setSubTab,
                 tabs: alexTabs
             }),
-            activeSubTab === 'overview' && h(OverviewView, { kpis, insights, props, settings }),
+            activeSubTab === 'overview' && h(OverviewView, { kpis, insights, props, settings, isPro, lockedInsightCount: rawInsightBase.length }),
             !hideStrategyTab && activeSubTab === 'strategy' && h(StrategySubview, { props }),
-            activeSubTab === 'patterns' && h(PatternsView, { props }),
+            activeSubTab === 'patterns' && h(PatternsView, { props, isPro }),
             activeSubTab === 'history' && h(HistoryView, { props }),
             activeSubTab === 'settings' && h(SettingsView, { settings, setSettings, leagueSkin: props.leagueSkin, currentLeague: props.currentLeague })
         );

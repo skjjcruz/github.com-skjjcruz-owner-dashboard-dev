@@ -41,15 +41,31 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
         if (pos === 'PICKS') return 'Picks';
         return window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
     };
+    const acceptanceFloorFor = (aggression, mode) => {
+        const fn = window.WR?.GmMode?.acceptanceFloorFor;
+        return typeof fn === 'function' ? fn(aggression, mode) : 75;
+    };
+    const clampFloor = (v, fallback) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.max(55, Math.min(90, Math.round(n))) : fallback;
+    };
     const normalizeDraft = (saved) => {
         const normalize = window.WR?.GmMode?.normalize || ((m) => m || 'compete');
+        const mode = normalize(saved.mode) || 'compete';
+        const aggression = saved.aggression || 'medium';
         return {
-            mode: normalize(saved.mode) || 'compete',
-            aggression: saved.aggression || 'medium',
+            mode,
+            aggression,
+            // Explicit, user-editable acceptance floor (Trade Acceptance Floor
+            // control). Defaults to the aggression+mode-derived floor when unset.
+            acceptanceFloor: clampFloor(saved.acceptanceFloor, acceptanceFloorFor(aggression, mode)),
             draftStyle: saved.draftStyle || 'bpa',
             marketPosture: saved.marketPosture || 'hold',
             timeline: saved.timeline || '2_3_years',
-            alexPersonality: saved.alexPersonality || 'balanced',
+            // saved.alexPersonality (legacy per-strategy voice knob) is
+            // deliberately NOT carried into the draft — one canonical Alex voice
+            // (owner ruling 2026-07-08). Old synced profiles still carry the
+            // field; dropping it here (tolerate, never crash) is the migration.
             targetPositions: normalizePositions(saved.targetPositions),
             sellPositions: normalizePositions(saved.sellPositions),
             sellRules: saved.sellRules || [],
@@ -67,14 +83,19 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
         setDraft(normalizeDraft(readSavedStrategy()));
     }, [leagueId]);
 
-    // Selecting a preset auto-applies its bundled config.
+    // Selecting a preset auto-applies its bundled config (incl. re-seeding the
+    // acceptance floor from the preset's aggression — "driven by aggression").
     const applyPreset = (modeId) => {
         const preset = window.WR?.GmMode?.getPreset?.(modeId);
-        const cfg = preset?.config || {};
+        const cfg = { ...(preset?.config || {}) };
+        // Presets may still carry a legacy alexPersonality — strip it so it
+        // never re-enters the draft/save (single Alex voice, 2026-07-08).
+        delete cfg.alexPersonality;
         setDraft(d => ({
             ...d,
             ...cfg,
             mode: modeId,
+            acceptanceFloor: acceptanceFloorFor(cfg.aggression || d.aggression, modeId),
         }));
     };
     const isCustom = draft.mode === 'custom';
@@ -269,14 +290,31 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
         { value: 'dynasty_long', label: 'Dynasty Long', desc: 'Build a program, not just a season.' },
     ];
 
-    const PERSONALITIES = [
-        { value: 'aggressive',    label: 'Aggressive',     desc: 'Alex hunts for wins, pushes hard on every move.' },
-        { value: 'value_hunter',  label: 'Value Hunter',   desc: 'Alex obsesses over undervalued assets and market gaps.' },
-        { value: 'balanced',      label: 'Balanced',       desc: 'Alex weighs all options before recommending a move.' },
-    ];
-
     const currentMode = MODES.find(m => m.value === draft.mode);
     const currentAggression = AGGRESSION.find(a => a.value === draft.aggression);
+
+    // ── Recommended mode — derived from the user's own team assessment ─────────
+    // Maps the roster's competitive tier (health-score based) to a franchise mode
+    // so the picker can flag the on-paper-right call. Advisory only — never auto-applies.
+    // Pro-only (gate-map row 17): the "★ Recommended for your roster" hint is a
+    // derived recommendation (tier read); the rest of the editor is build/set
+    // and stays free. Clean absence for free — teamRec null hides chip + line.
+    const teamRec = React.useMemo(() => {
+        try {
+            if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) return null;
+            const rid = myRoster?.roster_id;
+            const a = (rid != null && window.assessTeamFromGlobal) ? window.assessTeamFromGlobal(rid) : null;
+            if (!a) return null;
+            const tier = String(a.tier || '').toLowerCase();
+            const health = Number(a.healthScore) || 0;
+            let mode;
+            if (tier.includes('rebuild') || (health && health < 70)) mode = 'rebuild';
+            else if (tier.includes('elite') || tier.includes('contend') || health >= 82) mode = 'win_now';
+            else mode = 'compete';
+            return { mode, tierLabel: a.tier ? String(a.tier) : null, health };
+        } catch (_) { return null; }
+    }, [myRoster, playersData]);
+    const recommendedMode = teamRec?.mode || null;
 
     return (
         <div style={{ padding: '20px 0 60px', width: '100%', maxWidth: 'none', margin: 0 }}>
@@ -318,26 +356,66 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                                 position: 'relative',
                             }}>
                                 <div style={{ position: 'absolute', top: 10, right: 12, width: 8, height: 8, borderRadius: '50%', background: active ? m.color : 'transparent' }} />
-                                <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? m.color : 'var(--ov-9, rgba(255,255,255,0.8))', letterSpacing: '0.03em' }}>{m.label}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', paddingRight: 14 }}>
+                                    <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? m.color : 'var(--ov-9, rgba(255,255,255,0.8))', letterSpacing: '0.03em' }}>{m.label}</div>
+                                    {m.value === recommendedMode && (
+                                        <span title={teamRec?.tierLabel ? `Your roster grades ${teamRec.tierLabel}` : 'Based on your roster'} style={{ fontSize: '0.5rem', fontWeight: 800, letterSpacing: '0.08em', color: 'var(--gold)', background: 'var(--acc-fill2, rgba(212,175,55,0.16))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.4))', borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', whiteSpace: 'nowrap', lineHeight: 1.4 }}>★ Rec</span>
+                                    )}
+                                </div>
                                 <div style={{ fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 3, fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>{m.desc}</div>
                             </button>
                         );
                     })}
                 </div>
+                {recommendedMode && (
+                    <div style={{ marginTop: 12, fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.7))', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                        <span style={{ color: 'var(--gold)', fontWeight: 700 }}>★ Recommended for your roster:</span> {MODES.find(m => m.value === recommendedMode)?.label}
+                        {teamRec?.tierLabel ? <> — your team grades <em>{teamRec.tierLabel}</em>.</> : '.'} You can still pick any direction.
+                    </div>
+                )}
                 {!isCustom && (
                     <div style={{ marginTop: 14, padding: '10px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 6, fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.7))', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
-                        <strong style={{ color: 'var(--gold)' }}>Preset applied:</strong> aggression <em>{draft.aggression}</em> · draft <em>{draft.draftStyle}</em> · market <em>{draft.marketPosture}</em> · timeline <em>{draft.timeline}</em> · personality <em>{draft.alexPersonality}</em>
+                        <strong style={{ color: 'var(--gold)' }}>Preset applied:</strong> aggression <em>{draft.aggression}</em> · draft <em>{draft.draftStyle}</em> · market <em>{draft.marketPosture}</em> · timeline <em>{draft.timeline}</em>
                     </div>
                 )}
             </div>
 
+            {/* ── Trade Acceptance Floor (always visible — drives the Trade Center) ── */}
+            <div style={styles.card}>
+                <SectionHeader title="Trade Acceptance Floor" sub="The minimum acceptance an offer must clear for the Trade Center to call it Playable. Lower = chase more long-shot deals; higher = only safe, fair offers. Seeded by your aggression — drag to fine-tune." />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+                    <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '2.1rem', fontWeight: 700, color: 'var(--gold)', minWidth: 90, lineHeight: 1 }}>{draft.acceptanceFloor}%</div>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                        <input
+                            type="range" min="55" max="90" step="1"
+                            value={draft.acceptanceFloor}
+                            onChange={e => set('acceptanceFloor', Number(e.target.value))}
+                            aria-label="Trade acceptance floor"
+                            style={{ width: '100%', accentColor: 'var(--gold)', cursor: 'pointer', height: 32 }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', fontFamily: 'var(--font-body)', marginTop: 2 }}>
+                            <span>55% · chase long-shots</span>
+                            <span>only safe deals · 90%</span>
+                        </div>
+                    </div>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                    <div style={styles.subLabel}>Quick set</div>
+                    <PillGroup
+                        options={[{ value: 82, label: 'Conservative · 82%' }, { value: 75, label: 'Balanced · 75%' }, { value: 58, label: 'Aggressive · 58%' }]}
+                        value={draft.acceptanceFloor}
+                        onChange={v => set('acceptanceFloor', v)}
+                    />
+                </div>
+            </div>
+
             {/* ── Aggression (Custom only) ── */}
             {isCustom && <div style={styles.card}>
-                <SectionHeader title="Aggression" sub={currentAggression?.desc} />
+                <SectionHeader title="Aggression" sub={(currentAggression?.desc || '') + ' Also re-seeds the acceptance floor above.'} />
                 <PillGroup
                     options={AGGRESSION.map(a => ({ value: a.value, label: a.label }))}
                     value={draft.aggression}
-                    onChange={v => set('aggression', v)}
+                    onChange={v => setDraft(d => ({ ...d, aggression: v, acceptanceFloor: acceptanceFloorFor(v, d.mode) }))}
                     fullWidth
                 />
             </div>}
@@ -535,29 +613,8 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                 )}
             </div>}
 
-            {/* ── Alex Personality (Custom only) ── */}
-            {isCustom && <div style={styles.card}>
-                <SectionHeader title="Alex Personality" sub="How Alex frames advice and makes recommendations." />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
-                    {PERSONALITIES.map(p => {
-                        const active = draft.alexPersonality === p.value;
-                        return (
-                            <button key={p.value} onClick={() => set('alexPersonality', p.value)} style={{
-                                padding: '12px 14px',
-                                border: active ? '1px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
-                                borderRadius: 8,
-                                background: active ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))',
-                                cursor: 'pointer',
-                                textAlign: 'left',
-                                transition: 'all 0.15s',
-                            }}>
-                                <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? 'var(--gold)' : 'var(--ov-9, rgba(255,255,255,0.8))' }}>{p.label}</div>
-                                <div style={{ fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 3, fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>{p.desc}</div>
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>}
+            {/* Alex Personality card removed — one canonical Alex voice
+                (owner ruling 2026-07-08). Strategy substance above is untouched. */}
 
             {/* ── Bottom save bar ── */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, paddingBottom: 40 }}>

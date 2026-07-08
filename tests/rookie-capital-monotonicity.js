@@ -40,11 +40,13 @@ const ROOT = path.join(__dirname, '..');
 
 // ── Locate the canonical rookie-data.js (mirrors tests/rookie-data.js) ──
 function resolveRookieDataPath() {
-  const sharedSource = process.env.RECONAI_SHARED_SOURCE;
+  const sharedSource = process.env.SHARED_SOURCE || process.env.RECONAI_SHARED_SOURCE;
   const roots = [
+    sharedSource,
     sharedSource && path.resolve(sharedSource, '..'),
-    path.resolve(ROOT, '..', 'reconai'),
+    path.resolve(ROOT, '..', 'dhq-shared'),
     path.resolve(ROOT, 'reconai-shared'),
+    path.resolve(ROOT, '..', 'reconai'),
   ].filter(Boolean);
   for (const root of roots) {
     const nested = path.join(root, 'shared', 'rookie-data.js');
