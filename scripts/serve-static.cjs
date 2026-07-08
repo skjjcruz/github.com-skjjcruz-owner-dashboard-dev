@@ -6,6 +6,11 @@ const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
 
+// --compile (dev): transpile type="text/babel" scripts server-side so the browser
+// never loads @babel/standalone (the ~3-10s in-browser JSX compile). Lazy-required
+// only when the flag is present so other server modes carry no extra cost.
+let Babel = null;
+
 const LIVE_AI_ENDPOINT = 'https://hovnqztlbsgsywrbidbh.supabase.co/functions/v1/ai-analyze';
 
 const MIME_TYPES = {
@@ -38,6 +43,14 @@ const host = getArg('host', '127.0.0.1');
 const port = Number(getArg('port', process.env.PORT || 3001));
 const root = path.resolve(getArg('root', process.cwd()));
 const openPath = getArg('open', '');
+const COMPILE = process.argv.includes('--compile');
+if (COMPILE) {
+  try {
+    Babel = require('@babel/standalone');
+  } catch (err) {
+    console.error('[serve-static] --compile needs @babel/standalone installed; serving raw JSX instead.');
+  }
+}
 
 function loadLocalEnv() {
   ['.env.local', '.env'].forEach(file => {
@@ -419,10 +432,192 @@ async function handleDevAI(req, res) {
   }
 }
 
+function isValidMflUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    return (
+      parsed.protocol === 'https:' &&
+      (parsed.hostname === 'api.myfantasyleague.com' ||
+        parsed.hostname === 'myfantasyleague.com' ||
+        parsed.hostname.endsWith('.myfantasyleague.com'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function handleMflProxy(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type');
+  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Method Not Allowed' });
+    return;
+  }
+
+  try {
+    const body = await readJson(req);
+    const { url, method, cookie, form, login } = body || {};
+
+    if (!url || !isValidMflUrl(url)) {
+      sendJson(res, 400, { error: 'Invalid URL — only myfantasyleague.com URLs are allowed.' });
+      return;
+    }
+
+    const baseHeaders = { 'User-Agent': 'FantasyWarRoom/1.0', 'Accept': 'application/json' };
+    if (cookie) baseHeaders['Cookie'] = String(cookie);
+
+    // Login mode: POST credentials as a form body, return MFL_USER_ID + shard host.
+    if (login) {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { ...baseHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: typeof form === 'string' ? form : '',
+      });
+      const text = await r.text();
+      let mflUserId = null;
+      const setCookies = typeof r.headers.getSetCookie === 'function' ? r.headers.getSetCookie() : [];
+      for (const sc of setCookies) { const m = String(sc).match(/MFL_USER_ID=([^;]+)/); if (m) { mflUserId = m[1]; break; } }
+      if (!mflUserId) { const bm = text.match(/MFL_USER_ID="?([^";\s<]+)"?/); if (bm) mflUserId = bm[1]; }
+      let host = null; try { host = new URL(r.url).host; } catch (e) { host = null; }
+      const failedText = /invalid|incorrect|denied|not\s*log|error/i.test(text) && !mflUserId;
+      sendJson(res, 200, { ok: !!mflUserId && !failedText, mflUserId, host, message: text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) });
+      return;
+    }
+
+    let mflRes = await fetch(url, {
+      method: method === 'POST' ? 'POST' : 'GET',
+      headers: baseHeaders,
+      redirect: cookie ? 'manual' : 'follow',
+    });
+    if (cookie && mflRes.status >= 300 && mflRes.status < 400) {
+      const loc = mflRes.headers.get('location');
+      if (loc && isValidMflUrl(loc)) mflRes = await fetch(loc, { method: method === 'POST' ? 'POST' : 'GET', headers: baseHeaders });
+    }
+
+    if (!mflRes.ok) {
+      const status = mflRes.status;
+      let msg = `MFL API error ${status}`;
+      if (status === 401 || status === 403) msg = 'MFL authorization failed — your login may have expired. Reconnect and try again.';
+      else if (status === 404) msg = 'MFL league not found. Check your League ID and year.';
+      sendJson(res, status, { error: msg });
+      return;
+    }
+
+    const data = await mflRes.text();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(data);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || 'MFL proxy error' });
+  }
+}
+
+// ── NFL scoreboard proxy (schedule + weather + odds) ─────────────────────────
+// ESPN's public scoreboard API is CORS-blocked for browsers, so proxy it
+// server-side. Dumb passthrough (client parses) — the prod Supabase edge fn
+// should mirror this. One game-list per (season, week); short cache.
+async function handleNflScoreboard(req, res) {
+  try {
+    const u = new URL(req.url, `http://${host}:${port}`);
+    const week = parseInt(u.searchParams.get('week') || '0', 10);
+    const season = parseInt(u.searchParams.get('season') || '0', 10);
+    const seasontype = parseInt(u.searchParams.get('seasontype') || '2', 10);
+    let api = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard';
+    const qp = ['seasontype=' + seasontype];
+    if (week > 0) qp.push('week=' + week);
+    if (season > 0) qp.push('dates=' + season);
+    api += '?' + qp.join('&');
+    const r = await fetch(api, { headers: { 'User-Agent': 'FantasyWarRoom/1.0', 'Accept': 'application/json' } });
+    if (!r.ok) { sendJson(res, r.status, { error: 'ESPN scoreboard error ' + r.status }); return; }
+    const data = await r.text();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=900' });
+    res.end(data);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || 'NFL scoreboard proxy error' });
+  }
+}
+
+// ── Dev-time JSX compilation (--compile) ─────────────────────────────────────
+// Transpiles only the files index.html (and other pages) mark as type="text/babel",
+// caching by mtime so a save recompiles a single file in ~10-50ms instead of the
+// browser compiling ~3.4MB of JSX on every page load. Mirrors build-preview.cjs.
+const _xpileCache = new Map();   // absPath -> { mtimeMs, code }
+const _babelSrcSet = new Set();  // normalized repo-relative paths flagged text/babel
+let _seeded = false;
+
+function splitUrl(src) {
+  const i = src.indexOf('?');
+  return { pathname: i >= 0 ? src.slice(0, i) : src, query: i >= 0 ? src.slice(i) : '' };
+}
+function isRemoteUrl(value) {
+  return /^(?:https?:)?\/\//i.test(value) || /^data:/i.test(value);
+}
+function collectBabelSrcs(html) {
+  const re = /<script\b([^>]*)>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const attrs = m[1];
+    if (!/type=["']text\/babel["']/i.test(attrs)) continue;
+    const sm = attrs.match(/src=["']([^"']+)["']/i);
+    if (sm && !isRemoteUrl(sm[1])) _babelSrcSet.add(splitUrl(sm[1]).pathname.replace(/^\.?\//, ''));
+  }
+}
+function seedBabelSet() {
+  if (_seeded) return;
+  _seeded = true;
+  const idx = path.join(root, 'index.html');
+  if (fs.existsSync(idx)) {
+    try { collectBabelSrcs(fs.readFileSync(idx, 'utf8')); } catch (_e) { /* tolerate */ }
+  }
+}
+function rewriteHtmlForCompile(html) {
+  // Drop the in-browser Babel compiler entirely.
+  html = html.replace(/[ \t]*<script\b[^>]*src=["']https?:\/\/[^"']*@babel\/standalone[^"']*["'][^>]*><\/script>\s*\n?/gi, '');
+  // The server already transpiles these on request. data-wr-defer scripts stay INERT
+  // (type="text/wr-deferred") so the browser doesn't run them at boot — the module
+  // loader injects them on demand; the rest run immediately as plain JS.
+  html = html.replace(/<script\b[^>]*?\stype=["']text\/babel["'][^>]*>/gi, (tag) =>
+    /\bdata-wr-defer\b/i.test(tag)
+      ? tag.replace(/type=["']text\/babel["']/i, 'type="text/wr-deferred"')
+      : tag.replace(/\s+type=["']text\/babel["']/i, ''));
+  return html;
+}
+function transpileFile(absPath) {
+  const stat = fs.statSync(absPath);
+  const hit = _xpileCache.get(absPath);
+  if (hit && hit.mtimeMs === stat.mtimeMs) return hit.code;
+  const rel = path.relative(root, absPath).replace(/\\/g, '/');
+  const result = Babel.transform(fs.readFileSync(absPath, 'utf8'), {
+    filename: rel,
+    sourceFileName: '/' + rel,
+    sourceMaps: 'inline',
+    presets: [['react', { runtime: 'classic' }]],
+    sourceType: 'script',
+    comments: false,
+  });
+  const code = result.code + '\n';
+  _xpileCache.set(absPath, { mtimeMs: stat.mtimeMs, code });
+  return code;
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${host}:${port}`);
   if (url.pathname === '/api/dev-ai-analyze') {
     handleDevAI(req, res);
+    return;
+  }
+  if (url.pathname === '/api/mfl-proxy') {
+    handleMflProxy(req, res);
+    return;
+  }
+  if (url.pathname === '/api/nfl-scoreboard') {
+    handleNflScoreboard(req, res);
     return;
   }
   if (url.pathname === '/api/landing-content') {
@@ -452,6 +647,47 @@ const server = http.createServer((req, res) => {
   }
 
   const ext = path.extname(filePath).toLowerCase();
+
+  if (COMPILE && Babel && (ext === '.html' || ext === '.js')) {
+    seedBabelSet();
+    if (req.method === 'HEAD') {
+      res.writeHead(200, { 'Content-Type': MIME_TYPES[ext], 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+    if (ext === '.html') {
+      try {
+        const html = fs.readFileSync(filePath, 'utf8');
+        collectBabelSrcs(html);
+        const body = rewriteHtmlForCompile(html);
+        res.writeHead(200, { 'Content-Type': MIME_TYPES['.html'], 'Cache-Control': 'no-store' });
+        res.end(body);
+        return;
+      } catch (err) {
+        console.error('[serve-static] html rewrite failed for', filePath, '-', err && err.message);
+        // fall through to raw serving
+      }
+    } else { // .js
+      const rel = path.relative(root, filePath).replace(/\\/g, '/');
+      if (_babelSrcSet.has(rel)) {
+        let code;
+        try {
+          code = transpileFile(filePath);
+        } catch (err) {
+          const msg = err && err.message ? err.message : String(err);
+          console.error('[serve-static] JSX compile failed:', rel, '-', msg);
+          res.writeHead(200, { 'Content-Type': MIME_TYPES['.js'], 'Cache-Control': 'no-store' });
+          res.end('console.error(' + JSON.stringify('[dev compile error] ' + rel + ': ' + msg) + ');');
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': MIME_TYPES['.js'], 'Cache-Control': 'no-store' });
+        res.end(code);
+        return;
+      }
+      // not a flagged Babel module — fall through to raw streaming
+    }
+  }
+
   res.writeHead(200, {
     'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
     'Cache-Control': 'no-store',
@@ -466,7 +702,8 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Serving ${root} at http://${host}:${port}/`);
+  const compileNote = COMPILE ? (Babel ? '  [JSX compile: ON]' : '  [JSX compile: requested but @babel/standalone missing]') : '';
+  console.log(`Serving ${root} at http://${host}:${port}/${compileNote}`);
   if (openPath) {
     const target = new URL(openPath.replace(/^\/+/, ''), `http://${host}:${port}/`).toString();
     const opener = spawn('open', [target], { detached: true, stdio: 'ignore' });

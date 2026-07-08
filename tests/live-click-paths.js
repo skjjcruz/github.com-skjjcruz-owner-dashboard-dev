@@ -294,7 +294,6 @@ async function assertSurfaceReady(page, label, snippets = []) {
         '.gm-office-kpi-grid > *',
         '.gm-office-insight-grid > *',
         '.tc-dhq-panel',
-        '.tc-dhq-partner',
         '.tc-dhq-deal-card',
         '.fa-hq-panel',
         '.fa-hq-candidate',

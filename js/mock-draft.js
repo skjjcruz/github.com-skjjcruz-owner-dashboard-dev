@@ -563,14 +563,18 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
         const myPicks   = ds.picks.filter(p => p.isUser);
         const grade     = mdsGrade(myPicks, ds.originalPool);
         const posCounts = myPicks.reduce((acc, p) => { acc[p.pos] = (acc[p.pos] || 0) + 1; return acc; }, {});
-        const gradeColor = grade.letter.startsWith('A') ? 'var(--good)' : grade.letter.startsWith('B') ? 'var(--gold)' : 'var(--bad)';
+        // A–F grade is an interpretation → Scout Pro; the raw haul (DHQ total,
+        // picks, position counts) below stays free. Neutral color so the hero
+        // tint doesn't leak the grade. Fail-open without pro-gate.js.
+        const mdsPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+        const gradeColor = !mdsPro ? 'var(--silver)' : grade.letter.startsWith('A') ? 'var(--good)' : grade.letter.startsWith('B') ? 'var(--gold)' : 'var(--bad)';
 
         return (
             <div style={{ fontFamily: font }}>
                 {/* Grade hero */}
                 <div style={{ textAlign: 'center', padding: '20px 16px', background: 'var(--acc-fill1, rgba(212,175,55,0.05))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', marginBottom: '14px' }}>
-                    <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.76rem', color: 'var(--gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>Draft Grade</div>
-                    <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '4.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1, marginBottom: '6px' }}>{grade.letter}</div>
+                    <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.76rem', color: 'var(--gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>{mdsPro ? 'Draft Grade' : 'Draft Grade — Scout Pro'}</div>
+                    <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '4.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1, marginBottom: '6px' }}>{mdsPro ? grade.letter : '🔒'}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginBottom: '12px' }}>
                         Total DHQ: <strong style={{ color: 'var(--white)' }}>{grade.totalDHQ.toLocaleString()}</strong>
                         &nbsp;·&nbsp;{myPicks.length} picks

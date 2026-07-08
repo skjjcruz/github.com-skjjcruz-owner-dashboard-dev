@@ -26,8 +26,11 @@
             QB: 'var(--k-ff6b6b, #ff6b6b)', RB: 'var(--k-4ecdc4, #4ecdc4)', WR: 'var(--k-45b7d1, #45b7d1)', TE: 'var(--k-f7dc6f, #f7dc6f)',
             DL: 'var(--k-e67e22, #e67e22)', LB: 'var(--k-f0a500, #f0a500)', DB: 'var(--k-5dade2, #5dade2)', K: 'var(--k-bb8fce, #bb8fce)',
         };
+        // The A–F grade on the share card is a Pro interpretation; the free card
+        // keeps the raw haul (picks + total DHQ). Fail-open without pro-gate.js.
+        const exPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
         const gradeCol =
-            grade.letter === '?' ? 'var(--k-95a5a6, #95a5a6)' :
+            !exPro || grade.letter === '?' ? 'var(--k-95a5a6, #95a5a6)' :
             grade.letter.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' :
             grade.letter.startsWith('B') ? 'var(--k-d4af37, #d4af37)' :
             grade.letter.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
@@ -53,7 +56,7 @@
         const header = document.createElement('div');
         header.style.cssText = 'text-align:center;margin-bottom:60px';
         header.innerHTML = `
-            <div style="font-family:${FONT_DISPL};font-size:42px;font-weight:700;color:var(--k-d4af37, #d4af37);letter-spacing:0.12em;margin-bottom:8px">DYNASTY HQ</div>
+            <div style="font-family:${FONT_DISPL};font-size:42px;font-weight:700;color:var(--k-d4af37, #d4af37);letter-spacing:0.12em;margin-bottom:8px">WAR ROOM</div>
             <div style="font-size:22px;color:var(--k-95a5a6, #95a5a6);letter-spacing:0.08em;text-transform:uppercase">Draft Command Center · ${state.season || ''}</div>
             <div style="width:120px;height:2px;background:var(--k-d4af37, #d4af37);margin:20px auto 0"></div>
         `;
@@ -62,11 +65,17 @@
         // Grade hero
         const hero = document.createElement('div');
         hero.style.cssText = 'text-align:center;margin-bottom:50px';
-        hero.innerHTML = `
+        hero.innerHTML = exPro ? `
             <div style="font-size:22px;color:var(--k-d4af37, #d4af37);letter-spacing:0.16em;text-transform:uppercase;margin-bottom:14px">Draft Grade</div>
             <div style="font-family:${FONT_DISPL};font-size:260px;font-weight:700;color:${gradeCol};line-height:0.9;text-shadow:0 0 40px ${gradeCol}66">${grade.letter}</div>
             <div style="font-size:28px;color:var(--k-ffffff, #ffffff);margin-top:14px">
                 ${grade.totalDHQ.toLocaleString()} total DHQ · ${myPicks.length} picks · ${grade.pct || 0}% value
+            </div>
+        ` : `
+            <div style="font-size:22px;color:var(--k-d4af37, #d4af37);letter-spacing:0.16em;text-transform:uppercase;margin-bottom:14px">Draft Haul</div>
+            <div style="font-family:${FONT_DISPL};font-size:120px;font-weight:700;color:var(--k-d4af37, #d4af37);line-height:1">${grade.totalDHQ.toLocaleString()}</div>
+            <div style="font-size:28px;color:var(--k-ffffff, #ffffff);margin-top:14px">
+                total DHQ · ${myPicks.length} picks
             </div>
         `;
         card.appendChild(hero);

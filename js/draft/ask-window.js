@@ -164,7 +164,7 @@
             + '.meta{color:#6b7280;font-size:12px;margin-bottom:16px}hr{border:0;border-top:1px solid #e5e7eb;margin:14px 0}'
             + '@media print{body{margin:0;max-width:none}}</style></head><body>'
             + '<h1>' + safeTitle + '</h1>'
-            + '<div class="meta">Alex · Draft Room — ' + esc(new Date().toLocaleString()) + '</div><hr/>'
+            + '<div class="meta">Alex · Draft War Room — ' + esc(new Date().toLocaleString()) + '</div><hr/>'
             + body + '</body></html>';
     }
 
@@ -291,6 +291,15 @@
         // Listen for open + show requests from any action button.
         React.useEffect(() => {
             const onOpen = (e) => {
+                // Draft AI reports are Scout Pro. Entry buttons are already
+                // Pro-gated; this backstops stray wr:ask-open dispatches (deep
+                // links, stale listeners) so free routes to the upsell instead
+                // of a dhqAI call (BYOK would bypass the server tripwire).
+                if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+                    if (window.showProLaunchPage) window.showProLaunchPage();
+                    else if (window.showUpgradePrompt) window.showUpgradePrompt('draft_ai_reports');
+                    return;
+                }
                 const { title: t, prompt: p, kind: k } = e.detail || {};
                 ask(t, p, k);
             };
@@ -332,7 +341,7 @@
                     onClick={() => setMinimized(false)}
                     title="Restore report"
                     style={{
-                        position: 'fixed', bottom: '20px', left: '20px', zIndex: 600,
+                        position: 'fixed', bottom: 'calc(20px + var(--wr-bottom-inset, 0px))', left: '20px', zIndex: 600,
                         display: 'flex', alignItems: 'center', gap: '8px',
                         maxWidth: 'min(320px, 80vw)',
                         padding: '8px 12px',
@@ -402,7 +411,7 @@
                                 textOverflow: 'ellipsis',
                             }}>{title}</div>
                             <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                                Alex · Draft Room
+                                Alex · Draft War Room
                             </div>
                         </div>
                         <button

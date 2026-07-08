@@ -10,9 +10,15 @@
 
 (function() {
 
+    // Persona/DNA-informed CPU opponents are Scout Pro (owner ruling Q10, mirrors
+    // reconai _mockDNAInformedPick): free mocks draft plain best-available via the
+    // BPA fallback below, and behavioral predictions stay empty. Fail-open when
+    // pro-gate.js isn't loaded.
+    const _cpuIsPro = () => typeof window.wrIsPro !== 'function' || window.wrIsPro();
+
     function personaPick(persona, available, round, pickNumber, ctx) {
-        // Delegate to shared canonical engine
-        if (window.App?.MockEngine?.personaPick) {
+        // Delegate to shared canonical engine (Pro only — free = BPA fallback)
+        if (_cpuIsPro() && window.App?.MockEngine?.personaPick) {
             return window.App.MockEngine.personaPick(persona, available, round, pickNumber, ctx);
         }
         // Emergency BPA fallback
@@ -22,7 +28,7 @@
     }
 
     function computePredictions(persona, pool, round, pickNumber, ctx) {
-        if (window.App?.MockEngine?.computePredictions) {
+        if (_cpuIsPro() && window.App?.MockEngine?.computePredictions) {
             return window.App.MockEngine.computePredictions(persona, pool, round, pickNumber, ctx);
         }
         return { willReach: [], willPassOn: [], likelyPick: null };

@@ -66,12 +66,13 @@
         return h.toString(36);
     }
 
-    function stateHashFor(league, roster) {
+    function stateHashFor(league, roster, extra) {
         const parts = [
             league?.league_id || league?.id || '',
             (roster?.players || []).slice().sort().join(','),
             roster?.settings ? `${roster.settings.wins}-${roster.settings.losses}` : '',
             window.S?.nflState?.week || '',
+            extra || '',
         ];
         return hashString(parts.join('|'));
     }
@@ -79,6 +80,15 @@
     // Base payload for structured OD.callAI types. The edge function's
     // detectLeagueFormat/buildTeamModeBlock read exactly these field names.
     function buildStructuredBase(league, assessment, roster) {
+        // GM Strategy — the canonical serialized plan (WR.GmMode.promptBlock):
+        // mode directive, timeline, floor, postures, positions, sell rules,
+        // untouchable names. '' when no strategy is saved / gm-mode not loaded.
+        // The edge function reads ctx.gmStrategy (team_diagnosis + insight).
+        // Folded into stateHash so a strategy edit busts the response caches.
+        let gmStrategy = '';
+        try {
+            gmStrategy = window.WR?.GmMode?.promptBlock?.(league?.league_id || league?.id) || '';
+        } catch (e) { /* gm-mode optional */ }
         return {
             leagueId: league?.league_id || league?.id || null,
             leagueName: league?.name || '',
@@ -89,7 +99,8 @@
             teamTier: assessment?.tier || '',
             teamWindow: assessment?.window || assessment?.tradeWindow || '',
             healthScore: assessment?.healthScore || 0,
-            stateHash: stateHashFor(league, roster),
+            gmStrategy,
+            stateHash: stateHashFor(league, roster, gmStrategy),
         };
     }
 

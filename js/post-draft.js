@@ -206,6 +206,9 @@
   function onDraftClosed(recap) {
     if (!recap) return;
     try { if (recap.leagueId) archiveRecap(recap); } catch (e) {}
+    // A finished draft changes rosters/picks league-wide — revalidate the league
+    // data (WR.Sync no-ops if a sync is already running or no league is open).
+    try { window.WR?.Sync?.refresh?.('draft-complete'); } catch (e) {}
     // The UDFA craze is dynasty rookie-draft specific. variant==='rookie' implies a
     // dynasty rookie draft in practice; the craze board is dynasty-gated regardless.
     if (recap.variant === 'rookie' && recap.leagueId) {

@@ -3,8 +3,13 @@
 //
 // Three first-class presets: Rebuild / Compete / Win Now. Selecting a preset
 // auto-bundles every downstream variable (aggression, draftStyle,
-// marketPosture, timeline, personality). Custom mode unlocks individual
-// sliders in the Strategy Editor.
+// marketPosture, timeline). Custom mode unlocks individual sliders in the
+// Strategy Editor.
+//
+// 2026-07-08 single-voice ruling: presets no longer write `alexPersonality`
+// (the retired voice knob). Old strategies that carry it survive untouched —
+// applyPreset merges over the existing object and strategy.js normalization
+// keeps round-tripping the field for server-schema compatibility.
 //
 // This module is the single source of truth for mode. It:
 //   - Normalizes legacy mode labels from both my-team.js and strategy-editor.js
@@ -34,7 +39,6 @@
                 draftStyle: 'accumulate',
                 marketPosture: 'sell_high',
                 timeline: 'dynasty_long',
-                alexPersonality: 'value_hunter',
                 targetPositions: [],
                 sellPositions: [],
             },
@@ -52,7 +56,6 @@
                 draftStyle: 'bpa',
                 marketPosture: 'hold',
                 timeline: '2_3_years',
-                alexPersonality: 'balanced',
                 targetPositions: [],
                 sellPositions: [],
             },
@@ -70,7 +73,6 @@
                 draftStyle: 'consolidate',
                 marketPosture: 'buy_low',
                 timeline: '1_year',
-                alexPersonality: 'aggressive',
                 targetPositions: [],
                 sellPositions: [],
             },
@@ -107,16 +109,20 @@
     }
 
     function getMode(leagueId) {
-        // Priority: strategy-editor CDN store → my-team store (WrStorage GM_STRATEGY) → default
+        // Priority: shared global store (ONLY if it actually exists — see
+        // sharedStrategyStoreExists; getStrategy() otherwise returns a default
+        // that shadows the per-league value) → per-league WrStorage → default.
         try {
-            if (window.GMStrategy && typeof window.GMStrategy.getStrategy === 'function') {
+            if (sharedStrategyStoreExists() && window.GMStrategy && typeof window.GMStrategy.getStrategy === 'function') {
                 const s = window.GMStrategy.getStrategy(leagueId);
                 if (s && s.mode) return normalize(s.mode);
             }
         } catch (e) { /* ignore */ }
         try {
-            if (WrStorage && WR_KEYS && typeof WR_KEYS.GM_STRATEGY === 'function') {
-                const s = WrStorage.get(WR_KEYS.GM_STRATEGY(leagueId));
+            const keys = (window.App && window.App.WR_KEYS) || WR_KEYS;
+            const storage = (window.App && window.App.WrStorage) || WrStorage;
+            if (storage && keys && typeof keys.GM_STRATEGY === 'function') {
+                const s = storage.get(keys.GM_STRATEGY(leagueId));
                 if (s && s.mode) return normalize(s.mode);
             }
         } catch (e) { /* ignore */ }
@@ -183,16 +189,285 @@
         return () => window.removeEventListener('wr:gm-mode-changed', h);
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    // effects(leagueId) — THE single GM-Strategy resolver.
+    //
+    // Every surface in the app turns the persisted GM Strategy object into
+    // concrete tuning by calling this (or the useGmEffects hook below). It
+    // reads ONLY the GM Strategy store — never WR.AlexSettings — so GM
+    // Strategy is the single source of truth.
+    //
+    // GUARDRAIL: the values here (acceptanceFloor, aggression, overpay) drive
+    // YOUR acceptance bar / package width / what surfaces / framing. They must
+    // NEVER be fed into the OPPONENT's displayed "Likelihood of Acceptance %"
+    // (that stays computed from their DNA/posture/value via
+    // calcAcceptanceLikelihood). Floor/viability COMPARE against the opponent
+    // likelihood; they never edit it.
+    // ══════════════════════════════════════════════════════════════════
+
+    // 0..1 package-width / overpay scalar per aggression band (promoted from
+    // the constant that used to live inline in trade-calc getDealHqTuning).
+    const AGGRESSION_MAP = { conservative: 0.28, medium: 0.52, aggressive: 0.78 };
+
+    // Acceptance-floor anchors per aggression band. Chosen for numeric
+    // continuity with the retired Alex "Trade aggression" slider, whose
+    // actionableTradeAcceptanceFloor produced ~82/75/55 at slider 15/50/100.
+    const AGGR_FLOOR = { conservative: 82, medium: 75, aggressive: 58 };
+    // Mode nudges the floor: rebuild is pickier (higher bar), win_now is
+    // looser (lower bar, willing to act on thinner deals).
+    const MODE_FLOOR_SHIFT = { rebuild: 5, compete: 0, win_now: -5, custom: 0 };
+
+    function clampNum(value, min, max, fallback) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.max(min, Math.min(max, n));
+    }
+
+    // The one canonical aggression+mode → acceptance-floor map (55..90).
+    function acceptanceFloorFor(aggression, mode) {
+        const base = AGGR_FLOOR[aggression] != null ? AGGR_FLOOR[aggression] : 75;
+        const shift = MODE_FLOOR_SHIFT[normalize(mode)] || 0;
+        return clampNum(base + shift, 55, 90, 75);
+    }
+
+    // True only when the shared (ReconAI) global strategy store actually has a
+    // saved value. GMStrategy.getStrategy() returns a DEFAULT object even when
+    // the key is absent, which would otherwise shadow the per-league WrStorage
+    // value — so we gate on existence, matching league-detail's loadGmStrategy.
+    function sharedStrategyStoreExists() {
+        try { return !!localStorage.getItem('dhq_gm_strategy_v1'); } catch (e) { return false; }
+    }
+
+    // Resolve the persisted strategy with the SAME precedence league-detail uses
+    // for the header/badge: shared global store (only if it exists) → per-league
+    // WrStorage → last-active strategy. Reads App fresh (load-order safe).
+    function resolveStrategy(leagueId) {
+        try {
+            if (sharedStrategyStoreExists() && window.GMStrategy && window.GMStrategy.getStrategy) {
+                const s = window.GMStrategy.getStrategy(leagueId);
+                if (s && typeof s === 'object') return s;
+            }
+        } catch (e) { /* ignore */ }
+        try {
+            const keys = (window.App && window.App.WR_KEYS) || WR_KEYS;
+            const storage = (window.App && window.App.WrStorage) || WrStorage;
+            const key = keys && keys.GM_STRATEGY && keys.GM_STRATEGY(leagueId);
+            const s = key && storage && storage.get && storage.get(key);
+            if (s && typeof s === 'object') return s;
+        } catch (e) { /* ignore */ }
+        return window._wrGmStrategy || {};
+    }
+
+    function effects(leagueId) {
+        const strategy = resolveStrategy(leagueId) || {};
+        const mode = normalize(strategy.mode) || getMode(leagueId) || 'compete';
+        const preset = getPreset(mode);
+        const desc = describe(mode);
+        const cfg = (preset && preset.config) || {};
+        const aggressionKey = strategy.aggression || cfg.aggression || 'medium';
+        const aggression = AGGRESSION_MAP[aggressionKey] != null ? AGGRESSION_MAP[aggressionKey] : 0.52;
+        const timeline = strategy.timeline || cfg.timeline || '2_3_years';
+        const marketPosture = strategy.marketPosture || cfg.marketPosture || 'hold';
+        const toSet = (arr) => new Set((arr || []).map(String));
+        // The acceptance floor is an explicit, user-editable GM Strategy field
+        // (set via the "Trade Acceptance Floor" control in the GM Strategy editor).
+        // When unset, it derives from aggression + mode.
+        const explicitFloor = Number(strategy.acceptanceFloor);
+        const acceptanceFloor = Number.isFinite(explicitFloor)
+            ? clampNum(explicitFloor, 55, 90, 75)
+            : acceptanceFloorFor(aggressionKey, mode);
+        return {
+            strategy,
+            mode,
+            modeLabel: desc.label,
+            badgeColor: desc.badgeColor,
+            prompt: desc.prompt,
+            aggressionKey,                 // 'conservative' | 'medium' | 'aggressive'
+            aggression,                    // 0..1 package-width / overpay scalar
+            acceptanceFloor,               // 55..90 (explicit field or aggression-derived)
+            maxUserGainPct: 0.14 + aggression * 0.26,
+            maxOverpayPct: (timeline === '1_year' || mode === 'win_now') ? 0.20 : mode === 'rebuild' ? 0.07 : 0.12,
+            pickHorizon: timeline === '1_year' ? 1 : timeline === 'dynasty_long' ? 3 : 2,
+            horizonYears: timeline === '1_year' ? 1 : timeline === 'dynasty_long' ? 7 : 2.5,
+            tradeWeights: desc.tradeWeights,
+            draftWeights: desc.draftWeights,
+            draftStyle: strategy.draftStyle || cfg.draftStyle || 'bpa',
+            targetPositions: toSet(strategy.targetPositions),
+            sellPositions: toSet(strategy.sellPositions),
+            untouchable: toSet(strategy.untouchable || strategy.untouchables),
+            sellRules: strategy.sellRules || [],
+            faFilters: strategy.faFilters || null,
+            marketPosture,
+            timeline,
+            // Legacy tolerance (2026-07-08 single-voice ruling): alexPersonality
+            // is retired as a voice knob, but old server-synced strategies carry
+            // it forever. Keep surfacing it read-only so stale readers never
+            // crash; nothing should consume it for voice.
+            alexPersonality: strategy.alexPersonality || 'balanced',
+            hasStrategy: !!(strategy && strategy.mode),
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // promptData / promptBlock — THE canonical GM-Strategy prompt serializer.
+    //
+    // Every AI surface ([GM_STRATEGY] in dhq-ai, the Ask Alex GM MODE
+    // DIRECTIVE, structured payloads via buildStructuredBase, Alex Insights)
+    // renders the strategy through this one seam so the model always sees the
+    // FULL plan — mode directive, timeline, aggression/floor, market posture,
+    // draft style, target/sell positions, parsed sell rules, and untouchable
+    // player NAMES — not the legacy riskTolerance/targets fields.
+    // ══════════════════════════════════════════════════════════════════
+    const TIMELINE_PROMPT_LABELS = {
+        '1_year': 'This season (1-year window, all-in)',
+        '2_3_years': '2-3 year contention window',
+        'dynasty_long': 'Long-horizon dynasty build',
+    };
+    const POSTURE_PROMPT_LABELS = {
+        buy_low: 'Buy low (target undervalued / dipping assets)',
+        sell_high: 'Sell high (move assets at peak value)',
+        hold: 'Hold (trade only from a position of strength)',
+        exploit: 'Exploit market inefficiencies',
+    };
+    const DRAFT_STYLE_PROMPT_LABELS = {
+        accumulate: 'Accumulate picks / build depth',
+        consolidate: 'Consolidate depth into elite talent',
+        positional_need: 'Draft for positional need',
+        bpa: 'Best player available',
+    };
+
+    function untouchableNamesFor(pidSet) {
+        const S = window.S || (window.App && window.App.S) || {};
+        return Array.from(pidSet || []).map(pid =>
+            (S.players && S.players[pid] && (S.players[pid].full_name
+                || ((S.players[pid].first_name || '') + ' ' + (S.players[pid].last_name || '')).trim()))
+            || String(pid));
+    }
+
+    // Structured object form. Returns null when no strategy has been saved.
+    function promptData(leagueId) {
+        const fx = effects(leagueId);
+        if (!fx.hasStrategy) return null;
+        const parseRule = window.GMStrategy && window.GMStrategy.parseSellRule;
+        const sellRules = (fx.sellRules || []).map(rule => {
+            if (typeof rule === 'string') return rule;
+            if (typeof parseRule === 'function') {
+                const parsed = parseRule(rule);
+                if (parsed && parsed.pos) return 'Sell ' + parsed.pos + (parsed.ageAbove ? ' age ' + parsed.ageAbove + '+' : '');
+            }
+            return (rule && rule.pos) ? 'Sell ' + rule.pos + (rule.ageAbove ? ' age ' + rule.ageAbove + '+' : '') : '';
+        }).filter(Boolean);
+        return {
+            mode: fx.mode,
+            modeLabel: fx.modeLabel,
+            directive: fx.prompt,
+            timeline: fx.timeline,
+            timelineLabel: TIMELINE_PROMPT_LABELS[fx.timeline] || fx.timeline,
+            aggression: fx.aggressionKey,
+            acceptanceFloor: fx.acceptanceFloor,
+            marketPosture: fx.marketPosture,
+            marketPostureLabel: POSTURE_PROMPT_LABELS[fx.marketPosture] || fx.marketPosture,
+            draftStyle: fx.draftStyle,
+            draftStyleLabel: DRAFT_STYLE_PROMPT_LABELS[fx.draftStyle] || fx.draftStyle,
+            targetPositions: Array.from(fx.targetPositions || []),
+            sellPositions: Array.from(fx.sellPositions || []),
+            sellRules,
+            untouchableNames: untouchableNamesFor(fx.untouchable),
+        };
+    }
+
+    // Text-block form. `data` lets callers reuse an already-computed
+    // promptData; returns '' when no strategy has been saved.
+    function promptBlock(leagueId, data) {
+        const d = data || promptData(leagueId);
+        if (!d) return '';
+        const lines = [
+            'Mode: ' + d.modeLabel + ' — ' + d.directive,
+            'Timeline: ' + d.timelineLabel,
+            'Trade aggression: ' + d.aggression + ' (acceptance floor ' + d.acceptanceFloor + '%)',
+            'Market posture: ' + d.marketPostureLabel,
+            'Draft style: ' + d.draftStyleLabel,
+        ];
+        if (d.targetPositions.length) lines.push('Target positions (acquire): ' + d.targetPositions.join(', '));
+        if (d.sellPositions.length) lines.push('Sell positions (move): ' + d.sellPositions.join(', '));
+        if (d.sellRules.length) lines.push('Sell rules: ' + d.sellRules.join('; '));
+        if (d.untouchableNames.length) lines.push('Untouchable (never trade away): ' + d.untouchableNames.join(', '));
+        return lines.join('\n');
+    }
+
+    // React hook: resolves effects(leagueId) and live-updates on GM Strategy
+    // save. Generalizes the proven free-agency tick+listener pattern. Depends
+    // on BOTH leagueId (league switch) and an internal tick (in-place save),
+    // and re-reads the store fresh each tick (never trusts event.detail).
+    function useGmEffects(currentLeagueOrId) {
+        const R = window.React;
+        const leagueId = (currentLeagueOrId && typeof currentLeagueOrId === 'object')
+            ? (currentLeagueOrId.league_id || currentLeagueOrId.id)
+            : currentLeagueOrId;
+        const [tick, setTick] = R.useState(0);
+        R.useEffect(() => {
+            const h = () => setTick((t) => t + 1);
+            window.addEventListener('wr:gm-mode-changed', h);
+            return () => window.removeEventListener('wr:gm-mode-changed', h);
+        }, []);
+        return R.useMemo(() => effects(leagueId), [leagueId, tick]);
+    }
+
     window.WR = window.WR || {};
     window.WR.GmMode = {
         PRESETS,
+        AGGRESSION_MAP,
         normalize,
         getMode,
         getPreset,
         describe,
         applyPreset,
         onChange,
+        acceptanceFloorFor,
+        effects,
+        useGmEffects,
+        promptData,
+        promptBlock,
         // List of mode ids excluding custom — for the preset picker
         list: () => ['rebuild', 'compete', 'win_now'],
     };
+
+    // ── DhqEvents 'strategy:changed' → 'wr:gm-mode-changed' bridge ────
+    // GMStrategy.saveStrategy / syncFromRemote emit ONLY the DhqEvents
+    // 'strategy:changed' event, but every War Room consumer (useGmEffects,
+    // FA filter ticks, Trade Finder) listens on the 'wr:gm-mode-changed'
+    // window event. Bridge the two so remote sync, focus sync, and
+    // Scout-side saves live-update consumers without a reload.
+    // Re-entrancy guard: strategy-editor saves already fire BOTH paths
+    // (harmless double tick); the guard stops any synchronous dispatch loop
+    // if a 'wr:gm-mode-changed' listener writes the strategy back.
+    (function bootStrategyChangedBridge() {
+        let bridging = false;
+        function onStrategyChanged(strategy) {
+            if (bridging) return;
+            bridging = true;
+            try {
+                if (strategy && typeof strategy === 'object') window._wrGmStrategy = strategy;
+                window.dispatchEvent(new CustomEvent('wr:gm-mode-changed', {
+                    detail: { mode: strategy && strategy.mode, strategy, source: 'strategy:changed' },
+                }));
+            } finally {
+                bridging = false;
+            }
+        }
+        function subscribe() {
+            if (window.DhqEvents && typeof window.DhqEvents.on === 'function') {
+                window.DhqEvents.on('strategy:changed', onStrategyChanged);
+                return true;
+            }
+            return false;
+        }
+        if (!subscribe()) {
+            // event-bus.js normally loads first; retry once in case this copy
+            // boots ahead of it in another embed order.
+            const retry = () => { subscribe(); };
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', retry, { once: true });
+            else setTimeout(retry, 0);
+        }
+    })();
 })();

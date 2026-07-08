@@ -54,6 +54,35 @@ jobs:
       - name: Precompile JSX for production (drop in-browser Babel)
         run: node scripts/build-deploy.cjs
 
+      # reconai-shared/ is gitignored, so the bundled browser modules must be
+      # regenerated from the canonical dhq-shared source at deploy time — otherwise
+      # the Pages artifact ships a stale (or missing) copy of supabase-client.js
+      # and the other shared modules. dhq-shared is the neutral shared-engine repo
+      # that both War Room and ReconAI vendor; War Room no longer reads ReconAI.
+      - name: Checkout dhq-shared (canonical shared engine)
+        uses: actions/checkout@v4
+        with:
+          repository: C2-Football/dhq-shared
+          path: shared-src
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Sync shared engine modules
+        run: SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run sync:shared
+
+      # Precompile every type="text/babel" entry (index + free-agency + draft-warroom
+      # + trade-calculator) to plain JS so production no longer downloads ~3.1MB of
+      # @babel/standalone or runs the in-browser JSX transform on cold load.
+      - name: Precompile JSX for production (drop in-browser Babel)
+        run: node scripts/build-deploy.cjs
+
       - name: Build Pages artifact
         run: |
           set -euo pipefail

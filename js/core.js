@@ -169,8 +169,10 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
             return 'scout'; // paid but unrecognized profile tier → minimum paid level
         }
 
-        // Trial users get free-tier access in War Room (no trial concept here)
-        if (sharedTier === 'trial') return 'free';
+        // Trial (30-day) counts as Pro — Scout parity, owner ruling 2026-07-05.
+        // Maps to 'warroom' so existing canAccess gates unlock during trial too,
+        // matching wrIsPro()'s trial-is-Pro line (js/shared/pro-gate.js).
+        if (sharedTier === 'trial') return 'warroom';
 
         // Fallback: shared/tier.js not loaded. Do not trust persisted local
         // storage for paid access; users can edit it in the browser.
@@ -298,7 +300,6 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         return await fetchJSON(`${SLEEPER_BASE_URL}/league/${leagueId}`);
     }
 
-    let _wrPlayersCache = null;
     // IndexedDB key/value cache for payloads too big for Web Storage's ~5MB quota
     // (the Sleeper players map is ~15MB). Degrades to a no-op cache miss if IDB is
     // unavailable, so callers always fall back to a network refetch.
@@ -348,6 +349,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         };
     })();
 
+    let _wrPlayersCache = null;
     let _wrPlayersInflight = null;
     const PLAYERS_TTL_MS = 43200000; // 12h — player data barely changes intra-day
     async function fetchAllPlayers() {
@@ -397,6 +399,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         DL: ['DL','DE','DT','NT','IDL','EDGE'],
         LB: ['LB','OLB','ILB','MLB'],
         DEF: ['DEF','DST','D/ST'],
+        K: ['K','PK'],   // MFL codes kickers as PK
     };
 
     // Age curves default - fallback only; shared/constants.js is the primary source.
@@ -736,6 +739,19 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // can't rely on this file's top-level declarations reaching window.
     window.App.fetchSeasonStats = fetchSeasonStats;
 
+    // Clears core.js's in-memory data caches + the players IDB entry so the
+    // next fetch hits the network. MUST live in this file: _wrPlayersCache is a
+    // closure variable of this text/babel script, so the old external
+    // `window._wrPlayersCache = null` never touched the real cache. Callers
+    // (sidebar "Refresh Data") should also call window.Sleeper.clearSeasonCaches()
+    // to flush the shared season/players caches.
+    window.App.clearDataCaches = function clearDataCaches() {
+        _wrPlayersCache = null;
+        _wrStatsCache = {};
+        _projectionsCache = {};
+        WrIDB.del(WR_KEYS.PLAYERS_CACHE).catch(e => wrLog('clearDataCaches.players', e));
+    };
+
     window.App.getRosterDataState = function getRosterDataState(opts = {}) {
         const roster = opts.roster || opts.myRoster || (typeof window.myR === 'function' ? window.myR() : null);
         const rosters = opts.rosters || opts.currentLeague?.rosters || window.S?.rosters || [];
@@ -872,28 +888,33 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
     const STATS_YEAR = '2025'; // Most recent completed season — used until Sleeper publishes projections
 
+    // Delegate to the shared IndexedDB-backed, TTL'd, in-flight-deduped season
+    // cache (window.Sleeper.fetchSeasonStats) — it owns freshness, so no memo
+    // layer in front of it: a local no-TTL memo pinned the first response for
+    // the whole session and defeated in-season revalidation. The local memo is
+    // used ONLY on the raw-fetch fallback path (shared API not loaded).
     let _wrStatsCache = {};
     async function fetchSeasonStats(season) {
-        if (_wrStatsCache[season]) return _wrStatsCache[season];
         try {
-            _wrStatsCache[season] = await fetchJSON(`${SLEEPER_BASE_URL}/stats/nfl/regular/${season}`);
+            if (window.Sleeper?.fetchSeasonStats) return await window.Sleeper.fetchSeasonStats(season);
+            if (!_wrStatsCache[season]) _wrStatsCache[season] = await fetchJSON(`${SLEEPER_BASE_URL}/stats/nfl/regular/${season}`);
+            return _wrStatsCache[season];
         } catch (e) {
             console.warn('Stats fetch failed:', e);
-            _wrStatsCache[season] = {};
+            return _wrStatsCache[season] || {};
         }
-        return _wrStatsCache[season];
     }
 
     let _projectionsCache = {};
     async function fetchSeasonProjections(season) {
-        if (_projectionsCache[season]) return _projectionsCache[season];
         try {
-            _projectionsCache[season] = await fetchJSON(`${SLEEPER_BASE_URL}/projections/nfl/regular/${season}`);
+            if (window.Sleeper?.fetchSeasonProjections) return await window.Sleeper.fetchSeasonProjections(season);
+            if (!_projectionsCache[season]) _projectionsCache[season] = await fetchJSON(`${SLEEPER_BASE_URL}/projections/nfl/regular/${season}`);
+            return _projectionsCache[season];
         } catch (e) {
             console.warn('Projections fetch failed:', e);
-            _projectionsCache[season] = {};
+            return _projectionsCache[season] || {};
         }
-        return _projectionsCache[season];
     }
 
     // ── SeasonContext ────────────────────────────────────────────────────────

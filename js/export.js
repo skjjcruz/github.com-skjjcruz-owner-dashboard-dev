@@ -1,6 +1,41 @@
 // export.js — Screenshot export utilities + on-demand html2canvas loader
 (function () {
-  window.wrExport = { capture: function () { return Promise.resolve(false); } };
+  // capture(el, name) — render `el` to a PNG and download it as `name`.png.
+  // Backs the trade-analysis Snapshot button (js/trade-calc.js) and the
+  // league-map roster Share button (js/tabs/league-map.js). Best-effort:
+  // resolves true on success, false when the element is missing, the lazy
+  // html2canvas CDN load fails (offline), or rendering throws.
+  window.wrExport = {
+    capture: function (el, name) {
+      if (!el) return Promise.resolve(false);
+      return window.ensureHtml2Canvas()
+        .then(function (html2canvas) {
+          // Plain hex (not a CSS var): html2canvas parses this string itself,
+          // outside any element context where a var() could resolve.
+          return html2canvas(el, { backgroundColor: '#0a0a0a', scale: 2, useCORS: true, logging: false });
+        })
+        .then(function (canvas) {
+          return new Promise(function (resolve) {
+            canvas.toBlob(function (blob) {
+              if (!blob) { resolve(false); return; }
+              var url = URL.createObjectURL(blob);
+              var a = document.createElement('a');
+              a.href = url;
+              a.download = (name || 'war-room-export') + '.png';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+              resolve(true);
+            }, 'image/png');
+          });
+        })
+        .catch(function (e) {
+          if (window.wrLog) window.wrLog('wrExport.capture', e);
+          return false;
+        });
+    }
+  };
 
   // html2canvas (~200KB) is only used by user-triggered exports (Trophy Room
   // image export + draft PNG pick card). Load it lazily on first use instead of

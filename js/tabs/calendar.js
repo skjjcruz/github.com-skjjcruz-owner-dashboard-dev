@@ -2,22 +2,22 @@
 // js/tabs/calendar.js — League Calendar: Key Dates & Deadlines
 // Shows trade deadlines, draft dates, playoffs, and custom events.
 // Data from league settings + localStorage custom events.
+//
+// The event-building logic is exposed as window.WrCalendar so the Home
+// dashboard "League Calendar" widget can reuse the exact same dates.
 // ══════════════════════════════════════════════════════════════════
 
-function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
-    const { useState, useMemo } = React;
-    const leagueId = currentLeague?.id || currentLeague?.league_id || '';
-    const EVENTS_KEY = 'wr_calendar_' + leagueId;
+// ─── Shared calendar engine — window.WrCalendar ──────────────────────
+const WrCalendar = (function () {
+    function eventsKey(leagueId) { return 'wr_calendar_' + leagueId; }
+    function readCustomEvents(leagueId) {
+        try { return JSON.parse(localStorage.getItem(eventsKey(leagueId)) || '[]'); } catch { return []; }
+    }
 
-    const [customEvents, setCustomEvents] = useState(() => {
-        try { return JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]'); } catch { return []; }
-    });
-    const [showAdd, setShowAdd] = useState(false);
-    const [newTitle, setNewTitle] = useState('');
-    const [newDate, setNewDate] = useState('');
-
-    // ── Build calendar events from league settings + custom ──
-    const events = useMemo(() => {
+    // Build the full league calendar (league-derived events + custom events),
+    // sorted ascending by date. Returns items with real Date objects so callers
+    // can compute countdowns. Past events are included — callers filter.
+    function build(currentLeague, leagueSkin, customEvents) {
         const items = [];
         const settings = currentLeague?.settings || {};
         const season = currentLeague?.season || new Date().getFullYear();
@@ -70,7 +70,7 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                     id: 'draft',
                     title: draftTitle,
                     date: new Date(Number(draftTs)),
-                    icon: '\uD83C\uDFC8',
+                    icon: '🏈',
                     type: 'league',
                     detail: (draftRounds ? draftRounds + ' rounds' : 'Draft') + ', ' + (draftType || 'snake'),
                 });
@@ -80,7 +80,7 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                     id: 'draft',
                     title: draftTitle,
                     date: new Date(season, 7, 15), // mid-August placeholder
-                    icon: '\uD83C\uDFC8',
+                    icon: '🏈',
                     type: 'league',
                     detail: (draftRounds ? draftRounds + ' rounds' : 'Draft') + ' · date TBD',
                     tbd: true,
@@ -99,7 +99,7 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                 id: 'trade-deadline',
                 title: 'Trade Deadline',
                 date: deadlineDate,
-                icon: '\uD83D\uDD12',
+                icon: '🔒',
                 type: 'league',
                 detail: 'Week ' + tradeDeadline,
             });
@@ -114,7 +114,7 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                 id: 'playoffs',
                 title: 'Playoffs Begin',
                 date: playoffDate,
-                icon: '\u2B50',
+                icon: '⭐',
                 type: 'league',
                 detail: (settings.playoff_teams || 6) + ' teams qualify',
             });
@@ -126,7 +126,7 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                 id: 'championship',
                 title: 'Championship Week',
                 date: champDate,
-                icon: '\uD83C\uDFC6',
+                icon: '🏆',
                 type: 'league',
             });
         }
@@ -138,7 +138,7 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                 id: 'season-start',
                 title: 'Season Kickoff',
                 date: seasonStartDate,
-                icon: '\uD83D\uDE80',
+                icon: '🚀',
                 type: 'league',
                 detail: season + ' NFL Season',
             });
@@ -156,19 +156,19 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                 id: 'waivers',
                 title: 'Waivers Process',
                 date: nextWaiver,
-                icon: '\uD83D\uDCB0',
+                icon: '💰',
                 type: 'recurring',
-                detail: 'Every ' + dayNames[waiverDay] + (settings.waiver_budget ? ' \u00B7 $' + settings.waiver_budget + ' FAAB' : ''),
+                detail: 'Every ' + dayNames[waiverDay] + (settings.waiver_budget ? ' · $' + settings.waiver_budget + ' FAAB' : ''),
             });
         }
 
         // Custom events
-        customEvents.forEach(e => {
+        (customEvents || []).forEach(e => {
             items.push({
                 id: e.id,
                 title: e.title,
                 date: new Date(e.date),
-                icon: '\uD83D\uDCCC',
+                icon: '📌',
                 type: 'custom',
                 isCustom: true,
             });
@@ -176,7 +176,44 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
 
         // Sort by date
         return items.sort((a, b) => a.date.getTime() - b.date.getTime());
-    }, [currentLeague, customEvents, leagueSkin]);
+    }
+
+    // Full calendar for a league, reading custom events from localStorage.
+    function getEvents(currentLeague, leagueSkin) {
+        const leagueId = currentLeague?.id || currentLeague?.league_id || '';
+        return build(currentLeague, leagueSkin, readCustomEvents(leagueId));
+    }
+
+    // Upcoming events only (now onward, with a small grace window so dates
+    // earlier today — e.g. midnight waiver runs — still surface).
+    function getUpcoming(currentLeague, leagueSkin) {
+        const cutoff = Date.now() - 12 * 3600000;
+        return getEvents(currentLeague, leagueSkin).filter(e => e.date.getTime() >= cutoff);
+    }
+
+    return { eventsKey, readCustomEvents, build, getEvents, getUpcoming };
+})();
+window.WrCalendar = WrCalendar;
+
+function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
+    const { useState, useMemo } = React;
+    const leagueId = currentLeague?.id || currentLeague?.league_id || '';
+    const EVENTS_KEY = 'wr_calendar_' + leagueId;
+
+    const [customEvents, setCustomEvents] = useState(() => {
+        try { return JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]'); } catch { return []; }
+    });
+    const [showAdd, setShowAdd] = useState(false);
+    const [newTitle, setNewTitle] = useState('');
+    const [newDate, setNewDate] = useState('');
+
+    // ── Build calendar events from league settings + custom ──
+    // Delegates to the shared engine (window.WrCalendar, defined above)
+    // so the Home dashboard "League Calendar" widget shows the same dates.
+    const events = useMemo(
+        () => WrCalendar.build(currentLeague, leagueSkin, customEvents),
+        [currentLeague, customEvents, leagueSkin]
+    );
 
     // ── Add custom event ──
     function addEvent() {

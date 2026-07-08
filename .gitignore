@@ -3,6 +3,12 @@ node_modules/
 dist-preview/
 dist-deploy/
 reconai-shared/
+# Rookie/prospect CSVs vendored from dhq-shared (npm run sync:shared). Canonical
+# source is C2-Football/dhq-shared/draft-war-room. War-Room-only draft-tool data
+# (player-sources.csv, prospects_test_2025.csv, players-final.json) stays tracked.
+draft-war-room/player.csv
+draft-war-room/player-enrichment.csv
+draft-war-room/data/mock_draft_db.csv
 output/
 .env
 .env.local

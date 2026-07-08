@@ -74,7 +74,7 @@ function build() {
   let html = fs.readFileSync(INDEX_PATH, 'utf8');
   const compiled = [];
 
-  html = html.replace(/\n?<script[^>]+src=["']https:\/\/unpkg\.com\/@babel\/standalone[^"']*["'][^>]*><\/script>\s*/i, '\n');
+  html = html.replace(/\n?<script[^>]+src=["'][^"']*@babel\/standalone[^"']*["'][^>]*><\/script>\s*/i, '\n');
 
   // data-wr-defer scripts (lazy-loaded module groups) are kept INERT
   // (type="text/wr-deferred") so the browser doesn't run them at boot; the module

@@ -16,13 +16,25 @@
 (function() {
     'use strict';
 
+    // Proper ordinal suffix — '92nd', '33rd', not '92th'.
+    const ordinalSuffix = (n) => { const s = ['th', 'st', 'nd', 'rd']; const v = n % 100; return s[(v - 20) % 10] || s[v] || s[0]; };
+
     function RosterPulseWidget({ size, primaryMetric, myRoster, rankedTeams, sleeperUserId, currentLeague, playersData, computeKpiValue, setActiveTab, navigateWidget }) {
         const theme = window.WrTheme?.get?.() || {};
         const colors = theme.colors || {};
         const fonts = theme.fonts || {};
         const cardStyle = window.WrTheme?.cardStyle?.() || {};
         const fs = (rem) => window.WrTheme?.fontSize?.(rem) || (rem + 'rem');
+        // Free/Pro split (fail-open): raw KPI numbers stay free; the
+        // ELITE/CONTENDER/… tier verdict badge and the Action Plan rec are Pro.
+        const pro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
         const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
+
+        // ── GM Strategy (single source of truth) ────────────────
+        const gm = window.WR.GmMode.useGmEffects(currentLeague);
+        const untouchable = gm.untouchable || new Set();
+        const timeline = gm.timeline; // '1_year' | '2_3_years' | 'dynasty_long'
+        const isProtected = (pid) => untouchable.has(String(pid));
 
         // ── Data ────────────────────────────────────────────────
         const assess = React.useMemo(() => {
@@ -62,7 +74,7 @@
             if (key === 'contender-rank') return { label: 'CONTENDER', value: contenderKv.value, color: contenderKv.color || colors.accent, sub: contenderKv.sub || 'rank' };
             // default: health-score
             const healthCol = health >= 80 ? colors.positive : health >= 60 ? colors.accent : health >= 40 ? colors.warn : colors.negative;
-            return { label: 'HEALTH', value: health, color: healthCol, sub: tier };
+            return { label: 'HEALTH', value: health, color: healthCol, sub: pro ? tier : 'health score' };
         })();
 
         // Sparkline data: all teams' health scores sorted for the mini chart
@@ -88,13 +100,30 @@
 
         // ── Position breakdown — league-relative DHQ ranking ────
         const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
+
+        // Positions that hold an untouchable player — used to suppress any
+        // 'sell'/'cut' framing on cornerstones marked off-limits in strategy.
+        const protectedPositions = React.useMemo(() => {
+            const set = new Set();
+            if (!untouchable.size) return set;
+            const normPos = window.App?.normPos || (p => p);
+            (myRoster?.players || []).forEach(pid => {
+                if (!isProtected(pid)) return;
+                const pos = normPos(playersData?.[pid]?.position);
+                if (pos) set.add(String(pos));
+            });
+            return set;
+        }, [myRoster, playersData, untouchable]);
         const posBreakdown = React.useMemo(() => {
             const grades = window.App?.calcPosGrades?.(myRoster?.roster_id, currentLeague?.rosters, playersData) || [];
             return grades.map(g => ({
                 ...g,
-                col: g.grade === 'A' ? colors.positive : g.grade === 'B' ? colors.accent : (g.grade === 'C' || g.grade === 'D') ? colors.warn : colors.negative,
+                // A-F letter grades are interpretations → Pro; free keeps the raw
+                // rank + strength bar in neutral color
+                col: !pro ? (colors.textMuted || 'var(--silver)')
+                    : g.grade === 'A' ? colors.positive : g.grade === 'B' ? colors.accent : (g.grade === 'C' || g.grade === 'D') ? colors.warn : colors.negative,
             }));
-        }, [assess, currentLeague, myRoster, playersData]);
+        }, [assess, currentLeague, myRoster, playersData, pro]);
 
         if (!rosterState.isUsable) {
             return window.App?.renderRosterDataBlocker?.(rosterState, {
@@ -129,14 +158,16 @@
                         textTransform: 'uppercase', letterSpacing: '0.1em',
                         marginTop: '4px', fontFamily: fonts.ui,
                     }}>{primary.label}</div>
-                    <div style={{
-                        marginTop: '6px', fontSize: fs(0.72), fontWeight: 700,
-                        padding: '2px 8px',
-                        borderRadius: theme.card?.radius === '0px' ? '0' : '10px',
-                        background: wrAlpha(tierCol, '18'), color: tierCol,
-                        border: '1px solid ' + wrAlpha(tierCol, '44'),
-                        fontFamily: fonts.ui,
-                    }}>{tier}</div>
+                    {pro && (
+                        <div style={{
+                            marginTop: '6px', fontSize: fs(0.72), fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: theme.card?.radius === '0px' ? '0' : '10px',
+                            background: wrAlpha(tierCol, '18'), color: tierCol,
+                            border: '1px solid ' + wrAlpha(tierCol, '44'),
+                            fontFamily: fonts.ui,
+                        }}>{tier}</div>
+                    )}
                 </div>
             );
         }
@@ -160,7 +191,7 @@
                         <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
                             <Badge label={contenderKv.value} color={contenderKv.color || colors.accent} theme={theme} />
                             <Badge label={windowKv.value + ' window'} color={windowKv.color || colors.textMuted} theme={theme} />
-                            <Badge label={tier} color={tierCol} theme={theme} />
+                            {pro && <Badge label={tier} color={tierCol} theme={theme} />}
                         </div>
                     </div>
                 </div>
@@ -171,15 +202,37 @@
         if (size === 'lg' || size === 'tall' || size === 'xxl') {
             const healthRank = [...allAssess].sort((a, b) => (b.healthScore || 0) - (a.healthScore || 0)).findIndex(a => a.rosterId === myRoster?.roster_id) + 1;
             const totalTeams = allAssess.length || 1;
-            const percentile = totalTeams > 1 ? Math.round((1 - (healthRank - 1) / totalTeams) * 100) : 0;
+            // healthRank 0 = roster not found in the assessment list — no
+            // percentile claim (the formula would exceed 100 otherwise).
+            const percentile = (healthRank > 0 && totalTeams > 1) ? Math.round((1 - (healthRank - 1) / totalTeams) * 100) : 0;
             const healthCol = health >= 80 ? colors.positive : health >= 60 ? colors.accent : health >= 40 ? colors.warn : colors.negative;
+
+            // WINDOW vital — calibrated to GM Strategy timeline. A short
+            // contention window is fine for a long-horizon build but urgent
+            // for a win-now plan; reframe color + sub accordingly.
+            const winLower = String(window_ || '').toLowerCase();
+            const shortWindow = /close|now|short|0|1\b|expir|fad/.test(winLower);
+            let windowCol = windowKv.color || colors.warn;
+            let windowSub = window_;
+            if (gm.hasStrategy) {
+                if (timeline === '1_year' && shortWindow) {
+                    // 'act' is a directive → Pro; free keeps the urgency color
+                    // with a raw restatement of the window
+                    windowCol = colors.warn; windowSub = pro ? 'win-now: act' : 'win-now: ' + window_;
+                } else if (timeline === 'dynasty_long') {
+                    windowCol = shortWindow ? colors.textMuted : colors.positive;
+                    windowSub = 'long build: ' + window_;
+                } else if (timeline === '1_year') {
+                    windowCol = colors.positive; windowSub = 'win-now: ' + window_;
+                }
+            }
 
             // Compact 4-vital grid for lg (no scroll); 6 for tall/xxl
             const vitals4 = [
-                { label: 'HEALTH', value: healthKv.value, color: healthKv.color || healthCol, sub: tier + ' · #' + (healthRank || '—') },
+                { label: 'HEALTH', value: healthKv.value, color: healthKv.color || healthCol, sub: (pro ? tier + ' · ' : '') + '#' + (healthRank || '—') },
                 { label: 'ELITES', value: eliteKv.value, color: eliteKv.color || colors.positive, sub: 'top-tier' },
                 { label: 'CONTEND.', value: contenderKv.value, color: contenderKv.color || colors.accent, sub: contenderKv.sub || 'this season' },
-                { label: 'WINDOW', value: windowKv.value, color: windowKv.color || colors.warn, sub: window_ },
+                { label: 'WINDOW', value: windowKv.value, color: windowCol, sub: windowSub },
             ];
             const vitals6 = [
                 ...vitals4,
@@ -195,7 +248,8 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1.1rem' }}>💊</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(1.0), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>Roster Pulse</span>
-                        <Badge label={tier + ' · #' + (healthRank || '—')} color={tierCol} theme={theme} />
+                        {/* free keeps the raw rank; the tier verdict word is Pro */}
+                        <Badge label={(pro ? tier + ' · ' : '') + '#' + (healthRank || '—')} color={pro ? tierCol : colors.accent} theme={theme} />
                         <button onClick={openMyRoster} title="Open My Roster" style={{ padding: '3px 8px', minHeight: '44px', marginTop: '-12px', marginBottom: '-12px', display: 'flex', alignItems: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.58), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Roster</button>
                     </div>
 
@@ -228,7 +282,7 @@
                     {/* Position health — league-relative grades */}
                     <div style={{ marginBottom: '8px', flexShrink: 0 }}>
                         <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Position Health</div>
-                        <div className="fb-pos-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '4px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(' + Math.min(Math.max(posBreakdown.length, 1), 9) + ', 1fr)', gap: '4px' }}>
                             {posBreakdown.map((p, i) => (
                                 <div key={i} style={{
                                     background: 'var(--ov-1, rgba(255,255,255,0.02))',
@@ -237,7 +291,7 @@
                                     padding: '4px 2px', textAlign: 'center',
                                 }}>
                                     <div style={{ fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, fontFamily: fonts.ui, lineHeight: 1 }}>{window.App?.posLabel?.(p.pos) || (p.pos === 'DEF' ? 'D/ST' : p.pos)}</div>
-                                    <div style={{ fontFamily: fonts.mono, fontSize: fs(1.05), fontWeight: 800, color: p.col, lineHeight: 1, margin: '2px 0' }}>{p.grade}</div>
+                                    <div style={{ fontFamily: fonts.mono, fontSize: fs(1.05), fontWeight: 800, color: p.col, lineHeight: 1, margin: '2px 0' }}>{pro ? p.grade : '#' + p.rank}</div>
                                     <div style={{ height: 3, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 2, overflow: 'hidden' }}>
                                         <div style={{ width: p.pct + '%', height: '100%', background: p.col, transition: '0.3s' }} />
                                     </div>
@@ -256,12 +310,13 @@
                             <div style={{ marginBottom: '8px', flexShrink: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: fs(0.6), color: colors.textMuted, fontFamily: fonts.ui, marginBottom: '2px' }}>
                                     <span style={{ fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>League Health</span>
-                                    <span>You: {percentile}th percentile · #{healthRank || '—'} of {totalTeams}</span>
+                                    <span>You: {healthRank > 0 ? percentile + ordinalSuffix(percentile) + ' percentile · ' : ''}#{healthRank || '—'} of {totalTeams}</span>
                                 </div>
                                 <MiniBarChart data={healthSparkData} highlight={health} colors={colors} fonts={fonts} fs={fs} height={36} />
                             </div>
-                            {/* Needs + Strengths */}
-                            <div style={{ display: 'flex', gap: '12px', marginBottom: '8px', flexShrink: 0 }}>
+                            {/* Needs + Strengths — deficit/surplus directives (same species as
+                                gap-plan) → Pro; raw Top Players strip below stays free */}
+                            {pro && <div style={{ display: 'flex', gap: '12px', marginBottom: '8px', flexShrink: 0 }}>
                                 {needs.length > 0 && (
                                     <div style={{ flex: 1 }}>
                                         <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.negative, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Needs</div>
@@ -286,15 +341,22 @@
                                         </div>
                                     </div>
                                 )}
-                            </div>
+                            </div>}
                             {/* Top players — fills the empty bottom space */}
                             <TopPlayers
                                 myRoster={myRoster} playersData={playersData}
                                 colors={colors} fonts={fonts} fs={fs} theme={theme}
+                                untouchable={untouchable}
                                 limit={5}
                             />
-                            {/* Action plan */}
-                            <ActionPlan tier={tier} needs={needs} strengths={strengths} colors={colors} fonts={fonts} fs={fs} theme={theme} />
+                            {/* Action plan — a "do X" rec → Pro; free gets a teaser row */}
+                            {pro ? (
+                                <ActionPlan tier={tier} needs={needs} strengths={strengths} protectedPositions={protectedPositions} colors={colors} fonts={fonts} fs={fs} theme={theme} />
+                            ) : (
+                                typeof window.WrGatedMoreRow === 'function'
+                                    ? <div style={{ marginTop: 'auto', flexShrink: 0 }}>{React.createElement(window.WrGatedMoreRow, { title: 'Action plan', sub: "Alex's recommended next move for this roster", feature: 'analytics_depth' })}</div>
+                                    : null
+                            )}
                         </React.Fragment>
                     )}
 
@@ -306,6 +368,7 @@
                             healthSparkData={healthSparkData} health={health}
                             percentile={percentile} healthRank={healthRank} totalTeams={totalTeams}
                             tier={tier} needs={needs} strengths={strengths}
+                            untouchable={untouchable}
                             setActiveTab={setActiveTab}
                         />
                     )}
@@ -317,18 +380,23 @@
     }
 
     // ── Action plan recommendation ──────────────────────────────
-    function ActionPlan({ tier, needs, strengths, colors, fonts, fs, theme }) {
+    function ActionPlan({ tier, needs, strengths, protectedPositions, colors, fonts, fs, theme }) {
+        const protectedSet = protectedPositions || new Set();
         const topNeed = needs[0];
         const topNeedPos = topNeed ? (typeof topNeed === 'string' ? topNeed : topNeed?.pos) : null;
         const topNeedUrgency = typeof topNeed === 'object' ? topNeed?.urgency : null;
         const topStrength = strengths[0];
         const topStrPos = topStrength ? (typeof topStrength === 'string' ? topStrength : topStrength?.pos) : null;
+        // Don't suggest selling/shopping a position that holds an untouchable
+        // cornerstone — GM Strategy has marked it off-limits.
+        const strProtected = topStrPos ? protectedSet.has(String(topStrPos)) : false;
+        const sellStrPos = strProtected ? null : topStrPos;
 
         let msg;
         if (tier === 'ELITE') msg = 'Protect your core. ' + (topNeedPos ? 'Surgical upgrade at ' + topNeedPos + ' would lock in your window.' : 'No critical needs — stay disciplined.');
         else if (tier === 'CONTENDER') msg = (topNeedPos && topNeedUrgency === 'deficit' ? topNeedPos + ' is your biggest hole — fill it now or risk a first-round exit.' : 'Close to elite. ') + (topStrPos ? ' Your ' + topStrPos + ' depth gives you trade leverage.' : '');
-        else if (tier === 'CROSSROADS') msg = 'Decision time. ' + (topNeedPos ? 'You need ' + topNeedPos + ' help badly. ' : '') + (topStrPos ? 'Sell ' + topStrPos + ' surplus for picks if you\'re rebuilding, or buy a ' + (topNeedPos || 'starter') + ' if you\'re pushing.' : 'Commit one direction or the other.');
-        else msg = 'Rebuild mode. Accumulate picks and youth. ' + (topStrPos ? 'Shop your ' + topStrPos + ' depth for draft capital.' : 'Patience pays.');
+        else if (tier === 'CROSSROADS') msg = 'Decision time. ' + (topNeedPos ? 'You need ' + topNeedPos + ' help badly. ' : '') + (sellStrPos ? 'Sell ' + sellStrPos + ' surplus for picks if you\'re rebuilding, or buy a ' + (topNeedPos || 'starter') + ' if you\'re pushing.' : (topStrPos ? topStrPos + ' is locked — build around it; add a ' + (topNeedPos || 'starter') + ' if you\'re pushing.' : 'Commit one direction or the other.'));
+        else msg = 'Rebuild mode. Accumulate picks and youth. ' + (sellStrPos ? 'Shop your ' + sellStrPos + ' depth for draft capital.' : (topStrPos ? 'Build around your locked ' + topStrPos + ' core.' : 'Patience pays.'));
 
         return (
             <div style={{
@@ -346,16 +414,19 @@
     }
 
     // ── Top players strip (tall) ────────────────────────────────
-    function TopPlayers({ myRoster, playersData, colors, fonts, fs, theme, limit }) {
+    function TopPlayers({ myRoster, playersData, colors, fonts, fs, theme, untouchable, limit }) {
+        const untouchableSet = untouchable || new Set();
         const scores = window.App?.LI?.playerScores || {};
         const normPos = window.App?.normPos || (p => p);
         const players = (myRoster?.players || []).map(pid => {
             const p = playersData?.[pid] || {};
+            const rawAge = p.age || (p.birth_date ? Math.floor((Date.now() - new Date(p.birth_date).getTime()) / 31557600000) : null);
             return {
                 pid, name: p.full_name || pid,
                 pos: normPos(p.position) || '?',
-                age: p.age || (p.birth_date ? Math.floor((Date.now() - new Date(p.birth_date).getTime()) / 31557600000) : null),
+                age: Number.isFinite(rawAge) ? rawAge : null,
                 dhq: scores[pid] || 0,
+                locked: untouchableSet.has(String(pid)),
             };
         }).sort((a, b) => b.dhq - a.dhq).slice(0, limit || 5);
 
@@ -377,6 +448,7 @@
                                 <span style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.textFaint, width: 12, fontFamily: fonts.mono }}>{i + 1}</span>
                                 <span style={{ fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, width: 22, fontFamily: fonts.ui }}>{window.App?.posLabel?.(p.pos) || (p.pos === 'DEF' ? 'D/ST' : p.pos)}</span>
                                 <span style={{ flex: 1, minWidth: 0, fontSize: fs(0.66), fontWeight: 600, color: colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                                {p.locked && <span title="Untouchable — off-limits in GM Strategy" style={{ fontSize: fs(0.5), fontWeight: 700, color: 'var(--gold)', fontFamily: fonts.ui, letterSpacing: '0.04em', flexShrink: 0 }}>🔒</span>}
                                 {p.age && <span style={{ fontSize: fs(0.54), color: colors.textFaint, fontFamily: fonts.mono, minWidth: 16, textAlign: 'right' }}>{p.age}</span>}
                                 <div style={{ width: 60, height: 5, background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
                                     <div style={{ width: pct + '%', height: '100%', background: col }} />
@@ -391,7 +463,8 @@
     }
 
     // ── Mini roster panel (xxl) ─────────────────────────────────
-    function MiniRoster({ myRoster, playersData, posOrder, colors, fonts, fs, theme, healthSparkData, health, percentile, healthRank, totalTeams, tier, needs, strengths, setActiveTab }) {
+    function MiniRoster({ myRoster, playersData, posOrder, colors, fonts, fs, theme, healthSparkData, health, percentile, healthRank, totalTeams, tier, needs, strengths, untouchable, setActiveTab }) {
+        const untouchableSet = untouchable || new Set();
         const scores = window.App?.LI?.playerScores || {};
         const normPos = window.App?.normPos || (p => p);
 
@@ -402,17 +475,19 @@
                 const p = playersData?.[pid] || {};
                 const pos = normPos(p.position);
                 if (!groups[pos]) return;
+                const rawAge = p.age || (p.birth_date ? Math.floor((Date.now() - new Date(p.birth_date).getTime()) / 31557600000) : null);
                 groups[pos].push({
                     pid,
                     name: p.full_name || pid,
-                    age: p.age || (p.birth_date ? Math.floor((Date.now() - new Date(p.birth_date).getTime()) / 31557600000) : null),
+                    age: Number.isFinite(rawAge) ? rawAge : null,
                     dhq: scores[pid] || 0,
                     team: p.team || 'FA',
+                    locked: untouchableSet.has(String(pid)),
                 });
             });
             posOrder.forEach(p => groups[p].sort((a, b) => b.dhq - a.dhq));
             return groups;
-        }, [myRoster, playersData]);
+        }, [myRoster, playersData, untouchable]);
 
         const onPlayerClick = (pid) => {
             if (typeof window.openPlayerModal === 'function' && pid) window.openPlayerModal(pid);
@@ -459,6 +534,7 @@
                                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                                         fontFamily: fonts.ui,
                                     }}>{pl.name}</span>
+                                    {pl.locked && <span title="Untouchable — off-limits in GM Strategy" style={{ fontSize: fs(0.46), flexShrink: 0 }}>🔒</span>}
                                     {pl.age && <span style={{ fontSize: fs(0.5), color: colors.textFaint, fontFamily: fonts.mono }}>{pl.age}</span>}
                                     <span style={{
                                         fontSize: fs(0.54), fontWeight: 700,
@@ -511,9 +587,9 @@
                 fontWeight: 700,
                 padding: '2px 6px',
                 borderRadius: t.card?.radius === '0px' ? '0' : '10px',
-                background: (color || 'var(--k-d4af37, #d4af37)') + '18',
+                background: wrAlpha(color || 'var(--k-d4af37, #d4af37)', '18'),
                 color: color || 'var(--k-d4af37, #d4af37)',
-                border: '1px solid ' + (color || 'var(--k-d4af37, #d4af37)') + '44',
+                border: '1px solid ' + wrAlpha(color || 'var(--k-d4af37, #d4af37)', '44'),
                 fontFamily: t.fonts?.ui || 'DM Sans, sans-serif',
                 whiteSpace: 'nowrap',
             }}>{label}</span>

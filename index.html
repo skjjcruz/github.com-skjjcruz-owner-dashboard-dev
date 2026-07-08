@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://api.fantasycalc.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <!-- Early auth gate: bounce signed-out visitors to the sign-in page BEFORE the
@@ -47,7 +47,81 @@
     <meta name="theme-color" content="#D4AF37">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap"></noscript>
+    <!-- Boot-payload warmup. The app can't render until supabase + the shared
+         modules + React execute at the end of <body>, so start every one of
+         those downloads NOW, in parallel, while the inline stylesheet and body
+         parse. Preloads never execute — the document.write chain in <body>
+         still owns execution order. (No crossorigin on the preconnect/preloads:
+         classic scripts fetch no-cors, and the connection must match.) -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js">
+    <link rel="preload" as="script" href="vendor/react.production.min.js">
+    <link rel="preload" as="script" href="vendor/react-dom.production.min.js">
+    <script src="js/shared/shared-loader.js?v=20260705fdn1"></script>
+    <script>
+window.DYNASTY_HQ_APP = 'warroom';
+// Sandbox = the WarRoom-sandbox deploy (c2-football.github.io/WarRoom-sandbox/),
+// a hostname containing 'sandbox', localhost, or an explicit SANDBOX_MODE flag.
+// Note: the GitHub Pages sandbox has 'sandbox' in the PATH, not the hostname.
+const WR_PLATFORM_SANDBOX_ACCESS = window.SANDBOX_MODE === true
+  || (window.location.hostname || '').includes('sandbox')
+  || /\/warroom-sandbox(\/|$)/i.test(window.location.pathname || '')
+  || ['localhost', '127.0.0.1'].includes(window.location.hostname || '');
+// The /api/dev-* proxies only exist in the local static dev server
+// (scripts/serve-static.cjs). The Capacitor native app also serves from
+// 'localhost' but ships no such proxy, so it must keep the real Supabase
+// endpoints — otherwise every AI call fails with a network "Load failed".
+const WR_IS_NATIVE_APP = !!(window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function' ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative));
+const _isLocalDev = !WR_IS_NATIVE_APP && ['localhost', '127.0.0.1'].includes(window.location.hostname || '');
+if (_isLocalDev) {
+  const existingConfig = window.DYNASTY_HQ_CONFIG || {};
+  window.DYNASTY_HQ_CONFIG = {
+    ...existingConfig,
+    devPreviewAI: true,
+    endpoints: {
+      ...(existingConfig.endpoints || {}),
+      aiAnalyze: `${window.location.origin}/api/dev-ai-analyze`,
+      mflProxy: `${window.location.origin}/api/mfl-proxy`,
+    },
+  };
+}
+const WR_SHARED_FILES = [
+  'app-config.js',
+  'bug-capture.js',
+  'constants.js',
+  'utils.js',
+  'storage.js',
+  'event-bus.js',
+  'platform-provider.js',
+  'sleeper-api.js',
+  'supabase-client.js',
+  'tier.js',
+  'pick-value-model.js',
+  'dhq-providers.js',
+  'dhq-core.js',
+  'intelligence-context.js',
+  'dhq-engine.js',
+  'nfl-fit.js',
+  'team-assess.js',
+  'analytics-engine.js',
+  'dhq-ai.js',
+  'assistant-tutorial.js',
+  'ai-dispatch.js',
+  'strategy.js',
+  'trade-engine.js',
+  'mock-engine.js',
+  'gm-engine.js',
+  'player-modal.js',
+  'rookie-data.js',
+];
+// MFL is GA on production (mirrors MFL_ENABLED=true in js/app.js). ESPN/Yahoo stay sandbox-only beta.
+WR_SHARED_FILES.splice(7, 0, 'mfl-api.js');
+if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'espn-api.js', 'yahoo-api.js');
+WRShared.preloadMany(WR_SHARED_FILES);
+    </script>
     <style>
         :root {
             --gold: #D4AF37;
@@ -119,6 +193,42 @@
             --row-height: 32px;
             --row-compact: 24px;
             --row-relaxed: 40px;
+
+            /* Safe-area insets — iPhone notch / Dynamic Island / home indicator.
+               viewport-fit=cover (meta above) + apple-mobile-web-app-status-bar-style
+               black-translucent mean content draws under the status bar in the
+               installed PWA; fixed/floating elements pad by these tokens.
+               env() resolves to 0px on desktop, so global use is a no-op there. */
+            --sat: env(safe-area-inset-top, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
+
+            /* Fixed-layer z-index registry (mobile plan D3) — the league
+               shell's fixed/floating stack, low→high. New fixed elements
+               should consume one of these instead of a fresh magic number.
+               Observed inline values today: sidebar overlay 99 < sidebar +
+               phone bottom dock 100 < chat panels 200 < hamburger/Alex FAB
+               201 < corner toast 202 < GMMessage sheet 250 < DHQ bubble /
+               PWA install / chat welcome 300 < player card 400 < confirm
+               scrims 500–1000 < scout drawer 9000 < dropdown popover 9999. */
+            --wr-z-nav-overlay: 99;
+            --wr-z-nav: 100;      /* sidebar drawer + phone bottom dock */
+            --wr-z-sheet: 200;    /* chat panels / bottom sheets */
+            --wr-z-fab: 201;
+            --wr-z-toast: 202;
+            --wr-z-banner: 300;   /* DHQ bubble, PWA install, chat welcome */
+            --wr-z-card: 400;     /* player card scrim */
+            --wr-z-modal: 1000;   /* settings/dashboard modal scrims */
+
+            /* Bottom clearance for floating/fixed elements: phone bottom
+               dock height + home indicator on phones, just the safe-area
+               everywhere else. --wr-tab-bar-h flips to its real static
+               height (56px; 48px landscape-compact) inside the ≤767 PHONE
+               TIER block, so consuming this var is a no-op on
+               tablet/desktop. */
+            --wr-tab-bar-h: 0px;
+            --wr-bottom-inset: calc(var(--wr-tab-bar-h) + var(--sab));
         }
 
     /* Draft-surface readability floor. The global --text-micro (line 79) is an
@@ -207,9 +317,8 @@
         color: var(--text-faint);
         font-size: 0.72rem;
         font-style: normal;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        line-height: 1.25;
+        min-width: 0;
     }
     .wr-module-actions {
         display: flex;
@@ -423,10 +532,14 @@
         margin: 0 auto;
     }
 
-    /* Header — compact brand bar */
+    /* Header — compact brand bar. Top/side padding absorbs the safe-area
+       insets so the hub header clears the status bar in installed-PWA mode
+       (black-translucent draws content under it); 0px on desktop. The league
+       header (league-detail.js) overrides paddingTop/Bottom inline and is
+       offset by its own shell. */
     .header {
         background: linear-gradient(135deg, var(--black) 0%, var(--off-black) 100%);
-        padding: 0.75rem 1.5rem;
+        padding: calc(0.75rem + var(--sat)) calc(1.5rem + var(--sar)) 0.75rem calc(1.5rem + var(--sal));
         border-bottom: 2px solid var(--gold);
         box-shadow: 0 2px 12px rgba(212, 175, 55, 0.15);
         display: flex;
@@ -717,7 +830,7 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 14px 16px;
+        padding: var(--card-pad-sm);
         background: rgba(255,255,255,0.02);
         border: 1px solid rgba(212,175,55,0.15);
         border-radius: 10px;
@@ -1076,10 +1189,8 @@
     .tc-trade-root .wr-module-context strong { font-size: 1.05rem; }
     .tc-trade-root .wr-module-context em { color: rgba(207,207,214,0.92); opacity: 1; }
     .tc-trade-root .tc-dhq-panel,
-    .tc-trade-root .tc-ta-side,
-    .tc-trade-root .tc-scout-panel { background: rgba(16,16,22,0.96); }
+    .tc-trade-root .tc-ta-side { background: rgba(16,16,22,0.96); }
     .tc-trade-root .tc-dhq-hero p,
-    .tc-trade-root .tc-dhq-partner-main span,
     .tc-trade-root .tc-dhq-dossier-card p,
     .tc-trade-root .tc-dhq-dossier-block p,
     .tc-trade-root .tc-dhq-dossier-block li,
@@ -1119,12 +1230,6 @@
     .tc-likelihood-bar-wrap { height: 10px; background: rgba(255,255,255,0.07); border-radius: 5px; overflow: hidden; }
     .tc-likelihood-bar-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
 
-    .tc-scout-panel { background: var(--off-black); border: 1px solid rgba(212,175,55,0.2); border-radius: 8px; padding: 0.75rem; overflow-y: auto; max-height: 320px; display: flex; flex-direction: column; gap: 0.45rem; grid-column: 1 / -1; grid-row: 2; }
-    @media(min-width:1150px){ .tc-scout-panel { grid-column: 3; grid-row: 1; max-height: 660px; } }
-    .tc-scout-team-card { background: var(--charcoal); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 0.6rem 0.7rem; cursor: pointer; transition: border-color 0.15s, background 0.15s; display: flex; flex-direction: column; gap: 0.3rem; }
-    .tc-scout-team-card:hover { border-color: rgba(212,175,55,0.4); background: rgba(212,175,55,0.04); }
-    .tc-scout-team-card.tc-scout-selected { border-color: var(--gold); background: rgba(212,175,55,0.08); }
-
     .tc-tax-table { display: flex; flex-direction: column; gap: 0; border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; overflow: hidden; }
     .tc-tax-table-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.38rem 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.72rem; }
     .tc-tax-table-row:last-child { border-bottom: none; }
@@ -1146,19 +1251,9 @@
     .tc-dhq-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .tc-dhq-hero-actions button, .tc-dhq-actions button, .tc-dhq-modebar button, .tc-dhq-browser-controls button, .tc-dhq-detail-toggle { border: 1px solid rgba(212,175,55,0.22); background: rgba(255,255,255,0.045); color: var(--silver); border-radius: 5px; font-family: var(--font-body); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 6px 10px; cursor: pointer; }
     .tc-dhq-hero-actions button:hover, .tc-dhq-actions button:hover, .tc-dhq-modebar button:hover, .tc-dhq-browser-controls button:hover, .tc-dhq-detail-toggle:hover { border-color: rgba(212,175,55,0.45); color: var(--gold); }
-    .tc-dhq-metrics { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
-    .tc-dhq-metric-card { border: 1px solid rgba(212,175,55,0.14); background: rgba(255,255,255,0.03); border-radius: 8px; padding: 11px 12px; min-width: 0; text-align: left; font-family: var(--font-body); }
-    button.tc-dhq-metric-card { cursor: pointer; }
-    button.tc-dhq-metric-card:hover, button.tc-dhq-metric-card:focus-visible { border-color: rgba(212,175,55,0.42); background: rgba(212,175,55,0.055); outline: none; }
-    .tc-dhq-metrics span, .tc-dhq-panel-head em, .tc-dhq-breakdown, .tc-dhq-side-head span, .tc-dhq-score-stack span, .tc-dhq-saved span { display: block; color: var(--silver); opacity: 0.64; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; }
-    .tc-dhq-metrics strong { display: block; color: var(--white); font-family: 'Rajdhani', sans-serif; font-size: 1.15rem; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tc-dhq-metrics em { display: block; color: var(--gold); opacity: 0.78; font-size: 0.72rem; font-style: normal; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tc-dhq-panel-head em, .tc-dhq-breakdown, .tc-dhq-side-head span, .tc-dhq-score-stack span { display: block; color: var(--silver); opacity: 0.64; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; }
     .tc-dhq-notice { align-self: flex-start; color: var(--black); background: var(--gold); border-radius: 5px; padding: 6px 10px; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; animation: tcDqhNotice 2.4s ease both; }
     @keyframes tcDqhNotice { 0% { opacity: 0; transform: translateY(-4px); } 15%,80% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-4px); } }
-    .tc-dhq-grid { display: grid; grid-template-columns: minmax(250px, 0.78fr) minmax(300px, 0.92fr) minmax(430px, 1.35fr); grid-template-areas: "partners dossier packages"; gap: 12px; align-items: stretch; grid-auto-rows: clamp(680px, 72vh, 780px); }
-    .tc-dhq-partners { grid-area: partners; }
-    .tc-dhq-dossier { grid-area: dossier; }
-    .tc-dhq-packages { grid-area: packages; }
     .tc-dhq-panel { border: 1px solid rgba(212,175,55,0.16); background: var(--off-black); border-radius: 8px; padding: 12px; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     .tc-dhq-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(212,175,55,0.12); flex: 0 0 auto; }
     .tc-dhq-panel-head span { color: var(--gold); font-family: 'Rajdhani', sans-serif; font-size: 1rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
@@ -1172,15 +1267,6 @@
     .tc-dhq-panel-body::-webkit-scrollbar { width: 6px; }
     .tc-dhq-panel-body::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.22); border-radius: 999px; }
     .tc-dhq-panel-body::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 999px; }
-    .tc-dhq-partner-list { display: flex; flex-direction: column; gap: 8px; }
-    .tc-dhq-partner { width: 100%; text-align: left; border: 1px solid rgba(255,255,255,0.07); background: var(--charcoal); border-radius: 7px; padding: 10px; color: var(--white); cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 7px 8px; }
-    .tc-dhq-partner:hover, .tc-dhq-partner.is-selected { border-color: rgba(212,175,55,0.45); background: rgba(212,175,55,0.08); }
-    .tc-dhq-partner-main { min-width: 0; }
-    .tc-dhq-partner-main strong { display: block; font-size: 0.86rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tc-dhq-partner-main span { display: block; color: var(--silver); opacity: 0.64; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
-    .tc-dhq-partner-score { text-align: right; }
-    .tc-dhq-partner-score strong { display: block; font-family: 'JetBrains Mono', monospace; font-size: 1rem; }
-    .tc-dhq-partner-score span { display: block; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.07em; }
     .tc-dhq-chipline { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
     .tc-dhq-chipline span, .tc-dhq-chipline i { border: 1px solid rgba(212,175,55,0.18); background: rgba(255,255,255,0.035); color: var(--silver); border-radius: 4px; padding: 2px 6px; font-size: 0.66rem; line-height: 1.25; font-style: normal; font-weight: 700; }
     .tc-dhq-chipline i.need { border-color: rgba(231,76,60,0.35); color: var(--bad); background: rgba(231,76,60,0.08); }
@@ -1252,9 +1338,7 @@
     .tc-dhq-deal-stage-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 10px; align-items: start; }
     .tc-dhq-package-note { border: 1px solid rgba(212,175,55,0.16); background: rgba(212,175,55,0.06); border-radius: 8px; padding: 12px; color: var(--silver); font-size: 0.8rem; line-height: 1.45; }
     .tc-dhq-package-note b { display: block; color: var(--gold); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-    .tc-dhq-dossier { overflow: visible; }
     .tc-dhq-dossier-body { display: flex; flex-direction: column; gap: 10px; }
-    .tc-dhq-dossier .tc-dhq-panel-body { flex: 0 0 auto; min-height: auto; overflow: visible; padding-right: 0; }
     .tc-dhq-dossier-card p { margin: 7px 0 0; }
     .tc-dhq-dossier-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
     .tc-dhq-dossier-grid div { border: 1px solid rgba(255,255,255,0.06); background: rgba(0,0,0,0.14); border-radius: 7px; padding: 8px; }
@@ -1273,9 +1357,23 @@
     .tc-dhq-saved button { border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.035); color: var(--silver); border-radius: 5px; padding: 6px 7px; font-size: 0.72rem; text-align: left; cursor: pointer; }
     .tc-dhq-saved button:last-child { color: rgba(231,76,60,0.75); text-align: center; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
     .tc-dhq-empty { color: var(--silver); opacity: 0.6; border: 1px dashed rgba(212,175,55,0.18); border-radius: 8px; padding: 20px; text-align: center; font-size: 0.82rem; }
-    @media(max-width:1280px){ .tc-dhq-grid { grid-template-columns: minmax(250px, 0.85fr) minmax(420px, 1.45fr); grid-template-areas: "partners dossier" "packages packages"; grid-auto-rows: clamp(620px, 70vh, 740px); } }
-    @media(max-width:900px){ .tc-dhq-hero { align-items: flex-start; flex-direction: column; } .tc-dhq-metrics { grid-template-columns: repeat(2, 1fr); } .tc-dhq-grid { grid-template-columns: 1fr; grid-template-areas: "partners" "dossier" "packages"; grid-auto-rows: auto; } .tc-dhq-panel { overflow: visible; } .tc-dhq-panel-body { overflow: visible; padding-right: 0; } .tc-dhq-deal-grid, .tc-dhq-readout, .tc-dhq-deal-stage-body { grid-template-columns: 1fr; } .tc-dhq-browser-head { align-items: flex-start; flex-direction: column; } .tc-dhq-browser-controls { justify-content: flex-start; } }
-    @media(max-width:560px){ .tc-dhq-metrics, .tc-dhq-dossier-grid { grid-template-columns: 1fr; } .tc-dhq-panel { padding: 9px; } .tc-dhq-hero h2 { font-size: 1.3rem; } .tc-dhq-actions { justify-content: flex-start; } .tc-dhq-deal-stage { min-height: 0; } }
+    @media(max-width:900px){ .tc-dhq-hero { align-items: flex-start; flex-direction: column; } .tc-dhq-panel { overflow: visible; } .tc-dhq-panel-body { overflow: visible; padding-right: 0; } .tc-dhq-deal-grid, .tc-dhq-readout, .tc-dhq-deal-stage-body { grid-template-columns: 1fr; } .tc-dhq-browser-head { align-items: flex-start; flex-direction: column; } .tc-dhq-browser-controls { justify-content: flex-start; } }
+    @media(max-width:560px){ .tc-dhq-dossier-grid { grid-template-columns: 1fr; } .tc-dhq-panel { padding: 9px; } .tc-dhq-hero h2 { font-size: 1.3rem; } .tc-dhq-actions { justify-content: flex-start; } .tc-dhq-deal-stage { min-height: 0; } }
+
+    /* ── Trade Desk Context Rail — fixed two cards (Verdict + Owner DNA mini) ──
+       ≥1281px: sticky right column, scrolls as one unit. Narrower viewports keep the
+       same two cards but stack them inline below the builder strip (Verdict first,
+       DNA-mini below) — no morphing, no pinning, no state machine. */
+    .tc-adaptive-canvas, .tc-adaptive-main { min-width: 0; }
+    .tc-context-rail { display: flex; flex-direction: column; gap: 12px; min-width: 0; margin-top: 12px; }
+    .tc-context-rail .tc-rail-card { flex: 0 0 auto; overflow: visible; }
+    .tc-context-rail .tc-rail-card .tc-dhq-panel-body { flex: 0 0 auto; min-height: auto; overflow: visible; padding-right: 0; }
+    .tc-context-rail .tc-ta-sticky-summary { position: static; box-shadow: none; } /* verdict panel must scroll with the rail, not pin over the DNA card */
+    .tc-rail-dna-link { width: 100%; margin-top: 10px; background: rgba(212,175,55,0.06); border: 1px solid rgba(212,175,55,0.2); border-radius: 6px; color: var(--gold); cursor: pointer; font-family: var(--font-body); font-size: 0.74rem; font-weight: 600; padding: 8px 10px; }
+    @media(min-width:1281px){
+        .tc-adaptive-canvas.has-rail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(296px, 330px); gap: 12px; align-items: start; }
+        .tc-adaptive-canvas.has-rail .tc-context-rail { margin-top: 0; position: sticky; top: 10px; max-height: calc(100vh - 84px); overflow-y: auto; }
+    }
 
     /* ── Adaptive canvas Context Rail (morphing Dossier ⇄ DNA ⇄ Verdict) ──
        Desktop-only: at ≥1281px the rail owns the dossier (Deal HQ slims to partners+packages
@@ -1507,7 +1605,7 @@
 
 	    .draft-alex-toolbar { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 10px; }
 	    .draft-alex-presets { display: flex; flex-wrap: nowrap; gap: 6px; min-width: 0; }
-	    .draft-scout-drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.62); backdrop-filter: blur(2px); z-index: 9000; display: flex; align-items: flex-start; justify-content: center; padding: 6vh 2vw; animation: wrFadeIn 0.16s ease; }
+	    .draft-scout-drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.62); backdrop-filter: blur(2px); z-index: 9000; display: flex; align-items: flex-start; justify-content: center; padding: max(6vh, calc(var(--sat) + 12px)) max(2vw, var(--sar)) calc(6vh + var(--sab)) max(2vw, var(--sal)); animation: wrFadeIn 0.16s ease; }
 	    .draft-scout-drawer { width: min(960px, 96vw); max-height: 88vh; overflow-y: auto; background: linear-gradient(160deg, rgba(18,18,18,0.98), rgba(28,22,12,0.96)); border: 1px solid rgba(212,175,55,0.35); border-radius: 12px; box-shadow: 0 22px 64px rgba(0,0,0,0.55); animation: wrFadeIn 0.2s ease; }
 	    .draft-scout-drawer-head { display: grid; grid-template-columns: 56px minmax(0,1fr) 36px; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid rgba(212,175,55,0.18); }
 	    .draft-scout-drawer-photo { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; object-position: top; border: 1px solid rgba(212,175,55,0.32); background: rgba(255,255,255,0.04); }
@@ -1848,6 +1946,9 @@
     .analytics-room-chip span { color: var(--silver); font-size: 0.7rem; }
     .analytics-room-chip.is-bad { border-color: rgba(231,76,60,0.28); background: rgba(231,76,60,0.05); }
     .analytics-room-chip.is-good { border-color: rgba(46,204,113,0.24); background: rgba(46,204,113,0.04); }
+    .analytics-room-grade-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+    .analytics-room-grade-wrap b { font-family: 'Rajdhani', sans-serif; font-weight: 800; font-size: 1.18rem; line-height: 1; }
+    .analytics-room-grade-wrap em { font-style: normal; color: var(--silver); opacity: 0.6; font-size: 0.58rem; white-space: nowrap; }
     .analytics-pick-strip, .analytics-pick-leaders { display: flex; flex-wrap: wrap; gap: 6px; }
     .analytics-pick-strip span, .analytics-pick-leaders div { border: 1px solid rgba(212,175,55,0.18); background: rgba(212,175,55,0.045); color: var(--silver); border-radius: 5px; padding: 5px 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; }
     .analytics-pick-strip span.is-acquired { border-color: rgba(124,107,248,0.34); color: var(--purple); background: rgba(124,107,248,0.08); }
@@ -1885,13 +1986,31 @@
     .analytics-report-preview-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .analytics-report-preview-empty { color: var(--silver); opacity: 0.62; border: 1px dashed rgba(212,175,55,0.14); border-radius: 7px; padding: 16px; text-align: center; font-size: 0.76rem; }
     .analytics-command-panel { border: 1px solid rgba(212,175,55,0.18); background: linear-gradient(135deg, rgba(212,175,55,0.08), rgba(78,205,196,0.035) 46%, rgba(124,107,248,0.04)); border-radius: 10px; padding: 13px; margin-bottom: 12px; display: grid; grid-template-columns: minmax(0,1.3fr) minmax(260px,0.7fr); gap: 14px; }
+    .analytics-command-panel.is-bare { grid-template-columns: 1fr; }
     .analytics-command-panel span, .analytics-proof-card span, .analytics-lab-card > span, .analytics-delta-head span, .analytics-data-row span, .analytics-era-card span { display:block; color: var(--gold); font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.11em; }
     .analytics-command-panel h2 { margin: 3px 0 5px; color: var(--white); font-family: 'Rajdhani', sans-serif; font-size: 1.35rem; letter-spacing: 0.04em; }
     .analytics-command-panel p { margin: 0; color: var(--silver); opacity: 0.78; font-size: 0.78rem; line-height: 1.45; max-width: 920px; }
     .analytics-command-panel aside { display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; align-content: start; }
     .analytics-command-panel aside div { border: 1px solid rgba(255,255,255,0.06); background: rgba(0,0,0,0.18); border-radius: 7px; padding: 8px; min-width: 0; }
     .analytics-command-panel aside strong { display:block; color: var(--white); font-family:'JetBrains Mono', monospace; font-size: 0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .analytics-command-panel aside em { display:block; color: var(--silver); opacity: 0.64; font-style: normal; font-size: 0.62rem; margin-top: 2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .analytics-command-panel aside em { display:block; color: var(--silver); opacity: 0.64; font-style: normal; font-size: 0.62rem; margin-top: 2px; line-height: 1.3; }
+    .analytics-command-panel aside div[data-tip] { position: relative; }
+    .analytics-command-panel aside div[data-tip]:hover { z-index: 6; }
+    .analytics-command-panel aside div[data-tip]:hover::after {
+        content: attr(data-tip);
+        position: absolute; z-index: 60; top: calc(100% + 6px); right: 0;
+        width: 250px; max-width: 78vw; white-space: normal;
+        text-transform: none; letter-spacing: 0; font-weight: 400; font-style: normal;
+        font-size: 0.7rem; line-height: 1.42; color: var(--white);
+        background: var(--surf-solid, #15151a); border: 1px solid rgba(212,175,55,0.4);
+        border-radius: 8px; padding: 9px 11px; box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+        pointer-events: none;
+    }
+    .analytics-mode-callout { margin-top: 9px; border: 1px solid rgba(212,175,55,0.22); border-left: 3px solid var(--gold); background: rgba(0,0,0,0.22); border-radius: 8px; padding: 8px 12px; max-width: 920px; }
+    .analytics-mode-callout > span { display:block; color: var(--gold); font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; opacity: 0.9; }
+    .analytics-mode-callout > strong { display:block; font-family: 'Rajdhani', sans-serif; font-weight: 800; font-size: 1.55rem; line-height: 1.05; letter-spacing: 0.05em; text-transform: uppercase; margin: 1px 0 2px; }
+    .analytics-mode-callout > p { margin: 0; color: var(--white); opacity: 0.88; font-size: 0.84rem; line-height: 1.4; max-width: none; }
+    .analytics-command-note { grid-column: 1 / -1; margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.07); color: var(--silver); opacity: 0.58; font-size: 0.66rem; line-height: 1.4; }
     .analytics-lab-grid { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; margin-bottom: 12px; }
     .analytics-lab-grid.is-3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
     .analytics-lab-card { border: 1px solid rgba(212,175,55,0.14); background: linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.015)); border-radius: 9px; padding: 12px; min-width: 0; }
@@ -1918,6 +2037,8 @@
     .analytics-delta-row em.is-bad { color:var(--bad); opacity:1; }
     .analytics-data-stack { display:flex; flex-direction:column; gap:6px; }
     .analytics-data-row { display:grid; grid-template-columns: minmax(88px,0.75fr) minmax(0,1fr) auto; gap:8px; align-items:center; border:1px solid rgba(255,255,255,0.055); background:rgba(255,255,255,0.022); border-radius:7px; padding:8px; min-width:0; }
+    .analytics-data-row.is-compact { grid-template-columns: minmax(0,1fr) auto; }
+    .rc-ghost { background: repeating-linear-gradient(45deg, rgba(78,205,196,0.32) 0 3px, transparent 3px 6px); border: 1px dashed rgba(78,205,196,0.6); box-sizing: border-box; }
     .analytics-data-row strong { color:var(--white); font-size:0.76rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .analytics-data-row em { color:var(--silver); opacity:0.64; font-style:normal; font-size:0.66rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .analytics-data-row b { color:var(--gold); font-family:'JetBrains Mono', monospace; font-size:0.75rem; white-space:nowrap; }
@@ -1951,7 +2072,7 @@
 
     /* ── App shell rhythm ─────────────────────────────────── */
     .wr-main-content { min-height:100vh; min-width:0; max-width:100vw; overflow-x:clip; overflow-y:visible; box-sizing:border-box; background:var(--page-bg); transition:margin-left .18s ease; }
-    .wr-content-frame { width:100%; min-width:0; max-width:1760px; overflow-x:clip; overflow-y:visible; box-sizing:border-box; margin:0 auto; padding:14px clamp(12px, 1.2vw, 20px) 48px; }
+    .wr-content-frame { width:100%; min-width:0; max-width:1760px; overflow-x:clip; overflow-y:visible; box-sizing:border-box; margin:0 auto; padding:14px max(clamp(12px, 1.2vw, 20px), var(--sar)) 48px max(clamp(12px, 1.2vw, 20px), var(--sal)); }
     .wr-content-frame > * { max-width:100%; }
 
     .wr-sidebar { color:var(--silver); }
@@ -1988,7 +2109,7 @@
         .gm-office-section-head .gm-office-spacer { display:none; }
     }
     @media(max-width:1023px){
-        .wr-content-frame { width:100%; padding:10px 10px 36px; }
+        .wr-content-frame { width:100%; padding:10px max(10px, var(--sar)) 36px max(10px, var(--sal)); }
         .wr-main-content { margin-left:0 !important; }
         .wr-sidebar { width:176px !important; }
         .wr-sidebar.is-collapsed .wr-sidebar-label,
@@ -1997,6 +2118,272 @@
         .wr-sidebar.is-collapsed .wr-sidebar-extra { display:initial !important; }
         .wr-sidebar.is-collapsed .wr-sidebar-icon { display:none !important; }
         .wr-sidebar.is-collapsed .wr-sidebar-nav-btn { justify-content:flex-start !important; padding-left:20px !important; padding-right:16px !important; }
+    }
+
+    /* ══ PHONE TIER (≤767) — safe-area offsets, bottom dock, and touch
+       scaffold for the league-shell fixed layer. Scoped to the phone tier so
+       the just-shipped 768–1023 tablet tier is untouched (iPad installed-PWA
+       has a nonzero top inset too — deliberately left alone). !important
+       beats the inline React styles on these elements (js/league-detail.js
+       hamburger, .wr-sidebar, .wr-corner-toast, .wr-dhq-bubble). ══ */
+    @media(max-width:767px){
+        /* Bottom dock height becomes real — --wr-bottom-inset (registry,
+           :root above) resolves to dock + home indicator on this tier only. */
+        :root { --wr-tab-bar-h: 56px; }
+
+        .wr-hamburger { top:calc(10px + var(--sat) + var(--wr-dev-banner-height, 0px)) !important; left:calc(10px + var(--sal)) !important; }
+
+        /* Sidebar drawer: the ~800px nav stack overflows a 667px SE in
+           portrait (and any phone in landscape) — make the drawer itself the
+           scroll container. Bottom padding clears the dock + home
+           indicator so "Refresh Data" stays reachable. */
+        .wr-sidebar {
+            padding-top:calc(16px + var(--sat)) !important;
+            padding-bottom:calc(16px + var(--wr-bottom-inset)) !important;
+            overflow-y:auto;
+            -webkit-overflow-scrolling:touch;
+            overscroll-behavior:contain;
+        }
+
+        /* ── Bottom dock (PhoneDock, js/league-detail.js) ──
+           ONE row, Scout mobile-nav idiom: sliding module strip (every
+           sidebar nav item, icon over mono micro-caps label) + the PINNED
+           Ask Alex item at the right end behind a 1px gold-line divider.
+           Terminal chrome: near-black, 1px gold hairline top, silver
+           inactive / gold + 2px top rule active; gold otherwise reserved
+           for the Alex glyph ring + divider (structure).
+           Height = the STATIC --wr-tab-bar-h (56px; 48px landscape-compact)
+           + --sab, so the --wr-bottom-inset plumbing needs no JS.
+           z = --wr-z-nav (100): same layer as the sidebar drawer but later
+           in the DOM so it paints above it; the Alex sheet (200) covers the
+           dock while open — the dock stays mounted beneath it. JS unmounts
+           the dock off-phone and while the iOS keyboard is open. */
+        .wr-phone-dock {
+            display:flex;
+            align-items:stretch;
+            position:fixed;
+            left:0; right:0; bottom:0;
+            z-index:var(--wr-z-nav, 100);
+            height:calc(var(--wr-tab-bar-h) + var(--sab));
+            padding:0 var(--sar) var(--sab) var(--sal);
+            background:var(--black, #0a0a0a);
+            border-top:1px solid rgba(212,175,55,0.28);
+            box-shadow:0 -6px 18px rgba(0,0,0,0.45);
+        }
+        /* Module strip: one-line momentum scroll, no scrollbar. Edge fade
+           masks are DRIVEN BY SCROLL STATE (.has-left/.has-right toggled by
+           PhoneDockInner) so a fade only appears where chips are actually
+           cut off — a static mask would dim the last chip at full scroll
+           and give no "more this way" cue on the left. The mask ends at
+           the Ask Alex divider — the pinned item never fades. */
+        .wr-dock-strip {
+            flex:1 1 auto;
+            min-width:0;
+            display:flex;
+            align-items:stretch;
+            overflow-x:auto;
+            overflow-y:hidden;
+            -webkit-overflow-scrolling:touch;
+            overscroll-behavior-x:contain;
+            scrollbar-width:none;
+        }
+        .wr-dock-strip.has-right {
+            -webkit-mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 18px), transparent 100%);
+            mask-image:linear-gradient(90deg, #000 0, #000 calc(100% - 18px), transparent 100%);
+        }
+        .wr-dock-strip.has-left {
+            -webkit-mask-image:linear-gradient(90deg, transparent 0, #000 18px, #000 100%);
+            mask-image:linear-gradient(90deg, transparent 0, #000 18px, #000 100%);
+        }
+        .wr-dock-strip.has-left.has-right {
+            -webkit-mask-image:linear-gradient(90deg, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+            mask-image:linear-gradient(90deg, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+        }
+        .wr-dock-strip::-webkit-scrollbar { display:none; }
+        .wr-dock-chip {
+            flex:0 0 auto;
+            min-width:56px;
+            min-height:44px;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            gap:3px;
+            padding:4px 10px 2px;
+            margin:0;
+            background:transparent;
+            border:none;
+            border-top:2px solid transparent;
+            cursor:pointer;
+            color:var(--silver, #8a8f98);
+            font-family:var(--font-mono, 'JetBrains Mono', monospace);
+            font-size:var(--text-micro, 0.6875rem); /* 11px floor — no new sub-11px text */
+            font-weight:600;
+            letter-spacing:0.05em;
+            line-height:1;
+            text-transform:uppercase;
+            white-space:nowrap;
+        }
+        /* 20px matches Scout's icon-dominant nav weight + the Alex avatar. */
+        .wr-dock-chip svg { width:20px; height:20px; flex-shrink:0; }
+        .wr-dock-chip.is-active { color:var(--gold); border-top-color:var(--gold); font-weight:700; }
+        .wr-dock-chip:active { background:rgba(212,175,55,0.12); }
+        /* Ask Alex — pinned marquee peer item (Scout's AI slot precedent):
+           same chip anatomy, slightly wider, gold-line left divider; avatar
+           (or ✦ ring) over the ALEX label. Tap opens the Alex chat sheet. */
+        .wr-dock-ask {
+            flex:0 0 auto;
+            min-width:68px;
+            min-height:44px;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            gap:3px;
+            padding:4px 16px 2px;
+            margin:0;
+            background:transparent;
+            border:none;
+            border-top:2px solid transparent;
+            border-left:1px solid rgba(212,175,55,0.28);
+            cursor:pointer;
+            color:var(--silver, #8a8f98);
+            font-family:var(--font-mono, 'JetBrains Mono', monospace);
+            font-size:var(--text-micro, 0.6875rem);
+            font-weight:600;
+            letter-spacing:0.05em;
+            line-height:1;
+            white-space:nowrap;
+        }
+        .wr-dock-ask:active { background:rgba(212,175,55,0.12); }
+        .wr-dock-ask-glyph {
+            width:18px; height:18px; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center;
+            border:1px solid rgba(212,175,55,0.45);
+            border-radius:50%;
+            color:var(--gold);
+            font-size:0.625rem;
+            line-height:1;
+        }
+
+        /* League shell content clears the dock (60px was the pre-dock
+           clearance; keep it above the dock). Attribute-scoped so the hub
+           page's .app-container (js/app.js — no dock there) is untouched. */
+        .app-container[data-league-skin-type] { padding-bottom:calc(60px + var(--wr-bottom-inset)) !important; }
+
+        /* Floating elements ride above the dock via the registry offset
+           var. (.wr-alex-fab needs no phone override anymore — the FAB
+           renders tablet/desktop only; the dock's pinned Ask Alex item
+           replaces it here.) Toast sits just above the dock's right end,
+           pointing its 👇 at the Ask Alex item. DHQ bubble goes full-width;
+           its inline left:80px was desktop-sidebar clearance. */
+        .wr-corner-toast { bottom:calc(12px + var(--wr-bottom-inset)) !important; right:12px !important; }
+        .wr-dhq-bubble { bottom:calc(12px + var(--wr-bottom-inset)) !important; left:12px !important; right:12px !important; min-width:0 !important; }
+
+        /* iOS zoom-on-focus guard: Safari zooms any focused input under
+           16px. Phone tier only (plan D7). */
+        input, select, textarea { font-size:16px !important; }
+
+        /* Sub-tab strips: one-line momentum scroll instead of 2–3 wrapped
+           44px rows of chrome (Analytics / Trade Center). */
+        .wr-module-nav {
+            flex-wrap:nowrap;
+            overflow-x:auto;
+            overflow-y:hidden;
+            -webkit-overflow-scrolling:touch;
+            scrollbar-width:none;
+        }
+        .wr-module-nav::-webkit-scrollbar { display:none; }
+
+        /* Touch feedback: kill the gray iOS tap flash, give terminal-gold
+           :active states on the nav surfaces instead (inline hover styles
+           are mouse-only, so touch needs these). */
+        * { -webkit-tap-highlight-color:transparent; }
+        .wr-sidebar-nav-btn:active,
+        .wr-module-nav button:active,
+        .wr-module-nav-item:active { background:rgba(212,175,55,0.14) !important; }
+
+        /* ── Lane H smoke-pass fixes (My Roster / Dashboard / FA / Trade Desk) ── */
+
+        /* Dashboard widget picker: 18 modules render ~9 two-column rows at a
+           ~345px panel — the overflow:hidden 90vh panel hid most of them with
+           no scroll path. Body scrolls; panel capped in dynamic-viewport units
+           so Safari's collapsing URL bar can't clip the confirm button (85vh
+           fallback for pre-15.4 iOS). !important beats the inline 90vh. */
+        .wr-widget-picker-panel { max-height:85vh !important; max-height:85dvh !important; }
+        .wr-widget-picker-body {
+            min-height:0;
+            overflow-y:auto;
+            -webkit-overflow-scrolling:touch;
+            overscroll-behavior:contain;
+        }
+
+        /* FA detail drawer (fixed right panel, top:0/bottom:0): pad for the
+           notch + home indicator — installed-PWA (black-translucent) draws it
+           under both. z 200 covers the dock, so --sab (not the dock inset)
+           is the right bottom clearance. Close ✕ rides below the notch. */
+        .fa-detail-drawer {
+            padding-top:calc(20px + var(--sat)) !important;
+            padding-bottom:calc(20px + var(--sab)) !important;
+            padding-right:calc(20px + var(--sar)) !important;
+        }
+        .fa-detail-close { top:calc(12px + var(--sat)) !important; }
+
+        /* FA column-picker ◀/▶/× reorder buttons: 32px → 44px targets (plan
+           D7 straggler list); glyph size unchanged, hit-padding only. */
+        .fa-colpick-btn { min-width:44px !important; min-height:44px !important; }
+
+        /* Trade Desk builder strip: stack YOU SEND above YOU GET — the inline
+           1fr 1fr grid makes two ~165px columns at 375px (owner select +
+           roster picker unusable). ≥768 keeps side-by-side. */
+        .tc-builder-sides { grid-template-columns:1fr !important; }
+
+        /* Trade Desk touch bump: intent/partner chips, deal-card actions,
+           Why?/Browse toggles, show-more — all ~22-29px tall from the shared
+           chip rule (index.html base CSS). Same glyphs, taller targets. */
+        .tc-dhq-modebar button,
+        .tc-dhq-actions button,
+        .tc-dhq-hero-actions button,
+        .tc-dhq-browser-controls button,
+        .tc-dhq-browser-controls select,
+        .tc-dhq-detail-toggle,
+        .tc-dhq-show-more { min-height:44px; }
+        /* Builder/FAAB remove-X (~10px glyph, padding:0 base rule): pure
+           hit-area expansion — padding grows the target, negative margin
+           cancels the layout shift. Later-in-sheet equal specificity wins. */
+        .tc-ta-remove { padding:12px; margin:-12px; }
+
+        /* dvh audit (plan Phase 3): full-height overlay tracks the visual
+           viewport so Safari's collapsing URL bar can't clip the bottom.
+           Later-in-sheet rule wins where dvh is supported; on pre-15.4 iOS
+           the declaration is invalid and the base 88vh (line ~1502) stands.
+           Phone-scoped so the tablet/desktop tiers keep the audited vh. */
+        .draft-scout-drawer { max-height:88dvh; }
+    }
+    /* Short-viewport phones (landscape): slimmer dock so it doesn't eat a
+       375px-tall viewport. Same tier, height-guarded (plan D9). Only
+       SE-class (667) and 8-Plus-class (736) iPhones stay <768 wide in
+       landscape — everything newer rotates into the tablet tier, where the
+       dock and sheets are unmounted anyway. */
+    @media(max-width:767px) and (max-height:520px){
+        :root { --wr-tab-bar-h: 48px; }
+        .wr-dock-chip, .wr-dock-ask { gap:2px; padding-top:2px; }
+        /* WR.Sheet landscape full-height lives INSIDE the Sheet component
+           (wr-primitives.js maxH branch) so the keyboard-open shrink still
+           composes — a CSS !important override here would defeat it. */
+    }
+    /* Landscape phones of ANY width (SE 667 → Pro Max 932 all pass
+       max-height:520px; pointer:coarse keeps short desktop windows and all
+       tablets out): the mock-draft cockpit's 760px floor is meaningless in a
+       ~390px-tall viewport. The ≤1320px rule above already sets height:auto,
+       so this only releases the min-height floor (plan D9). */
+    @media(max-height:520px) and (pointer:coarse){
+        .mock-cockpit-grid { min-height:0; }
+    }
+    /* Belt-and-braces: the dock is JS-unmounted off-phone (WR.useViewport),
+       but the viewport store debounces ~100ms — never paint it above 767. */
+    @media(min-width:768px){
+        .wr-phone-dock { display:none !important; }
     }
 
     /* ── Micro-animations ────────────────────────────────── */
@@ -2144,72 +2531,27 @@
 
 </head>
 <body>
-    <div id="root"></div>
+    <!-- Static boot splash: pure HTML/CSS, visible at first paint while the JS
+         payload downloads + parses. ReactDOM.render replaces it on mount. -->
+    <div id="root">
+        <style>@keyframes wr-boot-pulse{0%,100%{opacity:.35}50%{opacity:1}}</style>
+        <div style="min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px">
+            <img src="icon-192.png" alt="" width="56" height="56" style="border-radius:14px">
+            <div class="wr-wordmark" style="font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;letter-spacing:.12em;color:var(--gold)">DYNASTY HQ</div>
+            <div style="font-size:13px;color:var(--silver);animation:wr-boot-pulse 1.4s ease-in-out infinite">Opening the war room…</div>
+        </div>
+    </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"></script>
-<script src="js/shared/shared-loader.js?v=20260531sandbox2"></script>
-<script>
-window.DYNASTY_HQ_APP = 'warroom';
-// Sandbox = the WarRoom-sandbox deploy (c2-football.github.io/WarRoom-sandbox/),
-// a hostname containing 'sandbox', localhost, or an explicit SANDBOX_MODE flag.
-// Note: the GitHub Pages sandbox has 'sandbox' in the PATH, not the hostname.
-const WR_PLATFORM_SANDBOX_ACCESS = window.SANDBOX_MODE === true
-  || (window.location.hostname || '').includes('sandbox')
-  || /\/warroom-sandbox(\/|$)/i.test(window.location.pathname || '')
-  || ['localhost', '127.0.0.1'].includes(window.location.hostname || '');
-// The /api/dev-ai-analyze proxy only exists in the local static dev server
-// (scripts/serve-static.cjs). The Capacitor native app also serves from
-// 'localhost' but ships no such proxy, so it must keep the real Supabase AI
-// endpoint — otherwise every AI call fails with a network "Load failed".
-const WR_IS_NATIVE_APP = !!(window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function' ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative));
-if (!WR_IS_NATIVE_APP && ['localhost', '127.0.0.1'].includes(window.location.hostname || '')) {
-  const existingConfig = window.DYNASTY_HQ_CONFIG || {};
-  window.DYNASTY_HQ_CONFIG = {
-    ...existingConfig,
-    devPreviewAI: true,
-    endpoints: {
-      ...(existingConfig.endpoints || {}),
-      aiAnalyze: `${window.location.origin}/api/dev-ai-analyze`,
-    },
-  };
-}
-const WR_SHARED_FILES = [
-  'app-config.js',
-  'bug-capture.js',
-  'constants.js',
-  'utils.js',
-  'storage.js',
-  'event-bus.js',
-  'platform-provider.js',
-  'sleeper-api.js',
-  'supabase-client.js',
-  'tier.js',
-  'pick-value-model.js',
-  'dhq-providers.js',
-  'dhq-core.js',
-  'intelligence-context.js',
-  'dhq-engine.js',
-  'team-assess.js',
-  'analytics-engine.js',
-  'dhq-ai.js',
-  'assistant-tutorial.js',
-  'ai-dispatch.js',
-  'strategy.js',
-  'trade-engine.js',
-  'mock-engine.js',
-  'gm-engine.js',
-  'player-modal.js',
-  'rookie-data.js',
-];
-// MFL is live for everyone, so its connector loads on every host.
-WR_SHARED_FILES.splice(7, 0, 'mfl-api.js');
-// ESPN/Yahoo stay sandbox-only beta.
-if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'espn-api.js', 'yahoo-api.js');
-WRShared.loadMany(WR_SHARED_FILES);
-</script>
+<!-- Shared module list + WRShared live in <head> (preloaded there); this
+     document.write chain just executes them, in order, from the warm cache. -->
+<script>WRShared.loadMany(WR_SHARED_FILES);</script>
 <!-- Preserve shared/tier.js canAccess before core.js hoists its own canAccess over window.canAccess -->
 <script>window._sharedCanAccess = window.canAccess;</script>
-<script src="https://skjjcruz.github.io/ReconAI-sandbox-dev/js/pro-launch.js?v=20260414d"></script>
+<!-- Scout-free vs Pro gate: wrIsPro() + chrome + lock card; boots loadUserTier().
+     Must run after the shared tier chain above, before any tab code. -->
+<script src="js/shared/pro-gate.js?v=20260705gate1"></script>
+<script src="js/pro-launch.js?v=20260414d"></script>
 <script src="college-stats.js"></script>
 <script src="draft-history.js"></script>
 <script src="charts.js"></script>
@@ -2227,23 +2569,34 @@ WRShared.loadMany(WR_SHARED_FILES);
 
 <!-- War Room modules — loaded in dependency order by Babel standalone -->
 <!-- 1. Core: tier system, React hooks, fetch helpers (everything depends on this) -->
-<script type="text/babel" src="js/core.js?v=20260611phonedebug1"></script>
+<script type="text/babel" src="js/core.js?v=20260701gdc1"></script>
+<!-- 1a. Central data-sync manager — window.WR.Sync — stale-while-revalidate on tab return + in-season interval (plain JS) -->
+<script src="js/shared/sync-manager.js?v=20260706sync1"></script>
+<!-- 1a2. Shared viewport seam — WR.useViewport() hook + WR.viewport() snapshot (plain JS; must precede components.js and all tab files) -->
+<script src="js/shared/viewport.js?v=20260707vp1"></script>
 <!-- 1b. Format/phase skin contract for league-type-aware modules -->
-<script src="js/league-skin.js?v=20260526redraftqa1"></script>
-<!-- 2. Shared components: UpgradeGate, GMMessage, PlayerInlineCard, TradeFinderTab -->
-<script type="text/babel" src="js/components.js?v=20260427font1"></script>
+<script src="js/league-skin.js?v=20260702bye1"></script>
+<!-- 2. Shared components: UpgradeGate, GMMessage, PlayerInlineCard -->
+<script type="text/babel" src="js/components.js?v=20260707desk1"></script>
 <!-- 2b. Unified Player Card (SI-2) — window.WR.openPlayerCard — replaces CDN modal -->
 <!-- Shared visual primitives (WR.Card / Badge / Chip / ConfChip / DeltaLine / Kpi / InsightCard) -->
-<script type="text/babel" src="js/components/wr-primitives.js?v=20260611qbsync4"></script>
-    <script type="text/babel" src="js/components/player-card.js?v=20260427font1"></script>
+<script type="text/babel" src="js/components/wr-primitives.js?v=20260427font1"></script>
+    <script type="text/babel" src="js/components/player-card.js?v=20260702scout1"></script>
 <!-- 2c. Saved List Views (SI-1) — window.WR.SavedViews — shared across list surfaces -->
 <script type="text/babel" src="js/shared/saved-views.js?v=20260427font1"></script>
 <!-- 2c-2. Saved Alex Reports — window.WR.SavedReports — local cache + ai_analysis server sync -->
 <script src="js/shared/saved-reports.js?v=20260601reports1"></script>
 <!-- 2d. GM Mode helper (Phase 1) — window.WR.GmMode — canonical mode/preset source of truth -->
-<script type="text/babel" src="js/shared/gm-mode.js?v=20260418a"></script>
+<script type="text/babel" src="js/shared/gm-mode.js?v=20260613gm3"></script>
+<script src="js/shared/startsit-engine.js?v=20260701gdc4"></script>
+<script src="js/shared/weekly-proj.js?v=20260701gdc1"></script>
+<script src="js/shared/nfl-context.js?v=20260616wx1"></script>
+<script src="js/shared/matchup.js?v=20260701gdc1"></script>
+<script src="js/utils/schedule-engine.js?v=20260702bye1"></script>
+<script src="js/utils/gamelog-engine.js?v=20260702scout1"></script>
+<script src="js/shared/draft-gameplan.js?v=20260616ros1"></script>
 <!-- 2e. Alex behavioral-insight settings — window.WR.AlexSettings — shared tuning for every Alex surface -->
-<script type="text/babel" src="js/shared/alex-settings.js?v=20260502c"></script>
+<script type="text/babel" src="js/shared/alex-settings.js?v=20260613gm1"></script>
 <!-- 2f. Achievements catalog — window.WrAchievements — first-class legacy badge system -->
 <script src="js/shared/achievements.js?v=20260426p14"></script>
 <!-- 2g. League history loader — window.WrHistory — Sleeper chain walker for season history -->
@@ -2257,7 +2610,7 @@ WRShared.loadMany(WR_SHARED_FILES);
 <!-- 2i. Per-league transaction cache — window.WrTxns — cross-league activity + DNA substrate -->
 <script src="js/shared/txn-store.js?v=20260601a"></script>
 <!-- 3. Shared utilities: player valuation constants + projection engine -->
-<script type="text/babel" src="js/utils/sos-engine.js"></script>
+<script type="text/babel" src="js/utils/sos-engine.js?v=20260702scout1"></script>
 <script type="text/babel" src="js/utils/player-value.js?v=20260517valuefix"></script>
 <!-- 4. Feature modules (no internal dependencies between these) -->
 <!-- data-wr-defer scripts are DEFERRED: emitted INERT (type="text/wr-deferred" by
@@ -2265,19 +2618,20 @@ WRShared.loadMany(WR_SHARED_FILES);
      boot. js/module-loader.js injects executable copies, in DOM order within each
      group, when the owning surface first calls wrLoadModuleGroup('<group>'). -->
 <script src="js/module-loader.js?v=20260612modlazy1"></script>
-<script type="text/babel" src="js/settings.js?v=20260525redraftnav1"></script>
-<script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20260518dealhqdark1"></script>
+<script type="text/babel" src="js/settings.js?v=20260613strip1"></script>
+<script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20260707desk1"></script>
 <script type="text/babel" src="js/post-draft.js?v=20260609postdraft1"></script>
-<script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260516click3"></script>
+<script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260613strip1"></script>
+<script type="text/babel" data-wr-defer="lineup" src="js/tabs/lineup.js?v=20260702bye1"></script>
 <!-- 4b. Draft Command Center modules — group "draft" (~28 scripts, ~1.26MB),
-     loaded on first Draft-tab open via js/module-loader.js. -->
+     loaded on first Draft-tab open. -->
 <script type="text/babel" data-wr-defer="draft" src="js/draft/styles.js?v=20260427font1"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/scouting.js?v=20260517baileymerge"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/trade-helpers.js?v=20260415cd8"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/context.js?v=20260517aiguard"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/persona.js?v=20260415cd8"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/cpu-engine.js?v=20260415cd8"></script>
-<script type="text/babel" data-wr-defer="draft" src="js/draft/state.js?v=20260601draftux"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/state.js?v=20260613gm1"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/big-board.js?v=20260601layout"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/draft-grid.js?v=20260418a"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/opponent-intel.js?v=20260601layout"></script>
@@ -2297,44 +2651,51 @@ WRShared.loadMany(WR_SHARED_FILES);
 <script type="text/babel" data-wr-defer="draft" src="js/draft/live-sync.js?v=20260516p6redo"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/live-decision-engine.js?v=20260601draftux"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/analyst-mock.js?v=20260531voice1"></script>
-<script type="text/babel" data-wr-defer="draft" src="js/draft/command-center.js?v=20260611phonefix1"></script>
-<script type="text/babel" data-wr-defer="draft" src="js/draft-room.js?v=20260531voice4"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/command-center.js?v=20260613strip2"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft-room.js?v=20260613strip2"></script>
 <!-- 5. League detail tab components (extracted from league-detail.js) -->
 <!-- v2 widget modules (load before dashboard.js which consumes them) -->
-<script type="text/babel" src="js/widgets/roster-pulse.js?v=20260611phonewdg1"></script>
+<script type="text/babel" src="js/widgets/roster-pulse.js?v=20260613gm1"></script>
+<script type="text/babel" src="js/widgets/lineup-check.js?v=20260615ss1"></script>
 <script type="text/babel" src="js/widgets/window-forecast.js?v=20260613gm1"></script>
 <script type="text/babel" src="js/widgets/gap-plan.js?v=20260613gm1"></script>
-<script type="text/babel" src="js/widgets/league-landscape.js?v=20260426p6"></script>
-<script type="text/babel" src="js/widgets/market-radar.js?v=20260516liveclick1"></script>
-<script type="text/babel" src="js/widgets/draft-capital.js?v=20260516liveclick1"></script>
+<script type="text/babel" src="js/widgets/league-landscape.js?v=20260613gm1"></script>
+<script type="text/babel" src="js/widgets/market-radar.js?v=20260613gm1"></script>
+<script type="text/babel" src="js/widgets/draft-capital.js?v=20260613gm1"></script>
 <!-- SI-3: Tag-driven widgets (Trade Block / Cut Candidates / Waiver Targets) -->
 <script type="text/babel" src="js/widgets/player-tags.js?v=20260516liveclick1"></script>
 <!-- Phase 3: League intel widgets (Competitive Tiers, Power Rankings) — ex-League Map -->
-<script type="text/babel" src="js/widgets/competitive-tiers.js?v=20260427font1"></script>
-<script type="text/babel" src="js/widgets/power-rankings.js?v=20260427font1"></script>
+<script type="text/babel" src="js/widgets/competitive-tiers.js?v=20260613gm1"></script>
+<script type="text/babel" src="js/widgets/power-rankings.js?v=20260611kpifix1"></script>
 <!-- Phase 9: My Trophies widget -->
-<script type="text/babel" src="js/widgets/my-trophies.js?v=20260427font1"></script>
-<script type="text/babel" src="js/tabs/dashboard.js?v=20260612predrag1"></script>
-<script type="text/babel" src="js/tabs/flash-brief.js?v=20260616modlazy1"></script>
-<script type="text/babel" src="js/tabs/league-map.js?v=20260616dynread1"></script>
-<script type="text/babel" src="js/tabs/my-team.js?v=20260616dynread1"></script>
+<script type="text/babel" src="js/widgets/my-trophies.js?v=20260611kpifix1"></script>
+<!-- League Calendar widget — depends on window.WrCalendar (js/tabs/calendar.js) -->
+<script type="text/babel" src="js/widgets/league-calendar.js?v=20260619cal1"></script>
+<script type="text/babel" src="js/tabs/dashboard.js?v=20260619cal1"></script>
+<script type="text/babel" src="js/tabs/flash-brief.js?v=20260613gm1"></script>
+<!-- Group "analysis": analytics.js embeds LeagueMapTab, so both defer together
+     (league-map.js first — DOM order is execution order within a group). -->
+<script type="text/babel" data-wr-defer="analysis" src="js/tabs/league-map.js?v=20260614dynread1"></script>
+<script type="text/babel" data-wr-defer="myteam" src="js/tabs/my-team.js?v=20260614card4"></script>
 <!-- Compare: extracted from My Roster's former sub-view, now a top-level ROSTER-group tab. -->
-<script type="text/babel" src="js/tabs/compare.js?v=20260524compare1"></script>
-<script type="text/babel" src="js/tabs/analytics.js?v=20260525redraftnav1"></script>
-<script type="text/babel" src="js/tabs/trophy-room.js?v=20260525redraftnav1"></script>
-<script type="text/babel" src="js/tabs/calendar.js?v=20260525redraftnav1"></script>
+<script type="text/babel" data-wr-defer="compare" src="js/tabs/compare.js?v=20260616compare5"></script>
+<script type="text/babel" data-wr-defer="analysis" src="js/tabs/analytics.js?v=20260613strip1"></script>
+<script type="text/babel" data-wr-defer="trophies" src="js/tabs/trophy-room.js?v=20260619cal1"></script>
+<script type="text/babel" src="js/tabs/calendar.js?v=20260619cal1"></script>
 <!-- Alex Insights (Option A): top-level tab for behavioral analysis + AI settings -->
-<script type="text/babel" data-wr-defer="alex" src="js/tabs/alex-insights.js?v=20260531voice1"></script>
+<script type="text/babel" data-wr-defer="alex" src="js/tabs/alex-insights.js?v=20260613strip1"></script>
 <!-- Group "empire": hub-level Empire Dashboard (Pro mode), loaded by app.js when
      Pro mode activates — also provides window.App.buildEmpireDna etc. -->
 <script type="text/babel" data-wr-defer="empire" src="js/tabs/global-view.js?v=20260427font1"></script>
 <script src="js/tutorial.js?v=20260503tutorial1"></script>
-<!-- 6. Strategy editor: calls shared GMStrategy API, no logic duplication -->
-<script type="text/babel" src="js/tabs/strategy-editor.js?v=20260502office1"></script>
+<!-- 6. Strategy editor: calls shared GMStrategy API, no logic duplication.
+     Only consumed by alex-insights' Strategy sub-view, so it rides the same
+     "alex" lazy group — inert at boot, loaded on first GM's Office / Strategy open. -->
+<script type="text/babel" data-wr-defer="alex" src="js/tabs/strategy-editor.js?v=20260613rec1"></script>
 <!-- 7. League detail: coordinator shell, depends on all above -->
-    <script type="text/babel" src="js/league-detail.js?v=20260616modlazy1"></script>
+    <script type="text/babel" src="js/league-detail.js?v=20260707desk1"></script>
 <!-- 8. App: OwnerDashboard + ReactDOM.render (loads last) -->
-<script type="text/babel" src="js/app.js?v=20260616modlazy1"></script>
+<script type="text/babel" src="js/app.js?v=20260706hub1"></script>
 
 <!-- All JSX code extracted to js/ modules. Only bootstrap remains. -->
 <script>
@@ -2351,10 +2712,10 @@ WRShared.loadMany(WR_SHARED_FILES);
   window.addEventListener('DOMContentLoaded', function() { setTimeout(check, 500); });
 })();
 </script>
-<footer style="text-align:center;padding:16px;font-size:12px;color:#666;border-top:1px solid #1a1a1a;margin-top:32px;">&copy; 2026 C2 Football LLC. All rights reserved.</footer>
+<footer style="text-align:center;padding:16px 16px calc(16px + var(--sab, 0px));font-size:12px;color:#666;border-top:1px solid #1a1a1a;margin-top:32px;">&copy; 2026 C2 Football LLC. All rights reserved.</footer>
 
-<!-- PWA Install Prompt -->
-<div id="pwa-install" style="display:none;position:fixed;bottom:72px;left:50%;transform:translateX(-50%);max-width:340px;width:calc(100% - 32px);background:var(--off-black);border:1px solid var(--gold);border-radius:12px;padding:12px 16px;z-index:300;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+<!-- PWA Install Prompt (bottom pads --sab so it clears the home indicator on iPhone) -->
+<div id="pwa-install" style="display:none;position:fixed;bottom:calc(72px + var(--sab, 0px));left:50%;transform:translateX(-50%);max-width:340px;width:calc(100% - 32px);background:var(--off-black);border:1px solid var(--gold);border-radius:12px;padding:12px 16px;z-index:300;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
   <div style="display:flex;align-items:center;gap:10px">
     <img src="icon-192.png" style="width:36px;height:36px;border-radius:8px" alt=""/>
     <div style="flex:1">

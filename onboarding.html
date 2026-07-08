@@ -2,11 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
   <title>Dynasty HQ — Get Started</title>
   <link rel="icon" href="icon-192.png">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap"></noscript>
   <script>
     (function () {
       const host = window.location.hostname || '';
@@ -30,6 +34,11 @@
       --silver:     #BDB8AD;
       --muted:      rgba(255,255,255,0.45);
       --green:      #2ECC71;
+      /* Safe-area insets (iPhone notch / home indicator); 0px on desktop */
+      --sat: env(safe-area-inset-top, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
     }
 
     html, body {
@@ -37,6 +46,11 @@
       font-family: 'Inter', sans-serif;
       background: var(--black);
       color: var(--white);
+    }
+    body {
+      padding-left: var(--sal);
+      padding-right: var(--sar);
+      padding-bottom: var(--sab);
     }
 
     /* ── Progress header ──────────────────────────────────── */
@@ -46,7 +60,8 @@
       z-index: 10;
       background: rgba(10,10,10,0.95);
       backdrop-filter: blur(8px);
-      padding: 1rem 1.5rem;
+      /* top padding absorbs the status-bar inset in installed-PWA mode */
+      padding: calc(1rem + var(--sat)) 1.5rem 1rem;
       border-bottom: 1px solid rgba(212,175,55,0.15);
       display: flex;
       align-items: center;
@@ -468,6 +483,14 @@
       background: linear-gradient(90deg, transparent, var(--gold), transparent);
       margin: 2rem 0;
     }
+
+    /* Phone tier: 16px inputs kill iOS Safari zoom-on-focus (!important beats
+       the inline font-size overrides on the AI provider select/model input);
+       44px tap floor on the CTAs. */
+    @media (max-width: 767px) {
+      .form-input { font-size: 16px !important; }
+      .cta-btn { min-height: 44px; }
+    }
   </style>
 </head>
 
@@ -579,7 +602,7 @@
         <div class="payment-icon" id="payIcon">⚔️</div>
         <div class="payment-title" id="payTitle">Dynasty HQ — Standard</div>
         <div class="payment-sub" id="paySub">
-          Full access to all Dynasty HQ tools — Team Comparison, Behavioral Trade Calculator, Draft Room, Free Agency Tracker, Calendar, Trophy Case, and Direct Messaging. AI included (20 queries/mo).
+          Full access to all Dynasty HQ tools — Team Comparison, Behavioral Trade Calculator, Draft War Room, Free Agency Tracker, Calendar, Trophy Case, and Direct Messaging. AI included (20 queries/mo).
         </div>
         <div class="payment-price" id="payPrice">Free during test flight</div>
         <button class="cta-btn" id="stripeBtn" onclick="goToStripe()">Proceed to Secure Checkout →</button>

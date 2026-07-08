@@ -175,6 +175,26 @@
             });
         }, [state.alex?.stream]);
 
+        // The Alex draft layer (live commentary, room reads, Ask Alex draft chat)
+        // is Scout Pro. Free gets a locked panel shell — the input/chips never
+        // render, so no draft-chat AI call can be triggered (BYOK included).
+        // Placed after every hook so the hook order stays stable across tiers.
+        if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+            const GatedRow = window.WrGatedMoreRow;
+            return (
+                <div style={containerCss}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', flexShrink: 0 }}>
+                        <div style={{ fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
+                            Alex Stream
+                        </div>
+                    </div>
+                    {GatedRow
+                        ? <GatedRow title="Alex calls your draft live" sub="Live commentary, room reads, and Ask Alex draft chat are Scout Pro." feature="draft_alex_stream" />
+                        : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Alex Stream', 'draft_alex_stream', 'Live draft commentary is Scout Pro.') : '' }} />}
+                </div>
+            );
+        }
+
         return (
             <div style={containerCss}>
                 {/* Header with budget */}

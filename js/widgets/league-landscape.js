@@ -23,6 +23,37 @@
         const fonts = theme.fonts || {};
         const cardStyle = window.WrTheme?.cardStyle?.() || {};
         const fs = (rem) => window.WrTheme?.fontSize?.(rem) || (rem + 'rem');
+        // Free/Pro (fail-open): standings/activity/health numbers stay free;
+        // the ELITE/…/REBUILDING tier verdicts + posture-target reads are Pro.
+        const pro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+
+        // GM Strategy is the single source of truth — frame the field by posture.
+        const gm = window.WR.GmMode.useGmEffects(currentLeague);
+        const posture = gm?.marketPosture || 'hold';
+        // buy_low → surface sellers/rebuilders (buy-FROM targets, low tiers);
+        // sell_high → surface buyers/contenders (sell-TO targets, high tiers).
+        // Pro-only: it flags specific rivals as deal targets via tier reads.
+        const postureFrame = React.useMemo(() => {
+            if (!pro || !gm?.hasStrategy) return null;
+            if (posture === 'buy_low') return {
+                label: 'BUY-FROM TARGETS',
+                hint: 'Rebuilders to pry talent from',
+                accent: colors.positive || 'var(--win-green)',
+                tiers: new Set(['REBUILDING', 'CROSSROADS']),
+            };
+            if (posture === 'sell_high') return {
+                label: 'SELL-TO TARGETS',
+                hint: 'Contenders shopping for the stretch',
+                accent: colors.accent || 'var(--gold)',
+                tiers: new Set(['ELITE', 'CONTENDER']),
+            };
+            return null;
+        }, [pro, gm?.hasStrategy, posture, colors.positive, colors.accent]);
+
+        function postureBadge() {
+            if (!postureFrame) return null;
+            return <span title={postureFrame.hint} style={{ fontSize: fs(0.52), padding: '1px 6px', borderRadius: 3, background: wrAlpha(postureFrame.accent, '18'), color: postureFrame.accent, border: '1px solid ' + wrAlpha(postureFrame.accent, '33'), fontWeight: 700, fontFamily: fonts.ui, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{postureFrame.label}</span>;
+        }
 
         const allAssess = React.useMemo(() => {
             if (typeof window.assessAllTeamsFromGlobal === 'function') return window.assessAllTeamsFromGlobal() || [];
@@ -37,7 +68,9 @@
         const rosterState = window.App?.getRosterDataState?.({ roster: currentRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
         const total = powerRanked.length || 0;
         const myRank = powerRanked.findIndex(a => a.rosterId && (currentLeague?.rosters || []).find(r => r.roster_id === a.rosterId)?.owner_id === sleeperUserId) + 1;
-        const txnCount = Array.isArray(transactions) ? transactions.length : 0;
+        // Exclude DHQ-merged historical trades (_fromDHQ) — the feed shouldn't
+        // count prior-season history as league activity.
+        const txnCount = Array.isArray(transactions) ? transactions.filter(t => !t?._fromDHQ).length : 0;
 
         // Tier color helper
         const tierCol = (t) => t === 'ELITE' ? colors.positive : t === 'CONTENDER' ? colors.accent : t === 'CROSSROADS' ? colors.warn : colors.negative;
@@ -97,8 +130,13 @@
                         borderTop: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
                         paddingTop: '4px', marginTop: '2px', width: '100%',
                     }}>
-                        <span style={{ fontWeight: 700, color: colors.text }}>{txnCount}</span> league moves recently
+                        <span style={{ fontWeight: 700, color: colors.text }}>{txnCount}</span> league moves this season
                     </div>
+                    {postureFrame && (
+                        <div style={{ fontSize: fs(0.54), color: postureFrame.accent, fontFamily: fonts.ui, fontWeight: 700, letterSpacing: '0.04em' }}>
+                            {postureFrame.label}
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -109,21 +147,22 @@
             const maxH = Math.max(...top5.map(a => a.healthScore || 0), 1);
             return (
                 <div onClick={onClick} style={{ ...cardStyle, padding: 'var(--card-pad, 12px 14px)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexShrink: 0 }}>
                         <span style={{ fontSize: '0.95rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(0.85), fontWeight: 700, color: colors.accent, letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1 }}>Top of the League</span>
                         <span style={{ fontSize: fs(0.6), color: colors.textMuted, fontFamily: fonts.ui }}>You: #{myRank || '—'}</span>
                     </div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         {top5.map((a, i) => {
                             const isMe = a.rosterId && (currentLeague?.rosters || []).find(r => r.roster_id === a.rosterId)?.owner_id === sleeperUserId;
                             const name = getOwnerName ? getOwnerName(a.rosterId) : ('Team ' + (i + 1));
                             const pct = ((a.healthScore || 0) / maxH) * 100;
-                            const tc = tierCol(a.tier);
+                            // tier colors encode the verdict — neutral for free
+                            const tc = pro ? tierCol(a.tier) : (colors.textMuted || 'var(--silver)');
                             return (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <span style={{ fontSize: fs(0.7), color: i < 3 ? colors.accent : colors.textMuted, fontWeight: 700, width: 14, textAlign: 'right', fontFamily: fonts.mono }}>{i + 1}</span>
-                                    <div style={{ flex: 1, minWidth: 0, position: 'relative', height: 18, borderRadius: theme.card?.radius === '0px' ? '0' : '3px', overflow: 'hidden', background: 'var(--ov-3, rgba(255,255,255,0.04))' }}>
+                                    <div style={{ flex: 1, minWidth: 0, position: 'relative', height: 16, borderRadius: theme.card?.radius === '0px' ? '0' : '3px', overflow: 'hidden', background: 'var(--ov-3, rgba(255,255,255,0.04))' }}>
                                         <div style={{ width: pct + '%', height: '100%', background: isMe ? colors.accent : tc, opacity: isMe ? 1 : 0.3, borderRadius: 'inherit' }} />
                                         <span style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', fontSize: fs(0.62), fontWeight: isMe ? 800 : 600, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%', fontFamily: fonts.ui }}>{isMe ? '★ ' : ''}{(name || '').slice(0, 16)}</span>
                                     </div>
@@ -146,10 +185,31 @@
             const type = tx.type || 'move';
             const typeCol = type === 'trade' ? (colors.purple || 'var(--k-7c6bf8, #7c6bf8)') : type === 'waiver' ? (colors.info || 'var(--k-00c8b4, #00c8b4)') : colors.positive;
             let desc = tx.description || tx.type || '—';
-            if (tx.adds || tx.drops) {
+            if (type === 'trade' && (tx.adds || tx.drops)) {
+                // Sleeper trades carry every traded player in both adds{} and
+                // drops{} — group by the acquiring roster (adds[pid] → rosterId)
+                // so a 2-for-2 doesn't render 'A, B for A, B'.
+                const byRoster = {};
+                Object.entries(tx.adds || {}).forEach(([pid, rid]) => {
+                    (byRoster[rid] = byRoster[rid] || []).push(playersData?.[pid]?.full_name || pid);
+                });
+                const sides = Object.values(byRoster);
+                if (sides.length >= 2) {
+                    desc = sides[0].slice(0, 2).join(', ') + ' for ' + sides[1].slice(0, 2).join(', ');
+                } else {
+                    const nPlayers = Object.keys(tx.adds || {}).length;
+                    const nPicks = (tx.draft_picks || []).length;
+                    const what = [
+                        nPlayers ? nPlayers + ' player' + (nPlayers === 1 ? '' : 's') : null,
+                        nPicks ? nPicks + ' pick' + (nPicks === 1 ? '' : 's') : null,
+                    ].filter(Boolean).join(' + ') || 'assets';
+                    const teams = (tx.roster_ids || []).map(rid => getOwnerName ? getOwnerName(rid) : ('Team ' + rid)).filter(Boolean);
+                    desc = 'Trade: ' + what + (teams.length >= 2 ? ' between ' + teams[0] + ' & ' + teams[1] : '');
+                }
+            } else if (tx.adds || tx.drops) {
                 const addNames = Object.keys(tx.adds || {}).map(pid => playersData?.[pid]?.full_name || pid).slice(0, 2);
                 const dropNames = Object.keys(tx.drops || {}).map(pid => playersData?.[pid]?.full_name || pid).slice(0, 2);
-                if (addNames.length && dropNames.length) desc = addNames.join(', ') + ' for ' + dropNames.join(', ');
+                if (addNames.length && dropNames.length) desc = 'Added ' + addNames.join(', ') + ', dropped ' + dropNames.join(', ');
                 else if (addNames.length) desc = 'Added ' + addNames.join(', ');
                 else if (dropNames.length) desc = 'Dropped ' + dropNames.join(', ');
             }
@@ -171,7 +231,7 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0 4px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                         <span style={{ width: 14 }} />
                         <span style={{ flex: 1, fontSize: fs(0.54), color: colors.textFaint, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: fonts.ui }}>Owner</span>
-                        {showCols === 'all' && <span style={{ fontSize: fs(0.54), color: colors.textFaint, textTransform: 'uppercase', fontFamily: fonts.ui, minWidth: 32, textAlign: 'right' }}>Tier</span>}
+                        {showCols === 'all' && pro && <span style={{ fontSize: fs(0.54), color: colors.textFaint, textTransform: 'uppercase', fontFamily: fonts.ui, minWidth: 32, textAlign: 'right' }}>Tier</span>}
                         {showCols === 'all' && <span style={{ fontSize: fs(0.54), color: colors.textFaint, textTransform: 'uppercase', fontFamily: fonts.ui, minWidth: 28, textAlign: 'right' }}>DHQ</span>}
                         <span style={{ fontSize: fs(0.54), color: colors.textFaint, textTransform: 'uppercase', fontFamily: fonts.ui, minWidth: 22, textAlign: 'right' }}>HP</span>
                     </div>
@@ -182,17 +242,20 @@
                         const scores = window.App?.LI?.playerScores || {};
                         const roster = (currentLeague?.rosters || []).find(r => r.roster_id === a.rosterId);
                         const rosterDHQ = roster ? (roster.players || []).reduce((s, pid) => s + (scores[pid] || 0), 0) : 0;
+                        // Posture-driven target: rival in the posture's tier band (not me).
+                        const isTarget = !isMe && postureFrame && postureFrame.tiers.has(a.tier);
                         return (
-                            <div key={i} style={{
+                            <div key={i} title={isTarget ? postureFrame.label + ' · ' + postureFrame.hint : undefined} style={{
                                 display: 'flex', alignItems: 'center', gap: '6px', padding: compact ? '2px 0' : '3px 0',
                                 borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))',
-                                background: isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'transparent',
+                                background: isMe ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : (isTarget ? wrAlpha(postureFrame.accent, '0a') : 'transparent'),
+                                boxShadow: isTarget ? ('inset 2px 0 0 ' + postureFrame.accent) : 'none',
                             }}>
                                 <span style={{ fontSize: fs(0.62), color: i < 3 ? colors.accent : colors.textMuted, fontWeight: 700, width: 14, textAlign: 'right', fontFamily: fonts.mono }}>{i + 1}</span>
                                 <span style={{ flex: 1, fontSize: fs(0.66), fontWeight: isMe ? 700 : 500, color: isMe ? colors.accent : colors.text, fontFamily: fonts.ui, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {isMe ? '★ ' : ''}{(name || '').slice(0, 18)}
                                 </span>
-                                {showCols === 'all' && <span style={{ fontSize: fs(0.54), padding: '1px 4px', borderRadius: 3, background: wrAlpha(tc, '18'), color: tc, fontWeight: 700, minWidth: 32, textAlign: 'center' }}>{(a.tier || '—').slice(0, 4)}</span>}
+                                {showCols === 'all' && pro && <span style={{ fontSize: fs(0.54), padding: '1px 4px', borderRadius: 3, background: wrAlpha(tc, '18'), color: tc, fontWeight: 700, minWidth: 32, textAlign: 'center' }}>{(a.tier || '—').slice(0, 4)}</span>}
                                 {showCols === 'all' && <span style={{ fontSize: fs(0.54), color: colors.textMuted, minWidth: 28, textAlign: 'right', fontFamily: fonts.mono }}>{rosterDHQ >= 1000 ? Math.round(rosterDHQ / 1000) + 'k' : rosterDHQ}</span>}
                                 <span style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.textMuted, minWidth: 22, textAlign: 'right', fontFamily: fonts.mono }}>{a.healthScore || 0}</span>
                             </div>
@@ -202,8 +265,9 @@
             );
         }
 
-        // ── Tier distribution strip ──
+        // ── Tier distribution strip (tier verdicts → Pro only) ──
         function renderTierStrip() {
+            if (!pro) return null;
             return (
                 <div style={{
                     display: 'flex', gap: '8px', padding: '6px 8px',
@@ -232,10 +296,11 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(0.95), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>League Landscape</span>
+                        {postureBadge()}
                         <span style={{ fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui }}>{txnCount} moves</span>
                         {analyticsButton()}
                     </div>
-                    <div style={{ marginBottom: '6px', flexShrink: 0 }}>{renderTierStrip()}</div>
+                    {pro && <div style={{ marginBottom: '6px', flexShrink: 0 }}>{renderTierStrip()}</div>}
                     <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                         {renderStandings(top8, { compact: true, cols: 'all' })}
                     </div>
@@ -254,10 +319,11 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1.1rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(1.0), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>League Landscape</span>
+                        {postureBadge()}
                         <span style={{ fontSize: fs(0.66), color: colors.textMuted, fontFamily: fonts.ui }}>{txnCount} moves</span>
                         {analyticsButton()}
                     </div>
-                    <div style={{ marginBottom: '8px', flexShrink: 0 }}>{renderTierStrip()}</div>
+                    {pro && <div style={{ marginBottom: '8px', flexShrink: 0 }}>{renderTierStrip()}</div>}
                     <div style={{ marginBottom: '10px' }}>{renderStandings(top12, { compact: true, cols: 'all' })}</div>
                     {movers.length > 0 && (
                         <div style={{ marginBottom: '8px' }}>
@@ -289,13 +355,17 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(0.95), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>League Landscape</span>
+                        {postureBadge()}
                         <span style={{ fontSize: fs(0.62), color: colors.textMuted, fontFamily: fonts.ui }}>{txnCount} moves · You #{myRank || '—'}</span>
                         {analyticsButton()}
                     </div>
-                    <div style={{ marginBottom: '8px', flexShrink: 0 }}>{renderTierStrip()}</div>
+                    {pro && <div style={{ marginBottom: '8px', flexShrink: 0 }}>{renderTierStrip()}</div>}
                     <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' }}>
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                            <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Power Standings</div>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
+                                <span style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: fonts.ui }}>Power Standings</span>
+                                {postureFrame && <span style={{ fontSize: fs(0.52), color: postureFrame.accent, fontFamily: fonts.ui, fontWeight: 600 }}>· {postureFrame.hint}</span>}
+                            </div>
                             {renderStandings(top12, { compact: true, cols: 'all' })}
                         </div>
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
@@ -327,15 +397,19 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1.1rem' }}>🌐</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(1.05), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>League Landscape</span>
+                        {postureBadge()}
                         <span style={{ fontSize: fs(0.66), color: colors.textMuted, fontFamily: fonts.ui }}>{txnCount} moves · You #{myRank || '—'} of {total}</span>
                         {analyticsButton()}
                     </div>
-                    <div style={{ marginBottom: '10px', flexShrink: 0 }}>{renderTierStrip()}</div>
+                    {pro && <div style={{ marginBottom: '10px', flexShrink: 0 }}>{renderTierStrip()}</div>}
                     <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', gap: '16px', overflow: 'hidden' }}>
                         {/* Left col: full standings + dhq chart */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0, minHeight: 0 }}>
                             <div style={{ minHeight: 0, overflow: 'hidden' }}>
-                                <div style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Power Standings</div>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
+                                    <span style={{ fontSize: fs(0.62), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: fonts.ui }}>Power Standings</span>
+                                    {postureFrame && <span style={{ fontSize: fs(0.54), color: postureFrame.accent, fontFamily: fonts.ui, fontWeight: 600 }}>· {postureFrame.hint}</span>}
+                                </div>
                                 {renderStandings(all, { compact: true, cols: 'all' })}
                             </div>
                             <div style={{ flexShrink: 0 }}>
@@ -345,7 +419,7 @@
                                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                             <span style={{ flex: 1, fontSize: fs(0.54), color: o.isMe ? colors.accent : colors.textMuted, fontWeight: o.isMe ? 700 : 500, fontFamily: fonts.ui, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(o.name || '').slice(0, 12)}</span>
                                             <div style={{ width: 80, height: 6, background: 'var(--ov-3, rgba(255,255,255,0.04))', borderRadius: 2, overflow: 'hidden' }}>
-                                                <div style={{ width: ((o.dhq / maxDHQ) * 100) + '%', height: '100%', background: tierCol(o.tier), opacity: o.isMe ? 1 : 0.6 }} />
+                                                <div style={{ width: ((o.dhq / maxDHQ) * 100) + '%', height: '100%', background: pro ? tierCol(o.tier) : (colors.textMuted || 'var(--silver)'), opacity: o.isMe ? 1 : 0.6 }} />
                                             </div>
                                             <span style={{ fontSize: fs(0.5), color: colors.textFaint, fontFamily: fonts.mono, minWidth: 28, textAlign: 'right' }}>{o.dhq >= 1000 ? Math.round(o.dhq / 1000) + 'k' : o.dhq}</span>
                                         </div>

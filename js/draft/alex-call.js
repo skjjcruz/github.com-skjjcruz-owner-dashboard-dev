@@ -36,6 +36,8 @@
             '.wr-alex-call{position:fixed;bottom:14px;left:12px;right:392px;z-index:590;',
             'animation:wrAlexCallIn .42s cubic-bezier(.16,1,.3,1) both;}',
             '@media (max-width:1023px){.wr-alex-call{right:12px;}}',
+            // Phone: clear the bottom dock (var resolves 0px on tablet/desktop).
+            '@media (max-width:767px){.wr-alex-call{bottom:calc(14px + var(--wr-bottom-inset, 0px));}}',
             '@keyframes wrAlexCallIn{from{transform:translateY(118%);opacity:0;}to{transform:translateY(0);opacity:1;}}',
             '@keyframes wrAlexCallDrain{from{width:100%;}to{width:0%;}}',
             '@media (prefers-reduced-motion:reduce){',
@@ -210,5 +212,11 @@
     }
 
     window.DraftCC = window.DraftCC || {};
-    window.DraftCC.AlexCall = AlexCall;
+    // Alex draft theater is Scout Pro — free never mounts the lower-third
+    // (clean absence; the stream panel carries the locked teaser). Wrapper keeps
+    // the inner component's hooks unmounted rather than conditionally skipped.
+    window.DraftCC.AlexCall = function GatedAlexCall(props) {
+        if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) return null;
+        return <AlexCall {...props} />;
+    };
 })();

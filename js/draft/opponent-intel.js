@@ -76,6 +76,24 @@
             overflow: 'hidden',
         });
 
+        // Owner reads (DNA labels, reach/pass predictions, psych taxes, grudges)
+        // are Scout Pro — free gets a locked panel shell, never a raw error.
+        if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+            const GatedRow = window.WrGatedMoreRow;
+            return (
+                <div style={containerCss}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                        <div style={{ fontFamily: FONT_DISPL, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
+                            Opponent Intel
+                        </div>
+                    </div>
+                    {GatedRow
+                        ? <GatedRow title="Read every opposing GM" sub="Draft DNA, reach/pass predictions, psych taxes, and grudges are Scout Pro." feature="draft_opponent_intel" />
+                        : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Opponent Intel', 'draft_opponent_intel', 'Opposing-GM reads are Scout Pro.') : '' }} />}
+                </div>
+            );
+        }
+
         return (
             <div style={containerCss}>
                 {/* Header */}

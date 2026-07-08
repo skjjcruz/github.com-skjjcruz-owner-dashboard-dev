@@ -167,7 +167,7 @@ async function runMatrix(context, port, failures) {
   assertSkin(failures, 'redraft myteam', snap, { type: 'redraft', phase: 'pre_draft' });
   pushIf(failures, snap.skin?.features?.showTaxi !== false, 'redraft myteam: showTaxi should be false');
   pushIf(failures, snap.skin?.features?.showIDP !== false, 'redraft myteam: showIDP should be false');
-  pushIf(failures, snap.skin?.vocabulary?.valueLabel !== 'Format Value', 'redraft myteam: value label should be Format Value');
+  pushIf(failures, snap.skin?.vocabulary?.valueLabel !== 'Rest-of-Season Value', 'redraft myteam: value label should be Rest-of-Season Value');
   pushIf(failures, hasExact(snap.buttons, 'Taxi'), 'redraft myteam: Taxi filter should not render');
   pushIf(failures, hasExact(snap.buttons, 'IDP'), 'redraft myteam: IDP filter should not render');
   await page.close();

@@ -325,6 +325,7 @@
         initialize,
         getPlayerSOS,
         getTeamSOS,
+        getWeekStats: fetchWeeklyStats,   // public accessor over the cached weekly stats (reused by the game-log engine)
         get defenseRankings() { return _defenseRankings; },
         get schedule()        { return _schedule; },
     };

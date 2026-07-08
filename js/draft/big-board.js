@@ -118,6 +118,20 @@
         const boardContext = state.draftContext?.boardContext || null;
         const lanes = boardContext?.lanes || {};
         const defaultLane = boardContext?.activeLane || 'dhq';
+        // Free/Pro (fail-open): the AI Recommended lane is strategy-fit optimizer
+        // output → Pro. context.js already degrades lanes.ai DATA to the raw DHQ
+        // order for free; here we hide the lane UI + SEED so free never sees a
+        // board framed as an AI recommendation.
+        const pro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+
+        // Phone/touch tier (mobile plan Phase 2 item 13): HTML5 drag is inert on
+        // iOS/touch, and this exact panel is what MobileFeed mounts on phones —
+        // the ▲/▼ move buttons rendered under my-lane rows are the only way to
+        // reorder My Board there. They write through the same commit path as the
+        // drag (saveManualOrder → persistBoardPatch). Tier-agnostic (free keeps
+        // its my lane); shown for any coarse pointer; desktop mouse drag untouched.
+        const vp = window.WR.useViewport();
+        const touchReorder = vp.isPhone || vp.isCoarse;
 
         const [posFilter, setPosFilter] = React.useState('');
         const [search, setSearch] = React.useState('');
@@ -208,7 +222,9 @@
         // renders the DHQ order as a draggable starting point, and the first drag
         // persists the manual order. (Otherwise an empty My Board silently falls
         // back to DHQ and can never be reordered.)
-        const activeLane = (boardLane === 'my' || lanes[boardLane]) ? boardLane : 'dhq';
+        // For free, treat the Pro-only 'ai' lane as unknown — a persisted
+        // activeLane:'ai' must clamp to 'dhq', never auto-open the optimizer lane.
+        const activeLane = ((pro || boardLane !== 'ai') && (boardLane === 'my' || lanes[boardLane])) ? boardLane : 'dhq';
         const activeLaneData = lanes[activeLane] || lanes.dhq || { order: [] };
         const activeRanks = React.useMemo(() => rankMap(activeLaneData.order || []), [activeLaneData]);
         const dhqRanks = React.useMemo(() => rankMap(lanes.dhq?.order || []), [lanes.dhq]);
@@ -226,9 +242,13 @@
             return boardContext?.entries?.[pid] || {};
         }, [boardContext]);
 
-        // Memoize per-player projection + value-window so they don't re-run over the
-        // whole 200-300 pool on every pick/re-render. Keyed by pid+dhq+age; the cache
-        // resets whenever the underlying originalPool changes.
+        // Per-player projection/value-window cache. projectionFor/valueWindow are pure
+        // functions of the player's dhq/age/pos (+ session-stable config), so they do
+        // NOT change when a pick is made — only when the pool is re-scored. Without this,
+        // decoratedPool (which re-runs every pick because state.draftedPids changes) calls
+        // projectPlayerValue 3x for the entire 200-300 player pool on every single pick.
+        // Reset on originalPool identity change (re-score); key by dhq/age so a changed
+        // value still recomputes.
         const projCacheRef = React.useRef({ pool: null, proj: new Map(), win: new Map() });
         if (projCacheRef.current.pool !== state.originalPool) {
             projCacheRef.current = { pool: state.originalPool, proj: new Map(), win: new Map() };
@@ -346,7 +366,7 @@
             persistBoardPatch({ activeLane: 'my', myOrder: aiOrder.slice() });
         };
 
-        const onCycleTag = (player) => {
+        const _onCycleTag = (player) => {
             const pid = idOf(player);
             if (!pid) return;
             const current = entryFor(player).tag || null;
@@ -355,7 +375,7 @@
             persistBoardPatch({ tags: { [pid]: next }, activeLane: boardLane });
         };
 
-        const onEditNote = (player) => {
+        const _onEditNote = (player) => {
             const pid = idOf(player);
             if (!pid) return;
             const current = entryFor(player).note || '';
@@ -385,14 +405,21 @@
 
         const onMovePlayer = (player, delta) => {
             const pid = idOf(player);
+            if (!pid) return;
+            // Move relative to the VISIBLE neighbor (mirrors onDropPlayer):
+            // the rendered list is filtered (hideDrafted/pos/search/row cap),
+            // so a raw ±1 through the full manual order can be a no-op or
+            // silently reorder rows the user can't see.
+            const visIdx = available.findIndex(p => idOf(p) === pid);
+            if (visIdx < 0) return;
+            const neighbor = available[visIdx + delta];
+            if (!neighbor) return; // already at the visible edge
+            const nPid = idOf(neighbor);
             const order = manualOrderIds();
-            const idx = order.indexOf(pid);
-            if (!pid || idx < 0) return;
-            const nextIdx = Math.max(0, Math.min(order.length - 1, idx + delta));
-            if (nextIdx === idx) return;
-            const next = order.slice();
-            const [moved] = next.splice(idx, 1);
-            next.splice(nextIdx, 0, moved);
+            if (order.indexOf(pid) < 0 || order.indexOf(nPid) < 0) return;
+            const next = order.filter(id => id !== pid);
+            const at = next.indexOf(nPid);
+            next.splice(delta < 0 ? at : at + 1, 0, pid);
             saveManualOrder(next);
         };
 
@@ -408,7 +435,7 @@
             saveManualOrder(order);
         };
 
-        const onEditTier = (player) => {
+        const _onEditTier = (player) => {
             const pid = idOf(player);
             if (!pid) return;
             const current = entryFor(player).tier || player.tier || player.csv?.tier || '';
@@ -469,16 +496,45 @@
             padding: '10px 12px',
         });
 
+        // Touch reorder controls (my lane, coarse pointer/phone only): 44px-tall
+        // terminal-styled buttons — 1px gold border, near-zero radius, mono
+        // micro-caps — rendered as a control row under the player row.
+        const moveBtnCss = {
+            flex: '1 1 0',
+            maxWidth: 132,
+            minHeight: 44,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+            padding: '0 10px',
+            background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
+            border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
+            borderRadius: 3,
+            color: 'var(--gold)',
+            fontFamily: FONT_UI,
+            fontWeight: 800,
+            fontSize: 'var(--text-micro, 0.6875rem)',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            touchAction: 'manipulation',
+        };
+
         // iPad / narrow cap: show ~15 player rows then scroll. Desktop is unrestricted
         // (flex fills the panel). DHQ/AI rows are one line (~46px incl. padding+border);
-        // My Board adds a second control row (~38px) per visible row.
+        // My Board on a touch device adds the ▲/▼ move-control row (~56px) per row.
         const ROWS_VISIBLE = 15;
-        const rowHeight = activeLane === 'my' ? 84 : 46;
+        const rowHeight = activeLane === 'my' ? (touchReorder ? 104 : 84) : 46;
         const scrollMaxHeight = bucket === 'desktop' ? undefined : (ROWS_VISIBLE * rowHeight) + 'px';
 
+        const laneOptions = pro ? ['dhq', 'ai', 'my'] : ['dhq', 'my'];
+
         const laneSource = activeLaneData.source || '';
+        // For free, the my-lane default seed IS the raw DHQ order (context.js
+        // degrades aiOrder) — don't caption it as AI.
         const laneCopy = activeLane === 'my' && laneSource === 'seeded_from_ai'
-            ? 'Seeded from AI. Edits create your manual fork.'
+            ? (pro ? 'Seeded from AI. Edits create your manual fork.' : 'Starts from the DHQ order. Edits create your manual fork.')
             : activeLane === 'ai'
                 ? 'Generated from GM strategy, roster fit, and format.'
                 : activeLane === 'dhq'
@@ -496,8 +552,8 @@
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginBottom: '6px' }}>
-                    {['dhq', 'ai', 'my'].map(lane => {
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(' + laneOptions.length + ', 1fr)', gap: '4px', marginBottom: '6px' }}>
+                    {laneOptions.map(lane => {
                         const active = activeLane === lane;
                         return (
                             <button key={lane} onClick={() => onLaneSelect(lane)} style={{
@@ -520,7 +576,7 @@
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '7px', minHeight: 18 }}>
                     <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_UI, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{laneCopy}</span>
-                    {activeLane === 'my' && boardContext?.canSeedMyBoardFromAi && (
+                    {pro && activeLane === 'my' && boardContext?.canSeedMyBoardFromAi && (
                         <button onClick={onSeedMyBoardFromAi} style={{
                             padding: '2px 6px',
                             border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
@@ -607,13 +663,13 @@
 
                 {activeLane === 'my' && (
                     <div style={{ padding: '4px 2px 7px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', opacity: 0.72, fontFamily: FONT_UI, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ fontWeight: 900 }}>{'↕'}</span> Drag rows to reorder your board
+                        <span style={{ fontWeight: 900 }}>{'↕'}</span> {touchReorder ? 'Tap ▲ / ▼ under a row to reorder your board' : 'Drag rows to reorder your board'}
                     </div>
                 )}
 
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: (isUserTurn || state.overrideMode || state.mode === 'manual') ? '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 50px' : '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px',
+                    gridTemplateColumns: '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 44px',
                     gap: '5px',
                     alignItems: 'center',
                     padding: '0 3px 4px 5px',
@@ -644,9 +700,10 @@
                         const posColor = posColors[normEdPos(p.pos)] || 'var(--silver)';
                         const nflTeam = nflTeamOf(p);
                         const college = collegeOf(p);
+                        const showTouchMove = touchReorder && activeLane === 'my' && !p._drafted;
                         return (
+                            <React.Fragment key={p.pid}>
                             <div
-                                key={p.pid}
                                 onClick={() => onOpenModal(p)}
                                 draggable={activeLane === 'my' && !p._drafted}
                                 onDragStart={e => {
@@ -669,11 +726,11 @@
                                 }}
                                 style={{
                                     display: 'grid',
-                                    gridTemplateColumns: (isUserTurn || state.overrideMode || state.mode === 'manual') ? '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 50px' : '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px',
+                                    gridTemplateColumns: '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 44px',
                                     gap: '5px',
                                     alignItems: 'center',
                                     padding: '3px 3px 3px 0',
-                                    borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))',
+                                    borderBottom: showTouchMove ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))',
                                     borderLeft: b.tier ? '2px solid ' + tCol : '2px solid transparent',
                                     paddingLeft: '5px',
                                     cursor: activeLane === 'my' && !p._drafted ? 'grab' : 'pointer',
@@ -712,8 +769,10 @@
                                         onClick={e => { e.stopPropagation(); onDraft(p); }}
                                         title={state.overrideMode || state.mode === 'manual' ? 'Record the player for the team on the clock' : 'Make your pick'}
                                         style={{
-                                            padding: '10px 8px',
-                                            minHeight: '44px',
+                                            padding: '3px 5px',
+                                            // ≥44px pick action on touch (phone feed / coarse pointer);
+                                            // desktop keeps the dense 22px row button.
+                                            minHeight: touchReorder ? '44px' : '22px',
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
@@ -729,6 +788,28 @@
                                     >{state.mode === 'live-sync' && state.overrideMode ? 'APPLY' : state.mode === 'manual' ? 'PICK' : (state.overrideMode ? 'FORCE' : 'DRAFT')}</button>
                                 )}
                             </div>
+                            {showTouchMove && (
+                                <div style={{
+                                    display: 'flex',
+                                    gap: 6,
+                                    padding: '4px 4px 8px 27px',
+                                    borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))',
+                                }}>
+                                    <button
+                                        type="button"
+                                        aria-label={'Move ' + (p.name || 'player') + ' up'}
+                                        onClick={e => { e.stopPropagation(); onMovePlayer(p, -1); }}
+                                        style={moveBtnCss}
+                                    >▲ Up</button>
+                                    <button
+                                        type="button"
+                                        aria-label={'Move ' + (p.name || 'player') + ' down'}
+                                        onClick={e => { e.stopPropagation(); onMovePlayer(p, 1); }}
+                                        style={moveBtnCss}
+                                    >▼ Down</button>
+                                </div>
+                            )}
+                            </React.Fragment>
                         );
                     })}
                 </div>

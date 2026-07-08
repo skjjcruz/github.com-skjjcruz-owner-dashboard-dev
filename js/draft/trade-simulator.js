@@ -99,7 +99,12 @@
         if (!pick) return 0;
         if (Number(pick.value) > 0) return Math.round(Number(pick.value));
         const teams = state.leagueSize || 12;
-        const slot = pick.slot || pick.pickInRound || Math.ceil(teams / 2);
+        // Value models expect pick-WITHIN-round; pick.slot is the team column, so
+        // only fall back to it when neither pickInRound nor overall is present.
+        const slot = pick.pickInRound
+            || (pick.overall ? ((Number(pick.overall) - 1) % teams) + 1 : 0)
+            || pick.slot
+            || Math.ceil(teams / 2);
         const overall = pick.overall || ((Number(pick.round || 1) - 1) * teams + slot);
         const resolver = window.DraftCC?.state?.resolveDraftPickValue;
         if (typeof resolver === 'function') {
@@ -141,6 +146,18 @@
 
     function sumPickValue(state, picks) {
         return (picks || []).reduce((sum, p) => sum + pickValueFor(state, p), 0);
+    }
+
+    // "R2.01" — universal round.pick-in-round label. pick.slot is the team's
+    // draft column, so derive from overall for records that predate pickInRound.
+    function pickRoundLabel(state, pick) {
+        if (!pick) return '';
+        const teams = state?.leagueSize || 12;
+        const pp = Number(pick.pickInRound)
+            || (Number(pick.overall) > 0 ? ((Number(pick.overall) - 1) % teams) + 1 : 0)
+            || Number(pick.slot)
+            || 0;
+        return 'R' + (pick.round || '?') + '.' + String(pp).padStart(2, '0');
     }
 
     // Phase 7 deferred: in-draft trades should support players + FAAB alongside picks.
@@ -754,7 +771,7 @@
         return next;
     }
 
-    function addTargetPicksUntil(state, proposal, targetRosterId, targetValue, maxAdds = 3) {
+    function _addTargetPicksUntil(state, proposal, targetRosterId, targetValue, maxAdds = 3) {
         const next = { ...proposal, theirGive: [...(proposal.theirGive || [])] };
         const picks = remainingPicksByValue(state, targetRosterId, next.theirGive, 'desc');
         for (const pick of picks) {
@@ -789,6 +806,7 @@
             movablePicks: picks.map(p => ({
                 round: p.round,
                 slot: p.slot,
+                pickInRound: p.pickInRound || null,
                 overall: p.overall,
                 value: pickValueFor(state, p),
             })),
@@ -806,9 +824,9 @@
         const myGiveDHQ = Math.round(Number(evaluation?.myGiveDHQ || 0));
         const theirGiveDHQ = Math.round(Number(evaluation?.theirGiveDHQ || 0));
         const acquired = opts.acquiredPick || null;
-        const acquiredVal = acquired ? pickValueFor(state, acquired) : theirGiveDHQ;
+        const _acquiredVal = acquired ? pickValueFor(state, acquired) : theirGiveDHQ;
         const slotLabel = acquired
-            ? 'R' + acquired.round + '.' + String(acquired.slot || 0).padStart(2, '0')
+            ? pickRoundLabel(state, acquired)
             : 'their slot';
 
         // Net DHQ — what you pay vs the value you acquire.
@@ -929,7 +947,7 @@
             // Build the user's give to ≈ the acquired pick's value — a fair deal, not an
             // overpay. Math.max(1, …) keeps it two-sided even when the value resolves to 0.
             proposal = buildSideToValue(state, proposal, 'my', Math.max(1, targetPickValue));
-            const earliestLabel = 'R' + theirEarliest.round + '.' + String(theirEarliest.slot || 0).padStart(2, '0');
+            const earliestLabel = pickRoundLabel(state, theirEarliest);
             push(
                 'move-up',
                 'Move Up',
@@ -1039,7 +1057,7 @@
                 moonshot = { ...moonshot, myGiveFaab: Math.min(1000, Math.round(shortfall / 0.7)) };
             }
             const moonEval = evaluateUserProposal(state, moonshot, { preview: true, noCounter: true });
-            const earliestLabel = 'R' + theirEarliest.round + '.' + String(theirEarliest.slot || 0).padStart(2, '0');
+            const earliestLabel = pickRoundLabel(state, theirEarliest);
             ranked.push({
                 id: 'moonshot',
                 label: 'MOONSHOT',
@@ -1125,7 +1143,7 @@
                 viable,
                 onClock: idx === 0,
                 picksAway: idx,
-                pickLabel: 'R' + slot.round + '.' + String(slot.slot || 0).padStart(2, '0'),
+                pickLabel: pickRoundLabel(state, slot),
                 overall: slot.overall,
                 motive: best.intent || best.label,
                 reason: best.rationale,
@@ -1298,9 +1316,17 @@
             .map(n => (typeof n === 'string' ? n : n?.pos))
             .filter(Boolean);
         const dnaLabel = theirPersona.draftDna?.label || theirPersona.tradeDna?.label || 'Balanced';
-        const reason = theirNeeds.length > 0
-            ? `They need ${theirNeeds[0]} and want to move up for earlier capital.`
-            : `${dnaLabel} — looking to acquire earlier capital.`;
+        // Near snake turns the CPU's own next pick can sit EARLIER than the user's
+        // pick they are targeting — that is a move DOWN, so don't claim they "want
+        // to move up" (timingModifier grades the true direction from overalls).
+        const cpuMovesUp = Number(myTargetPick.overall || 0) < Number(theirFirst.overall || 0);
+        const reason = cpuMovesUp
+            ? (theirNeeds.length > 0
+                ? `They need ${theirNeeds[0]} and want to move up for earlier capital.`
+                : `${dnaLabel} — looking to acquire earlier capital.`)
+            : (theirNeeds.length > 0
+                ? `They need ${theirNeeds[0]} and would rather slide back and stack extra picks.`
+                : `${dnaLabel} — open to sliding back to accumulate capital.`);
         const intelReason = ownerIntelSummary(theirPersona);
 
         return offerShape(state, proposal, evaluation, intelReason ? `${reason} Historical intel: ${intelReason}.` : reason, {

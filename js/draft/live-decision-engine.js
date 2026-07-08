@@ -120,7 +120,28 @@
         return out;
     }
 
-    function decorateCandidate(state, player, idx, lane, rankLookup, needs) {
+    // GM Strategy terms for the live score — resolved once per candidates()
+    // pass, so the Recommended/Safe/Upside cards obey the strategy on the
+    // DEFAULT (dhq) board lane, not just the AI lane. Guarded: gm-mode.js is
+    // optional; returns null (score unchanged) until a strategy is saved.
+    function gmScoreContext(state) {
+        try {
+            if (typeof window.WR?.GmMode?.effects !== 'function') return null;
+            const fx = window.WR.GmMode.effects(state?.leagueId || window.S?.currentLeagueId);
+            if (!fx || !fx.hasStrategy) return null;
+            return {
+                // Same draftStyle → needBias mapping as the AI board lane.
+                needBias: (fx.draftStyle === 'positional_need' || fx.draftStyle === 'need') ? 1.35
+                    : fx.draftStyle === 'bpa' ? 0.8
+                    : num(fx.draftWeights?.needBias, 1) || 1,
+                youthPremium: num(fx.draftWeights?.youthPremium, 1) || 1,
+                targets: fx.targetPositions instanceof Set ? fx.targetPositions : new Set(),
+                fades: fx.sellPositions instanceof Set ? fx.sellPositions : new Set(),
+            };
+        } catch (_) { return null; }
+    }
+
+    function decorateCandidate(state, player, idx, lane, rankLookup, needs, gm) {
         const boardContext = state?.draftContext?.boardContext || {};
         const entry = boardEntry(boardContext, player);
         const rank = boardRank(boardContext, player, lane) || rankLookup[idKey(player?.pid)] || idx + 1;
@@ -133,9 +154,19 @@
         // userNeedMap depends only on state, not the player — built once by candidates()
         // and passed in (was rebuilt for every one of the ~300-440 pool candidates).
         const needMap = needs || userNeedMap(state);
-        const needBoost = needMap[posOf(player)] || 0;
+        const needBoost = (needMap[posOf(player)] || 0) * (gm ? gm.needBias : 1);
+        // GM Strategy steers (0 when no strategy): mild target/fade position
+        // shifts plus a youth tilt — rebuild boosts age-24-and-under skill
+        // players, win-now fades them (youthPremium 1.2 / 0.6 per preset).
+        const age = ageOf(player);
+        const gmPosBoost = gm ? (gm.targets.has(posOf(player)) ? 6 : 0) - (gm.fades.has(posOf(player)) ? 6 : 0) : 0;
+        const gmYouthBoost = (gm && age && age <= 24 && ['QB', 'RB', 'WR', 'TE'].includes(posOf(player)))
+            ? Math.max(-12, Math.min(12, (gm.youthPremium - 1) * 30))
+            : 0;
         const score = dhq / 100
             + needBoost
+            + gmPosBoost
+            + gmYouthBoost
             + (tagTarget ? 24 : 0)
             - (tagFade ? 42 : 0)
             + Math.max(-12, Math.min(18, growth / 180))
@@ -161,10 +192,11 @@
         const lane = activeLane(boardContext);
         const rankLookup = rankMap(boardContext?.lanes?.[lane]?.order || []);
         const needs = userNeedMap(state);
+        const gm = gmScoreContext(state);
         const ldCopies = Math.max(1, Number(state?.playerCopies) || 1);
         return asArray(state?.pool)
             .filter(p => p?.pid && (state?.draftedPids?.[p.pid] || 0) < ldCopies)
-            .map((p, idx) => decorateCandidate(state, p, idx, lane, rankLookup, needs))
+            .map((p, idx) => decorateCandidate(state, p, idx, lane, rankLookup, needs, gm))
             .sort((a, b) => (a.rank - b.rank) || (b.dhq - a.dhq))
             .slice(0, limit);
     }
@@ -315,7 +347,12 @@
         const nm = c => c.player?.name || c.player?.full_name || c.player?.pid || 'Player';
         const ps = c => posOf(c.player) || '';
         const slot = next.slot;
-        const pickLabel = 'R' + (slot.round || '?') + '.' + String(slot.slot || 0).padStart(2, '0');
+        // Universal round.pick-in-round label — slot.slot is the team column, so
+        // derive from overall for saved drafts that predate pickInRound.
+        const teams = num(state?.leagueSize, 0);
+        const pp = num(slot.pickInRound, 0)
+            || (teams > 0 && num(slot.overall, 0) > 0 ? ((num(slot.overall, 0) - 1) % teams) + 1 : num(slot.slot, 0));
+        const pickLabel = 'R' + (slot.round || '?') + '.' + String(pp || 0).padStart(2, '0');
         // Heuristic: the ~picksAway top-ranked players are likely gone before our turn.
         const survivors = rows.filter(c => c.rank > picksAway + 1);
         const gone = rows.filter(c => c.rank <= picksAway);
@@ -488,13 +525,22 @@
         };
     }
 
+    // Scout-free gate at the engine seam: every export here is an interpretive
+    // read (decision deck recs, predicted-available, tier-break/value-cliff/
+    // need-tension advice, trade-evolution narration) → Pro. Gating here covers
+    // all consumers (command-center memos + LiveCommandHeader + stream effects)
+    // with one seam. Fail-open when pro-gate.js isn't loaded; callers already
+    // handle null/{} (their normal "no signal" shape).
+    const _ldePro = () => typeof window.wrIsPro !== 'function' || window.wrIsPro();
+    const _gateNull = fn => function () { return _ldePro() ? fn.apply(null, arguments) : null; };
+
     window.DraftCC = window.DraftCC || {};
     window.DraftCC.liveDecisionEngine = {
-        buildDecisionDeck,
-        buildLiveReadout,
-        liveStreamSignals,
-        liveTradeEvolutionSignal,
-        tierAlert,
+        buildDecisionDeck: _gateNull(buildDecisionDeck),
+        buildLiveReadout: _gateNull(buildLiveReadout),
+        liveStreamSignals: function () { return _ldePro() ? liveStreamSignals.apply(null, arguments) : {}; },
+        liveTradeEvolutionSignal: _gateNull(liveTradeEvolutionSignal),
+        tierAlert: _gateNull(tierAlert),
         _private: {
             candidates,
             nextUserPick,

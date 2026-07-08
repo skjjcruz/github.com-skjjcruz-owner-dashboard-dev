@@ -2,19 +2,28 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <title>Behavioral Trade Calculator - Dynasty HQ</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap"></noscript>
     <style>
         :root {
             --gold: #D4AF37; --dark-gold: #B8941E; --black: #0A0A0A;
             --off-black: #1A1A1A; --charcoal: #2A2A2A; --silver: #C0C0C0;
             --white: #FFFFFF; --win-green: #2ECC71; --loss-red: #E74C3C;
             --amber: #F0A500; --blue: #5DADE2;
+            /* iPhone safe-area tokens (viewport-fit=cover above) — same names
+               as index.html so the idiom carries across pages. 0px elsewhere. */
+            --sat: env(safe-area-inset-top, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: var(--black); color: var(--white); min-height: 100vh; overflow-x: hidden; }
@@ -547,7 +556,15 @@
         /* ---- Touch hit-area targets (tablet / coarse pointer) ---- */
         @media (pointer: coarse) {
             .back-btn,
-            .league-select { min-height: 44px; }
+            .league-select,
+            .filter-select,
+            .dna-select,
+            .ta-owner-select,
+            .ta-roster-filter,
+            .outcome-btn,
+            .ai-team-select,
+            .ai-analyze-btn,
+            .ai-mode-btn { min-height: 44px; }
             .ta-remove {
                 min-width: 44px;
                 min-height: 44px;
@@ -555,6 +572,21 @@
                 align-items: center;
                 justify-content: center;
             }
+        }
+
+        /* ---- iPhone pass (≤767, plan Phase 3 item 17): safe-area chrome,
+             16px inputs (iOS zoom-on-focus guard), home-indicator clearance.
+             Phone-scoped — wider tiers are untouched. ---- */
+        @media (max-width: 767px) {
+            /* Header rides below the notch/status bar (installed-PWA draws
+               under it with viewport-fit=cover). */
+            .page-header { padding: calc(0.55rem + var(--sat)) calc(1rem + var(--sar)) 0.55rem calc(1rem + var(--sal)); }
+            /* Safari zooms any focused input under 16px (same rule as the
+               main app's phone tier). */
+            input, select, textarea { font-size: 16px !important; }
+            /* Page scrolls at body level here (min-height root, no fixed
+               shell) — last content block clears the home indicator. */
+            .tab-content { padding-bottom: calc(0.75rem + var(--sab)); }
         }
     </style>
 </head>
@@ -584,8 +616,10 @@ WRShared.loadMany([
   'app-config.js',
   'constants.js',
   'utils.js',
+  'storage.js',
   'sleeper-api.js',
   'supabase-client.js',
+  'tier.js',
   'pick-value-model.js',
   'dhq-core.js',
   'intelligence-context.js',
@@ -599,6 +633,10 @@ WRShared.loadMany([
   'rookie-data.js',
 ]);
 </script>
+<!-- Scout-free vs Pro gate: wrIsPro() + chrome + lock card; boots loadUserTier().
+     Must come after the tier chain above (storage.js → tier.js) and also arms the
+     OD.callAI free-type tripwire, which is inert when window.isScoutPro is absent. -->
+<script src="js/shared/pro-gate.js?v=20260705gate1"></script>
 <script src="draft-history.js"></script>
 <script src="vendor/react.production.min.js"></script>
 <script src="vendor/react-dom.production.min.js"></script>
@@ -1829,6 +1867,30 @@ function TeamCard({ assessment, isMyTeam, ownerDna }) {
     );
 }
 
+// ─── PRO LOCK PANEL (Scout-free tier) ────────────────────────────────────────
+// Inline JSX lock (mirrors free-agency.html's AI Scout lock): CTA goes straight
+// to landing.html because the shared showUpgradePrompt modal styles with Scout
+// CSS variables this standalone page does not define.
+function ProLockPanel({ title, desc }) {
+    return (
+        <div style={{ maxWidth:'560px', margin:'2rem auto' }}>
+            <div style={{ background:'var(--off-black)', border:'1px solid var(--charcoal)', borderLeft:'3px solid var(--gold)', borderRadius:'2px', padding:'14px 16px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                    <span aria-hidden="true" style={{ fontSize:'0.9rem' }}>🔒</span>
+                    <span style={{ flex:1, fontFamily:'monospace', fontSize:'0.72rem', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--white)' }}>{title}</span>
+                    <span style={{ fontFamily:'monospace', fontSize:'0.68rem', letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--gold)', border:'1px solid rgba(212,175,55,0.45)', borderRadius:'2px', padding:'1px 6px' }}>Pro</span>
+                </div>
+                <div style={{ fontSize:'0.72rem', color:'var(--silver)', lineHeight:1.55, margin:'8px 0 0 22px' }}>{desc}</div>
+                <button type="button"
+                    onClick={() => { window.location.href = 'landing.html'; }}
+                    style={{ display:'block', margin:'10px 0 0 22px', padding:'6px 14px', background:'var(--gold)', color:'#1a1000', border:'none', borderRadius:'2px', fontFamily:'monospace', fontSize:'0.72rem', fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer' }}>
+                    Unlock with Pro
+                </button>
+            </div>
+        </div>
+    );
+}
+
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 function TradeCalculator() {
     const [phase, setPhase]   = useState('boot');
@@ -1880,12 +1942,28 @@ function TradeCalculator() {
     const [aiChatInput,     setAiChatInput]      = useState('');
     const [aiHistory,       setAiHistory]        = useState([]);
 
-    // Load AI history when league changes (must be at top level, not inside renderAIScout)
+    // Scout-free vs Pro (js/shared/pro-gate.js, loaded above the React chain).
+    // Manual trade building + raw values/rosters + the raw DHQ fairness verdict
+    // stay free; Roster Audit / Owner DNA / AI Scout and the psych layer
+    // (posture, DNA, taxes, likelihood, buyer line) are Pro — Trade Center
+    // parity. Re-render once the async server tier resolves so a paying user
+    // whose local trial stamp lapsed isn't stuck on the lock.
+    const [tierTick, setTierTick] = useState(0);
     useEffect(() => {
-        if (leagueId) {
+        let live = true;
+        const p = (typeof window.loadUserTier === 'function') ? window.loadUserTier() : null;
+        Promise.resolve(p).catch(() => {}).then(() => { if (live) setTierTick(t => t + 1); });
+        return () => { live = false; };
+    }, []);
+    const isPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+
+    // Load AI history when league changes (must be at top level, not inside
+    // renderAIScout). Pro-only: free must not browse saved AI analyses.
+    useEffect(() => {
+        if (leagueId && isPro) {
             window.OD.loadAIHistory(leagueId).then(h => setAiHistory(h || [])).catch(() => {});
         }
-    }, [leagueId]);
+    }, [leagueId, tierTick]);
 
     // Bootstrap — fetch user once, then leagues for the selected year
     useEffect(() => { boot(); }, []);
@@ -3234,7 +3312,9 @@ function TradeCalculator() {
                             LEAGUE TEAMS
                         </div>
                         <div style={{ fontSize:'0.62rem', color:'var(--silver)', opacity:0.5, marginBottom:'0.3rem', lineHeight:1.4 }}>
-                            Click a team to set as Side B trading partner. Shows their key needs and surpluses.
+                            {isPro
+                                ? 'Click a team to set as Side B trading partner. Shows their key needs and surpluses.'
+                                : 'Click a team to set as Side B trading partner. Needs, surpluses, tiers, and fit scouting are Pro.'}
                         </div>
                         {assessments
                             .filter(a => a.rosterId !== myRosterId)
@@ -3256,7 +3336,7 @@ function TradeCalculator() {
                                     >
                                         <div className="scout-owner-row">
                                             <span className="scout-owner-name">{a.ownerName}</span>
-                                            <span className="tier-badge" style={{ color:a.tierColor, borderColor:a.tierColor, background:a.tierBg, flexShrink:0 }}>{a.tier}</span>
+                                            {isPro && <span className="tier-badge" style={{ color:a.tierColor, borderColor:a.tierColor, background:a.tierBg, flexShrink:0 }}>{a.tier}</span>}
                                         </div>
                                         <div style={{ fontSize:'0.65rem', color:'var(--silver)', opacity:0.55, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.teamName}</div>
 
@@ -3266,13 +3346,13 @@ function TradeCalculator() {
                                                 {a.weeklyPts > 0 ? `${a.weeklyPts} pts` : '—'}
                                             </span>
                                             <span style={{ color:'var(--silver)', opacity:0.4 }}>/ {WEEKLY_TARGET} target</span>
-                                            {compat > 0 && (
+                                            {isPro && compat > 0 && (
                                                 <span style={{ marginLeft:'auto', fontSize:'0.6rem', color:compatColor, fontWeight:700 }}>{compat}% fit</span>
                                             )}
                                         </div>
 
-                                        {/* Needs */}
-                                        {a.needs.length > 0 && (
+                                        {/* Needs — Pro (partner intel) */}
+                                        {isPro && a.needs.length > 0 && (
                                             <div className="scout-chips">
                                                 <span style={{ fontSize:'0.58rem', color:'var(--silver)', opacity:0.4, marginRight:'0.15rem' }}>NEEDS:</span>
                                                 {a.needs.slice(0,4).map(n => (
@@ -3283,8 +3363,8 @@ function TradeCalculator() {
                                             </div>
                                         )}
 
-                                        {/* Strengths */}
-                                        {a.strengths.length > 0 && (
+                                        {/* Strengths — Pro (partner intel) */}
+                                        {isPro && a.strengths.length > 0 && (
                                             <div className="scout-chips">
                                                 <span style={{ fontSize:'0.58rem', color:'var(--silver)', opacity:0.4, marginRight:'0.15rem' }}>HAS:</span>
                                                 {a.strengths.map(s => (
@@ -3293,8 +3373,8 @@ function TradeCalculator() {
                                             </div>
                                         )}
 
-                                        {/* DNA */}
-                                        {dnaKey !== 'NONE' && (
+                                        {/* DNA — Pro (psych read) */}
+                                        {isPro && dnaKey !== 'NONE' && (
                                             <div style={{ fontSize:'0.6rem', color:dna.color, opacity:0.85, fontStyle:'italic', marginTop:'0.1rem' }}>
                                                 {dna.label}
                                             </div>
@@ -3320,8 +3400,8 @@ function TradeCalculator() {
                             </span>
                         </div>
 
-                        {/* Owner posture + DNA */}
-                        {otherOwnerId && (
+                        {/* Owner posture + DNA — Pro (psych read) */}
+                        {isPro && otherOwnerId && (
                             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
                                 <span style={{ fontSize:'0.6rem', color:'var(--silver)', opacity:0.5 }}>Their posture:</span>
                                 <span className="posture-badge" style={{ color:theirPosture.color, borderColor:theirPosture.color, background:`${theirPosture.color}18` }}>{theirPosture.label}</span>
@@ -3330,8 +3410,8 @@ function TradeCalculator() {
                             </div>
                         )}
 
-                        {/* Psychological Tax Breakdown */}
-                        <div>
+                        {/* Psychological Tax Breakdown — Pro (psych layer) */}
+                        {isPro && <div>
                             <div className="log-section-hdr" style={{ marginBottom:'0.35rem' }}>Acceptance Drivers</div>
                             <div style={{ fontSize:'0.58rem', color:'var(--silver)', opacity:0.5, margin:'-0.15rem 0 0.35rem', lineHeight:1.35 }}>
                                 These are percentage-point odds modifiers only. They do not change the raw DHQ won/lost above.
@@ -3363,17 +3443,17 @@ function TradeCalculator() {
                                     </span>
                                 </div>
                             </div>
-                        </div>
+                        </div>}
 
-                        {/* Strategy tip */}
-                        {otherDnaKey !== 'NONE' && otherDna.strategy && (
+                        {/* Strategy tip — Pro (DNA-based "how to approach" advice) */}
+                        {isPro && otherDnaKey !== 'NONE' && otherDna.strategy && (
                             <div style={{ fontSize:'0.65rem', color:otherDna.color, fontStyle:'italic', background:`${otherDna.color}0d`, border:`1px solid ${otherDna.color}25`, borderRadius:5, padding:'0.4rem 0.6rem' }}>
                                 Approach: {otherDna.strategy}
                             </div>
                         )}
 
-                        {/* Buyer target */}
-                        {buyerTarget && (
+                        {/* Buyer target — Pro (send-X-more recommendation) */}
+                        {isPro && buyerTarget && (
                             <div className="buyer-target-card">
                                 <div className="buyer-target-title">Buyer Line</div>
                                 <div className="buyer-target-body">
@@ -3399,8 +3479,8 @@ function TradeCalculator() {
                             </div>
                         )}
 
-                        {/* Likelihood of acceptance */}
-                        <div>
+                        {/* Likelihood of acceptance — Pro (optimizer output) */}
+                        {isPro && <div>
                             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.3rem' }}>
                                 <span style={{ fontSize:'0.65rem', color:'var(--silver)', opacity:0.7, textTransform:'uppercase', letterSpacing:'0.06em' }}>Likelihood of Acceptance</span>
                                 <span style={{ fontFamily:'Inter,sans-serif', fontSize:'1.4rem', color: likelihoodColor }}>{likelihood}%</span>
@@ -3408,7 +3488,13 @@ function TradeCalculator() {
                             <div className="likelihood-bar-wrap">
                                 <div className="likelihood-bar-fill" style={{ width:`${likelihood}%`, background: likelihoodColor }} />
                             </div>
-                        </div>
+                        </div>}
+
+                        {/* Free teaser: raw DHQ verdict above stays; psych layer is Pro */}
+                        {!isPro && (
+                            <ProLockPanel title="Acceptance Intelligence"
+                                desc="Acceptance likelihood, psychological drivers, owner posture, and the buyer line are Pro. The raw DHQ value verdict above stays free." />
+                        )}
 
                     </div>
                 )}
@@ -3511,6 +3597,13 @@ function TradeCalculator() {
         }
 
         async function runAnalysis() {
+            // Trigger gate (not just the server tripwire): free never calls AI —
+            // BYOK users bypass OD.callAI, so the gate must live on the trigger.
+            if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+                if (window.showProLaunchPage) window.showProLaunchPage();
+                else window.location.href = 'landing.html';
+                return;
+            }
             setAiLoading(true);
             setAiError(null);
             setAiAnalysis(null);
@@ -3678,13 +3771,18 @@ function TradeCalculator() {
                 ))}
             </div>
 
-            {/* Tab Content */}
+            {/* Tab Content — free keeps the guide + manual Trade Analyzer (raw
+                values/rosters); the interpretive surfaces (Roster Audit health
+                tiers/commentary, Owner DNA psych profiling, AI Scout) are Pro. */}
             <div className="tab-content" style={{ flex:1, paddingBottom:'2rem' }}>
                 {activeTab === 'guide'    && renderGuide()}
-                {activeTab === 'audit'    && renderAudit()}
+                {activeTab === 'audit'    && (isPro ? renderAudit()
+                    : <ProLockPanel title="Roster Audit" desc="Team health scores, competitive tiers, panic meters, and needs/surplus scouting are Pro. The Trade Analyzer's manual builder and raw player values stay free." />)}
                 {activeTab === 'analyzer' && renderTradeAnalyzer()}
-                {activeTab === 'dna'      && renderOwnerDna()}
-                {activeTab === 'ai'       && renderAIScout()}
+                {activeTab === 'dna'      && (isPro ? renderOwnerDna()
+                    : <ProLockPanel title="Owner DNA" desc="Behavioral profiles of opposing GMs and the psychological trade modifiers they unlock are Pro." />)}
+                {activeTab === 'ai'       && (isPro ? renderAIScout()
+                    : <ProLockPanel title="AI Scout" desc="League overviews, team deep dives, AI-ranked trade partners, and Ask-the-AI are Pro. Your saved analyses unlock with your subscription." />)}
             </div>
         </div>
     );

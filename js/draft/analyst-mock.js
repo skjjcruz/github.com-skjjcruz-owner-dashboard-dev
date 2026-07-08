@@ -788,7 +788,7 @@
             ? beforeUserPositions.map(p => p.key + ' x' + p.count).join(', ')
             : 'No pre-user pressure yet';
         const userPath = userPicks.length
-            ? userPicks.slice(0, 4).map(p => p.round + '.' + String(p.slot).padStart(2, '0') + ' ' + p.name).join(' / ')
+            ? userPicks.slice(0, 4).map(p => p.round + '.' + String(p.pickInRound || p.slot).padStart(2, '0') + ' ' + p.name).join(' / ')
             : 'No user picks inside this projection window';
         const topTeam = teamSummaries[0] || null;
         return {
@@ -828,6 +828,11 @@
             ? picks.length
             : clamp(opts.maxLines, 1, 500, Math.min(16, picks.length || 1));
         const shown = picks.slice(0, limit);
+        // commentaryFor: 'user+r1' emits per-pick commentary only for the user's
+        // picks + round-1 picks ('' otherwise — the data row still renders).
+        // Absent/any other value keeps commentary on every pick. Full pick reads
+        // always live in Mock Draft Center's expander regardless of this option.
+        const commentaryFor = opts.commentaryFor;
         const userPicks = picks.filter(p => isUserPick(p, state));
         const pressure = report?.summary?.reportBrief?.positionPressure || [];
         const pressureText = pressure.length
@@ -836,7 +841,7 @@
         const roundCount = report?.assumptions?.rounds || 0;
         const roundLabel = roundCount ? roundCount + ' round' + (Number(roundCount) === 1 ? '' : 's') : 'projection';
         const userPath = userPicks.length
-            ? userPicks.slice(0, 4).map(p => p.round + '.' + String(p.slot).padStart(2, '0') + ' ' + p.name).join(' / ')
+            ? userPicks.slice(0, 4).map(p => p.round + '.' + String(p.pickInRound || p.slot).padStart(2, '0') + ' ' + p.name).join(' / ')
             : 'No user pick inside this window.';
 
         return {
@@ -853,23 +858,25 @@
                 const dhq = Math.round(Number(pick.dhq || 0)).toLocaleString();
                 const commentary = pick.alexCommentary?.roomImpact || pick.alexCommentary?.teamImpact || pick.note || '';
                 const team = pick.ownerName || ('Team ' + pick.slot);
+                const isUser = isUserPick(pick, state);
+                const wantsCommentary = commentaryFor !== 'user+r1' || isUser || Number(pick.round) === 1;
                 return {
                     overall: pick.overall,
-                    pickLabel: pick.round + '.' + String(pick.slot).padStart(2, '0'),
+                    pickLabel: pick.round + '.' + String(pick.pickInRound || pick.slot).padStart(2, '0'),
                     team,
                     player: pick.name,
                     pos: normalizedPos(pick.pos),
                     value: valuePhrase(pick),
                     dhq,
                     driver: drivers,
-                    commentary: stripLeadingTeamName(pick.alexCommentary?.teamImpact || commentary, team),
+                    commentary: wantsCommentary ? stripLeadingTeamName(pick.alexCommentary?.teamImpact || commentary, team) : '',
                     teamImpact: pick.alexCommentary?.teamImpact || '',
                     ownerFit: pick.alexCommentary?.ownerFit || '',
                     nflTeam: pick.nflTeam || pick.team || 'Team TBD',
                     school: pick.school || pick.college || 'School TBD',
                     photoUrl: pick.photoUrl || (pick.pid ? 'https://sleepercdn.com/content/nfl/players/thumb/' + pick.pid + '.jpg' : ''),
                     pid: pick.pid,
-                    isUser: isUserPick(pick, state),
+                    isUser,
                 };
             }),
             footer: shown.length < picks.length
@@ -998,6 +1005,7 @@
             picks.push({
                 round: slot.round,
                 slot: slot.slot,
+                pickInRound: slot.pickInRound || slot.slot,
                 overall: slot.overall,
                 teamIdx: slot.teamIdx,
                 rosterId: slot.rosterId || null,
@@ -1011,6 +1019,7 @@
                 photoUrl: player.photoUrl || (player.pid ? 'https://sleepercdn.com/content/nfl/players/thumb/' + player.pid + '.jpg' : null),
                 dhq: Number(player.dhq || 0),
                 consensusRank: player.consensusRank || player.analystBoardRank || null,
+                analystBoardRank: player.analystBoardRank || null,
                 tier: player.tier || player.csv?.tier || null,
                 confidence,
                 drivers,
@@ -1032,8 +1041,12 @@
         });
 
         const userPicks = picks.filter(p => idKey(p.rosterId) === userRosterId || (!p.rosterId && Number(p.slot) === Number(state.userSlot)));
-        const reaches = picks.filter(p => p.consensusRank && p.consensusRank > p.overall + 8).slice(0, 8);
-        const steals = picks.filter(p => p.consensusRank && p.consensusRank < p.overall - 8).slice(0, 8);
+        // Grade the watch lists on the SAME board (and thresholds) the per-pick
+        // commentary uses (boardWindowPhrase: analystBoardRank first), so a pick
+        // can't sit in Reaches while its own blurb says it fits the board window.
+        const watchRankOf = p => Number(p.analystBoardRank || p.consensusRank || 0);
+        const reaches = picks.filter(p => watchRankOf(p) && watchRankOf(p) >= p.overall + 10).slice(0, 8);
+        const steals = picks.filter(p => watchRankOf(p) && watchRankOf(p) <= p.overall - 8).slice(0, 8);
         const tradeSignals = picks.filter(p => p.drivers.some(d => d.code === 'trade_logic')).slice(0, 10);
 
         const reportBrief = buildReportBrief(picks, state, reaches, steals, tradeSignals);
@@ -1085,6 +1098,7 @@
             .map(p => ({
                 round: p.round,
                 slot: p.slot,
+                pickInRound: p.pickInRound || p.slot,
                 overall: p.overall,
                 teamIdx: p.teamIdx,
                 rosterId: p.rosterId,
@@ -1186,6 +1200,13 @@
         };
     }
 
+    // Projected league mocks (persona-driven simulation) are Scout Pro (owner
+    // ruling Q10). Gate the two simulation entry points at the engine seam so
+    // every caller — draft-room flash mock, scenario handoff, standalone pages —
+    // degrades to null (its documented "no report" shape). Fail-open when
+    // pro-gate.js isn't loaded. Render surfaces carry their own teasers.
+    const _amPro = () => typeof window.wrIsPro !== 'function' || window.wrIsPro();
+
     window.DraftCC = window.DraftCC || {};
     window.DraftCC.analystMock = {
         PRESETS,
@@ -1197,7 +1218,7 @@
         formatAlexSlackBrief,
         compareReports,
         applyReportFilters,
-        generateProjectedMock,
-        applyProjectedScenario,
+        generateProjectedMock: function () { return _amPro() ? generateProjectedMock.apply(null, arguments) : null; },
+        applyProjectedScenario: function () { return _amPro() ? applyProjectedScenario.apply(null, arguments) : null; },
     };
 })();

@@ -22,6 +22,7 @@
         }
 
         const tierLabel = targetTier === 'scout' ? 'Scout' : 'Dynasty HQ';
+        const tierPrice = targetTier === 'scout' ? '$4.99/mo' : '$9.99/mo';
 
         return React.createElement('div', { style: { background:'linear-gradient(135deg, var(--off-black), var(--charcoal))', border:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius:'var(--card-radius)', padding:'24px', textAlign:'center', maxWidth:'480px', margin:'24px auto' } },
             React.createElement('div', { style: { fontFamily:'Rajdhani, sans-serif', fontSize:'1.6rem', color:'var(--gold)', letterSpacing:'0.06em', marginBottom:'8px' } }, title || 'UPGRADE TO UNLOCK'),
@@ -38,8 +39,37 @@
     // (overwrites shared/tier.js and causes infinite recursion via _sharedCanAccess)
     window.getUserTier = getUserTier;
 
+    // ===== GATED "SEE ALL N" TEASER ROW =====
+    // Locked teaser row appended to gated list sections (Intel Brief, Market
+    // Radar, Empire queue, GM's Office). Free renders the section shell with
+    // real rows sliced to zero — rows.slice(0, gated ? 0 : N) — plus this row;
+    // no real recommendations reach the DOM. Port of reconai's
+    // _scoutGatedMoreRow (js/scout-ui.js) in warroom terminal trim.
+    function WrGatedMoreRow({ title, sub, feature }) {
+        const openUpsell = () => {
+            if (window.showProLaunchPage) window.showProLaunchPage();
+            else if (window.showUpgradePrompt) window.showUpgradePrompt(feature || '');
+        };
+        return React.createElement('button', {
+                onClick: openUpsell,
+                style: { display:'flex', alignItems:'center', gap:'10px', width:'100%', textAlign:'left', padding:'10px 12px', background:'var(--off-black)', border:'1px solid var(--charcoal)', borderRadius:'2px', cursor:'pointer' }
+            },
+            React.createElement('span', { 'aria-hidden': true, style: { fontSize:'0.9rem' } }, '🔒'),
+            React.createElement('span', { style: { flex:1, minWidth:0 } },
+                React.createElement('div', { style: { fontFamily:'Rajdhani, sans-serif', fontSize:'0.95rem', fontWeight:600, color:'var(--white)', letterSpacing:'.03em' } }, title),
+                sub ? React.createElement('div', { style: { fontSize:'var(--text-label, 0.75rem)', color:'var(--silver)', marginTop:'2px' } }, sub) : null
+            ),
+            React.createElement('span', { style: { fontFamily:'JetBrains Mono, monospace', fontSize:'var(--text-label, 0.75rem)', letterSpacing:'.08em', textTransform:'uppercase', color:'var(--gold)', border:'1px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius:'2px', padding:'2px 6px' } }, 'Pro')
+        );
+    }
+    window.WrGatedMoreRow = WrGatedMoreRow;
+
     // ===== PLAYER INLINE CARD (bottom-right, non-blocking) =====
     function PlayerInlineCard({ pid, playersData, statsData, onClose, onFullProfile }) {
+        // Live viewport (shared seam, js/shared/viewport.js) — replaces the
+        // render-time innerWidth read that went stale on rotation. Hook must
+        // run before the !p early return (rules of hooks).
+        const viewportWidth = window.WR.useViewport().width;
         const p = playersData?.[pid];
         if (!p) return null;
         const pos = p.position || '?';
@@ -56,10 +86,11 @@
         const [pLo, pHi] = curve.peak;
         const declineHi = curve.decline[1];
         const age = p.age || 0;
-        const peakYrs = Math.max(0, pHi - age);
-        const valueYrs = Math.max(0, declineHi - age);
-        const peakLabel = age < pLo ? 'Rising' : age <= pHi ? 'Prime' : age <= declineHi ? 'Veteran' : 'Post-Window';
-        const peakCol = age < pLo ? 'var(--k-2ecc71, #2ecc71)' : age <= pHi ? 'var(--k-d4af37, #d4af37)' : age <= declineHi ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+        // Unknown age (0) must not read as 29 peak years / 'Rising' — mirror the '—' guard used by My Roster / League Map.
+        const peakYrs = age ? Math.max(0, pHi - age) : 0;
+        const valueYrs = age ? Math.max(0, declineHi - age) : 0;
+        const peakLabel = !age ? '—' : age < pLo ? 'Rising' : age <= pHi ? 'Prime' : age <= declineHi ? 'Veteran' : 'Post-Window';
+        const peakCol = !age ? 'var(--k-d0d0d0, #d0d0d0)' : age < pLo ? 'var(--k-2ecc71, #2ecc71)' : age <= pHi ? 'var(--k-d4af37, #d4af37)' : age <= declineHi ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
         const dhqCol = dhq >= 7000 ? 'var(--k-2ecc71, #2ecc71)' : dhq >= 4000 ? 'var(--k-3498db, #3498db)' : dhq >= 2000 ? 'var(--k-d0d0d0, #d0d0d0)' : 'var(--ov-8, rgba(255,255,255,0.3))';
         // Use league scoring_settings for PPG (matches roster table calculation)
         const scoring = window.S?.leagues?.[0]?.scoring_settings;
@@ -68,14 +99,17 @@
         const trend = meta.trend || 0;
         // Use shared getPlayerAction if available (ownership-aware)
         const pa = typeof window.getPlayerAction === 'function' ? window.getPlayerAction(pid) : null;
-        const rec = pa ? pa.label.toUpperCase() : (peakYrs <= 0 && trend <= -10 ? 'SELL NOW' : peakYrs <= 0 ? 'SELL' : peakYrs <= 2 ? 'SELL' : dhq >= 7000 && peakYrs >= 3 ? 'HOLD CORE' : 'HOLD');
+        const rec = pa ? pa.label.toUpperCase() : !age ? 'HOLD' : (peakYrs <= 0 && trend <= -10 ? 'SELL NOW' : peakYrs <= 0 ? 'SELL' : peakYrs <= 2 ? 'SELL' : dhq >= 7000 && peakYrs >= 3 ? 'HOLD CORE' : 'HOLD');
         const recCol = rec.includes('SELL') ? 'var(--k-e74c3c, #e74c3c)' : rec.includes('BUY') ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-d4af37, #d4af37)';
+        // Verdict chip is Pro at this render seam; getPlayerAction itself stays
+        // callable for engine logic. Fail-open when pro-gate.js isn't loaded.
+        const inlinePro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
         const initials = ((p.first_name||'?')[0] + (p.last_name||'?')[0]).toUpperCase();
 
         // Smart positioning: ensure card is fully visible
-        const isMobile = typeof window !== 'undefined' && window.innerWidth < 440;
+        const isMobile = viewportWidth < 440; // sheet threshold unchanged (D4 owns the ≤767 raise)
         const cardStyle = isMobile
-            ? { position:'fixed', bottom:0, left:0, right:0, width:'100%', maxHeight:'85vh', overflowY:'auto', background:'var(--black)', border:'none', borderTop:'2px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius:'14px 14px 0 0', zIndex:250, boxShadow:'0 -12px 48px rgba(0,0,0,0.7)', animation:'wrFadeIn 0.2s ease' }
+            ? { position:'fixed', bottom:0, left:0, right:0, width:'100%', maxHeight:'85vh', overflowY:'auto', background:'var(--black)', border:'none', borderTop:'2px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius:'14px 14px 0 0', zIndex:250, boxShadow:'0 -12px 48px rgba(0,0,0,0.7)', animation:'wrFadeIn 0.2s ease', paddingBottom:'calc(12px + var(--sab, env(safe-area-inset-bottom, 0px)))' }
             : { position:'fixed', bottom:'80px', right:'24px', width:'360px', maxHeight:'calc(100vh - 100px)', overflowY:'auto', background:'var(--black)', border:'2px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius:'14px', zIndex:250, boxShadow:'0 12px 48px rgba(0,0,0,0.7)', animation:'wrFadeIn 0.2s ease' };
 
         return React.createElement('div', { style: cardStyle },
@@ -90,13 +124,13 @@
                 ),
                 React.createElement('button', { onClick:onClose, style:{ background:'none', border:'none', color: 'var(--text-muted)', cursor:'pointer', fontSize:'1.1rem', padding:'2px', minWidth:'44px', minHeight:'44px', display:'flex', alignItems:'center', justifyContent:'center' } }, '\u2715')
             ),
-            // Stats row
-            React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'4px', padding:'10px 16px', borderBottom:'1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
+            // Stats row \u2014 ACTION verdict cell is Pro; free gets the raw 3-cell row.
+            React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'repeat('+(inlinePro?4:3)+',1fr)', gap:'4px', padding:'10px 16px', borderBottom:'1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
                 ...[
                     { val:dhq>0?dhq.toLocaleString():'\u2014', lbl:valueShortLabel, col:dhqCol, gauge:true },
                     { val:ppg||'\u2014', lbl:'PPG', col:ppg>=10?'var(--k-2ecc71, #2ecc71)':'var(--k-d0d0d0, #d0d0d0)' },
-                    { val:peakYrs>0?peakYrs+'yr':valueYrs+'yr', lbl:peakYrs>0?'PEAK':'VALUE', col:peakCol },
-                    { val:rec, lbl:'ACTION', col:recCol }
+                    { val:!age?'—':peakYrs>0?peakYrs+'yr':valueYrs+'yr', lbl:peakYrs>0?'PEAK':'VALUE', col:peakCol },
+                    ...(inlinePro ? [{ val:rec, lbl:'ACTION', col:recCol }] : [])
                 ].map(function(s,i){ var dhqFilled=s.gauge?Math.round(Math.min(10,dhq/1000)):0; var gCol=dhq>=7000?'filled-green':dhq>=4000?'filled':'filled-red'; return React.createElement('div', { key:i, style:{textAlign:'center'} },
                     React.createElement('div', { style:{ fontFamily:'JetBrains Mono, monospace', fontSize:'1rem', fontWeight:600, color:s.col } }, s.val),
                     s.gauge ? React.createElement('div', { className:'wr-gauge', style:{marginTop:'2px'} }, Array.from({length:10}, function(_,gi){ return React.createElement('div', { key:gi, className:'wr-gauge-seg'+(gi<dhqFilled?' '+gCol:'') }); })) : null,
@@ -107,7 +141,7 @@
             React.createElement('div', { style:{ padding:'8px 16px' } },
                 React.createElement('div', { style:{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'4px' } },
                     React.createElement('div', { style:{ fontSize:'var(--text-label, 0.75rem)', color: 'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:700 } }, 'Age Curve'),
-                    React.createElement('div', { style:{ fontSize:'var(--text-label, 0.75rem)', color:peakCol } }, peakLabel+' \u00B7 '+(peakYrs > 0 ? peakYrs+'yr peak left' : valueYrs > 0 ? valueYrs+'yr value left' : 'Past value window'))
+                    React.createElement('div', { style:{ fontSize:'var(--text-label, 0.75rem)', color:peakCol } }, !age ? 'Age unknown' : peakLabel+' \u00B7 '+(peakYrs > 0 ? peakYrs+'yr peak left' : valueYrs > 0 ? valueYrs+'yr value left' : 'Past value window'))
                 ),
                 React.createElement('div', { style:{ display:'flex', height:'16px', borderRadius:'4px', overflow:'hidden', gap:'1px' } },
                     ...Array.from({length:17}, function(_,i){ var a=i+20; var col=a<pLo-3?'rgba(96,165,250,0.3)':a<pLo?'rgba(46,204,113,0.45)':(a>=pLo&&a<=pHi)?'rgba(46,204,113,0.75)':a<=declineHi?'var(--acc-line3, rgba(212,175,55,0.45))':'rgba(231,76,60,0.35)'; return React.createElement('div', { key:a, style:{ flex:1, background:col, opacity:a===age?1:0.55, outline:a===age?'2px solid var(--k-d4af37, #d4af37)':'none', outlineOffset:'-1px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'var(--text-label, 0.75rem)', fontWeight:700, color:a===age?'var(--text-primary)':'transparent' } }, a===age?String(age):''); })
@@ -163,7 +197,12 @@
         { id: 'scout', label: 'The Scout', src: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=120&h=120&fit=crop&crop=face' },
     ];
     function getAlexAvatar() {
-        return ComponentsStorage.get(COMPONENTS_WR_KEYS.ALEX_AVATAR, 'badge') || 'badge';
+        const id = ComponentsStorage.get(COMPONENTS_WR_KEYS.ALEX_AVATAR, 'badge') || 'badge';
+        // Tolerate legacy emoji-picker ids (brain/target/chart/football/bolt/
+        // fire/medal/trophy — the retired settings.js vocabulary) and anything
+        // else unknown: fall back to the default badge, never a broken image.
+        // Stored legacy values are ignored, not migrated.
+        return ALEX_AVATARS.some(a => a.id === id) ? id : 'badge';
     }
     function setAlexAvatar(id) {
         ComponentsStorage.set(COMPONENTS_WR_KEYS.ALEX_AVATAR, id);
@@ -367,12 +406,15 @@
             return pct > 0 ? '\u2191 ' + pct + '% above league avg' : pct < 0 ? '\u2193 ' + Math.abs(pct) + '% below league avg' : '\u2192 At league average';
         }
         if (kpiKey === 'health-score') {
-            const v = parseInt(value) || 0;
+            const v = parseInt(value);
+            if (isNaN(v)) return ''; // value renders '\u2014' before assessment loads \u2014 no verdict from missing data
             return v >= 85 ? '\u2191 Championship caliber' : v >= 70 ? '\u2192 Playoff contender' : v >= 55 ? '\u2193 Work to do' : '\u2193 Rebuild mode';
         }
         if (kpiKey === 'aging-cliff') {
-            const v = parseInt(value) || 0;
-            return v > 30 ? '\u26A0 High risk \u2014 sell aging assets' : v > 15 ? '\u2192 Moderate \u2014 monitor closely' : '\u2191 Sustainable roster age';
+            const v = parseInt(value);
+            if (isNaN(v)) return '';
+            // Bands match computeKpiValue's colors (league-detail): green \u226420 / amber \u226435 / red >35
+            return v > 35 ? '\u26A0 High risk \u2014 sell aging assets' : v > 20 ? '\u2192 Moderate \u2014 monitor closely' : '\u2191 Sustainable roster age';
         }
         return '';
     }
@@ -424,249 +466,6 @@
         }
     }
     window.ErrorBoundary = ErrorBoundary;
-
-    function tradeFinderAcceptanceFloorFromSettings(settings = {}) {
-        const sharedFloor = window.WR?.AlexSettings?.actionableTradeAcceptanceFloor?.(settings);
-        if (Number.isFinite(Number(sharedFloor))) return Math.max(55, Math.min(90, Math.round(Number(sharedFloor))));
-        const raw = Number(settings.tradeAggression);
-        const aggression = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 50;
-        return aggression <= 50
-            ? Math.round(75 + ((50 - aggression) / 50) * 10)
-            : Math.round(75 - ((aggression - 50) / 50) * 20);
-    }
-
-    function currentTradeFinderAcceptanceFloor(settings) {
-        return tradeFinderAcceptanceFloorFromSettings(settings || window.WR?.AlexSettings?.get?.() || {});
-    }
-
-    function TradeFinderTab({ allRosters, myRosterId, assessments, ownerDna, playersData, picksByOwner, getPlayerValue, getPickValue, calcOwnerPosture, calcPsychTaxes, calcAcceptanceLikelihood, DNA_TYPES, autoTarget, onAutoTargetConsumed }) {
-        const leagueSkin = window.App?.LeagueSkin?.getCurrent?.() || null;
-        const valueShortLabel = leagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
-        const [finderMode, setFinderMode] = React.useState('my');
-        const [finderAsset, setFinderAsset] = React.useState(null);
-        const [finderResults, setFinderResults] = React.useState(null);
-        const [showMoonshots, setShowMoonshots] = React.useState(false);
-        const [actionableAcceptanceFloor, setActionableAcceptanceFloor] = React.useState(() => currentTradeFinderAcceptanceFloor());
-        const autoTargetRef = React.useRef(false);
-
-        React.useEffect(() => {
-            if (!window.WR?.AlexSettings?.subscribe) return undefined;
-            return window.WR.AlexSettings.subscribe((next) => setActionableAcceptanceFloor(currentTradeFinderAcceptanceFloor(next)));
-        }, []);
-
-        const myPlayers = React.useMemo(() => (allRosters.find(r => r.roster_id === myRosterId)?.players || [])
-            .map(pid => ({ pid, name: playersData[pid]?.full_name || pid, pos: playersData[pid]?.position || '?', val: getPlayerValue(pid).value }))
-            .filter(p => p.val > 0).sort((a,b) => b.val - a.val), [allRosters, playersData]);
-
-        const allLeaguePlayers = React.useMemo(() => {
-            const list = [];
-            allRosters.forEach(r => { if (r.roster_id === myRosterId) return; (r.players || []).forEach(pid => { const p = playersData[pid]; if (!p) return; const val = getPlayerValue(pid).value; if (val > 0) list.push({ pid, name: p.full_name || pid, pos: p.position || '?', val, rosterId: r.roster_id }); }); });
-            return list.sort((a,b) => b.val - a.val);
-        }, [allRosters, playersData]);
-
-        function generateTrades(pid, mode) {
-            const val = getPlayerValue(pid).value;
-            if (!val) { setFinderResults([]); return; }
-            const tolerance = 0.20, minVal = val*(1-tolerance), maxVal = val*(1+tolerance);
-            const myAssess = assessments.find(a => a.rosterId === myRosterId);
-            const results = [];
-
-            if (mode === 'my') {
-                allRosters.forEach(r => {
-                    if (r.roster_id === myRosterId) return;
-                    const ta = assessments.find(a => a.rosterId === r.roster_id); if (!ta) return;
-                    const dk = ownerDna[ta.ownerId] || 'NONE';
-                    const tp = calcOwnerPosture(ta, dk);
-                    const theirP = (r.players||[]).map(p=>({pid:p,val:getPlayerValue(p).value})).filter(p=>p.val>0).sort((a,b)=>b.val-a.val);
-                    const trades = [];
-                    // 1-for-1
-                    theirP.forEach(tp2 => { if (tp2.val >= minVal && tp2.val <= maxVal) { const taxes = calcPsychTaxes(myAssess,ta,dk,tp); const lk = calcAcceptanceLikelihood(val,tp2.val,dk,taxes,myAssess,ta); trades.push({give:[{pid,val}],receive:[{pid:tp2.pid,val:tp2.val}],givePicks:[],receivePicks:[],diff:tp2.val-val,likelihood:lk,type:'1-for-1'}); }});
-                    // 2-for-1
-                    for(let i=0;i<Math.min(theirP.length,12);i++){for(let j=i+1;j<Math.min(theirP.length,12);j++){const c=theirP[i].val+theirP[j].val;if(c>=minVal&&c<=maxVal){const taxes=calcPsychTaxes(myAssess,ta,dk,tp);const lk=calcAcceptanceLikelihood(val,c,dk,taxes,myAssess,ta);trades.push({give:[{pid,val}],receive:[{pid:theirP[i].pid,val:theirP[i].val},{pid:theirP[j].pid,val:theirP[j].val}],givePicks:[],receivePicks:[],diff:c-val,likelihood:lk,type:'2-for-1'});break;}}}
-                    // Player + pick
-                    const theirPicks = picksByOwner[ta.ownerId]||[];
-                    theirP.slice(0,8).forEach(tp2=>{if(tp2.val>=val)return;const gap=val-tp2.val;const bp=theirPicks.find(pk=>{const pv=getPickValue(pk.year||pk.season,pk.round,allRosters.length);return Math.abs(pv-gap)<=val*tolerance;});if(bp){const pv=getPickValue(bp.year||bp.season,bp.round,allRosters.length);const total=tp2.val+pv;const taxes=calcPsychTaxes(myAssess,ta,dk,tp);const lk=calcAcceptanceLikelihood(val,total,dk,taxes,myAssess,ta);trades.push({give:[{pid,val}],receive:[{pid:tp2.pid,val:tp2.val}],givePicks:[],receivePicks:[{...bp,val:pv}],diff:total-val,likelihood:lk,type:'Player + Pick'});}});
-                    trades.sort((a,b)=>b.likelihood-a.likelihood);
-                    const topTrades = trades.slice(0,3);
-                    if(topTrades.length) results.push({
-                        team:ta,
-                        dnaKey:dk,
-                        trades:topTrades,
-                        actionableTrades:topTrades.filter(t=>t.likelihood>=actionableAcceptanceFloor),
-                        moonshotCount:topTrades.filter(t=>t.likelihood<actionableAcceptanceFloor).length
-                    });
-                });
-            } else {
-                const ownerR = allRosters.find(r=>(r.players||[]).includes(pid));
-                if(!ownerR){setFinderResults([]);return;}
-                const ta=assessments.find(a=>a.rosterId===ownerR.roster_id);if(!ta){setFinderResults([]);return;}
-                const dk=ownerDna[ta.ownerId]||'NONE';const tp=calcOwnerPosture(ta,dk);
-                const myR=allRosters.find(r=>r.roster_id===myRosterId);
-                const myP2=(myR?.players||[]).filter(p=>p!==pid).map(p=>({pid:p,val:getPlayerValue(p).value})).filter(p=>p.val>0).sort((a,b)=>b.val-a.val);
-                const trades=[];
-                myP2.forEach(mp=>{if(mp.val>=minVal&&mp.val<=maxVal){const taxes=calcPsychTaxes(myAssess,ta,dk,tp);const lk=calcAcceptanceLikelihood(mp.val,val,dk,taxes,myAssess,ta);trades.push({give:[{pid:mp.pid,val:mp.val}],receive:[{pid,val}],givePicks:[],receivePicks:[],diff:val-mp.val,likelihood:lk,type:'1-for-1'});}});
-                for(let i=0;i<Math.min(myP2.length,12);i++){for(let j=i+1;j<Math.min(myP2.length,12);j++){const c=myP2[i].val+myP2[j].val;if(c>=minVal&&c<=maxVal){const taxes=calcPsychTaxes(myAssess,ta,dk,tp);const lk=calcAcceptanceLikelihood(c,val,dk,taxes,myAssess,ta);trades.push({give:[{pid:myP2[i].pid,val:myP2[i].val},{pid:myP2[j].pid,val:myP2[j].val}],receive:[{pid,val}],givePicks:[],receivePicks:[],diff:val-c,likelihood:lk,type:'2-for-1'});break;}}}
-                trades.sort((a,b)=>b.likelihood-a.likelihood);
-                const topTrades = trades.slice(0,3);
-                if(topTrades.length) results.push({
-                    team:ta,
-                    dnaKey:dk,
-                    trades:topTrades,
-                    actionableTrades:topTrades.filter(t=>t.likelihood>=actionableAcceptanceFloor),
-                    moonshotCount:topTrades.filter(t=>t.likelihood<actionableAcceptanceFloor).length
-                });
-            }
-            results.sort((a,b)=>Math.max(...b.trades.map(t=>t.likelihood))-Math.max(...a.trades.map(t=>t.likelihood)));
-            setFinderResults(results);
-            const targetName = playersData[pid]?.full_name || pid;
-            window.wrLogAction?.('\uD83D\uDD0D', 'Ran trade finder targeting ' + targetName, 'trade', { players: [{ name: targetName, pid: pid }], actionType: 'trade-finder' });
-        }
-
-        // Auto-target from GENERATE TRADES button in Intelligence Briefing
-        React.useEffect(() => {
-            if (autoTarget && !autoTargetRef.current) {
-                autoTargetRef.current = true;
-                setFinderMode(autoTarget.mode || 'acquire');
-                setFinderAsset(autoTarget.pid);
-                setFinderResults(null);
-                setTimeout(() => { generateTrades(autoTarget.pid, autoTarget.mode || 'acquire'); if (onAutoTargetConsumed) onAutoTargetConsumed(); }, 50);
-            } else if (!autoTarget) { autoTargetRef.current = false; }
-        }, [autoTarget]);
-
-        const pName=pid=>playersData[pid]?.full_name||pid;
-        const pPos=pid=>playersData[pid]?.position||'?';
-
-        // Time Context awareness
-        const currentSeason = parseInt(window.S?.season) || new Date().getFullYear();
-        const baseSeason = parseInt(window.App?.LI?._baseScoresBackup ? Object.keys(window.App.LI._baseScoresBackup).length > 0 ? currentSeason : currentSeason : currentSeason);
-        const isProjected = !!window.App?.LI?._projectedYear;
-        const evalYear = window.App?.LI?._projectedYear || currentSeason;
-
-        // Multi-year value calculator
-        function getMultiYearDelta(tradeObj) {
-            if (!window.App?.LI?._baseScoresBackup) return null;
-            const baseScores = window.App.LI._baseScoresBackup;
-            const results = [];
-            for (let delta = 0; delta <= 2; delta++) {
-                const yr = currentSeason + delta;
-                let giveVal = 0, getVal = 0;
-                tradeObj.give.forEach(p => {
-                    const base = baseScores[p.pid] || p.val;
-                    const proj = typeof projectPlayerValue === 'function' ? projectPlayerValue(p.pid, base, playersData[p.pid]?.age, playersData[p.pid]?.position || '', delta) : base;
-                    giveVal += proj;
-                });
-                tradeObj.receive.forEach(p => {
-                    const base = baseScores[p.pid] || p.val;
-                    const proj = typeof projectPlayerValue === 'function' ? projectPlayerValue(p.pid, base, playersData[p.pid]?.age, playersData[p.pid]?.position || '', delta) : base;
-                    getVal += proj;
-                });
-                results.push({ year: yr, diff: getVal - giveVal });
-            }
-            return results;
-        }
-
-        // Window impact
-        function getWindowImpact(tradeObj) {
-            const givePeakTotal = tradeObj.give.reduce((s, p) => {
-                const age = playersData[p.pid]?.age || 25;
-                const pos = playersData[p.pid]?.position || '';
-                const end = typeof window.App?.getValueWindowEnd === 'function' ? window.App.getValueWindowEnd(pos) : ((window.App.peakWindows || {})[pos] || [24, 29])[1];
-                return s + Math.max(0, end - age);
-            }, 0);
-            const getPeakTotal = tradeObj.receive.reduce((s, p) => {
-                const age = playersData[p.pid]?.age || 25;
-                const pos = playersData[p.pid]?.position || '';
-                const end = typeof window.App?.getValueWindowEnd === 'function' ? window.App.getValueWindowEnd(pos) : ((window.App.peakWindows || {})[pos] || [24, 29])[1];
-                return s + Math.max(0, end - age);
-            }, 0);
-            const peakDelta = getPeakTotal - givePeakTotal;
-            if (peakDelta >= 3) return { label: 'Extends window', icon: '\u2191', col: 'var(--k-2ecc71, #2ecc71)' };
-            if (peakDelta <= -3) return { label: 'Shortens window', icon: '\u2193', col: 'var(--k-e74c3c, #e74c3c)' };
-            return { label: 'Window neutral', icon: '\u2192', col: 'var(--silver)' };
-        }
-
-        const hiddenMoonshotCount = finderResults
-            ? finderResults.reduce((sum, r)=>sum+(r.trades||[]).filter(t=>t.likelihood<actionableAcceptanceFloor).length,0)
-            : 0;
-        const visibleFinderResults = finderResults
-            ? finderResults.map(r=>({...r,trades:showMoonshots?r.trades:(r.trades||[]).filter(t=>t.likelihood>=actionableAcceptanceFloor)})).filter(r=>r.trades.length)
-            : null;
-
-        return React.createElement('div', null,
-            // Time context banner
-            isProjected ? React.createElement('div', { style:{fontSize:'var(--text-body, 1rem)',color:'var(--k-3498db, #3498db)',background:'rgba(52,152,219,0.08)',border:'1px solid rgba(52,152,219,0.2)',borderRadius:'6px',padding:'6px 12px',marginBottom:'10px',display:'flex',alignItems:'center',gap:'6px'} },
-                React.createElement('span', null, 'Evaluated in '+evalYear+' (Projected Values)'),
-            ) : null,
-            React.createElement('div', {style:{fontSize:'var(--text-body, 1rem)',color:'var(--silver)',opacity:0.65,marginBottom:'0.75rem',lineHeight:1.5}}, 'Select any player to generate trade proposals. Shows offers within 20% value variance ranked by acceptance likelihood. ', React.createElement(Tip, null, 'Builds 1-for-1, 2-for-1, and player+pick combos. Acceptance % uses DNA type, psychological taxes, and trade posture.')),
-            React.createElement('div', {style:{display:'flex',gap:'0.5rem',marginBottom:'1rem'}},
-                React.createElement('button', {onClick:()=>{setFinderMode('my');setFinderAsset(null);setFinderResults(null);setShowMoonshots(false);},style:{padding:'7px 16px',fontSize:'var(--text-body, 1rem)',fontFamily: 'var(--font-body)',textTransform:'uppercase',background:finderMode==='my'?'var(--gold)':'var(--ov-3, rgba(255,255,255,0.04))',color:finderMode==='my'?'var(--black)':'var(--silver)',border:'1px solid '+(finderMode==='my'?'var(--gold)':'var(--ov-5, rgba(255,255,255,0.08))'),borderRadius:'4px',cursor:'pointer'}}, 'Trade My Player'),
-                React.createElement('button', {onClick:()=>{setFinderMode('acquire');setFinderAsset(null);setFinderResults(null);setShowMoonshots(false);},style:{padding:'7px 16px',fontSize:'var(--text-body, 1rem)',fontFamily: 'var(--font-body)',textTransform:'uppercase',background:finderMode==='acquire'?'var(--gold)':'var(--ov-3, rgba(255,255,255,0.04))',color:finderMode==='acquire'?'var(--black)':'var(--silver)',border:'1px solid '+(finderMode==='acquire'?'var(--gold)':'var(--ov-5, rgba(255,255,255,0.08))'),borderRadius:'4px',cursor:'pointer'}}, 'Acquire a Player')
-            ),
-            React.createElement('div', {style:{fontSize:'var(--text-label, 0.75rem)',color:'var(--gold)',textTransform:'uppercase',marginBottom:'0.3rem',fontWeight:700}}, finderMode==='my'?'Select your player to shop':'Select a player to acquire'),
-            React.createElement('div', {style:{display:'flex',flexWrap:'wrap',gap:'0.35rem',maxHeight:'200px',overflowY:'auto',marginBottom:'1rem',padding:'10px',background:'var(--ov-1, rgba(255,255,255,0.02))',borderRadius:'8px',border:'1px solid var(--acc-fill2, rgba(212,175,55,0.12))'}},
-                ...(finderMode==='my'?myPlayers:allLeaguePlayers).slice(0,60).map(p=>
-                    React.createElement('button', {key:p.pid, onClick:()=>{setFinderAsset(p.pid);setFinderResults(null);setShowMoonshots(false);generateTrades(p.pid,finderMode);}, style:{padding:'5px 12px',fontSize:'var(--text-label, 0.75rem)',fontFamily: 'var(--font-body)',borderRadius:'4px',cursor:'pointer',background:finderAsset===p.pid?'var(--gold)':'var(--ov-3, rgba(255,255,255,0.04))',color:finderAsset===p.pid?'var(--black)':'var(--silver)',border:'1px solid '+(finderAsset===p.pid?'var(--gold)':'var(--ov-4, rgba(255,255,255,0.06))')}}, p.name+' '+p.val.toLocaleString())
-                )
-            ),
-            finderResults && !finderResults.length ? React.createElement('div', {style:{color:'var(--silver)',fontSize:'var(--text-body, 1rem)',textAlign:'center',padding:'2rem'}}, 'No viable trades found within 20% value variance.') : null,
-            finderResults && finderResults.length && !visibleFinderResults.length ? React.createElement('div', {style:{color:'var(--silver)',fontSize:'var(--text-body, 1rem)',textAlign:'center',padding:'2rem'}}, 'No actionable trades clear '+actionableAcceptanceFloor+'% acceptance.') : null,
-            hiddenMoonshotCount ? React.createElement('button', {onClick:()=>setShowMoonshots(v=>!v), style:{padding:'6px 12px',fontSize:'var(--text-label, 0.75rem)',fontFamily:'var(--font-body)',textTransform:'uppercase',background:'var(--ov-3, rgba(255,255,255,0.04))',color:'var(--gold)',border:'1px solid var(--acc-line1, rgba(212,175,55,0.22))',borderRadius:'4px',cursor:'pointer',marginBottom:'0.75rem'}}, showMoonshots ? 'Hide moonshots' : 'Show '+hiddenMoonshotCount+' moonshot'+(hiddenMoonshotCount===1?'':'s')) : null,
-            visibleFinderResults ? visibleFinderResults.map((r,ri) =>
-                React.createElement('div', {key:ri, style:{marginBottom:'1.25rem'}, className:'wr-fade-in'},
-                    React.createElement('div', {style:{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.5rem',paddingBottom:'0.4rem',borderBottom:'1px solid var(--acc-fill3, rgba(212,175,55,0.15))'}},
-                        React.createElement('span', {style:{fontFamily:'Rajdhani, sans-serif',fontSize:'1rem',color:'var(--white)'}}, r.team.ownerName),
-                        React.createElement('span', {style:{fontSize:'var(--text-label, 0.75rem)',color:'var(--silver)',opacity:0.65}}, r.team.teamName),
-                        React.createElement('span', {style:{fontSize:'var(--text-label, 0.75rem)',fontWeight:700,color:r.team.tierColor,background:r.team.tierBg,padding:'0.15rem 0.4rem',borderRadius:'3px'}}, r.team.tier),
-                        r.dnaKey!=='NONE'?React.createElement('span', {style:{fontSize:'var(--text-label, 0.75rem)',color:(DNA_TYPES[r.dnaKey]||{}).color,fontWeight:700}}, (DNA_TYPES[r.dnaKey]||{}).label):null
-                    ),
-                    ...r.trades.map((t,ti) => {
-                        const giveT=t.give.reduce((s,p)=>s+p.val,0)+t.givePicks.reduce((s,p)=>s+(p.val||0),0);
-                        const getT=t.receive.reduce((s,p)=>s+p.val,0)+t.receivePicks.reduce((s,p)=>s+(p.val||0),0);
-                        return React.createElement('div', {key:ti, style:{background:'var(--ov-1, rgba(255,255,255,0.02))',border:'1px solid var(--acc-fill3, rgba(212,175,55,0.15))',borderRadius:'8px',padding:'0.75rem',marginBottom:'0.5rem'}},
-                            React.createElement('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}},
-                                React.createElement('span', {style:{fontSize:'var(--text-label, 0.75rem)',color:'var(--gold)',fontWeight:700,textTransform:'uppercase'}}, t.type),
-                                React.createElement('div', {style:{display:'flex',gap:'0.5rem',alignItems:'center'}},
-                                    React.createElement('span', {style:{fontSize:'var(--text-label, 0.75rem)',color:t.diff>=0?'var(--win-green)':'var(--loss-red)'}}, (t.diff>=0?'You gain ':'You give ')+Math.abs(Math.round(t.diff)).toLocaleString()+' '+valueShortLabel),
-                                    React.createElement('span', {style:{fontSize:'var(--text-body, 1rem)',fontWeight:700,color:t.likelihood>=60?'var(--win-green)':t.likelihood>=40?'var(--k-f0a500, #f0a500)':'var(--loss-red)',background:(t.likelihood>=60?'rgba(46,204,113,0.1)':t.likelihood>=40?'rgba(240,165,0,0.1)':'rgba(231,76,60,0.1)'),padding:'0.15rem 0.5rem',borderRadius:'4px'}}, Math.round(t.likelihood)+'%')
-                                )
-                            ),
-                            React.createElement('div', {style:{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:'0.5rem',alignItems:'start'}},
-                                React.createElement('div', null,
-                                    React.createElement('div', {style:{fontSize:'var(--text-label, 0.75rem)',color:'var(--loss-red)',textTransform:'uppercase',marginBottom:'0.25rem',fontWeight:700}}, 'Send ('+giveT.toLocaleString()+')'),
-                                    ...t.give.map(p=>React.createElement('div', {key:p.pid,style:{fontSize:'var(--text-body, 1rem)',color:'var(--white)',fontWeight:600}}, pName(p.pid), React.createElement('span', {style:{color:'var(--silver)',fontSize:'var(--text-label, 0.75rem)',marginLeft:'4px'}}, pPos(p.pid)+' '+p.val.toLocaleString()))),
-                                    ...t.givePicks.map((pk,i)=>React.createElement('div', {key:'gp'+i,style:{fontSize:'var(--text-body, 1rem)',color:'var(--gold)',fontWeight:600}}, (pk.year||pk.season)+' R'+pk.round))
-                                ),
-                                React.createElement('div', {style:{fontSize:'1.1rem',color:'var(--gold)',alignSelf:'center',fontWeight:700}}, '\u21C4'),
-                                React.createElement('div', null,
-                                    React.createElement('div', {style:{fontSize:'var(--text-label, 0.75rem)',color:'var(--win-green)',textTransform:'uppercase',marginBottom:'0.25rem',fontWeight:700}}, 'Get ('+getT.toLocaleString()+')'),
-                                    ...t.receive.map(p=>React.createElement('div', {key:p.pid,style:{fontSize:'var(--text-body, 1rem)',color:'var(--white)',fontWeight:600}}, pName(p.pid), React.createElement('span', {style:{color:'var(--silver)',fontSize:'var(--text-label, 0.75rem)',marginLeft:'4px'}}, pPos(p.pid)+' '+p.val.toLocaleString()))),
-                                    ...t.receivePicks.map((pk,i)=>React.createElement('div', {key:'rp'+i,style:{fontSize:'var(--text-body, 1rem)',color:'var(--gold)',fontWeight:600}}, (pk.year||pk.season)+' R'+pk.round))
-                                )
-                            ),
-                            // Multi-year delta + window impact
-                            (() => {
-                                const multiYear = getMultiYearDelta(t);
-                                const winImpact = getWindowImpact(t);
-                                if (!multiYear) return null;
-                                return React.createElement('div', {style:{display:'flex',gap:'10px',alignItems:'center',marginTop:'8px',paddingTop:'8px',borderTop:'1px solid var(--ov-3, rgba(255,255,255,0.04))',flexWrap:'wrap'}},
-                                    // Multi-year trend
-                                    ...multiYear.map((yr,yi) => React.createElement('span', {key:yi, style:{fontSize:'var(--text-label, 0.75rem)',color:yr.diff>=0?'var(--k-2ecc71, #2ecc71)':'var(--k-e74c3c, #e74c3c)',fontWeight:600}},
-                                        (yr.diff>=0?'+':'')+Math.round(yr.diff).toLocaleString()+' ('+yr.year+')'
-                                    )),
-                                    // Trend arrow
-                                    React.createElement('span', {style:{fontSize:'var(--text-label, 0.75rem)',color:multiYear[2].diff>multiYear[0].diff?'var(--k-2ecc71, #2ecc71)':multiYear[2].diff<multiYear[0].diff?'var(--k-e74c3c, #e74c3c)':'var(--silver)'}},
-                                        multiYear[2].diff>multiYear[0].diff?'\uD83D\uDCC8 improving':multiYear[2].diff<multiYear[0].diff?'\uD83D\uDCC9 declining':'\u27A1 neutral'
-                                    ),
-                                    // Window impact
-                                    React.createElement('span', {style:{fontSize:'var(--text-label, 0.75rem)',color:winImpact.col,marginLeft:'auto',fontWeight:600}}, winImpact.icon+' '+winImpact.label)
-                                );
-                            })()
-                        );
-                    })
-                )
-            ) : null
-        );
-    }
 
     // ===== DEV MODE =====
     // Dev bypass (unlocks features AND skips the auth gate) is allowed ONLY on a

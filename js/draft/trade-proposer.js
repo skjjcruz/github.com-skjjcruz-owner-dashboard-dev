@@ -14,6 +14,17 @@
 (function() {
     const { FONT_UI, FONT_DISPL, FONT_MONO } = window.DraftCC.styles;
 
+    // Pick-in-round for "R2.01"-style labels. pick.slot is the team's draft
+    // COLUMN (ownership key), so prefer pickInRound, then derive from overall
+    // when a league size is available (saved drafts predating pickInRound).
+    function pickPP(pick, leagueSize) {
+        if (!pick) return 0;
+        if (Number(pick.pickInRound) > 0) return Number(pick.pickInRound);
+        const ls = Number(leagueSize) || 0;
+        if (ls > 0 && Number(pick.overall) > 0) return ((Number(pick.overall) - 1) % ls) + 1;
+        return Number(pick.slot) || 0;
+    }
+
     // Compact error boundary for the embedded Find-a-Trade tab: a render failure in the
     // borrowed Trade Center component degrades to a switch-to-Build hint instead of
     // unmounting the whole drawer.
@@ -65,8 +76,9 @@
     }
 
     // NOTE: the draft "Find a Trade" tab is a native reimplementation (DraftTradeFinder,
-    // below) built on sim.findFairPackages — it does NOT mount the main app's
-    // window.TradeFinderTab. Keep the two analyzers in sync when changing trade logic.
+    // below) built on sim.findFairPackages — it does NOT use the main app's trade
+    // evaluator (window.App.TradeEngine / trade-calc.js buildDeal). Keep the two
+    // analyzers in sync when changing trade logic.
     // Asset option groups for a roster — picks of all years (current draft + future) in
     // ONE group, players in another. Shared shape with the Build dropdowns.
     function buildAssetGroups(state, rosterId) {
@@ -76,7 +88,7 @@
         const fmtDhq = (v) => { const n = Number(v) || 0; return (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n))) + ' DHQ'; };
         const seasonPrefix = state.season ? state.season + ' ' : '';
         const remaining = (state.pickOrder || []).slice(state.currentIdx || 0).filter(p => String(p.rosterId) === String(rosterId));
-        const pickOpts = remaining.map(p => ({ key: 'pick:' + p.round + '-' + p.teamIdx, type: 'pick', label: seasonPrefix + 'R' + p.round + '.' + String(p.slot || 0).padStart(2, '0'), sub: sim.pickValueFor ? fmtDhq(sim.pickValueFor(state, p)) : '', asset: p }));
+        const pickOpts = remaining.map(p => ({ key: 'pick:' + p.round + '-' + p.teamIdx, type: 'pick', label: seasonPrefix + 'R' + p.round + '.' + String(pickPP(p, state.leagueSize) || 0).padStart(2, '0'), sub: sim.pickValueFor ? fmtDhq(sim.pickValueFor(state, p)) : '', asset: p }));
         const futures = (stt.buildFuturePickPool ? stt.buildFuturePickPool(state) : []).filter(fp => String(fp.ownerRosterId) === String(rosterId));
         const futureOpts = futures.map(fp => ({ key: 'fut:' + fp.year + ':' + fp.round + ':' + fp.fromRosterId, type: 'future', label: fp.year + ' R' + fp.round, sub: stt.futurePickValueFor ? fmtDhq(stt.futurePickValueFor(state, fp)) : '', asset: fp }));
         const pickedPids = new Set((state.picks || []).map(p => p.pid).filter(Boolean));
@@ -181,8 +193,8 @@
                                     borderRadius: '5px', color: 'var(--silver)', cursor: 'pointer', fontFamily: FONT_UI,
                                 }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, marginBottom: 6 }}>
-                                        <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--bad)' }}>Give:</strong> {proposalAssets(c.proposal, 'my')}</span>
-                                        <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--good)' }}>Get:</strong> {proposalAssets(c.proposal, 'their')}</span>
+                                        <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--bad)' }}>Give:</strong> {proposalAssets(c.proposal, 'my', state.leagueSize)}</span>
+                                        <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--good)' }}>Get:</strong> {proposalAssets(c.proposal, 'their', state.leagueSize)}</span>
                                     </div>
                                     <div style={{ display: 'flex', gap: 6, paddingTop: 6, borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))' }}>
                                         {metric('DHQ variance', (variance > 0 ? '+' : '') + variance.toLocaleString(), vCol)}
@@ -378,7 +390,7 @@
         const pdata = window.S?.players || {};
         const playerName = (pid) => { const p = pdata[pid] || {}; return p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || pid; };
         const seasonPrefix = state.season ? state.season + ' ' : '';
-        const pickOpts = (picks) => (picks || []).map(p => ({ key: p.round + '-' + p.teamIdx, type: 'pick', label: seasonPrefix + 'R' + p.round + '.' + String(p.slot || 0).padStart(2, '0'), sub: simulator ? fmtDhq(simulator.pickValueFor(state, p)) : '', asset: p }));
+        const pickOpts = (picks) => (picks || []).map(p => ({ key: p.round + '-' + p.teamIdx, type: 'pick', label: seasonPrefix + 'R' + p.round + '.' + String(pickPP(p, state.leagueSize) || 0).padStart(2, '0'), sub: simulator ? fmtDhq(simulator.pickValueFor(state, p)) : '', asset: p }));
         const playerOpts = (pids) => (pids || []).map(pid => ({ pid, val: simulator ? simulator.playerValueFor(pid) : 0 })).sort((a, b) => b.val - a.val).slice(0, 60).map(({ pid, val }) => { const pd = pdata[pid] || {}; const pos = pd.position || pd.fantasy_positions?.[0] || ''; return { key: pid, type: 'player', label: playerName(pid) + (pos ? ' · ' + pos : ''), sub: fmtDhq(val), asset: pid }; });
         const futureOpts = (picks) => (picks || []).map(fp => ({ key: futureKeyOf(fp), type: 'future', label: fp.year + ' R' + fp.round, sub: window.DraftCC?.state?.futurePickValueFor ? fmtDhq(window.DraftCC.state.futurePickValueFor(state, fp)) : '', asset: fp }));
         // Picks of all years (current draft + future seasons) share one group, ordered
@@ -496,7 +508,7 @@
             });
         };
 
-        const gradeCol = evaluation.grade?.col || 'var(--gold)';
+        const gradeCol = evaluation.grade?.col || evaluation.grade?.color || 'var(--gold)';
         const likelihoodCol = evaluation.likelihood >= 60 ? 'var(--good)'
             : evaluation.likelihood >= 40 ? 'var(--warn)'
             : 'var(--bad)';
@@ -708,7 +720,7 @@
                     <AnalyzerModeToggle mode={analyzerMode} onChange={setAnalyzerMode} disabled={isSending || isAccepted} />
 
                     {/* Partner needs + tradable assets — always visible (Build AND Find) */}
-                    <OwnerIntelCard profile={partnerProfile} />
+                    <OwnerIntelCard profile={partnerProfile} leagueSize={state.leagueSize} />
 
                     {analyzerMode === 'find' ? (
                         <DraftTradeFinder state={state} dispatch={dispatch} />
@@ -800,6 +812,7 @@
                                 faab={counterOffer.myGiveFaab}
                                 dhq={counterOffer.myGiveDHQ}
                                 empty="Nothing selected"
+                                leagueSize={state.leagueSize}
                             />
                             <PickSide
                                 label="Counter: you get"
@@ -809,6 +822,7 @@
                                 faab={counterOffer.theirGiveFaab}
                                 dhq={counterOffer.myGainDHQ}
                                 empty="Nothing selected"
+                                leagueSize={state.leagueSize}
                             />
                         </div>
                     )}
@@ -823,6 +837,7 @@
                             faab={drawer.myGiveFaab}
                             dhq={evaluation.myGiveDHQ}
                             empty="Nothing selected"
+                            leagueSize={state.leagueSize}
                         />
                         <PickSide
                             label="You get"
@@ -832,6 +847,7 @@
                             faab={drawer.theirGiveFaab}
                             dhq={evaluation.theirGiveDHQ}
                             empty="Nothing selected"
+                            leagueSize={state.leagueSize}
                         />
                     </div>
 
@@ -1013,8 +1029,8 @@
         );
     }
 
-    function formatPick(pick) {
-        return 'R' + pick.round + '.' + String(pick.slot || 0).padStart(2, '0');
+    function formatPick(pick, leagueSize) {
+        return 'R' + pick.round + '.' + String(pickPP(pick, leagueSize) || 0).padStart(2, '0');
     }
 
     function playerName(pid) {
@@ -1023,13 +1039,13 @@
         return full || pid;
     }
 
-    function proposalAssets(proposal, side) {
+    function proposalAssets(proposal, side, leagueSize) {
         const picks = side === 'my' ? proposal.myGive : proposal.theirGive;
         const futures = side === 'my' ? proposal.myGiveFuture : proposal.theirGiveFuture;
         const players = side === 'my' ? proposal.myGivePlayers : proposal.theirGivePlayers;
         const faab = side === 'my' ? proposal.myGiveFaab : proposal.theirGiveFaab;
         const items = [];
-        (picks || []).slice(0, 3).forEach(p => items.push(formatPick(p)));
+        (picks || []).slice(0, 3).forEach(p => items.push(formatPick(p, leagueSize)));
         (futures || []).slice(0, 2).forEach(fp => items.push(fp.year + ' R' + fp.round));
         (players || []).slice(0, 2).forEach(pid => items.push(playerName(pid)));
         if (faab > 0) items.push('$' + faab + ' FAAB');
@@ -1040,8 +1056,8 @@
     }
 
     function buildLiveOfferHandoff(state, targetPersona, proposal, result) {
-        const giveText = proposalAssets(proposal, 'my');
-        const getText = proposalAssets(proposal, 'their');
+        const giveText = proposalAssets(proposal, 'my', state?.leagueSize);
+        const getText = proposalAssets(proposal, 'their', state?.leagueSize);
         const partnerName = targetPersona?.teamName || ('Team ' + proposal?.targetRosterId);
         const line = result?.acceptanceLine || 70;
         const likelihood = result?.likelihood || 0;
@@ -1107,7 +1123,7 @@
         };
     }
 
-    function OwnerIntelCard({ profile }) {
+    function OwnerIntelCard({ profile, leagueSize }) {
         if (!profile) return null;
         const chips = [
             profile.tradeDna?.label || 'Balanced',
@@ -1116,7 +1132,7 @@
             profile.liquidity?.label,
         ].filter(Boolean).slice(0, 4);
         const needs = (profile.needs || []).slice(0, 5);
-        const picks = (profile.movablePicks || []).slice(0, 3).map(p => 'R' + p.round + '.' + String(p.slot || 0).padStart(2, '0'));
+        const picks = (profile.movablePicks || []).slice(0, 3).map(p => 'R' + p.round + '.' + String(pickPP(p, leagueSize) || 0).padStart(2, '0'));
         const players = (profile.tradablePlayers || []).slice(0, 3).map(p => p.name);
         return (
             <div style={{
@@ -1166,7 +1182,7 @@
         );
     }
 
-    function SuggestionRail({ suggestions, onLoad, disabled }) {
+    function SuggestionRail({ suggestions, onLoad, disabled, state }) {
         // Render even when the only item is a MOONSHOT (the no-viable-deal
         // fallback) — that is precisely the case where the user most needs a
         // surfaced path "in." Only bail when the rail is genuinely empty.
@@ -1226,8 +1242,8 @@
                                     </span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, marginBottom: 6 }}>
-                                    <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--bad)' }}>Give:</strong> {proposalAssets(s.proposal, 'my')}</span>
-                                    <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--good)' }}>Get:</strong> {proposalAssets(s.proposal, 'their')}</span>
+                                    <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--bad)' }}>Give:</strong> {proposalAssets(s.proposal, 'my', state?.leagueSize)}</span>
+                                    <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--good)' }}>Get:</strong> {proposalAssets(s.proposal, 'their', state?.leagueSize)}</span>
                                 </div>
                                 {/* DHQ variance · Acceptance · Grade — the numbers the user judges by */}
                                 {(() => {
@@ -1261,7 +1277,7 @@
         );
     }
 
-    function PickSide({ label, color, picks, playerIds, faab, dhq, empty }) {
+    function PickSide({ label, color, picks, playerIds, faab, dhq, empty, leagueSize }) {
         const hasAny = (picks && picks.length > 0) || (playerIds && playerIds.length > 0) || (faab && faab > 0);
         const pdata = window.S?.players || {};
         const playerName = (pid) => {
@@ -1295,7 +1311,7 @@
                                     borderRadius: '3px',
                                     background: 'var(--ov-4, rgba(255,255,255,0.06))',
                                     color: 'var(--white)',
-                                }}>R{p.round}.{String(p.slot || 0).padStart(2, '0')}</span>
+                                }}>R{p.round}.{String(pickPP(p, leagueSize) || 0).padStart(2, '0')}</span>
                             ))}
                             {(playerIds || []).map((pid) => (
                                 <span key={'pl'+pid} title={playerName(pid)} style={{
@@ -1464,6 +1480,38 @@
         fontFamily: FONT_UI,
     };
 
+    // The in-draft trade desk is Scout Pro end-to-end: quick packages ranked by
+    // acceptance likelihood, the live likelihood/grade read, psych-tax + DNA
+    // drivers, and the send verdict all come from the persona simulator — a
+    // raw-only builder here would dead-end at Send, so the whole drawer gates
+    // (stronger than the row-6 split; noted for review). Wrapper keeps the big
+    // component's hooks unmounted for free.
+    function GatedTradeProposer(props) {
+        const { state, dispatch } = props;
+        if (typeof window.wrIsPro !== 'function' || window.wrIsPro()) return <TradeProposer {...props} />;
+        if (!state.proposerDrawer) return null;
+        const GatedRow = window.WrGatedMoreRow;
+        return (
+            <div style={{
+                position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(420px, 90vw)',
+                background: 'var(--black)', borderLeft: '2px solid var(--gold)',
+                boxShadow: '-12px 0 40px rgba(0,0,0,0.6)', zIndex: 600,
+                display: 'flex', flexDirection: 'column', fontFamily: FONT_UI,
+                animation: 'wrFadeIn 0.25s ease',
+            }}>
+                <div style={{ padding: '14px 16px', borderBottom: 'var(--card-border)', display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                    <div style={{ flex: 1, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Propose Trade</div>
+                    <button onClick={() => dispatch({ type: 'CLOSE_PROPOSER' })} style={{ background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', color: 'var(--silver)', fontSize: '0.9rem', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', cursor: 'pointer' }}>✕</button>
+                </div>
+                <div style={{ padding: '14px 16px' }}>
+                    {GatedRow
+                        ? <GatedRow title="Work the phones mid-draft" sub="Live acceptance odds, psych taxes, and owner-DNA trade reads are Scout Pro." feature="draft_trade_desk" />
+                        : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Draft Trade Desk', 'draft_trade_desk', 'In-draft trade negotiation is Scout Pro.') : '' }} />}
+                </div>
+            </div>
+        );
+    }
+
     window.DraftCC = window.DraftCC || {};
-    window.DraftCC.TradeProposer = TradeProposer;
+    window.DraftCC.TradeProposer = GatedTradeProposer;
 })();

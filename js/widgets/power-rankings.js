@@ -62,6 +62,10 @@
         const [view, setView] = React.useState(() => window._wrPrView || 'blended');
         React.useEffect(() => { window._wrPrView = view; }, [view]);
 
+        // Free/Pro (fail-open): ranks + gap math stay free (owner Q7); the
+        // Roster Identity build read + riser/win-now framing are Pro.
+        const pro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+
         const assessments = React.useMemo(() => {
             if (typeof window.assessAllTeamsFromGlobal === 'function') {
                 try { return window.assessAllTeamsFromGlobal() || []; } catch { return []; }
@@ -86,22 +90,28 @@
 
             const dynasty = assessments.map(t => {
                 const r = rosters.find(r2 => r2.roster_id === t.rosterId);
-                const totalDhq = (r?.players || []).reduce((s, pid) => s + ((window.App?.LI?.playerScores || {})[pid] || 0), 0);
+                const totalDhq = (r?.players || []).reduce((s, pid) => s + (window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid) : ((window.App?.LI?.playerScores || {})[pid] || 0)), 0);
                 return { ...t, totalDhq };
             }).sort((a, b) => b.totalDhq - a.totalDhq);
 
+            // fmtFn formats SCORES ('\u2014' for missing); gapFmt formats GAPS,
+            // where 0 is a legitimate number ('0', not an em dash) and small
+            // dynasty gaps shouldn't collapse to '0.0K'.
             return {
                 blended: {
                     label: 'Blended', data: blended, valFn: t => t.healthScore || 0,
                     fmtFn: v => String(Math.round(v || 0)),
+                    gapFmt: v => String(Math.round(v || 0)),
                 },
                 contender: {
                     label: 'Contender', data: contender, valFn: t => t.ppg || 0,
                     fmtFn: v => v > 0 ? v.toFixed(1) : '\u2014',
+                    gapFmt: v => (v || 0).toFixed(1),
                 },
                 dynasty: {
                     label: 'Dynasty', data: dynasty, valFn: t => t.totalDhq || 0,
                     fmtFn: v => v > 0 ? ((v / 1000).toFixed(1) + 'K') : '\u2014',
+                    gapFmt: v => (v || 0) >= 1000 ? ((v / 1000).toFixed(1) + 'K') : String(Math.round(v || 0)),
                 },
             };
         }, [assessments, currentLeague, playersData]);
@@ -207,7 +217,7 @@
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            fontSize: compact ? '0.58rem' : '0.64rem',
+                            fontSize: 'var(--text-micro, 0.6875rem)',
                             fontFamily: 'var(--font-body)',
                             borderRadius: '5px',
                             cursor: 'pointer',
@@ -240,19 +250,19 @@
             }));
         }
 
-        function StatTile({ label, value, sub, tone = 'var(--white)' }) {
+        function StatTile({ label, value, sub, tone = 'var(--white)', compact = false }) {
             return React.createElement('div', {
                 style: {
                     background: TONE.panel,
                     border: '1px solid var(--ov-4, rgba(255,255,255,0.055))',
                     borderRadius: '8px',
-                    padding: '8px 10px',
+                    padding: compact ? '5px 9px' : '8px 10px',
                     minWidth: 0,
                 }
             },
                 React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, label),
-                React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.18rem', lineHeight: 1.1, fontWeight: 900, color: tone, marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, value),
-                sub ? React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.62, marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, sub) : null
+                React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: compact ? '0.95rem' : '1.18rem', lineHeight: 1.1, fontWeight: 900, color: tone, marginTop: compact ? '2px' : '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, value),
+                sub ? React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.62, marginTop: compact ? '1px' : '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, sub) : null
             );
         }
 
@@ -283,7 +293,7 @@
                 React.createElement('div', {
                     style: {
                         fontFamily: 'Rajdhani, sans-serif',
-                        fontSize: micro ? '0.68rem' : dense ? '0.78rem' : '0.9rem',
+                        fontSize: micro ? 'var(--text-micro, 0.6875rem)' : dense ? '0.78rem' : '0.9rem',
                         fontWeight: 800,
                         color: rank <= 3 ? TONE.gold : 'var(--silver)',
                         textAlign: 'right',
@@ -294,7 +304,7 @@
                         style: {
                             color: isMe ? TONE.gold : 'var(--white)',
                             fontWeight: isMe ? 800 : 650,
-                            fontSize: micro ? '0.66rem' : dense ? '0.74rem' : '0.82rem',
+                            fontSize: micro ? 'var(--text-micro, 0.6875rem)' : dense ? '0.74rem' : '0.82rem',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -310,7 +320,7 @@
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                         }
-                    }, crossText || (rank === 1 ? 'League leader' : (gapToLead > 0 ? cur.fmtFn(gapToLead) + ' off lead' : metricLabel(view)))) : null
+                    }, crossText || (rank === 1 ? 'League leader' : (gapToLead > 0 ? cur.gapFmt(gapToLead) + ' off lead' : metricLabel(view)))) : null
                 ),
                 React.createElement(Bar, { val, rank, totalTeams: total, width: micro ? 46 : dense ? 58 : 74, height: micro ? 4 : dense ? 5 : 6 }),
                 React.createElement('div', {
@@ -487,6 +497,11 @@
                             fontSize: 'var(--text-micro, 0.6875rem)',
                             cursor: 'pointer',
                             padding: '0',
+                            minHeight: '44px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '-14px 0',
                         }
                     }, 'Open league analytics')
                     : null
@@ -506,7 +521,7 @@
                     React.createElement(StatTile, {
                         label: 'Average',
                         value: cur.fmtFn(avgVal),
-                        sub: gapToAvg >= 0 ? cur.fmtFn(gapToAvg) + ' above avg' : cur.fmtFn(Math.abs(gapToAvg)) + ' below avg',
+                        sub: myTeam ? (gapToAvg >= 0 ? cur.gapFmt(gapToAvg) + ' above avg' : cur.gapFmt(Math.abs(gapToAvg)) + ' below avg') : 'league mean',
                         tone: gapToAvg >= 0 ? TONE.elite : TONE.weak,
                     })
                 ),
@@ -517,7 +532,7 @@
                         gap: '1px',
                         minHeight: 0,
                         flex: 1,
-                        overflow: 'hidden',
+                        overflow: 'auto',
                     }
                 },
                     ...cur.data.map((t, i) => React.createElement(TeamRow, {
@@ -599,27 +614,38 @@
                         gap: '8px',
                     }
                 },
-                    React.createElement(StatTile, {
+                    pro ? React.createElement(StatTile, {
+                        compact: true,
                         label: 'Roster Identity',
                         value: identity,
                         sub: myContenderRank && myDynastyRank ? 'Now #' + myContenderRank + ' · Future #' + myDynastyRank : 'cross-view pending',
                         tone: identityTone,
+                    }) : React.createElement(StatTile, {
+                        // Free: raw cross-rank fact only — no build classification.
+                        compact: true,
+                        label: 'Cross-View Rank',
+                        value: myContenderRank && myDynastyRank ? 'Now #' + myContenderRank + ' · Future #' + myDynastyRank : '—',
+                        sub: 'contender vs dynasty',
+                        tone: TONE.middle,
                     }),
                     React.createElement(StatTile, {
+                        compact: true,
                         label: 'Lead Chase',
-                        value: cur.fmtFn(leaderGap),
+                        value: cur.gapFmt(leaderGap),
                         sub: leader ? 'behind ' + getTeamName(leader) : 'no leader',
                         tone: leaderGap <= 5 ? TONE.elite : leaderGap <= 15 ? TONE.gold : TONE.weak,
                     }),
                     React.createElement(StatTile, {
+                        compact: true,
                         label: 'Next Jump',
-                        value: aboveMe ? cur.fmtFn(packGap) : 'Hold',
+                        value: aboveMe ? cur.gapFmt(packGap) : 'Hold',
                         sub: aboveMe ? 'to pass ' + getTeamName(aboveMe) : 'you lead this view',
                         tone: packGap <= 3 ? TONE.elite : packGap <= 10 ? TONE.gold : TONE.middle,
                     }),
                     React.createElement(StatTile, {
+                        compact: true,
                         label: 'Seat Heat',
-                        value: belowMe ? cur.fmtFn(cushion) : 'None',
+                        value: belowMe ? cur.gapFmt(cushion) : 'None',
                         sub: belowMe ? 'over ' + getTeamName(belowMe) : 'no one below',
                         tone: cushion <= 3 ? TONE.weak : cushion <= 10 ? TONE.gold : TONE.elite,
                     })
@@ -638,30 +664,40 @@
                     React.createElement(StatTile, {
                         label: 'Your Board Position',
                         value: myRank ? '#' + myRank + ' of ' + total : '\u2014',
-                        sub: myTeam ? cur.fmtFn(myVal) + ' · ' + (gapToAvg >= 0 ? '+' : '-') + cur.fmtFn(Math.abs(gapToAvg)) + ' vs avg' : 'no roster match',
+                        sub: myTeam ? cur.fmtFn(myVal) + ' · ' + (gapToAvg >= 0 ? '+' : '-') + cur.gapFmt(Math.abs(gapToAvg)) + ' vs avg' : 'no roster match',
                         tone: myRank ? rankTone(myRank) : TONE.middle,
                     }),
                     React.createElement(StatTile, { label: 'Leader', value: leader ? getTeamName(leader) : '\u2014', sub: leader ? cur.fmtFn(leaderVal) + ' ' + metricLabel(view).toLowerCase() : '', tone: TONE.elite }),
-                    React.createElement(StatTile, { label: 'Catch Target', value: aboveMe ? getTeamName(aboveMe) : 'Top spot', sub: aboveMe ? cur.fmtFn(cur.valFn(aboveMe) - myVal) + ' away' : 'protect the lead', tone: aboveMe ? TONE.gold : TONE.elite }),
-                    React.createElement(StatTile, { label: 'Pressure', value: belowMe ? getTeamName(belowMe) : 'None', sub: belowMe ? cur.fmtFn(myVal - cur.valFn(belowMe)) + ' cushion' : 'bottom of board', tone: belowMe ? TONE.middle : TONE.weak })
+                    React.createElement(StatTile, { label: 'Catch Target', value: aboveMe ? getTeamName(aboveMe) : 'Top spot', sub: aboveMe ? cur.gapFmt(Math.max(0, cur.valFn(aboveMe) - myVal)) + ' away' : 'protect the lead', tone: aboveMe ? TONE.gold : TONE.elite }),
+                    React.createElement(StatTile, { label: 'Pressure', value: belowMe ? getTeamName(belowMe) : 'None', sub: belowMe ? cur.gapFmt(Math.max(0, myVal - cur.valFn(belowMe))) + ' cushion' : 'bottom of board', tone: belowMe ? TONE.middle : TONE.weak })
                 ),
                 React.createElement('div', {
                     style: {
                         display: 'grid',
-                        gridTemplateColumns: 'minmax(0, 1.65fr) minmax(240px, 0.85fr)',
+                        gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 0.85fr)',
+                        gridTemplateRows: 'minmax(0, 1fr)',
                         gap: '10px',
                         minHeight: 0,
+                        overflow: 'hidden',
                         flex: 1,
                     }
                 },
                     React.createElement('div', {
                         style: {
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                            display: 'flex',
+                            flexDirection: 'column',
                             gap: '8px',
-                            alignContent: 'start',
+                            minHeight: 0,
                         }
                     },
+                        React.createElement('div', {
+                            style: {
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                                gap: '8px',
+                                flexShrink: 0,
+                            }
+                        },
                         ...top3.map((t, i) => {
                             const rank = i + 1;
                             const val = cur.valFn(t);
@@ -684,14 +720,16 @@
                                 React.createElement('div', { style: { marginTop: '8px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62 } }, 'Now #' + rankByView.contender[t.rosterId] + ' · Future #' + rankByView.dynasty[t.rosterId]),
                                 React.createElement('div', { style: { marginTop: '8px' } }, React.createElement(Bar, { val, rank, totalTeams: total, width: '100%', height: 7 }))
                             );
-                        }),
+                        })),
                         React.createElement('div', {
                             style: {
-                                gridColumn: '1 / -1',
                                 display: 'grid',
                                 gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                                 gap: '3px 12px',
-                                marginTop: '2px',
+                                minHeight: 0,
+                                overflowY: 'auto',
+                                alignContent: 'start',
+                                flex: 1,
                             }
                         },
                             ...cur.data.slice(3).map((t, i) => React.createElement(TeamRow, {
@@ -703,10 +741,11 @@
                             }))
                         )
                     ),
-                    React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0 } },
+                    React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, overflowY: 'auto' } },
                         React.createElement(TierStrip, null),
-                        React.createElement(DeltaList, { title: 'Dynasty Risers', rows: upside, tone: TONE.elite }),
-                        React.createElement(DeltaList, { title: 'Win-Now Profiles', rows: winNow, tone: TONE.gold })
+                        // Free: neutral rank-delta titles — no build-type read on rivals.
+                        React.createElement(DeltaList, { title: pro ? 'Dynasty Risers' : 'Future Rank Lead', rows: upside, tone: TONE.elite }),
+                        React.createElement(DeltaList, { title: pro ? 'Win-Now Profiles' : 'Now Rank Lead', rows: winNow, tone: TONE.gold })
                     )
                 ),
                 React.createElement(StrategicRail, null),

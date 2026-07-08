@@ -10,6 +10,10 @@ on:
 
 jobs:
   deploy:
+    # Edge functions live in the shared production Supabase project — only the
+    # canonical repo deploys them. The sandbox mirror (no deploy token) skips
+    # instead of failing on every push.
+    if: github.repository == 'skjjcruz/github.com-skjjcruz-owner-dashboard-dev'
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

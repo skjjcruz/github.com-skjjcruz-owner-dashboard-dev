@@ -2,13 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <title>Waiver Wire - Dynasty HQ</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap"></noscript>
     <style>
         :root {
             --gold: #D4AF37;
@@ -18,6 +21,12 @@
             --charcoal: #2A2A2A;
             --silver: #C0C0C0;
             --white: #FFFFFF;
+            /* iPhone safe-area tokens (viewport-fit=cover above) — same names
+               as index.html so the idiom carries across pages. 0px elsewhere. */
+            --sat: env(safe-area-inset-top, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -27,6 +36,11 @@
             min-height: 100vh;
             overflow-x: hidden;
         }
+        /* App root: full-height flex shell (height lives here, not inline, so
+           the dvh line can fall back to vh on pre-15.4 iOS). dvh tracks the
+           visual viewport — Safari's URL bar can't permanently clip the
+           bottom panel rows, since inner-panel scrolling never collapses it. */
+        .page-shell { height: 100vh; height: 100dvh; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: rgba(212,175,55,0.05); }
         ::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 2px; }
@@ -428,6 +442,7 @@
             .tracker-grid {
                 grid-template-columns: 1fr 1fr !important;
                 height: calc(100vh - 46px) !important;
+                height: calc(100dvh - 46px) !important; /* visual-viewport height; invalid → vh line above stands (pre-15.4 iOS) */
                 gap: 0.22rem !important;
                 padding: 0.22rem !important;
             }
@@ -514,8 +529,36 @@
             .filter-btn,
             .search-input,
             .fa-tab-btn,
+            .t-submit,
+            .ai-analyze-btn,
             .ai-mode-btn { min-height: 44px; }
             .player-row { min-height: 44px; }
+            /* Small glyph controls (26px add circle, del ✕): expand the HIT
+               area to ≥44px via an invisible pseudo-halo — the visual stays
+               the page's compact idiom. */
+            .add-circle, .del-btn { position: relative; }
+            .add-circle::after, .del-btn::after { content: ''; position: absolute; inset: -10px; }
+        }
+
+        /* ---- iPhone pass (≤767, plan Phase 3 item 17): safe-area chrome,
+             16px inputs (iOS zoom-on-focus guard), home-indicator clearance.
+             Phone-scoped — the tablet tier above is untouched. ---- */
+        @media (max-width: 767px) {
+            /* Header rides below the notch/status bar (installed-PWA draws
+               under it with viewport-fit=cover); !important beats the inline
+               JSX padding on the header row. */
+            .tracker-header { padding: calc(0.4rem + var(--sat)) calc(1rem + var(--sar)) 0.4rem calc(1rem + var(--sal)) !important; }
+            /* Safari zooms any focused input under 16px (same rule as the
+               main app's phone tier). Overrides the ≤640 compact sizes. */
+            input, select, textarea { font-size: 16px !important; }
+            /* The 100dvh page shell is overflow:hidden inline; let the page
+               scroll if content outgrows the viewport (641–767 band where
+               the grid is height:auto). At ≤640 the grid fits exactly, so
+               no scrollbar appears. */
+            .page-shell { overflow-y: auto !important; }
+            /* Bottom row of panels clears the home indicator. Placed after
+               the ≤640 rules so the later padding-bottom wins. */
+            .tracker-grid { padding-bottom: calc(0.32rem + var(--sab)) !important; }
         }
     </style>
 </head>
@@ -523,7 +566,7 @@
     <div id="root"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="js/shared/shared-loader.js?v=20260614dynread3"></script>
+    <script src="js/shared/shared-loader.js?v=20260705fdn1"></script>
     <script>
     // The /api/dev-ai-analyze proxy only exists in the local static dev server
     // (scripts/serve-static.cjs). The Capacitor native app also serves from
@@ -545,8 +588,10 @@
       'app-config.js',
       'constants.js',
       'utils.js',
+      'storage.js',
       'sleeper-api.js',
       'supabase-client.js',
+      'tier.js',
       'pick-value-model.js',
       'dhq-core.js',
       'intelligence-context.js',
@@ -558,6 +603,8 @@
       'rookie-data.js',
     ]);
     </script>
+    <!-- Scout-free vs Pro gate: wrIsPro() + chrome + lock card; boots loadUserTier(). -->
+    <script src="js/shared/pro-gate.js?v=20260705gate1"></script>
     <script src="js/shared/wr-ai-context.js?v=20260610a"></script>
     <script src="vendor/react.production.min.js"></script>
     <script src="vendor/react-dom.production.min.js"></script>
@@ -1115,6 +1162,19 @@
             const [aiError,     setAiError]     = useState(null);
             const [aiChatInput, setAiChatInput] = useState('');
 
+            // Scout-free vs Pro: every AI Scout mode (recs + chat) is Pro. Re-render
+            // once the async server tier resolves so a paying user whose local trial
+            // stamp lapsed isn't stuck on the lock (and free can't race the resolve).
+            // loadUserTier() is safe to call again — pro-gate.js already booted it.
+            const [, setTierTick] = useState(0);
+            useEffect(() => {
+                let live = true;
+                const p = (typeof window.loadUserTier === 'function') ? window.loadUserTier() : null;
+                Promise.resolve(p).catch(() => {}).then(() => { if (live) setTierTick(t => t + 1); });
+                return () => { live = false; };
+            }, []);
+            const aiIsPro = (typeof window.wrIsPro === 'function') ? window.wrIsPro() : true;
+
             const FA_AI_MODES = [
                 { id: 'fa_targets', label: 'FA Pickups',   desc: 'Recommend free agents based on your roster needs and remaining FAAB' },
                 { id: 'rookies',    label: 'Rookies',      desc: 'Rookie draft targets ranked by fit with your roster needs' },
@@ -1205,6 +1265,10 @@
             }
 
             async function runFAAnalysis() {
+                // Trigger gate (BYOK-safe): never fire an AI call for a free user.
+                // The locked panel below means this is unreachable UI-side; keep it
+                // as the guarantee in case another path ever invokes it.
+                if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) return;
                 setAiLoading(true); setAiError(null); setAiAnalysis(null);
                 try {
                     const ctx = buildFAContext();
@@ -1257,7 +1321,7 @@
 
             // ---- Main render ----
             return (
-                <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden' }}>
+                <div className="page-shell" style={{ display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
                     {/* HEADER */}
                     <div className="tracker-header" style={{ flexDirection:'column', gap:'0.3rem', padding:'0.4rem 1rem' }}>
@@ -1849,10 +1913,12 @@
                                         </div>
                                     ) : (
                                         <div className="ph-sub" style={{ gap:'0.3rem' }}>
-                                            {FA_AI_MODES.map(m => (
+                                            {aiIsPro ? FA_AI_MODES.map(m => (
                                                 <button key={m.id} className={`ai-mode-btn${aiMode===m.id?' active':''}`}
                                                     onClick={() => setAiMode(m.id)}>{m.label}</button>
-                                            ))}
+                                            )) : (
+                                                <span style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--gold)', border:'1px solid rgba(212,175,55,0.45)', borderRadius:'3px', padding:'0.18rem 0.5rem' }}>🔒 Pro feature</span>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -2014,6 +2080,26 @@
                                             )}
                                         </div>
                                     </>
+                                ) : !aiIsPro ? (
+                                    /* AI Scout lock — CTA goes to landing.html directly: the shared
+                                       upgrade modal styles with Scout CSS vars this page doesn't define */
+                                    <div className="panel-body" style={{ padding:'0.85rem 0.8rem' }}>
+                                        <div style={{ background:'var(--black)', border:'1px solid var(--charcoal)', borderLeft:'3px solid var(--gold)', borderRadius:'2px', padding:'12px 14px' }}>
+                                            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                                                <span aria-hidden="true" style={{ fontSize:'0.9rem' }}>🔒</span>
+                                                <span style={{ flex:1, fontFamily:'monospace', fontSize:'0.72rem', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--white)' }}>AI Scout</span>
+                                                <span style={{ fontFamily:'monospace', fontSize:'0.68rem', letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--gold)', border:'1px solid rgba(212,175,55,0.45)', borderRadius:'2px', padding:'1px 6px' }}>Pro</span>
+                                            </div>
+                                            <div style={{ fontSize:'0.72rem', color:'var(--silver)', lineHeight:1.55, margin:'8px 0 0 22px' }}>
+                                                FA pickup recommendations, rookie targets ranked by fit, and Ask AI are Pro. Your targets list, FAAB tracking, and the full wire stay free.
+                                            </div>
+                                            <button type="button"
+                                                onClick={() => { window.location.href = 'landing.html'; }}
+                                                style={{ display:'block', margin:'10px 0 0 22px', padding:'6px 14px', background:'var(--gold)', color:'#1a1000', border:'none', borderRadius:'2px', fontFamily:'monospace', fontSize:'0.72rem', fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer' }}>
+                                                Unlock with Pro
+                                            </button>
+                                        </div>
+                                    </div>
                                 ) : (
                                     /* AI Scout tab content */
                                     <div className="panel-body" style={{ padding:'0.85rem 0.8rem' }}>

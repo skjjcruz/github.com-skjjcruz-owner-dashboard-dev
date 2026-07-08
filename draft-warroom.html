@@ -2,13 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <title>Draft Command Center - Dynasty HQ</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap"></noscript>
     <style>
         :root {
             --gold: #D4AF37;
@@ -18,9 +21,20 @@
             --charcoal: #2A2A2A;
             --silver: #C0C0C0;
             --white: #FFFFFF;
+            /* iPhone safe-area tokens (viewport-fit=cover above) — same names
+               as index.html so the idiom carries across pages. 0px elsewhere. */
+            --sat: env(safe-area-inset-top, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: var(--black); color: var(--white); min-height: 100vh; overflow-x: hidden; }
+        /* App root: full-height flex shell (height lives here, not inline, so
+           the dvh line can fall back to vh on pre-15.4 iOS). dvh tracks the
+           visual viewport — Safari's URL bar can't permanently clip the
+           bottom, since inner-panel scrolling never collapses it. */
+        .page-shell { height: 100vh; height: 100dvh; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: rgba(212,175,55,0.05); }
         ::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 2px; }
@@ -129,8 +143,28 @@
             .back-btn,
             .league-select,
             .filter-btn,
+            .search-input,
+            .ai-analyze-btn,
             .ai-mode-btn { min-height: 44px; }
             .player-row { min-height: 44px; }
+        }
+
+        /* ---- iPhone pass (≤767, plan Phase 3 item 17): safe-area chrome,
+             16px inputs (iOS zoom-on-focus guard), home-indicator clearance.
+             Phone-scoped — the tablet tier above is untouched. ---- */
+        @media (max-width: 767px) {
+            /* Header rides below the notch/status bar (installed-PWA draws
+               under it with viewport-fit=cover). */
+            .wr-header { padding: calc(0.55rem + var(--sat)) calc(1rem + var(--sar)) 0.55rem calc(1rem + var(--sal)); }
+            /* Safari zooms any focused input under 16px (same rule as the
+               main app's phone tier). */
+            input, select, textarea { font-size: 16px !important; }
+            /* The 100dvh page shell is overflow:hidden inline; at ≤1023 the
+               grid is height:auto, so the page itself must scroll or the
+               stacked panels get clipped at the viewport edge. */
+            .page-shell { overflow-y: auto !important; }
+            /* Last stacked panel clears the home indicator. */
+            .wr-grid { padding-bottom: calc(0.6rem + var(--sab)); }
         }
     </style>
 </head>
@@ -138,7 +172,7 @@
     <div id="root"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="js/shared/shared-loader.js?v=20260614dynread3"></script>
+    <script src="js/shared/shared-loader.js?v=20260705fdn1"></script>
     <script>
     // The /api/dev-ai-analyze proxy only exists in the local static dev server
     // (scripts/serve-static.cjs). The Capacitor native app also serves from
@@ -160,8 +194,10 @@
       'app-config.js',
       'constants.js',
       'utils.js',
+      'storage.js',
       'sleeper-api.js',
       'supabase-client.js',
+      'tier.js',
       'pick-value-model.js',
       'dhq-core.js',
       'intelligence-context.js',
@@ -175,6 +211,8 @@
       'rookie-data.js',
     ]);
     </script>
+    <!-- Scout-free vs Pro gate: wrIsPro() + chrome + lock card; boots loadUserTier(). -->
+    <script src="js/shared/pro-gate.js?v=20260705gate1"></script>
     <script src="vendor/react.production.min.js"></script>
     <script src="vendor/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -381,6 +419,16 @@
             const [aiLoading,   setAiLoading]   = useState(false);
             const [aiError,     setAiError]     = useState(null);
             const [aiChatInput, setAiChatInput] = useState('');
+            // Scout-free vs Pro (js/shared/pro-gate.js, loaded above the React
+            // chain). Ranked-by-fit recs + Ask AI are Pro; raw board/pick values
+            // stay free. The trigger gate here matters because BYOK users bypass
+            // the OD.callAI server tripwire.
+            const isPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+            // One re-render once the async server tier resolves — a paying user
+            // whose local trial stamp lapsed reads 'free' pre-resolve and must
+            // not stay locked (trade-calculator.html tierTick pattern).
+            const [, setTierTick] = useState(0);
+            useEffect(() => { Promise.resolve(window.loadUserTier?.()).catch(() => {}).then(() => setTierTick(t => t + 1)); }, []);
 
             const userIdRef = useRef('');
             useEffect(() => { userIdRef.current = userId; }, [userId]);
@@ -605,6 +653,12 @@
             }
 
             async function runAnalysis() {
+                // Trigger gate (not just the server tripwire): free never calls AI.
+                if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+                    if (window.showProLaunchPage) window.showProLaunchPage();
+                    else if (window.showUpgradePrompt) window.showUpgradePrompt('draft_ai_standalone');
+                    return;
+                }
                 setAiLoading(true); setAiError(null); setAiAnalysis(null);
                 try {
                     const ctx = buildContext();
@@ -748,7 +802,7 @@
             );
 
             return (
-                <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden' }}>
+                <div className="page-shell" style={{ display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
                     {/* HEADER */}
                     <div className="wr-header">
@@ -893,7 +947,7 @@
                                                                 {r.name}
                                                                 <span className="player-team"> {r.team||'UFA'}</span>
                                                             </a>
-                                                            <span style={{ fontSize:'0.6rem', fontWeight:700, color: fitColor(fit), flexShrink:0 }}>FIT {fit}%</span>
+                                                            {isPro && <span style={{ fontSize:'0.6rem', fontWeight:700, color: fitColor(fit), flexShrink:0 }}>FIT {fit}%</span>}
                                                         </div>
                                                     );
                                                 })}
@@ -920,7 +974,7 @@
                                                                 {r.name}
                                                                 <span className="player-team"> {r.team||'UFA'}</span>
                                                             </a>
-                                                            <span style={{ fontSize:'0.6rem', fontWeight:700, color: fitColor(fit), flexShrink:0 }}>FIT {fit}%</span>
+                                                            {isPro && <span style={{ fontSize:'0.6rem', fontWeight:700, color: fitColor(fit), flexShrink:0 }}>FIT {fit}%</span>}
                                                         </div>
                                                     );
                                                 })}
@@ -947,7 +1001,7 @@
                                                                 {r.name}
                                                                 <span className="player-team"> {r.team||'UFA'}</span>
                                                             </a>
-                                                            <span style={{ fontSize:'0.6rem', fontWeight:700, color: fitColor(fit), flexShrink:0 }}>FIT {fit}%</span>
+                                                            {isPro && <span style={{ fontSize:'0.6rem', fontWeight:700, color: fitColor(fit), flexShrink:0 }}>FIT {fit}%</span>}
                                                         </div>
                                                     );
                                                 })}
@@ -972,7 +1026,7 @@
                                                         {r.name}
                                                         <span className="player-team"> {r.team||'UFA'}</span>
                                                     </a>
-                                                    <span style={{ fontSize:'0.6rem', fontWeight:700, color: fitColor(fit), flexShrink:0 }}>FIT {fit}%</span>
+                                                    {isPro && <span style={{ fontSize:'0.6rem', fontWeight:700, color: fitColor(fit), flexShrink:0 }}>FIT {fit}%</span>}
                                                 </div>
                                             );
                                         })}
@@ -991,7 +1045,7 @@
                                         <span style={{ background:'var(--gold)', color:'var(--black)', fontFamily:'Inter,sans-serif', fontSize:'0.52rem', fontWeight:700, padding:'0.1rem 0.35rem', borderRadius:'3px', letterSpacing:'0.06em', marginLeft:'0.4rem' }}>BETA</span>
                                     </div>
                                     <div className="ph-sub" style={{ gap:'0.35rem' }}>
-                                        {AI_MODES.map(m => (
+                                        {isPro && AI_MODES.map(m => (
                                             <button key={m.id} className={`ai-mode-btn${aiMode===m.id?' active':''}`}
                                                 onClick={() => setAiMode(m.id)}>{m.label}</button>
                                         ))}
@@ -1000,8 +1054,16 @@
 
                                 <div className="panel-body" style={{ padding:'0.85rem 0.8rem' }}>
 
+                                    {/* Free: one lock card replaces the rec/AI stack; the raw
+                                        pick-value row below stays. */}
+                                    {!isPro && (
+                                        <div dangerouslySetInnerHTML={{ __html: window.wrLockCard
+                                            ? window.wrLockCard('Draft AI', 'draft_ai_standalone', 'Fit-ranked rookie targets and Ask AI are Scout Pro.')
+                                            : '' }} />
+                                    )}
+
                                     {/* Auto-generated pick recommendations */}
-                                    {nextPick && autoRecs.length > 0 && (
+                                    {isPro && nextPick && autoRecs.length > 0 && (
                                         <div style={{ marginBottom:'0.9rem', padding:'0.5rem', background:'rgba(212,175,55,0.05)', border:'1px solid rgba(212,175,55,0.18)', borderRadius:'6px' }}>
                                             <div style={{ fontFamily:'Inter,sans-serif', fontSize:'0.82rem', color:'var(--gold)', letterSpacing:'0.08em', marginBottom:'0.15rem' }}>
                                                 AT YOUR NEXT PICK ({nextPick.year} Rd {nextPick.round})
@@ -1029,6 +1091,7 @@
                                         </div>
                                     )}
 
+                                    {isPro && <React.Fragment>
                                     <div style={{ fontSize:'0.68rem', color:'var(--silver)', opacity:0.55, marginBottom:'0.75rem', lineHeight:1.5 }}>
                                         {AI_MODES.find(m => m.id === aiMode)?.desc}
                                     </div>
@@ -1054,6 +1117,7 @@
                                             Select a mode and run analysis
                                         </div>
                                     )}
+                                    </React.Fragment>}
                                 </div>
                             </div>
 

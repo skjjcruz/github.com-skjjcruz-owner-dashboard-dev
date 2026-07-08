@@ -153,6 +153,14 @@
         const learning = opts.recapLearning || null;
         const gmMode = inferGmMode(leagueId, opts);
         const gmAdjust = gmModeDraftAdjustment(gmMode);
+        // GM Strategy aggression nudges in-draft trade frequency on top of mode
+        // (conservative trades less, aggressive trades more).
+        try {
+            const eff = window.WR?.GmMode?.effects?.(leagueId);
+            if (eff && Number.isFinite(eff.aggression)) {
+                gmAdjust.tradeActivity = (gmAdjust.tradeActivity || 0) + Math.round((eff.aggression - 0.52) * 40);
+            }
+        } catch (_) { /* ignore */ }
         let tuning = mergeDraftTuning(base, preset.tuning);
 
         DRAFT_TUNING_KEYS.forEach(key => {
@@ -584,11 +592,17 @@
     function resolveDraftPickValue(input = {}) {
         const round = Math.max(1, Number(input.round) || 1);
         const teams = Math.max(1, Number(input.leagueSize || input.totalTeams || input.teams) || 12);
-        const slot = Math.max(1, Number(input.slot || input.pickInRound) || Math.ceil(teams / 2));
+        // Every value model downstream (getPickValue → dhqPickValueFn, pickValueBySlot,
+        // getPickValueBySlot) expects pick-WITHIN-round — NOT the team's draft column.
+        // Prefer deriving it from the true overall so snake even rounds can never mirror.
+        const overallInput = Math.max(0, Number(input.overall) || 0);
+        const slot = overallInput > 0
+            ? ((overallInput - 1) % teams) + 1
+            : Math.max(1, Number(input.pickInRound || input.slot) || Math.ceil(teams / 2));
         const defaultRounds = window.App?.PlayerValue?.DRAFT_ROUNDS || 7;
         const rounds = Math.max(1, Number(input.rounds || input.draftRounds) || defaultRounds);
         const season = input.season || window.S?.season || new Date().getFullYear();
-        const overall = Number(input.overall || ((round - 1) * teams + slot));
+        const overall = overallInput || ((round - 1) * teams + slot);
         const playerValue = window.App?.PlayerValue || {};
         let value = 0;
         let source = 'missing';
@@ -683,10 +697,20 @@
             if (typeof window.getProspects === 'function') {
                 const prospects = window.getProspects();
                 if (prospects && prospects.length) {
-                    return prospects.slice(0, maxSize).map(p => {
+                    return prospects.map(p => {
                         const sleeper = matchSleeperRookie(p, playersData);
                         const sid = sleeper?.pid || p.sleeperId || p.player_id || p.playerId || p.pid;
                         const resolved = resolvePlayerDhq({ ...p, pid: sid, csv: p, player: sleeper?.player, name: sleeper?.player?.full_name || p.name });
+                        // Determine NFL experience. matchSleeperRookie only matches
+                        // years_exp===0 players, so a returning player (e.g. a 2nd-year
+                        // IDP that leaked into the prospect CSV) comes back as no match —
+                        // look it up by its resolved id so we still see its real
+                        // experience. No id / not in the player DB ⇒ incoming rookie.
+                        const sleeperPlayer = sleeper?.player
+                            || (sid != null ? (playersData || window.S?.players || {})[sid] : null)
+                            || null;
+                        const yearsExpRaw = sleeperPlayer?.years_exp ?? sleeperPlayer?.yearsExp;
+                        const yearsExp = Number.isFinite(Number(yearsExpRaw)) ? Number(yearsExpRaw) : null;
                         return {
                             pid: sid || p.pid,
                             csvPid: p.pid,
@@ -695,6 +719,9 @@
                             team: sleeper?.player?.team || '',
                             college: p.college || p.school || sleeper?.player?.college || '',
                             age: p.age || p.csv?.age || sleeper?.player?.age || null,
+                            yearsExp,
+                            years_exp: yearsExp,
+                            isRookie: yearsExp == null || yearsExp === 0,
                             dhq: resolved.value,
                             csv: p,
                             photoUrl: sleeper
@@ -709,7 +736,14 @@
                             source: resolved.source,
                             isCSV: true,
                         };
-                    }).sort((a, b) => (b.dhq || 0) - (a.dhq || 0));
+                    })
+                        // Rookie pool = first-year players only. Drop any prospect that
+                        // resolved to a Sleeper player with NFL experience — those are
+                        // returning players (e.g. 2nd-year IDP scored on real production)
+                        // that don't belong on the rookie board.
+                        .filter(p => p.yearsExp == null || p.yearsExp === 0)
+                        .sort((a, b) => (b.dhq || 0) - (a.dhq || 0))
+                        .slice(0, maxSize);
                 }
             }
             // Fall through to startup if CSV missing
@@ -774,7 +808,8 @@
             const rev = draftType === 'snake' && r % 2 === 0;
             for (let s = 0; s < leagueSize; s++) {
                 const teamIdx = rev ? leagueSize - 1 - s : s;
-                const slot = teamIdx + 1; // 1-indexed slot
+                const slot = teamIdx + 1; // 1-indexed team column — ownership key only
+                const pickInRound = s + 1; // 1-indexed pick-within-round — labels + values
                 const origInfo = slotToRoster[slot] || {};
                 const ownershipKey = r + '-' + slot;
                 const owner = pickOwnership[ownershipKey] || { rosterId: origInfo.rosterId, ownerName: origInfo.ownerName, traded: false };
@@ -782,7 +817,7 @@
                 const pickValue = resolveDraftPickValue({
                     season: window.S?.season,
                     round: r,
-                    slot,
+                    pickInRound,
                     overall,
                     leagueSize,
                     rounds,
@@ -790,6 +825,7 @@
                 order.push({
                     round: r,
                     slot,
+                    pickInRound,
                     teamIdx,
                     overall,
                     originalRosterId: origInfo.rosterId || null,
@@ -1332,7 +1368,9 @@
             if (delta <= -REACH_STEAL_THRESHOLD) row.reaches.push(pickSnapshot(pick));
             if (!row.topPick || pickDhq(pick) > row.topPick.dhq) row.topPick = pickSnapshot(pick);
             if (delta > (row.bestValue?.valueDelta ?? -999)) row.bestValue = pickSnapshot(pick);
-            if (delta < (row.biggestReach?.valueDelta ?? 999)) row.biggestReach = pickSnapshot(pick);
+            // Only a NEGATIVE delta is a reach — mirrors the user-recap filter, so a
+            // team that never reached doesn't get a value pick labeled a reach.
+            if (delta < 0 && delta < (row.biggestReach?.valueDelta ?? 999)) row.biggestReach = pickSnapshot(pick);
         });
 
         Object.keys(state?.personas || {}).forEach(rid => {
@@ -1686,7 +1724,7 @@
                     id: 'pick_' + slot.overall + '_' + Date.now(),
                     round: slot.round,
                     slot: slot.slot,
-                    pickInRound: slot.slot,
+                    pickInRound: slot.pickInRound || slot.slot,
                     overall: slot.overall,
                     teamIdx: slot.teamIdx,
                     rosterId: slot.rosterId,
@@ -2170,7 +2208,7 @@
                         id: 'pick_' + adjustedSlot.overall + '_' + Date.now(),
                         round: adjustedSlot.round,
                         slot: adjustedSlot.slot,
-                        pickInRound: adjustedSlot.slot,
+                        pickInRound: adjustedSlot.pickInRound || adjustedSlot.slot,
                         overall: adjustedSlot.overall,
                         teamIdx: adjustedSlot.teamIdx,
                         rosterId,
@@ -2637,6 +2675,7 @@
             schemaVersion: 'draft-recap-v5',
             id: opts.id || ('recap_' + Date.now()),
             leagueId: state?.leagueId || '',
+            sleeperDraftId: state?.sleeperDraftId || null,
             season: state?.season || new Date().getFullYear(),
             mode: state?.mode || 'solo',
             variant: state?.variant || 'startup',
@@ -2666,6 +2705,40 @@
             ownerLearning,
             savedAt: Date.now(),
         };
+    }
+
+    // ── selectCurrentDraft — the league's "draft of record" ─────────────
+    // The single rule every draft surface should use to decide which Sleeper
+    // draft owns the room:
+    //   1. 'live'     — a draft is actively drafting.
+    //   2. 'review'   — the most recently completed draft, which STAYS current
+    //                   until genuinely superseded: another draft goes live, or
+    //                   a pre_draft draft is CREATED after this one finished.
+    //                   (A league that pre-schedules its next draft — e.g. a
+    //                   UDFA frenzy queued up before the rookie draft ran —
+    //                   must NOT evict the just-completed draft.)
+    //   3. 'upcoming' — the next scheduled pre_draft by start time.
+    // Returns { draft, reason } with reason 'live'|'review'|'upcoming'|'none'.
+    function selectCurrentDraft(drafts) {
+        const list = (Array.isArray(drafts) ? drafts : []).filter(d => d && d.draft_id);
+        if (!list.length) return { draft: null, reason: 'none' };
+        const live = list.find(d => d.status === 'drafting');
+        if (live) return { draft: live, reason: 'live' };
+        const completedAtOf = d => Number(d.last_picked || d.start_time || d.created || 0);
+        const latestComplete = list.filter(d => d.status === 'complete')
+            .sort((a, b) => completedAtOf(b) - completedAtOf(a))[0] || null;
+        const nextPre = list.filter(d => d.status === 'pre_draft')
+            .sort((a, b) => (Number(a.start_time) || Infinity) - (Number(b.start_time) || Infinity))[0] || null;
+        if (latestComplete) {
+            const completedAt = completedAtOf(latestComplete);
+            const superseded = list.some(d => d.status === 'pre_draft'
+                && String(d.draft_id) !== String(latestComplete.draft_id)
+                && Number(d.created || 0) > completedAt);
+            if (!superseded) return { draft: latestComplete, reason: 'review' };
+        }
+        if (nextPre) return { draft: nextPre, reason: 'upcoming' };
+        if (latestComplete) return { draft: latestComplete, reason: 'review' };
+        return { draft: list[0], reason: 'upcoming' };
     }
 
     function draftLearningKey(leagueId) {
@@ -2952,6 +3025,7 @@
         initialDraftState,
         normalizeLeagueTypeValue,
         detectDraftVariant,
+        selectCurrentDraft,
         buildPool,
         buildPickOrder,
         resolvePlayerDhq,
