@@ -1269,6 +1269,7 @@
                         <strong style={{ color: dhqCol }}>{x.dhq ? x.dhq.toLocaleString() : '—'}</strong>
                         <em>{x.faab ? '$' + x.faab.lo + '-' + x.faab.hi : 'No bid'}</em>
                     </span>
+                    <span className="fa-hq-why">{x.why}</span>
                 </button>
             );
         }

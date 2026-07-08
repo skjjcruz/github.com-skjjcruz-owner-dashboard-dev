@@ -423,7 +423,7 @@ async function main() {
     throw err;
   }
   const server = await startStaticServer(port);
-  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: (process.env.PLAYWRIGHT_CHROME_ARGS || '').split(' ').filter(Boolean) });
   const failures = [];
   const network = { signup: [], signin: [], passwordReset: [], checkout: [] };
   const baseUrl = `http://127.0.0.1:${port}`;

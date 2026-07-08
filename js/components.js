@@ -22,7 +22,6 @@
         }
 
         const tierLabel = targetTier === 'scout' ? 'Scout' : 'Dynasty HQ';
-        const tierPrice = targetTier === 'scout' ? '$4.99/mo' : '$9.99/mo';
 
         return React.createElement('div', { style: { background:'linear-gradient(135deg, var(--off-black), var(--charcoal))', border:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius:'var(--card-radius)', padding:'24px', textAlign:'center', maxWidth:'480px', margin:'24px auto' } },
             React.createElement('div', { style: { fontFamily:'Rajdhani, sans-serif', fontSize:'1.6rem', color:'var(--gold)', letterSpacing:'0.06em', marginBottom:'8px' } }, title || 'UPGRADE TO UNLOCK'),

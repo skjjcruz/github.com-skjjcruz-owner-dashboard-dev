@@ -240,7 +240,7 @@ async function main() {
   }
 
   const server = await startStaticServer(port);
-  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: (process.env.PLAYWRIGHT_CHROME_ARGS || '').split(' ').filter(Boolean) });
   const failures = [];
 
   try {

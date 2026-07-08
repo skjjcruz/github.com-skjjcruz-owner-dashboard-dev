@@ -123,7 +123,7 @@ async function main() {
     throw err;
   }
   const server = await startStaticServer(port);
-  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: (process.env.PLAYWRIGHT_CHROME_ARGS || '').split(' ').filter(Boolean) });
   const failures = [];
   let checked = 0;
 
@@ -250,14 +250,15 @@ async function main() {
     await empirePage.goto(`http://127.0.0.1:${port}${BASE_PATH}?dev=true&user=${USER}`, { waitUntil: 'domcontentloaded', timeout: 12000 });
     // The selector renders only after the user's leagues finish loading (network).
     await empirePage.locator('.hub-league-selector').waitFor({ state: 'attached', timeout: 20000 }).catch(() => {});
-    const launch = empirePage.getByText('Launch Empire Dashboard', { exact: true });
-    await launch.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+    // FranchisePicker hub (2026-07): the launch control is the EMPIRE COMMAND hero card.
+    const launch = empirePage.locator('.empire-hero:not(.locked)');
+    await launch.first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
     if (await launch.count() !== 1) {
       const diag = await empirePage.evaluate(() => ({
-        sel: !!document.querySelector('.hub-league-selector'),
+        sel: !!document.querySelector('.hub-franchise-picker'),
         body: String(document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 160),
       })).catch(() => ({}));
-      failures.push(`empire-launch: Launch Empire Dashboard control not found [selector=${diag.sel} body="${diag.body || ''}"]`);
+      failures.push(`empire-launch: EMPIRE COMMAND hero not found [picker=${diag.sel} body="${diag.body || ''}"]`);
     } else {
       await launch.click();
       await empirePage.waitForTimeout(1200);

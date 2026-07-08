@@ -20,9 +20,10 @@ const MAIN_TABS = [
   'analytics',
   'alex',
   'trophies',
-  'calendar',
 ];
-const ROUTED_TABS = [...MAIN_TABS, 'strategy', 'league'];
+// 'calendar' has no sidebar nav entry anymore (folded into Trophy Room's calendar view)
+// but must stay directly addressable as a route.
+const ROUTED_TABS = [...MAIN_TABS, 'calendar', 'strategy', 'league'];
 const WIDGET_SIZES = ['sm', 'slim', 'narrow', 'md', 'lg', 'tall', 'xl', 'xxl'];
 
 let passed = 0;
@@ -191,7 +192,7 @@ test('GM strategy saves through the canonical app storage used by the header', (
 });
 
 test('league format skin loads early and is published to every module surface', () => {
-  sourceHas(indexHtml, '<script src="js/league-skin.js?v=20260526redraftqa1"></script>', 'league skin script must load after core and before modules');
+  sourceHas(indexHtml, '<script src="js/league-skin.js?v=20260702bye1"></script>', 'league skin script must load after core and before modules');
   sourceHas(leagueSkinSrc, 'App.LeagueSkin = api;', 'league skin must expose window.App.LeagueSkin');
   sourceHas(leagueSkinSrc, 'WR.LeagueSkin = api;', 'league skin must expose window.WR.LeagueSkin');
   sourceHas(leagueSkinSrc, "appLabel: 'Dynasty HQ'", 'league skin must preserve the Dynasty HQ brand');
@@ -241,7 +242,7 @@ test('existing module components consume the league skin contract for labels and
   sourceHas(compareSrc, 'const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || \'DHQ\';', 'Compare must use skin value vocabulary');
   sourceHas(compareSrc, 'const valueLabel = resolvedLeagueSkin?.vocabulary?.valueLabel || \'DHQ Value\';', 'Compare must use the full skin value label');
   sourceHas(draftRoomSrc, 'const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || \'DHQ\';', 'Draft room must use skin value vocabulary');
-  sourceHas(draftRoomSrc, "const draftCapitalLabel = skinFeatures.showFuturePicks === false ? 'draft capital' : 'future capital';", 'Draft room copy must adapt future-pick language');
+  sourceHas(draftRoomSrc, "const _draftCapitalLabel = skinFeatures.showFuturePicks === false ? 'draft capital' : 'future capital';", 'Draft room copy must adapt future-pick language');
   sourceHas(draftRoomSrc, 'skinFeatures.showFuturePicks === false ? [leagueSeason] : [leagueSeason, leagueSeason + 1, leagueSeason + 2]', 'Draft room pick-year model must hide future years in redraft');
   sourceHas(draftRoomSrc, 'futureCapitalRows.length > 0', 'Draft room must hide empty future-pick controls');
 });
@@ -355,7 +356,7 @@ test('Mock Draft Center keeps decision cards readable and roster grade integrate
   sourceHas(indexHtml, '.mock-decision-card strong { display: block; color: var(--white); font-size: 0.82rem; line-height: 1.14;', 'mock decision player names should be allowed to wrap');
   sourceHas(indexHtml, '.mock-roster-card { min-height: 0; overflow: visible; }', 'mock roster build card should not create an internal scroll');
   sourceHas(draftCommandCenterSrc, 'function MockRosterBuildCard({ state, grade })', 'mock roster build must receive the draft grade');
-  sourceHas(draftCommandCenterSrc, '<div><span>Draft Grade</span><strong>{grade?.letter || \'--\'}</strong>', 'mock roster build must surface the draft grade in-card');
+  sourceHas(draftCommandCenterSrc, '<div><span>Draft Grade</span><strong>{ccIsPro() ? (grade?.letter || \'--\') : \'🔒\'}</strong>', 'mock roster build must surface the draft grade in-card');
   ok(!draftCommandCenterSrc.includes('className="mock-grade-strip"'), 'mock draft grade should not render as a detached bottom strip');
 });
 
@@ -448,7 +449,7 @@ group('my team roster density');
 test('expanded roster rows use contextual readout without duplicate profile cards', () => {
   sourceHas(myTeamSrc, 'const buildDynastyRead = r => {', 'contextual dynasty read helper missing');
   sourceHas(myTeamSrc, '{aiReads[r.pid] || buildDynastyRead(r)}', 'expanded card must render the AI read, falling back to the contextual dynasty read');
-  sourceHas(myTeamSrc, "{formatHeight(r.p.height) ? ' \\u00B7 ' + formatHeight(r.p.height) : ''}", 'height must live in the player identity card');
+  sourceHas(myTeamSrc, "{formatHeight(r.p.height) ? ' · ' + formatHeight(r.p.height) : ''}", 'height must live in the player identity card');
   ok(!myTeamSrc.includes('Moderate dynasty asset. Watch trajectory.'), 'generic dynasty read copy should not return');
   ok(!myTeamSrc.includes("label: 'DEPTH', val"), 'expanded metric cards should not include the duplicate depth card');
   ok(!myTeamSrc.includes('Physical + Draft Profile'), 'duplicate profile card should not return');

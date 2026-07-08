@@ -217,11 +217,15 @@ test('redraft pool includes veterans and rookies from the all-player pool', () =
   eq(pool.find(p => p.pid === 'rook2').isRookie, true, 'rookie flag preserved');
 });
 
-test('mock pick order stores canonical slot pick values', () => {
+test('mock pick order stores pick-position values (snake rounds never mirror)', () => {
   const order = state.buildPickOrder(2, 4, 'snake');
-  eq(order[0].value, 1001, '1.01 value uses exact slot');
-  eq(order[3].value, 1004, '1.04 value uses exact slot');
-  eq(order[4].value, 2004, 'snake round two first pick uses exact original slot');
+  eq(order[0].value, 1001, '1.01 value uses pick-in-round');
+  eq(order[3].value, 1004, '1.04 value uses pick-in-round');
+  // Snake round two: the first pick taken (original slot 4) is the 5th overall,
+  // so its VALUE is that of pick 2.01 — value follows draft position, not the
+  // team column. (Original slot identity lives in order[].slot.)
+  eq(order[4].value, 2001, 'snake round two first pick valued by pick position');
+  eq(order[4].slot, 4, 'original slot identity preserved on the entry');
 });
 
 console.log('\n');

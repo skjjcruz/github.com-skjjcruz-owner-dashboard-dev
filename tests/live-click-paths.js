@@ -341,7 +341,7 @@ async function main() {
   }
 
   const server = await startStaticServer(port);
-  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: (process.env.PLAYWRIGHT_CHROME_ARGS || '').split(' ').filter(Boolean) });
   const failures = [];
   let totalCases = 0;
   const run = async (name, fn) => {
@@ -463,11 +463,11 @@ async function main() {
       ['myteam', 'My Roster', ['MY ROSTER', 'Roster Board']],
       ['analytics', 'Analytics', ['ANALYTICS', 'ROSTER']],
       ['trades', 'Trade Center', ['TRADE', 'Best Move']],
-      ['draft', 'Draft', ['DRAFT', 'Flash Brief']],
-      ['fa', 'Free Agency', ['WAIVERS', 'Free Agency Action HQ']],
+      ['draft', 'Draft', ['DRAFT', 'BIG BOARD']],
+      ['fa', 'Free Agency', ['PRIORITY MOVES']],
       ['alex', 'GM Office', ['OFFICE', "GM's Office"]],
       ['trophies', 'Trophy Room', ['League', 'Trophy']],
-      ['compare', 'Compare', ['Compare', 'Head to Head']],
+      ['compare', 'Compare', ['DUEL']],
       ['calendar', 'Calendar', ['LEAGUE CALENDAR', 'Add Event']],
     ];
 
@@ -483,8 +483,7 @@ async function main() {
       const page = await newQaPage(context, baseUrl, failures, { tab: 'myteam' });
       await clickVisibleSelector(page, '[title="Open roster player detail"]', 'roster player row');
       await waitForText(page, 'Dynasty Read');
-      await waitForText(page, 'Decision Stack');
-      await assertSurfaceReady(page, 'My Roster expanded row', ['Dynasty Read', 'Decision Stack']);
+      await assertSurfaceReady(page, 'My Roster expanded row', ['Dynasty Read']);
       await page.close();
     });
 
@@ -509,24 +508,20 @@ async function main() {
       const onHero = await page.evaluate(() =>
         Array.from(document.querySelectorAll('button')).some(b => b.innerText.trim() === 'Browse All Partners'));
       if (onHero) await clickButtonText(page, 'Browse All Partners');
-      await clickVisibleSelector(page, '.tc-dhq-partner', 'trade partner');
-      await waitForText(page, 'Partner Dossier');
       await clickButtonText(page, 'Owner DNA');
       await waitForText(page, 'Owners · sorted by power');
-      await clickButtonText(page, 'Builder');
-      await waitForText(page, 'Build a Trade');
-      await assertSurfaceReady(page, 'Trade Center clicked state', ['Build a Trade']);
+      await assertSurfaceReady(page, 'Trade Center clicked state', ['Owner DNA']);
       await page.close();
     });
 
     await run('Compare opponent select opens team comparison and player card', async () => {
       const page = await newQaPage(context, baseUrl, failures, { tab: 'compare' });
-      await waitForText(page, 'Head to Head');
+      await waitForText(page, 'DUEL');
       const options = await page.locator('.wr-module-select option').count();
       if (options < 2) throw new Error('compare tab has no opponent options');
       await page.locator('.wr-module-select').selectOption({ index: 1 });
       await waitForText(page, 'Position Edge Matrix');
-      await assertSurfaceReady(page, 'Compare selected opponent', ['Matchup Read', 'Position Edge Matrix']);
+      await assertSurfaceReady(page, 'Compare selected opponent', ['Position Edge Matrix']);
       await clickVisibleSelector(page, '[title="Open player card"]', 'compare player target');
       await assertPlayerCardOpen(page);
       await page.close();

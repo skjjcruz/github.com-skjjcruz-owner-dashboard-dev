@@ -860,7 +860,7 @@
     // ═══════════════════════════════════════════════════════
 
     // ── State ──────────────────────────────────────────────
-    const SUPABASE_URL = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
+    const FW_ONBOARD_SUPABASE_URL = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
     let selectedPlan = null;
     let selectedStandardProduct = 'war_room'; // default for Standard tier
     const selectedPlatforms = new Set(['sleeper']);
@@ -1039,7 +1039,7 @@
       alertEl.className = 'alert';
 
       try {
-        const resp = await fetch(`${SUPABASE_URL}/functions/v1/fw-create-checkout`, {
+        const resp = await fetch(`${FW_ONBOARD_SUPABASE_URL}/functions/v1/fw-create-checkout`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
