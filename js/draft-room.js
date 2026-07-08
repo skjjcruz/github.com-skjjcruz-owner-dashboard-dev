@@ -10,7 +10,6 @@
     // Rotated pick — spreads variants across rows by index so same-tier
     // neighbours don't open with the same sentence on a hash collision.
     const avPickRot = (seed, arr, off) => (window.AlexVoice ? window.AlexVoice.pickRot(seed, arr, off) : arr[(off | 0) % arr.length]);
-<<<<<<< skjjcruz-prod
     // Content signature of a Big Board snapshot (manual order, AI order, tags,
     // notes, drafted, active lane). Used to tell a real cross-view edit apart from a
     // view's own echo so the Draft tab and live draft room can share one store
@@ -29,8 +28,6 @@
             });
         } catch (e) { return ''; }
     };
-=======
->>>>>>> c2-latest
     // ══════════════════════════════════════════════════════════════════════════
     // END FREE AGENCY TAB
     // ══════════════════════════════════════════════════════════════════════════
@@ -121,10 +118,7 @@
         const toggleHideDrafted = () => setHideDrafted(v => { const next = !v; try { DraftStorage.set('wr_bb_hide_drafted', next); } catch (e) {} return next; });
         const [expandedDraftPid, setExpandedDraftPid] = useState(null);
         const [scoutDrawerPid, setScoutDrawerPid] = useState(null);
-<<<<<<< skjjcruz-prod
-=======
         const [depthReadPos, setDepthReadPos] = useState(null); // Class Depth row with the full Alex read expanded
->>>>>>> c2-latest
         const [nflFitAI, setNflFitAI] = useState({}); // pid -> live web-search "Alex NFL Fit" read (premium)
         const [dragPid, setDragPid] = useState(null); // currently dragging pid
         const [draftStrategyEditing, setDraftStrategyEditing] = useState(false);
@@ -436,12 +430,9 @@
         // returns null on the free tier, so the deterministic narrative stays the
         // baseline. Only fires for the currently-expanded player to limit LLM cost.
         useEffect(() => {
-<<<<<<< skjjcruz-prod
-=======
             // Own trigger gate (BYOK bypasses fetchNFLFitNews's internal tier
             // check path) — the whole "Alex NFL Fit" read is Pro-only below.
             if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) return;
->>>>>>> c2-latest
             const pid = expandedDraftPid;
             if (!pid || typeof window.App?.fetchNFLFitNews !== 'function') return;
             const row = (draftPoolRows || []).find(x => String(x.pid) === String(pid));
@@ -456,15 +447,6 @@
             return () => { cancelled = true; };
         }, [expandedDraftPid]);
 
-<<<<<<< skjjcruz-prod
-        // Jump straight into Follow Live Draft when the league header "Draft Live"
-        // chip is clicked. The chip lives in league-detail, so it sets a flag +
-        // fires this event; the mount-time flag check covers the case where the
-        // Draft tab (and this module) wasn't mounted yet when the chip was clicked.
-        useEffect(() => {
-            const openLive = () => {
-                window._wrOpenLiveDraft = false;
-=======
         // Jump straight into Follow Live Draft when the league header draft chip
         // is clicked (live "Draft Live" AND completed "View Results" — the chip
         // sets the flag for both statuses). The chip lives in league-detail, so it
@@ -474,7 +456,6 @@
             const openLive = () => {
                 window._wrOpenLiveDraft = false;
                 draftNavTouchedRef.current = true; // chip click = manual navigation
->>>>>>> c2-latest
                 setLiveAutoStartToken(Date.now());
                 setDraftView('live');
             };
@@ -483,8 +464,6 @@
             return () => window.removeEventListener('wr:open-live-draft', openLive);
         }, []);
 
-<<<<<<< skjjcruz-prod
-=======
         // ── Completed-draft auto-open ─────────────────────────────────────────
         // A finished real-platform draft (Sleeper autodraft/away, MFL email draft)
         // used to sit behind a manual "View Draft Results" click — the board was
@@ -524,7 +503,6 @@
             try { DraftStorage.set('wr_draft_autoshown_' + leagueKey, String(liveDraftId)); } catch (e) {}
         }, [draftView, liveDraftStatus, liveDraftId, leagueKey]);
 
->>>>>>> c2-latest
         const normPos = window.App.normPos;
         const posLabel = pos => window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
         const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
@@ -1283,11 +1261,8 @@
         }, []);
 
         const flashAnalystPreviewReports = useMemo(() => {
-<<<<<<< skjjcruz-prod
-=======
             // Persona-projected mocks are a Scout Pro optimizer — free never simulates.
             if (!isPro) return [];
->>>>>>> c2-latest
             // Frozen once the live draft starts — stop re-simulating, show the locked board.
             if (frozenMock) return frozenMock.previewReports || [];
             const engine = window.DraftCC?.analystMock;
@@ -1309,16 +1284,10 @@
                     return null;
                 }
             }).filter(Boolean);
-<<<<<<< skjjcruz-prod
-        }, [boardPoolForContext.length, flashAnalystPresetOptions, draftProjectionState, draftProjectionMeta, playersData, currentLeague, myRoster, frozenMock]);
-
-        const generateFlashAnalystMock = useCallback(() => {
-=======
         }, [boardPoolForContext.length, flashAnalystPresetOptions, draftProjectionState, draftProjectionMeta, playersData, currentLeague, myRoster, frozenMock, isPro]);
 
         const generateFlashAnalystMock = useCallback(() => {
             if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) return; // Pro (card is teasered for free)
->>>>>>> c2-latest
             if (liveDraftOn) return; // locked once the live draft is detected — don't re-simulate
             const engine = window.DraftCC?.analystMock;
             if (!engine?.generateProjectedMock || !boardPoolForContext.length) return;
@@ -1557,12 +1526,9 @@
         }, [normPos, nextPickLabel, fmtDhq, valueShortLabel]);
 
         const pressureProjectionReport = useMemo(() => {
-<<<<<<< skjjcruz-prod
-=======
             // Persona-projected pressure read is Pro; free's Board Pressure falls
             // back to the raw board-order slice in likelyGoneBeforePick.
             if (!isPro) return null;
->>>>>>> c2-latest
             // Frozen once the live draft starts, alongside the preview mock.
             if (frozenMock) return frozenMock.pressureReport || null;
             const engine = window.DraftCC?.analystMock;
@@ -1583,11 +1549,7 @@
                 if (window.wrLog) window.wrLog('draftRoom.pressureProjection', e);
                 return null;
             }
-<<<<<<< skjjcruz-prod
-        }, [boardPoolForContext.length, draftProjectionState, draftProjectionMeta, playersData, currentLeague, myRoster, highestCurrentPickRound, draftRounds, frozenMock]);
-=======
         }, [boardPoolForContext.length, draftProjectionState, draftProjectionMeta, playersData, currentLeague, myRoster, highestCurrentPickRound, draftRounds, frozenMock, isPro]);
->>>>>>> c2-latest
         const draftPredictionReport = activeFlashAnalystReport || pressureProjectionReport || activeFlashPreviewReport;
 
         // Freeze the Analyst Mock on the live draft's first real pick; clear if it resets.
@@ -1821,7 +1783,6 @@
                 if (!map[pos]) map[pos] = { pos, count: 0, names: [] };
                 map[pos].count += 1;
                 if (map[pos].names.length < 4) map[pos].names.push(r.name);
-<<<<<<< skjjcruz-prod
             });
             return Object.values(map).sort((a, b) => b.count - a.count).slice(0, 6).map(row => {
                 const need = needByPos[row.pos];
@@ -1834,20 +1795,6 @@
                 const note = lead + (nextName ? ' — ' + nextName + ' is the next one likely up.' : '.');
                 return { ...row, isNeed: !!need, note };
             });
-=======
-            });
-            return Object.values(map).sort((a, b) => b.count - a.count).slice(0, 6).map(row => {
-                const need = needByPos[row.pos];
-                const goneIds = liveDraftSnapshot.allPids || new Set();
-                const nextAvail = scoredAvailable.find(r => (normPos(r.pos || r.p?.position) || r.pos) === row.pos && !goneIds.has(String(r.pid)));
-                const nextName = nextAvail ? pName(nextAvail.p) : '';
-                const lead = need
-                    ? (need.urgency === 'deficit' ? 'A critical ' + row.pos + ' need is draining' : 'A ' + row.pos + ' need is thinning out')
-                    : (row.count >= 4 ? row.pos + ' is coming off the board fast' : row.pos + ' tier is holding for now');
-                const note = lead + (nextName ? ' — ' + nextName + ' is the next one likely up.' : '.');
-                return { ...row, isNeed: !!need, note };
-            });
->>>>>>> c2-latest
         }, [likelyGoneBeforePick, assess, scoredAvailable, normPos, liveDraftSnapshot]);
 
         const classDepthRows = useMemo(() => {
@@ -1937,13 +1884,9 @@
                         'I\'d watch the tier break and stay flexible.',
                     ]));
                 }
-<<<<<<< skjjcruz-prod
-                return { ...row, alexBlurb: sentences.join(' '), starterCount, nextNames: pool.slice(1, 3).map(r => pName(r.p)) };
-=======
                 // De-busy: lead = the count/format read only; headliner + plan
                 // sentences live behind the row's "Full read" expander.
                 return { ...row, blurbLead: sentences[0] || '', blurbMore: sentences.slice(1).join(' '), starterCount, nextNames: pool.slice(1, 3).map(r => pName(r.p)) };
->>>>>>> c2-latest
             });
         }, [topProspects, normPos, leagueDraftProfile]);
 
@@ -2072,11 +2015,7 @@
                     age,
                     goneBeforePick: posGone.length,
                     lastGoneName: lastGone?.name || null,
-<<<<<<< skjjcruz-prod
-                    lastGoneSlot: lastGone ? lastGone.round + '.' + String(lastGone.slot).padStart(2, '0') : null,
-=======
                     lastGoneSlot: lastGone ? lastGone.round + '.' + String(lastGone.pickInRound || lastGone.slot).padStart(2, '0') : null,
->>>>>>> c2-latest
                 };
             };
 
@@ -2113,13 +2052,10 @@
         // voice; we parse "POS: note" lines and swap them in over the seeded
         // template. If AI is unavailable or the call fails, the template stands.
         useEffect(() => {
-<<<<<<< skjjcruz-prod
-=======
             // Trigger gate, not just the hasAI() tripwire: a BYOK user (S.apiKey)
             // routes dhqAI straight to the provider, so free must never reach
             // AV.enhance from this auto-fire (targets are Pro-gated anyway).
             if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) return;
->>>>>>> c2-latest
             if (liveDraftOn) return; // live draft: generation is locked — don't fire AI note calls
             const AV = window.AlexVoice;
             if (!AV || !AV.hasAI() || !needLabels.length) return;
@@ -2199,11 +2135,7 @@
                 let rank = Number(pick.consensusRank ?? (pick.csv && (pick.csv.consensusRank ?? pick.csv.rank)));
                 rank = (Number.isFinite(rank) && rank > 0) ? Math.round(rank) : null;
                 const overall = Number(pick.overall) || null;
-<<<<<<< skjjcruz-prod
-                const slot = (Number(pick.round) || 0) + '.' + String(Number(pick.slot) || 0).padStart(2, '0');
-=======
                 const slot = (Number(pick.round) || 0) + '.' + String(Number(pick.pickInRound || pick.slot) || 0).padStart(2, '0');
->>>>>>> c2-latest
                 // Value: board rank vs the slot you spent. delta>0 = value fell to you.
                 // Downside capped (-35) so a need-driven reach isn't catastrophic.
                 let valueScore = 0, valuePhrase = '';
@@ -2244,11 +2176,7 @@
                     player: pick.name || 'Your pick',
                     pid: pick.pid,
                     dhq: pick.dhq || 0,
-<<<<<<< skjjcruz-prod
-                    slotLabel: (Number(pick.round) || 0) + '.' + String(Number(pick.slot) || 0).padStart(2, '0'),
-=======
                     slotLabel: (Number(pick.round) || 0) + '.' + String(Number(pick.pickInRound || pick.slot) || 0).padStart(2, '0'),
->>>>>>> c2-latest
                     grade: g.grade,
                     rationale: g.rationale,
                 };
@@ -2264,11 +2192,7 @@
             : g === 'C' ? 'var(--k-f0a500, #f0a500)'
             : 'var(--bad, #e5534b)';
 
-<<<<<<< skjjcruz-prod
-        const userMockRows = useMemo(() => {
-=======
         const _userMockRows = useMemo(() => {
->>>>>>> c2-latest
             const picks = (draftPredictionReport?.picks || []).filter(p =>
                 sameId(p.rosterId, myRoster?.roster_id)
                 || (!p.rosterId && Number(p.slot) === Number(draftProjectionMeta.mySlot))
@@ -2491,11 +2415,7 @@
                 if (ap.pid != null) claimed.add(String(ap.pid));
                 if (aPos) claimedByPos[aPos] = (claimedByPos[aPos] || 0) + 1;
                 const rd = Number(ap.round) || 0;
-<<<<<<< skjjcruz-prod
-                const sl = Number(ap.slot || ap.pickInRound) || 0;
-=======
                 const sl = Number(ap.pickInRound || ap.slot) || 0;
->>>>>>> c2-latest
                 return {
                     pid: ap.pid,
                     overall: Number(ap.overall) || 0,
@@ -2515,11 +2435,7 @@
 
             const futureRows = futureSlots.map((pk, idx) => {
                 const pickOverall = ((Number(pk.round || 1) - 1) * leagueSize)
-<<<<<<< skjjcruz-prod
-                    + (slotFor(pk) || draftProjectionMeta.mySlot || idx + 1);
-=======
                     + (pickPosInRound(pk.round, slotFor(pk)) || draftProjectionMeta.mySlot || idx + 1);
->>>>>>> c2-latest
 
                 // Pids the room has consumed before this pick. Skip my own roster's
                 // projected picks because Alex's plan overrides them.
@@ -2599,11 +2515,7 @@
         }, [
             rosterState.isUsable, currentCapitalRow.picks, draftPredictionReport,
             myRoster?.roster_id, topProspects, draftedPids, assess, strategyRec,
-<<<<<<< skjjcruz-prod
-            leagueSize, slotFor, draftProjectionMeta.mySlot, normPos,
-=======
             leagueSize, slotFor, pickPosInRound, draftProjectionMeta.mySlot, normPos,
->>>>>>> c2-latest
             compactPickLabel, needLabels, liveDraftSnapshot,
         ]);
 
@@ -2677,8 +2589,6 @@
         };
 
         const renderAnalystFlash = () => {
-<<<<<<< skjjcruz-prod
-=======
             // Persona-projected league mock (analyst-mock.js) is an optimizer → Pro.
             if (!isPro) {
                 const GatedRow = window.WrGatedMoreRow;
@@ -2694,7 +2604,6 @@
                     </section>
                 );
             }
->>>>>>> c2-latest
             // Overlay actual live picks onto the (frozen) mock so it reflects what really happened.
             const liveByOverall = {};
             (liveDraftSnapshot.picks || []).forEach(p => { if (p && Number(p.overall)) liveByOverall[Number(p.overall)] = p; });
@@ -2776,11 +2685,7 @@
                                     const name = live ? (live.name || pick.name) : pick.name;
                                     return (
                                     <button key={activeFlashPreviewReport.presetId + '-' + pick.overall} type="button" title={live ? 'Actual pick · open player card' : 'Open player card'} onClick={e => { e.stopPropagation(); openDraftPlayer(pid); }} style={live ? { borderLeft: '2px solid var(--good, #3fb950)' } : undefined}>
-<<<<<<< skjjcruz-prod
-                                        <span>{pick.round}.{String(pick.slot).padStart(2, '0')} · {pos} · {team}{live ? ' · ✓' : ''}</span>
-=======
                                         <span>{pick.round}.{String(pick.pickInRound || pick.slot).padStart(2, '0')} · {pos} · {team}{live ? ' · ✓' : ''}</span>
->>>>>>> c2-latest
                                         <em>{pick.ownerName || ('Team ' + pick.slot)}</em>
                                         <b>{name}</b>
                                     </button>
@@ -2798,8 +2703,6 @@
             </section>
             );
         };
-<<<<<<< skjjcruz-prod
-=======
 
         // Redraft draft gameplan — round-by-round positional blueprint per
         // archetype, derived from roster slots + scoring (works with no
@@ -2855,7 +2758,6 @@
             </section>
             );
         };
->>>>>>> c2-latest
 
         return (
             <div className="draft-cc-scope" style={{ padding: 'var(--card-pad, 16px 18px)' }}>
@@ -2885,33 +2787,20 @@
                 {/* ═══════════════════ VIEW 1: FLASH BRIEF ═══════════════════ */}
                 {activeView === 'command' && (
                     <div className="draft-hq-shell">
-<<<<<<< skjjcruz-prod
-                        {liveDraftOn && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 10, borderRadius: 8, border: '1px solid var(--bad, #e5534b)', background: 'rgba(229,83,75,0.10)', flexWrap: 'wrap' }}>
-                                <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--bad, #e5534b)', boxShadow: '0 0 0 3px rgba(229,83,75,0.22)', flexShrink: 0 }} />
-                                <strong style={{ color: 'var(--bad, #e5534b)', fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{liveDraftStatus === 'complete' ? 'Draft Complete' : 'Live Draft In Progress'}</strong>
-=======
                         {liveDraftOn && liveDraftStatus !== 'complete' && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 10, borderRadius: 8, border: '1px solid var(--bad, #e5534b)', background: 'rgba(229,83,75,0.10)', flexWrap: 'wrap' }}>
                                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--bad, #e5534b)', boxShadow: '0 0 0 3px rgba(229,83,75,0.22)', flexShrink: 0 }} />
                                 <strong style={{ color: 'var(--bad, #e5534b)', fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Live Draft In Progress</strong>
->>>>>>> c2-latest
                                 <span style={{ color: 'var(--silver)', fontSize: '0.8rem' }}>
                                     {liveDraftSnapshot.active
                                         ? 'Element generation locked — tracking your picks.'
                                         : 'Element generation locked. Open Follow Live Draft to pull picks.'}
                                 </span>
-<<<<<<< skjjcruz-prod
-                                {!liveDraftSnapshot.active && liveDraftStatus !== 'complete' && (
-=======
                                 {!liveDraftSnapshot.active && (
->>>>>>> c2-latest
                                     <button type="button" onClick={launchLiveDraft} style={{ marginLeft: 'auto', padding: '4px 11px', minHeight: '32px', borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.76rem', fontWeight: 800, border: '1px solid var(--bad, #e5534b)', background: 'rgba(229,83,75,0.16)', color: 'var(--white)' }}>Follow Live Draft</button>
                                 )}
                             </div>
                         )}
-<<<<<<< skjjcruz-prod
-=======
                         {liveDraftStatus === 'complete' && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', marginBottom: 10, borderRadius: 8, border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', flexWrap: 'wrap' }}>
                                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--gold)', boxShadow: '0 0 0 3px rgba(212,175,55,0.22)', flexShrink: 0 }} />
@@ -2933,7 +2822,6 @@
                                 </div>
                             </div>
                         )}
->>>>>>> c2-latest
                         <div className="draft-hq-hero">
                             <section className="draft-hq-panel draft-hq-capital-targeting">
                                 <div className="draft-hq-panel-head">
@@ -2982,9 +2870,6 @@
                                     })}
                                 </div>
 
-<<<<<<< skjjcruz-prod
-                                {(() => { const hasGraded = rosterScorecard.some(r => r.kind === 'drafted'); return (<>
-=======
                                 {(() => {
                                 if (!isPro) {
                                     // Positional targets + Alex notes + graded live scorecard are
@@ -2998,7 +2883,6 @@
                                     </>);
                                 }
                                 const hasGraded = rosterScorecard.some(r => r.kind === 'drafted'); return (<>
->>>>>>> c2-latest
                                 <div className="draft-hq-subhead">{hasGraded ? 'Roster Targeting · Live Scorecard' : 'Roster Targeting'}</div>
                                 <div className="draft-target-header">
                                     <span>Pos</span>
@@ -3011,7 +2895,6 @@
                                         <div key={'drafted-' + row.pos + '-' + (row.pid || ri)} className="draft-run-note-row draft-target-row" style={{ borderLeft: '3px solid ' + gradeColor(row.grade) }}>
                                             <strong style={{ color: posColors[row.pos] || 'var(--gold)' }}>{row.pos}</strong>
                                             <span><span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '2em', padding: '2px 8px', borderRadius: 6, fontWeight: 900, fontSize: '0.92rem', color: gradeColor(row.grade), border: '1px solid ' + gradeColor(row.grade), fontFamily: 'var(--font-body)' }}>{row.grade}</span></span>
-<<<<<<< skjjcruz-prod
                                             <em>
                                                 <button type="button" onClick={() => openDraftPlayer(row.pid)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--acc-line2, rgba(212,175,55,0.35))' }}>{row.player}</button>
                                                 {row.dhq ? ' - ' + fmtDhq(row.dhq) + ' ' + valueShortLabel : ''}
@@ -3024,20 +2907,6 @@
                                             <strong style={{ color: posColors[row.pos] || 'var(--gold)' }}>{row.pos}</strong>
                                             <span>{row.priorityLabel}</span>
                                             <em>
-=======
-                                            <em>
-                                                <button type="button" onClick={() => openDraftPlayer(row.pid)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--acc-line2, rgba(212,175,55,0.35))' }}>{row.player}</button>
-                                                {row.dhq ? ' - ' + fmtDhq(row.dhq) + ' ' + valueShortLabel : ''}
-                                                <span style={{ marginLeft: 6, color: gradeColor(row.grade), fontWeight: 800, fontSize: 'var(--text-micro)' }}>✓ {row.slotLabel}</span>
-                                            </em>
-                                            <p>{row.rationale}</p>
-                                        </div>
-                                    ) : (
-                                        <div key={'target-' + row.pos} className="draft-run-note-row draft-target-row">
-                                            <strong style={{ color: posColors[row.pos] || 'var(--gold)' }}>{row.pos}</strong>
-                                            <span>{row.priorityLabel}</span>
-                                            <em>
->>>>>>> c2-latest
                                                 {row.targetName ? (
                                                     <>
                                                         <button type="button" onClick={() => openDraftPlayer(row.targetPid)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--acc-line2, rgba(212,175,55,0.35))' }}>{row.targetName}</button>
@@ -3072,12 +2941,6 @@
                                             <button type="button" disabled={!aiRecommendedOrder.length || !boardPosFilter} onClick={() => applyAiOrderToUserBoard('position')}>Apply Position</button>
                                         </div>
                                     </div>
-<<<<<<< skjjcruz-prod
-                                    {savedReports.length > 0 && (
-                                        <div style={{ marginTop: 10, borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop: 8 }}>
-                                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--silver)', opacity: 0.6, marginBottom: 6 }}>Saved Reports</div>
-                                            {savedReports.slice(0, 6).map(r => (
-=======
                                     )}
                                     {savedReports.length > 0 && (
                                         <div style={{ marginTop: 10, borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop: 8 }}>
@@ -3089,7 +2952,6 @@
                                                     ? React.createElement(window.WrGatedMoreRow, { title: savedReports.length + ' saved report' + (savedReports.length === 1 ? '' : 's'), sub: 'Reopen your AI scouting reports with Scout Pro.', feature: 'draft_ai_reports' })
                                                     : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Saved Reports', 'draft_ai_reports', 'Reopen your AI scouting reports with Scout Pro.') : '' }} />
                                             ) : savedReports.slice(0, 6).map(r => (
->>>>>>> c2-latest
                                                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
                                                     <button type="button" title="Reopen report" onClick={() => window.dispatchEvent(new CustomEvent('wr:ask-show', { detail: { title: r.title, prompt: r.prompt, answer: r.content, kind: r.kind } }))} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 0, color: 'var(--silver)', cursor: 'pointer', font: 'inherit', fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0 }}>
                                                         <span style={{ color: 'var(--gold)' }}>{'★'}</span> {r.title} <span style={{ opacity: 0.45 }}>{new Date(r.createdAt).toLocaleDateString()}</span>
@@ -3120,10 +2982,7 @@
                                 <div className="draft-hq-panel-head">
                                     <span>Alex's Recommended Draft</span>
                                     <em>{(() => {
-<<<<<<< skjjcruz-prod
-=======
                                         if (!isPro) return 'Pro';
->>>>>>> c2-latest
                                         if (!aiDraftPathRows.length) return 'waiting on projection';
                                         const lockedN = aiDraftPathRows.filter(p => p.locked).length;
                                         return lockedN ? lockedN + ' locked / ' + (aiDraftPathRows.length - lockedN) + ' to come' : aiDraftPathRows.length + ' recommended picks';
@@ -3151,18 +3010,10 @@
                                             <img className="draft-rec-photo" src={pick.photoUrl} alt="" onError={e => e.currentTarget.style.visibility = 'hidden'} />
                                             <span className="draft-rec-main">
                                                 <strong>{pick.name} <small>{pick.pos}</small></strong>
-<<<<<<< skjjcruz-prod
-                                                <em>{pick.nflTeam} - {pick.school} - {pick.driverText}</em>
-=======
->>>>>>> c2-latest
                                             </span>
                                             {pick.locked ? (
                                                 <span className="draft-rec-score">
                                                     <strong style={{ color: 'var(--good, #3fb950)' }}>DRAFTED</strong>
-<<<<<<< skjjcruz-prod
-                                                    <span>your pick</span>
-=======
->>>>>>> c2-latest
                                                 </span>
                                             ) : (
                                                 <span className="draft-rec-score">
@@ -3175,11 +3026,7 @@
                                                 <span className="draft-rec-actions">
                                                     <button type="button" onClick={e => { e.stopPropagation(); setScoutDrawerPid(pick.pid); }}>Scout</button>
                                                     <button type="button" onClick={e => { e.stopPropagation(); setBoardTags(prev => ({ ...prev, [pick.pid]: 'target' })); }}>Tag Target</button>
-<<<<<<< skjjcruz-prod
-                                                    <button type="button" onClick={e => { e.stopPropagation(); setDraftView('mock'); }}>Mock It</button>
-=======
                                                     <button type="button" onClick={e => { e.stopPropagation(); navDraftView('mock'); }}>Mock It</button>
->>>>>>> c2-latest
                                                 </span>
                                             )}
                                         </div>
@@ -3199,12 +3046,8 @@
                                             <strong style={{ color: posColors[row.pos] || 'var(--gold)' }}>{row.pos}</strong>
                                             <span>{row.count} likely gone</span>
                                             <em>{row.names.join(', ')}</em>
-<<<<<<< skjjcruz-prod
-                                            <p>{row.note}</p>
-=======
                                             {/* need-read note is advice — raw counts/names stay free */}
                                             {isPro && <p>{row.note}</p>}
->>>>>>> c2-latest
                                         </div>
                                     )) : <div className="draft-empty">No pick-pressure read yet.</div>}
                                 </div>
@@ -3472,6 +3315,19 @@
                         setDragPid(null);
                         if (boardMode !== 'my') setBoardMode('my');
                     };
+                    const handleBoardMove = (pid, delta) => {
+                        setMyBoardOrder(prev => {
+                            const order = prev.length ? [...prev] : aiSeedOrder.slice();
+                            const fromIdx = order.indexOf(pid);
+                            if (fromIdx === -1) return order;
+                            const toIdx = Math.max(0, Math.min(order.length - 1, fromIdx + delta));
+                            if (fromIdx === toIdx) return order;
+                            const [moved] = order.splice(fromIdx, 1);
+                            order.splice(toIdx, 0, moved);
+                            return order;
+                        });
+                        if (boardMode !== 'my') setBoardMode('my');
+                    };
 
                     const buildOrderedPlayers = (order) => {
                         const cleanOrder = Array.isArray(order) && order.length ? order : draftPoolRows.map(r => r.pid);
@@ -3505,18 +3361,9 @@
                     const renderCompactBoard = (players, isDhq) => {
                         // Auto cross-off players already taken in the live draft (parallel to
                         // the live Command Center board), merged with manual "Off" marks.
-<<<<<<< skjjcruz-prod
                         // liveDraftedPids is kept current by the wr:live-draft-picks listener
                         // above, so this re-renders the instant a pick lands in the live draft.
                         const liveDrafted = liveDraftedPids;
-=======
-                        const liveDrafted = (() => {
-                            try {
-                                const lid = window.S?.currentLeagueId || currentLeague?.league_id || currentLeague?.id;
-                                return window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids || null;
-                            } catch (e) { return null; }
-                        })();
->>>>>>> c2-latest
                         const boardGridCols = isSeasonalDraft
                             ? '58px minmax(220px, 1.25fr) 96px 88px 68px 72px 64px minmax(156px, 0.95fr) 92px'
                             : '58px minmax(205px, 1.15fr) minmax(128px, 0.82fr) 88px 64px 58px 82px 64px 58px minmax(156px, 0.95fr) 92px';
@@ -3538,8 +3385,6 @@
 
                         return (
 		                        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: 'var(--card-radius-sm)', maxHeight: 'none', overflowX: 'auto', WebkitOverflowScrolling: 'touch', overflowY: 'clip' }}>
-<<<<<<< skjjcruz-prod
-=======
 	                          {/* Phone-tier tap-target bump for the ▲/▼ board-move fallback
 	                              (mobile plan D7/D10): HTML5 drag is inert on iOS, so these
 	                              buttons are the only reorder path — 16×14px is untappable.
@@ -3554,7 +3399,6 @@
 	                                 without moving the 36px visual or the 4px gap. */
 	                              .wr-brd-move-btn::after{content:'';position:absolute;left:0;right:0;top:-4px;bottom:-4px;}
 	                          }`}</style>
->>>>>>> c2-latest
 	                          <div style={{ minWidth: '100%' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: boardGridCols, minHeight: '34px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1 }}>
                                 <div style={{ textAlign: 'center' }}>#</div>
@@ -3572,16 +3416,12 @@
                             {players.map((r, idx) => {
                                 const pos = normPos(r.p.position) || r.p.position;
                                 const dhqC = r.dhq >= 7000 ? 'var(--good)' : r.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : r.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))';
-<<<<<<< skjjcruz-prod
                                 // Match on Sleeper pid (how the live draft keys picks) and
                                 // fall back to the CSV prospect id for rookies that aren't
                                 // linked to a Sleeper player.
                                 const isDrafted = draftedPids.has(r.pid)
                                     || liveDrafted.has(r.pid) || liveDrafted.has(String(r.pid))
                                     || (r.csv?.pid != null && liveDrafted.has(String(r.csv.pid)));
-=======
-                                const isDrafted = draftedPids.has(r.pid) || !!(liveDrafted && liveDrafted[r.pid]);
->>>>>>> c2-latest
                                 const tag = boardTags[r.pid];
                                 const note = boardNotes[r.pid] || '';
                                 const isExp = expandedDraftPid === r.pid;
@@ -3656,13 +3496,6 @@
                                         onDragEnd={!isDhq ? () => setDragPid(null) : undefined}
                                         onDrop={!isDhq ? () => handleDrop(r.pid) : undefined}
                                         onClick={openPlayerDetail}
-<<<<<<< skjjcruz-prod
-                                        style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : (dragPid === r.pid ? 0.5 : 1), borderBottom: isExp ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: !isDhq ? 'grab' : 'pointer', background: isExp ? 'var(--acc-fill1, rgba(212,175,55,0.065))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent', transition: 'background 0.1s', position: 'relative', ...(!isDhq ? { userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' } : {}) }}
-                                        onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.04))'; }}
-                                        onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>
-                                            <span>{idx + 1}</span>
-=======
                                         style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : 1, borderBottom: isExp ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: 'pointer', background: isExp ? 'var(--acc-fill1, rgba(212,175,55,0.065))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent', transition: 'background 0.1s', position: 'relative' }}
                                         onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.04))'; }}
                                         onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
@@ -3674,7 +3507,6 @@
                                                     <button type="button" className="wr-brd-move-btn" title="Move down" onClick={e => { e.stopPropagation(); handleBoardMove(r.pid, 1); }} style={{ width: 16, height: 14, lineHeight: 1, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: 0 }}>▼</button>
                                                 </span>
                                             )}
->>>>>>> c2-latest
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, padding: '5px 7px' }}>
                                             <div style={{ width: 28, height: 28, flexShrink: 0 }}>
@@ -3738,12 +3570,8 @@
                                                         ))}
                                                     </div>
                                                     {compText && <div style={{ color: 'var(--white)', opacity: 0.82, fontSize: 'var(--text-micro, 0.6875rem)', marginTop: 7 }}>Comp: {compText}</div>}
-<<<<<<< skjjcruz-prod
-                                                    {teamFitInsight && (
-=======
                                                     {/* fit READ is interpretation → Pro; raw scouting bits above stay free */}
                                                     {isPro && teamFitInsight && (
->>>>>>> c2-latest
                                                         <div style={{ border: '1px solid rgba(46,204,113,0.18)', background: 'rgba(46,204,113,0.045)', borderRadius: 6, padding: '7px 8px', marginTop: 7 }}>
                                                             <span style={{ display: 'block', color: 'var(--good)', fontSize: 'var(--text-micro)', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Alex NFL Fit{nflFitAI[r.pid] ? ' · Live' : ''}</span>
                                                             <div style={{ color: 'var(--silver)', fontSize: '0.7rem', lineHeight: 1.42 }}>{nflFitAI[r.pid] || teamFitInsight}</div>
@@ -3770,12 +3598,8 @@
                                                         <a href={(isSeasonalDraft ? 'https://www.pro-football-reference.com/search/search.fcgi?search=' : 'https://www.sports-reference.com/cfb/search/search.fcgi?search=') + encodeURIComponent(pName(r.p))} target="_blank" rel="noopener" title={isSeasonalDraft ? 'Open Pro Football Reference player search in a new tab' : 'Open Sports Reference college stats in a new tab'} onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.12)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>{isSeasonalDraft ? 'PRO STATS' : 'COLLEGE STATS'}</a>
                                                         <a href={'https://www.youtube.com/results?search_query=' + encodeURIComponent(pName(r.p) + ' highlights ' + leagueSeason)} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.12)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>HIGHLIGHTS</a>
                                                         <a href={'https://www.fantasypros.com/nfl/players/' + encodeURIComponent(((r.p.first_name || '') + '-' + (r.p.last_name || '')).toLowerCase().replace(/[^a-z-]/g, '')) + '.php'} target="_blank" rel="noopener" title="Open FantasyPros player news and profile in a new tab" aria-label={'Open FantasyPros news for ' + pName(r.p)} onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.15)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>FANTASYPROS NEWS</a>
-<<<<<<< skjjcruz-prod
-                                                        <button type="button" onClick={e => {
-=======
                                                         {/* AI scouting chat entry point → Pro (clean absence for free) */}
                                                         {isPro && <button type="button" onClick={e => {
->>>>>>> c2-latest
                                                             e.stopPropagation();
                                                             const name = pName(r.p);
                                                             const sections = [];
@@ -3791,11 +3615,7 @@
                                                                 const context = isSeasonalDraft ? (posLabel(pos) + ', ' + (team || 'FA') + ', age ' + (age || 'unknown') + ', ' + rankStr + ' board rank, ' + tierStr + ' tier') : (posLabel(pos) + ', ' + college);
                                                                 sendReconMessage('Give me a full ' + (isSeasonalDraft ? 'redraft NFL player scouting report' : 'rookie scouting report') + ' on ' + name + ' (' + context + '). Include role, production profile, weekly floor, ceiling, risk, comparable players, and where I should draft him in this league format.');
                                                             }
-<<<<<<< skjjcruz-prod
-                                                        }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: 'var(--purple)', border: '1px solid rgba(124,107,248,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>ASK ALEX</button>
-=======
                                                         }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: 'var(--purple)', border: '1px solid rgba(124,107,248,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>ASK ALEX</button>}
->>>>>>> c2-latest
                                                         <button type="button" onClick={e => { e.stopPropagation(); setExpandedDraftPid(null); }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>COLLAPSE</button>
                                                     </div>
                                                 </div>
@@ -3851,10 +3671,6 @@
                                 <div style={{ minWidth: 0 }}>
 	                                    <div style={{ color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>{isRookieDraft ? 'Draft Big Board' : 'Redraft Big Board'}</div>
                                     <h3 style={{ margin: 0, color: 'var(--white)', fontFamily: 'var(--font-title)', fontSize: '1.22rem', lineHeight: 1.05 }}>{activeBoardInfo.label}</h3>
-<<<<<<< skjjcruz-prod
-                                    <p style={{ margin: '4px 0 0', color: 'var(--silver)', opacity: 0.72, fontSize: '0.76rem', lineHeight: 1.45 }}>{activeBoardInfo.detail}</p>
-=======
->>>>>>> c2-latest
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(74px,1fr))', gap: 6, minWidth: 250 }}>
                                     {[
@@ -3908,11 +3724,7 @@
                             {(typeof getLeaguePositions === 'function' ? getLeaguePositions() : ['QB','RB','WR','TE','K','DEF','DL','LB','DB']).map(pos => (
                                 <button key={pos} onClick={() => setBoardPosFilter(boardPosFilter === pos ? '' : pos)} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '55' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '18' : 'transparent', color: boardPosFilter === pos ? posColors[pos] : 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</button>
                             ))}
-<<<<<<< skjjcruz-prod
-                            <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Drag a player to reorder My Board</span>
-=======
                             <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Use arrows or drag to reorder My Board</span>
->>>>>>> c2-latest
                         </div>
 
                         {/* Team & Round filters */}
@@ -4008,8 +3820,6 @@
                     ? React.createElement(window.DraftCC.AskAnswerWindow, { state: null })
                     : null}
 
-<<<<<<< skjjcruz-prod
-=======
                 {/* ═══════════════════ DRAFT HISTORY ═══════════════════
                     The historical area for retired drafts: every archived recap
                     (auto-saved when a draft completes), browsable with grade,
@@ -4102,7 +3912,6 @@
                     );
                 })()}
 
->>>>>>> c2-latest
             </div>
         );
     }
