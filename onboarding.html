@@ -549,7 +549,7 @@
           <ul class="plan-features">
             <li><span class="pf-check">✦</span> Everything in Scout</li>
             <li><span class="pf-check">✦</span> Unlimited Sleeper leagues</li>
-            <li><span class="pf-check">✦</span> Unlimited AI analysis</li>
+            <li><span class="pf-check">✦</span> <span id="proAiCalls">10 AI calls per day</span></li>
             <li><span class="pf-check">✦</span> Owner DNA + trade intelligence</li>
             <li><span class="pf-check">✦</span> Draft command center</li>
             <li><span class="pf-check">✦</span> No contract · cancel anytime</li>
@@ -588,7 +588,7 @@
         <div class="payment-icon" id="payIcon">🏆</div>
         <div class="payment-title" id="payTitle">Dynasty HQ Pro — Monthly</div>
         <div class="payment-sub" id="paySub">
-          Everything unlocked — unlimited Sleeper leagues, unlimited AI analysis, Owner DNA, draft command. BYO AI key supported. No contract.
+          Everything unlocked — unlimited Sleeper leagues, 10 AI calls a day, Owner DNA, draft command. BYO AI key supported. No contract.
         </div>
         <div class="payment-price" id="payPrice">$9.99/mo after a 7-day free trial</div>
         <button class="cta-btn" id="stripeBtn" onclick="goToStripe()">Proceed to Secure Checkout →</button>
@@ -952,7 +952,7 @@
       document.getElementById('payTitle').textContent  = annual
         ? 'Dynasty HQ Pro — Annual'
         : 'Dynasty HQ Pro — Monthly';
-      document.getElementById('paySub').textContent    = 'Everything unlocked — unlimited Sleeper leagues, unlimited AI analysis, Owner DNA, draft command. BYO AI key supported. No contract.';
+      document.getElementById('paySub').textContent    = 'Everything unlocked — unlimited Sleeper leagues, ' + (annual ? '15' : '10') + ' AI calls a day, Owner DNA, draft command. BYO AI key supported. No contract.';
       document.getElementById('payPrice').textContent  = annual
         ? '$99.99/yr after a 7-day free trial (~$8.33/mo)'
         : '$9.99/mo after a 7-day free trial';
@@ -992,6 +992,7 @@
       const per = document.createElement('span');
       per.textContent = monthly ? '/mo' : '/yr';
       price.appendChild(per);
+      document.getElementById('proAiCalls').textContent = monthly ? '10 AI calls per day' : '15 AI calls per day';
     }
 
     function goStep2() {
