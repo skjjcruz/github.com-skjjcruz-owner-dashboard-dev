@@ -46,6 +46,12 @@
     window.App.WR_DISCORD_URL = WR_DISCORD_URL;
     window.WR_DISCORD_URL = WR_DISCORD_URL;
 
+    // Public marketing site. ?home keeps a signed-in visitor on the page instead
+    // of bouncing them straight back into the app. Flip to https://dhqfootball.com/?home
+    // at go-live (domain cutover is on hold until pay plans are wired).
+    const DHQ_HOME_URL = 'https://skjjcruz.github.io/DHQ-Web-Page/?home';
+    window.App.DHQ_HOME_URL = DHQ_HOME_URL;
+
     // ── Owner default: bigloco's locked-in MFL franchise in the "MLS Dynasty
     // League" (id 41969). Used to auto-select the team on rehydrate when no
     // mfl_franchise_id is persisted yet. Matched by NAME in loadMflData so the
@@ -1230,7 +1236,7 @@
                 {/* ── Header ── */}
                 <header className="header">
                     <div className="header-brand" role="link" aria-label="Dynasty HQ home"
-                        onClick={() => { window.location.href = distPrefix + 'landing.html'; }}
+                        onClick={() => { window.location.href = DHQ_HOME_URL; }}
                         style={{ cursor: 'pointer' }}>
                         <img src={iconSrc} alt="Logo" style={{ width:'44px',height:'44px',borderRadius:'10px',boxShadow:'0 2px 12px var(--acc-line2, rgba(212,175,55,.3))' }} />
                         <div className="header-text">
