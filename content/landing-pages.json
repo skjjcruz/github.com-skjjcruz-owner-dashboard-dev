@@ -177,14 +177,14 @@
       },
       "pricing": {
         "eyebrow": "Plans",
-        "title": "Start with one league. Upgrade when the board gets bigger.",
-        "subtitle": "Live plans are Sleeper-first while additional platform connectors stay in beta.",
+        "title": "Start free. Go Pro when you're ready.",
+        "subtitle": "Scout one Sleeper league free, forever. Pro unlocks the full engine — 7-day free trial, cancel anytime.",
         "plans": [
           {
-            "name": "Free",
+            "name": "Scout",
             "price": "$0",
             "billing": "",
-            "note": "One league, forever",
+            "note": "Free — one league, forever",
             "badge": "",
             "primary": false,
             "features": [
@@ -197,14 +197,14 @@
             "cta": "Get started"
           },
           {
-            "name": "Dynasty HQ",
+            "name": "Pro Monthly",
             "price": "$9.99",
             "billing": "/mo",
-            "note": "Unlimited Sleeper leagues. Cancel anytime.",
+            "note": "7-day free trial · cancel anytime",
             "badge": "Most Popular",
             "primary": true,
             "features": [
-              "Everything in Free",
+              "Everything in Scout",
               "Unlimited Sleeper leagues",
               "Unlimited AI analysis",
               "Owner DNA profiles",
@@ -215,34 +215,17 @@
             "cta": "Start free trial"
           },
           {
-            "name": "Pro",
-            "price": "$14.95",
-            "billing": "/mo",
-            "note": "Multi-league command center.",
-            "badge": "",
-            "primary": false,
-            "features": [
-              "Everything in Dynasty HQ",
-              "Global dashboard for Sleeper leagues",
-              "Cross-league AI advice",
-              "Player exposure tracking",
-              "Unified Trophy Room",
-              "Season recap generator"
-            ],
-            "cta": "Start free trial"
-          },
-          {
-            "name": "Dynasty HQ Annual",
-            "price": "$79.99",
+            "name": "Pro Annual",
+            "price": "$99.99",
             "billing": "/yr",
-            "note": "Save 33% - $6.67/mo",
-            "badge": "",
+            "note": "Best value — ~$8.33/mo · 7-day free trial",
+            "badge": "Best Value",
             "primary": false,
             "features": [
-              "Everything in monthly",
+              "Everything in Pro Monthly",
               "Locked-in annual rate",
-              "Priority feature access",
-              "Unlimited Sleeper leagues"
+              "Save ~17% vs monthly",
+              "Priority feature access"
             ],
             "cta": "Start free trial"
           }

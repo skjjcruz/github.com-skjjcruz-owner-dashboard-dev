@@ -348,7 +348,7 @@ async function testCheckoutFlow(context, baseUrl, network, failures) {
     }
   }, QA_TOKEN);
   await page.goto(`${baseUrl}/onboarding.html`, { waitUntil: 'domcontentloaded', timeout: 12000 });
-  await page.locator('#plan-standard').click();
+  await page.locator('#plan-pro').click();
   await page.locator('#step1Btn').click();
   await page.locator('#stripeBtn').click();
   for (let i = 0; i < 30 && !network.checkout.length; i++) await wait(100);
@@ -356,7 +356,7 @@ async function testCheckoutFlow(context, baseUrl, network, failures) {
   expect(network.checkout.length > 0, `checkout endpoint was not called; alert="${alertText || ''}" url="${page.url()}"`);
   const request = network.checkout.at(-1);
   expect(request?.auth === `Bearer ${QA_TOKEN}`, 'checkout request did not include the app session token');
-  expect(request?.body?.productSlug === 'war_room', 'standard checkout did not request war_room');
+  expect(request?.body?.productSlug === 'bundle', 'pro checkout did not request the bundle product');
   expect(request?.body?.successUrl?.includes('payment=success'), 'checkout success URL missing payment=success');
   await page.close();
 }

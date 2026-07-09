@@ -256,7 +256,7 @@
     .cc p{font-size:13px;color:var(--text-2);line-height:1.55}
 
     /* ── Pricing ─────────────────────────────────────── */
-    .pricing-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:760px}
+    .pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:1020px}
     .price-card{background:var(--bg-1);border:1px solid var(--border);padding:26px 24px;position:relative;display:flex;flex-direction:column}
     .price-card.pop,.price-card.price-card-pop{border-color:var(--accent)}
     .price-badge{position:absolute;top:-1px;right:-1px;background:var(--accent);color:var(--bg-0);font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px}
@@ -566,30 +566,30 @@
   <section class="section pricing" id="pricing">
     <div class="sec-head">
       <div class="sec-kicker">Plans</div>
-      <h2 class="sec-title">Start free. Go all-in for $9.99.</h2>
-      <p class="sec-sub">Two plans, no maze. Connect a Sleeper league free, and upgrade when you want the full engine. Cancel anytime.</p>
+      <h2 class="sec-title">Start free. Go Pro when you're ready.</h2>
+      <p class="sec-sub">Scout one Sleeper league free, forever. Pro unlocks the full engine — 7-day free trial, cancel anytime.</p>
     </div>
     <div class="pricing-grid">
       <div class="price-card">
-        <div class="price-name">Free</div>
+        <div class="price-name">Scout</div>
         <div class="price-amount">$0</div>
-        <div class="price-note">One Sleeper league, forever</div>
+        <div class="price-note">Free — one league, forever</div>
         <ul class="price-features">
           <li>One Sleeper league</li>
           <li>League-specific DHQ values</li>
           <li>Player cards with age curves</li>
           <li>Team diagnosis</li>
-          <li>A taste of Alex (1 query / day)</li>
+          <li>1 AI query per day</li>
         </ul>
         <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Get started</button>
       </div>
       <div class="price-card pop">
-        <div class="price-badge">Full engine</div>
-        <div class="price-name">Dynasty HQ</div>
-        <div class="price-amount">$9.99 <span>/ mo</span></div>
-        <div class="price-note">Unlimited Sleeper leagues · 30-day free trial</div>
+        <div class="price-badge">Most Popular</div>
+        <div class="price-name">Pro Monthly</div>
+        <div class="price-amount">$9.99 <span>/mo</span></div>
+        <div class="price-note">7-day free trial · cancel anytime</div>
         <ul class="price-features">
-          <li>Everything in Free</li>
+          <li>Everything in Scout</li>
           <li>Unlimited Sleeper leagues</li>
           <li>Unlimited AI analysis</li>
           <li>Owner DNA profiles</li>
@@ -600,28 +600,15 @@
         <button class="price-btn accent" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free trial</button>
       </div>
       <div class="price-card">
-        <div class="price-name">Pro</div>
-        <div class="price-amount">$14.95 <span>/mo</span></div>
-        <div class="price-note">Multi-league command center.</div>
+        <div class="price-badge">Best Value</div>
+        <div class="price-name">Pro Annual</div>
+        <div class="price-amount">$99.99 <span>/yr</span></div>
+        <div class="price-note">Best value — ~$8.33/mo · 7-day free trial</div>
         <ul class="price-features">
-          <li>Everything in Dynasty HQ</li>
-          <li>Global dashboard for Sleeper leagues</li>
-          <li>Cross-league AI advice</li>
-          <li>Player exposure tracking</li>
-          <li>Unified Trophy Room</li>
-          <li>Season recap generator</li>
-        </ul>
-        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free trial</button>
-      </div>
-      <div class="price-card">
-        <div class="price-name">Dynasty HQ Annual</div>
-        <div class="price-amount">$79.99 <span>/yr</span></div>
-        <div class="price-note">Save 33% — $6.67/mo</div>
-        <ul class="price-features">
-          <li>Everything in monthly</li>
+          <li>Everything in Pro Monthly</li>
           <li>Locked-in annual rate</li>
+          <li>Save ~17% vs monthly</li>
           <li>Priority feature access</li>
-          <li>Unlimited Sleeper leagues</li>
         </ul>
         <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free trial</button>
       </div>

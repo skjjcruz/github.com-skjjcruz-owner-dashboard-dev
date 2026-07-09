@@ -18,7 +18,7 @@ assert(landing.meta?.title, 'landing meta title is required');
 assert(landing.hero?.title, 'landing hero title is required');
 assert(Array.isArray(landing.productSummary) && landing.productSummary.length === 3, 'landing needs 3 product summary chips');
 assert(Array.isArray(landing.features?.cards) && landing.features.cards.length === 6, 'landing needs 6 feature cards');
-assert(Array.isArray(landing.pricing?.plans) && landing.pricing.plans.length === 4, 'landing needs 4 pricing plans');
+assert(Array.isArray(landing.pricing?.plans) && landing.pricing.plans.length === 3, 'landing needs 3 pricing plans (Scout / Pro Monthly / Pro Annual)');
 assert(Array.isArray(landing.platforms?.badges) && landing.platforms.badges.length >= 2, 'landing needs platform badges');
 assert(landing.auth?.signupSubmit && landing.auth?.signinSubmit, 'landing auth labels are required');
 

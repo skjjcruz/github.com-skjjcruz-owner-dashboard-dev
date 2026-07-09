@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════════════════
-// js/pro-launch.js — War Room upgrade page
-// Full-screen premium launch experience. Tiers: Free → War Room → War Room Pro → Commissioner
+// js/pro-launch.js — Pro upgrade page
+// Full-screen premium launch experience. Tiers: Scout (free) → Pro Monthly → Pro Annual
 // ══════════════════════════════════════════════════════════════════
 
 (function () {
@@ -38,10 +38,9 @@
   ];
 
   const TIERS = [
-    { name: 'Free', price: '$0', period: '', features: ['1 league', 'DHQ dynasty values', 'Player cards + age curves', 'Team diagnosis', '1 AI query/day'], accent: 'rgba(255,255,255,0.3)' },
-    { name: 'War Room', price: '$9.99', period: '/mo', features: ['Everything in Free', 'Unlimited AI analysis', 'Owner DNA profiles', 'Behavioral trade model', 'Draft command center', 'Scout + War Room access'], accent: '#D4AF37', recommended: true },
-    { name: 'Pro', price: '$12.99', period: '/mo', features: ['Everything in War Room', 'Global dashboard (all leagues)', 'Cross-league AI advice', 'Player exposure tracking', 'Unified Trophy Room', 'Season recap generator'], accent: '#60A5FA' },
-    { name: 'Annual', price: '$79.99', period: '/yr', features: ['Everything in War Room', 'Locked-in annual rate', 'Save 33% — $6.67/mo', 'Priority feature access'], accent: '#2ECC71' },
+    { name: 'Scout', price: '$0', period: '', features: ['1 league', 'DHQ dynasty values', 'Player cards + age curves', 'Team diagnosis', '1 AI query/day'], accent: 'rgba(255,255,255,0.3)' },
+    { name: 'Pro Monthly', price: '$9.99', period: '/mo', features: ['Everything in Scout', 'Unlimited Sleeper leagues', 'Unlimited AI analysis', 'Owner DNA profiles', 'Behavioral trade model', 'Draft command center'], accent: '#D4AF37', recommended: true },
+    { name: 'Pro Annual', price: '$99.99', period: '/yr', features: ['Everything in Pro Monthly', 'Locked-in annual rate', 'Best value — ~$8.33/mo', '7-day free trial'], accent: '#2ECC71' },
   ];
 
   const FAQ_ITEMS = [
@@ -54,12 +53,12 @@
       a: 'Your data stays — Field Log notes, Owner DNA profiles, and league history are retained. You just lose access to premium features until you resubscribe.',
     },
     {
-      q: 'Does Scout come with War Room?',
-      a: 'Yes. Scout is the free tier. When you upgrade to War Room, you get everything in Scout plus the full desktop command center, AI analysis, and Owner DNA.',
+      q: 'What does Pro add over Scout?',
+      a: 'Scout is the free tier — one league with DHQ values and team diagnosis. Pro unlocks everything: unlimited leagues, unlimited AI analysis, Owner DNA, the behavioral trade model, and the draft command center.',
     },
     {
-      q: 'What\'s the difference between War Room and War Room Pro?',
-      a: 'War Room gives you the core dynasty toolkit. Pro adds advanced analytics, full league mapping, trophy room, and deeper draft boards.',
+      q: 'How does the 7-day free trial work?',
+      a: 'Both Pro plans start with a 7-day free trial. You get full access immediately and can cancel any time during the trial without being charged.',
     },
   ];
 
@@ -163,7 +162,7 @@
           style="width:100%;padding:18px;background:linear-gradient(135deg,#d4af37,#b8941f);color:#1a1000;border:none;border-radius:14px;font-size:16px;font-weight:800;cursor:pointer;letter-spacing:0;box-shadow:0 8px 32px rgba(212,175,55,.32);margin-bottom:12px;font-family:inherit;transition:transform .15s,box-shadow .15s"
           onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 14px 48px rgba(212,175,55,.45)'"
           onmouseout="this.style.transform='';this.style.boxShadow='0 8px 32px rgba(212,175,55,.32)'">
-          Upgrade to War Room &mdash; $9.99/month
+          Upgrade to Pro &mdash; $9.99/mo &middot; 7-day free trial
         </button>
 
         <!-- Secondary: continue with free -->
@@ -234,7 +233,7 @@
     if (!container) return;
     const currentTier = typeof getTier === 'function' ? getTier() : 'free';
     container.innerHTML = TIERS.map(t => {
-      const isCurrent = (currentTier === 'paid' && t.name === 'War Room') || (currentTier === 'free' && t.name === 'Free');
+      const isCurrent = (currentTier === 'paid' && t.name.startsWith('Pro')) || (currentTier === 'free' && t.name === 'Scout');
       return `
       <div style="background:${t.recommended ? 'rgba(212,175,55,.06)' : 'rgba(255,255,255,.03)'};border:${t.recommended ? '2px solid rgba(212,175,55,.35)' : '1px solid rgba(255,255,255,.08)'};border-radius:12px;padding:14px;position:relative;${isCurrent ? 'outline:2px solid rgba(46,204,113,.4);outline-offset:2px' : ''}">
         ${t.recommended ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;letter-spacing:0;text-transform:uppercase;color:#d4af37;background:#090909;padding:0 8px;white-space:nowrap">MOST POPULAR</div>' : ''}
