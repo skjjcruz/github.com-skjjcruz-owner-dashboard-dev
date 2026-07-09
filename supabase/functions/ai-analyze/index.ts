@@ -281,10 +281,15 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
         allowWebSearch: false,
     },
     pro: {
-        dailyRequests: 25,
-        monthlyRequests: 200,
-        dailyCostUsd: 3.00,
-        monthlyCostUsd: 35.00,
+        // Matches the advertised Pro allowance (10/day monthly, 15/day annual —
+        // billing period isn't visible here, so the ceiling covers the annual
+        // promise). The cost caps are whale circuit breakers: a typical Pro user
+        // spends $1.50–2.50/mo of AI against ~$7–8.50/mo net revenue; the caps
+        // bound the worst case at ~$3.75 so no subscriber is unprofitable.
+        dailyRequests: 15,
+        monthlyRequests: 450,
+        dailyCostUsd: 1.00,
+        monthlyCostUsd: 3.75,
         maxOutputTokens: 4200,
         mockDraftMaxOutputTokens: 10000,
         maxInputChars: 90000,
