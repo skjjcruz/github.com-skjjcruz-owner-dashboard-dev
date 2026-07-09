@@ -206,7 +206,7 @@
             "features": [
               "Everything in Scout",
               "Unlimited Sleeper leagues",
-              "Unlimited AI analysis",
+              "10 AI calls per day",
               "Owner DNA profiles",
               "Trade memory + finder",
               "Draft command + pick values",
@@ -223,6 +223,7 @@
             "primary": false,
             "features": [
               "Everything in Pro Monthly",
+              "15 AI calls per day",
               "Locked-in annual rate",
               "Save ~17% vs monthly",
               "Priority feature access"

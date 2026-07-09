@@ -2686,7 +2686,7 @@
           } else {
             // Paid/trial: untouched — legacy scout-tier limit + server-side rate limiting.
             if (!canUseAI()) {
-              setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to Scout ($4.99/mo) or Dynasty HQ ($9.99/mo) for unlimited AI access.' }]);
+              setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to Dynasty HQ Pro ($9.99/mo or $99.99/yr) for 10–15 AI calls a day.' }]);
               return;
             }
             // Only track local daily use if NOT using server AI (server handles its own rate limiting)

@@ -14,8 +14,8 @@
     {
       icon: '🧠',
       title: 'Full AI Intelligence',
-      desc: 'Unlimited AI chats with deep reasoning — trade analysis, waiver recommendations, draft intelligence, and daily briefings from Alex Ingram.',
-      badge: 'Unlimited',
+      desc: 'Deep-reasoning AI chats — trade analysis, waiver recommendations, draft intelligence, and daily briefings from Alex Ingram. 10 calls a day on monthly, 15 on annual.',
+      badge: '10–15/day',
     },
     {
       icon: '🔗',
@@ -39,8 +39,8 @@
 
   const TIERS = [
     { name: 'Scout', price: '$0', period: '', features: ['1 league', 'DHQ dynasty values', 'Player cards + age curves', 'Team diagnosis', '1 AI query/day'], accent: 'rgba(255,255,255,0.3)' },
-    { name: 'Pro Monthly', price: '$9.99', period: '/mo', features: ['Everything in Scout', 'Unlimited Sleeper leagues', 'Unlimited AI analysis', 'Owner DNA profiles', 'Behavioral trade model', 'Draft command center'], accent: '#D4AF37', recommended: true },
-    { name: 'Pro Annual', price: '$99.99', period: '/yr', features: ['Everything in Pro Monthly', 'Locked-in annual rate', 'Best value — ~$8.33/mo', '7-day free trial'], accent: '#2ECC71' },
+    { name: 'Pro Monthly', price: '$9.99', period: '/mo', features: ['Everything in Scout', 'Unlimited Sleeper leagues', '10 AI calls per day', 'Owner DNA profiles', 'Behavioral trade model', 'Draft command center'], accent: '#D4AF37', recommended: true },
+    { name: 'Pro Annual', price: '$99.99', period: '/yr', features: ['Everything in Pro Monthly', '15 AI calls per day', 'Locked-in annual rate', 'Best value — ~$8.33/mo', '7-day free trial'], accent: '#2ECC71' },
   ];
 
   const FAQ_ITEMS = [
@@ -54,7 +54,7 @@
     },
     {
       q: 'What does Pro add over Scout?',
-      a: 'Scout is the free tier — one league with DHQ values and team diagnosis. Pro unlocks everything: unlimited leagues, unlimited AI analysis, Owner DNA, the behavioral trade model, and the draft command center.',
+      a: 'Scout is the free tier — one league with DHQ values and team diagnosis. Pro unlocks everything: unlimited leagues, 10 AI calls a day (15 on annual), Owner DNA, the behavioral trade model, and the draft command center.',
     },
     {
       q: 'How does the 7-day free trial work?',
