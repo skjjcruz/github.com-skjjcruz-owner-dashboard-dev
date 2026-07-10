@@ -211,10 +211,16 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // tier.js and core.js (inline <script>), which runs before Babel compiles core.js.
     const _sharedCanAccess = window._sharedCanAccess || null;
 
+    // Billing went live 2026-07-10 (Stripe + RevenueCat wired, plan funnel in
+    // onboarding): tier gating is ON by default. Owner accounts
+    // (FULL_ACCESS_USERNAMES) and admin/commissioner keep full access. Set
+    // window.__WR_ENFORCE_TIERS = false before core.js loads to restore the
+    // unlocked tester mode.
+    if (typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === undefined) {
+        window.__WR_ENFORCE_TIERS = true;
+    }
+
     function canAccess(feature) {
-        // TEST FLIGHT: paywalls are OFF — every feature is unlocked for all testers.
-        // To re-enable billing-tier gating (e.g. when subscriptions go live),
-        // set window.__WR_ENFORCE_TIERS = true and the original matrix below applies.
         if (!(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true)) return true;
         // War Room's granular feature matrix is the primary gate
         const tier = getUserTier();

@@ -361,15 +361,15 @@ test('server paid with unknown product tier → scout minimum',
 test('malformed JSON profile → free',
   () => { resetTierState(); ls.setItem('od_profile_v1', '{bad json{{'); eq(getUserTier(), 'free'); resetTierState(); });
 
-// TEST FLIGHT: canAccess unlocks everything by default; the billing matrix
-// only applies when window.__WR_ENFORCE_TIERS is on. Verify both behaviors.
-group('canAccess (test-flight: all unlocked by default)');
-test('default: trade-finder unlocked for free',
-  () => { resetTierState(); delete ctx.window.__WR_ENFORCE_TIERS; ok(canAccess('trade-finder')); });
-test('default: owner-dna unlocked for free',
-  () => { resetTierState(); ok(canAccess('owner-dna')); });
-test('default: ai-unlimited unlocked for free',
-  () => { resetTierState(); ok(canAccess('ai-unlimited')); });
+// BILLING LIVE (2026-07-10): core.js turns tier gating ON by default; an
+// explicit opt-out (__WR_ENFORCE_TIERS = false) restores unlocked tester mode.
+group('canAccess (billing live: gating on by default)');
+test('default: trade-finder gated for free',
+  () => { resetTierState(); ok(!canAccess('trade-finder')); });
+test('default: owner-dna gated for free',
+  () => { resetTierState(); ok(!canAccess('owner-dna')); });
+test('opt-out flag restores unlocked tester mode',
+  () => { resetTierState(); ctx.window.__WR_ENFORCE_TIERS = false; ok(canAccess('ai-unlimited')); ctx.window.__WR_ENFORCE_TIERS = true; });
 
 // With enforcement ON, the original billing matrix applies (kept tested for
 // when subscriptions are re-enabled).
