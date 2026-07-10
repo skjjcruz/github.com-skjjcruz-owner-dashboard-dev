@@ -234,6 +234,8 @@ test('checkout sells dhq monthly/annual with the App Store trial parity', () => 
     'https://dhqfootball.com',
     'https://skjjcruz.github.io',
   ], 'dhq checkout contract');
+  ok(checkoutSource.includes("new Set([...defaults.split(','), ...configured])"),
+    'APP_ALLOWED_ORIGINS must widen the checkout redirect allowlist, never replace it');
   ok(signupSource.includes("'dhq'"), 'signup should accept the dhq product slug');
 });
 
