@@ -142,6 +142,9 @@ Deno.serve(async (req) => {
 
     return json(req, {
       token,
+      // First-ever sign-in for this account: clients route new users into the
+      // onboarding funnel (plan selection) instead of straight into the app.
+      isNew,
       user: {
         id:          appUser.id,
         email:       appUser.email,
