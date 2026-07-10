@@ -1056,10 +1056,18 @@
                             const title = showTeam ? team : l.name;
                             const sub = showTeam ? l.name : null;
                             const isLast = String(l.id) === String(lastLeagueId);
+                            // Scout (free) = 1 league: everything beyond the free
+                            // slot renders locked; clicks route to the upgrade page
+                            // via the handleSelectLeague gate.
+                            const enforceTiers = typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true;
+                            const freeTileId = (enforceTiers && tier === 'free' && leagues.length)
+                                ? (leagues.some(x => String(x.id) === String(lastLeagueId)) ? String(lastLeagueId) : String(leagues[0].id))
+                                : null;
+                            const lockedTile = freeTileId !== null && String(l.id) !== freeTileId;
                             const recordCol = h.wp === null ? 'var(--silver)' : h.wp >= 60 ? 'var(--win-green)' : h.wp < 40 ? 'var(--loss-red)' : 'var(--silver)';
                             return (
                                 <div key={l.id} onClick={() => onSelect(l)}
-                                    style={{ position: 'relative', cursor: 'pointer', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (isLast ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'), borderRadius: '12px', padding: '14px', transition: 'all .14s' }}
+                                    style={{ position: 'relative', cursor: 'pointer', opacity: lockedTile ? 0.55 : 1, background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (isLast && !lockedTile ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'), borderRadius: '12px', padding: '14px', transition: 'all .14s' }}
                                     onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
                                     onMouseLeave={e => { e.currentTarget.style.borderColor = isLast ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'; e.currentTarget.style.transform = 'none'; }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
@@ -1067,7 +1075,8 @@
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                                                 <span style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 600, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
-                                                {isLast && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 600, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '4px', padding: '0 4px', flexShrink: 0 }}>LAST</span>}
+                                                {isLast && !lockedTile && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 600, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '4px', padding: '0 4px', flexShrink: 0 }}>LAST</span>}
+                                                {lockedTile && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 700, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: '4px', padding: '0 4px', flexShrink: 0 }}>🔒 PRO</span>}
                                             </div>
                                             {sub && <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>}
                                         </div>
@@ -1096,7 +1105,30 @@
         // Empire Command hero on top (launch for paid / upgrade for free), then a tile per
         // franchise showing team name · league name · league settings, then "Add a league".
 
+        // Scout (free) includes exactly one league — the advertised "1 free
+        // league". The free slot is the last league the user opened (stable:
+        // selecting it keeps it the last), falling back to their first league.
+        // Paid tiers and owner/admin overrides are exempt via getUserTier().
+        function freeLeagueIdFor(leagues) {
+            const last = AppStorage.get(APP_WR_KEYS.LAST_LEAGUE_ID);
+            if (last && leagues.some(l => String(l.id) === String(last))) return String(last);
+            return leagues.length ? String(leagues[0].id) : null;
+        }
+
+        function isLeagueLockedForTier(league, leagues) {
+            if (!(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true)) return false;
+            const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
+            if (tier !== 'free') return false;
+            const freeId = freeLeagueIdFor(leagues);
+            return freeId !== null && String(league.id) !== freeId;
+        }
+
         function handleSelectLeague(league) {
+            const allKnownLeagues = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues];
+            if (isLeagueLockedForTier(league, allKnownLeagues)) {
+                if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
+                return;
+            }
             setActiveLeagueId(league.id);
             setSelectedLeague(league);
             setActiveTab('dashboard');
