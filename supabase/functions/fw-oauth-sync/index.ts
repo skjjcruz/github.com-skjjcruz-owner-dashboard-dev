@@ -86,6 +86,15 @@ Deno.serve(async (req) => {
       .eq('email', normalizedEmail)
       .maybeSingle();
 
+    // Designated QA accounts (TEST_RESET_EMAILS secret) reset to a blank
+    // slate on every OAuth sign-in so the full new-user funnel can be
+    // exercised repeatedly. Unset secret = feature off.
+    if (appUser && testResetEmails().has(normalizedEmail)) {
+      await admin.from('app_users').delete().eq('id', appUser.id);
+      await auditEvent(admin, req, 'fw_oauth_sync', 'success', { userId: appUser.id, email: normalizedEmail }, { reason: 'test_account_reset' });
+      appUser = null;
+    }
+
     let isNew = false;
     if (!appUser) {
       isNew = true;
@@ -177,6 +186,17 @@ async function mintJWT(
     .setIssuedAt()
     .setExpirationTime('7d')
     .sign(secret);
+}
+
+// QA accounts that reset to a blank slate on every OAuth sign-in.
+// Comma-separated emails in TEST_RESET_EMAILS; empty/unset disables.
+function testResetEmails(): Set<string> {
+  return new Set(
+    (Deno.env.get('TEST_RESET_EMAILS') || '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
 }
 
 function normalizeProductSlug(value: unknown): string {

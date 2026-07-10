@@ -65,8 +65,18 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (existing) {
-      await auditEvent(admin, req, 'fw_signup', 'failure', { email: normalizedEmail }, { reason: 'email_exists' });
-      return json(req, { error: 'An account with this email already exists.' }, 409);
+      // Designated QA accounts (TEST_RESET_EMAILS secret, comma-separated)
+      // reset to a blank slate on every sign-up: the old row is deleted
+      // (subscriptions cascade) and the flow proceeds as a brand-new user,
+      // so the full onboarding funnel can be exercised repeatedly. Unset
+      // secret = feature off; sign-IN is untouched either way.
+      if (testResetEmails().has(normalizedEmail)) {
+        await admin.from('app_users').delete().eq('id', existing.id);
+        await auditEvent(admin, req, 'fw_signup', 'success', { userId: existing.id, email: normalizedEmail }, { reason: 'test_account_reset' });
+      } else {
+        await auditEvent(admin, req, 'fw_signup', 'failure', { email: normalizedEmail }, { reason: 'email_exists' });
+        return json(req, { error: 'An account with this email already exists.' }, 409);
+      }
     }
 
     // ── Hash password (PBKDF2 via Web Crypto — no external deps) ─
@@ -152,6 +162,17 @@ async function mintJWT(
     .setIssuedAt()
     .setExpirationTime('7d')
     .sign(secret);
+}
+
+// QA accounts that reset to a blank slate on every sign-up. Comma-separated
+// emails in the TEST_RESET_EMAILS secret; empty/unset disables the feature.
+function testResetEmails(): Set<string> {
+  return new Set(
+    (Deno.env.get('TEST_RESET_EMAILS') || '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
 }
 
 function normalizeProductSlug(value: unknown): string {
