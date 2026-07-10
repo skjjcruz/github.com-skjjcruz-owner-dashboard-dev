@@ -43,6 +43,9 @@ verify_jwt = false
 [functions.fw-signup]
 verify_jwt = false
 
+[functions.fw-revenuecat-webhook]
+verify_jwt = false
+
 [functions.fw-stripe-webhook]
 verify_jwt = false
 

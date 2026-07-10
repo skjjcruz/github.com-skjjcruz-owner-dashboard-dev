@@ -31,6 +31,20 @@ const signupSource = fs.readFileSync(
   'utf8'
 );
 const landingSource = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+const dhqMigration = fs.readFileSync(
+  path.join(ROOT, 'supabase', 'migrations', '20260710000000_dhq_pro_billing.sql'),
+  'utf8'
+);
+const rcWebhookSource = fs.readFileSync(
+  path.join(ROOT, 'supabase', 'functions', 'fw-revenuecat-webhook', 'index.ts'),
+  'utf8'
+);
+const onboardingSource = fs.readFileSync(path.join(ROOT, 'onboarding.html'), 'utf8');
+const configToml = fs.readFileSync(path.join(ROOT, 'supabase', 'config.toml'), 'utf8');
+const deployWorkflow = fs.readFileSync(
+  path.join(ROOT, '.github', 'workflows', 'deploy-functions.yml'),
+  'utf8'
+);
 
 let passed = 0;
 let failed = 0;
@@ -188,6 +202,81 @@ test('webhook does not grant paid access for unknown Stripe statuses', () => {
     "(status === 'active' || status === 'trialing') ? 'pro' : 'free'",
   ], 'webhook status safety');
   ok(!webhookSource.includes("default:\n      return 'active'"), 'unknown Stripe status must not default to active');
+});
+
+group('dynasty hq pro (live product line)');
+
+test('dhq product is seeded with billing metadata columns and constraints', () => {
+  hasEvery(dhqMigration, [
+    "('dhq', 'Dynasty HQ Pro'",
+    'add column if not exists billing_period text',
+    'add column if not exists store text',
+    'add column if not exists rc_app_user_id text',
+    'add column if not exists rc_product_id text',
+    "check (billing_period is null or billing_period in ('monthly', 'annual'))",
+    "check (store is null or store in ('stripe', 'app_store', 'play_store', 'promotional'))",
+    'subscriptions_rc_app_user_id_idx',
+  ], 'dhq billing migration');
+  hasEvery(deployWorkflow, [
+    "'20260710000000': 'supabase/migrations/20260710000000_dhq_pro_billing.sql'",
+  ], 'dhq migration deploy allowlist');
+  const occurrences = deployWorkflow.split('20260710000000').length - 1;
+  ok(occurrences >= 2, '20260710000000 should be in both the apply allowlist and the verification list');
+});
+
+test('checkout sells dhq monthly/annual with the App Store trial parity', () => {
+  hasEvery(checkoutSource, [
+    'STRIPE_PRICE_DHQ_MONTHLY',
+    'STRIPE_PRICE_DHQ_ANNUAL',
+    'dhq_${billingPeriod}',
+    'trial_period_days: DHQ_TRIAL_DAYS',
+    'billing_period: billingPeriod',
+    'https://dhqfootball.com',
+    'https://skjjcruz.github.io',
+  ], 'dhq checkout contract');
+  ok(signupSource.includes("'dhq'"), 'signup should accept the dhq product slug');
+});
+
+test('stripe webhook records billing period, store, and truthful trial status', () => {
+  hasEvery(webhookSource, [
+    'function billingPeriodFor',
+    "if (interval === 'year') return 'annual'",
+    "if (interval === 'month') return 'monthly'",
+    "store:                 'stripe'",
+    'billing_period:        billingPeriodFor(subscription)',
+    'status:                mapStripeStatus(subscription.status)',
+  ], 'stripe webhook billing contract');
+});
+
+test('revenuecat webhook mirrors App Store entitlements into subscriptions', () => {
+  hasEvery(rcWebhookSource, [
+    'REVENUECAT_WEBHOOK_AUTH',
+    'timingSafeEqual',
+    'if (!WEBHOOK_AUTH) return false',
+    "case 'INITIAL_PURCHASE':",
+    "case 'RENEWAL':",
+    "case 'UNCANCELLATION':",
+    "case 'PRODUCT_CHANGE':",
+    "case 'CANCELLATION':",
+    "case 'EXPIRATION':",
+    "case 'BILLING_ISSUE':",
+    "tier: 'pro'",
+    "tier: 'free', status: 'canceled'",
+    "onConflict: 'user_id,product_slug'",
+    "const PRODUCT_SLUG = 'dhq'",
+    'Purchases.logIn',
+  ], 'revenuecat webhook contract');
+  ok(rcWebhookSource.includes("'trialing' : 'active'"), 'RC trials must land as trialing, not active');
+  ok(configToml.includes('[functions.fw-revenuecat-webhook]'), 'rc webhook must pin verify_jwt in config.toml');
+  ok(deployWorkflow.includes('supabase functions deploy fw-revenuecat-webhook'), 'rc webhook must be in the deploy list');
+});
+
+test('onboarding requests the live dhq product with a billing period', () => {
+  hasEvery(onboardingSource, [
+    "productSlug: 'dhq'",
+    "billing:     selectedProBilling === 'annual' ? 'annual' : 'monthly'",
+  ], 'onboarding checkout payload');
+  ok(!onboardingSource.includes("productSlug: 'bundle'"), 'onboarding must not sell the legacy bundle product');
 });
 
 group('security');

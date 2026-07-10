@@ -24,7 +24,7 @@ import {
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const JWT_SECRET           = Deno.env.get('JWT_SECRET')!;
-const VALID_PRODUCT_SLUGS  = new Set(['war_room', 'dynast_hq', 'bundle']);
+const VALID_PRODUCT_SLUGS  = new Set(['war_room', 'dynast_hq', 'bundle', 'dhq']);
 
 Deno.serve(async (req) => {
   const options = handleOptions(req);

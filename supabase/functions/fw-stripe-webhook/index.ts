@@ -99,7 +99,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     user_id:               userId,
     product_slug:          productSlug,
     tier:                  'pro',
-    status:                'active',
+    // 7-day trials start in `trialing`; mapStripeStatus keeps it truthful.
+    status:                mapStripeStatus(subscription.status),
+    store:                 'stripe',
+    billing_period:        billingPeriodFor(subscription),
     stripe_subscription_id: subscription.id,
     stripe_price_id:       subscription.items.data[0]?.price.id,
     current_period_start:  new Date(subscription.current_period_start * 1000).toISOString(),
@@ -123,6 +126,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     .update({
       status,
       tier:                 (status === 'active' || status === 'trialing') ? 'pro' : 'free',
+      billing_period:       billingPeriodFor(subscription),
       current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
       current_period_end:   new Date(subscription.current_period_end   * 1000).toISOString(),
       cancel_at_period_end: subscription.cancel_at_period_end,
@@ -150,6 +154,16 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 }
 
 // ── Utility ───────────────────────────────────────────────────
+
+// The subscribed price's recurrence is authoritative for monthly vs annual
+// (metadata is a fallback for prices without a recurring interval).
+function billingPeriodFor(subscription: Stripe.Subscription): 'monthly' | 'annual' | null {
+  const interval = subscription.items.data[0]?.price?.recurring?.interval;
+  if (interval === 'year') return 'annual';
+  if (interval === 'month') return 'monthly';
+  const fromMetadata = String(subscription.metadata?.billing_period || '').toLowerCase();
+  return fromMetadata === 'annual' || fromMetadata === 'monthly' ? fromMetadata : null;
+}
 
 function mapStripeStatus(stripeStatus: string): string {
   switch (stripeStatus) {

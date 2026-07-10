@@ -3,21 +3,25 @@
  *
  * POST /functions/v1/fw-create-checkout
  * Headers: { Authorization: Bearer <jwt> }
- * Body:    { productSlug, successUrl, cancelUrl }
+ * Body:    { productSlug, billing, successUrl, cancelUrl }
+ *          billing: 'monthly' | 'annual' — required meaningfully only for
+ *          the live 'dhq' product (defaults to monthly).
  *
  * Returns: { checkoutUrl }
  *
  * Required secrets:
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
  *   STRIPE_SECRET_KEY
+ *   STRIPE_PRICE_DHQ_MONTHLY      (Dynasty HQ Pro Monthly — $9.99/mo, 7-day trial)
+ *   STRIPE_PRICE_DHQ_ANNUAL       (Dynasty HQ Pro Annual  — $99.99/yr, 7-day trial)
+ *   -- legacy products (grandfathered subscribers only, nothing sells these):
  *   STRIPE_PRICE_WAR_ROOM         (Dynasty HQ War Room — price_1TCSAPBzhLLVa13Q3A2l8DP2)
  *   STRIPE_PRICE_DYNASTY_HQ       (Dynasty HQ      — price_1TCSJZBzhLLVa13Qitxwr8sh)
  *   STRIPE_PRICE_FANTASY_WARS_PRO (legacy env name for Pro Bundle — price_1TCSNSBzhLLVa13QnT3hsQLC)
  *
  * To set Price IDs:
- *   supabase secrets set STRIPE_PRICE_WAR_ROOM=price_...
- *   supabase secrets set STRIPE_PRICE_DYNASTY_HQ=price_...
- *   supabase secrets set STRIPE_PRICE_FANTASY_WARS_PRO=price_...
+ *   supabase secrets set STRIPE_PRICE_DHQ_MONTHLY=price_...
+ *   supabase secrets set STRIPE_PRICE_DHQ_ANNUAL=price_...
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -35,12 +39,19 @@ const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const STRIPE_SECRET_KEY    = Deno.env.get('STRIPE_SECRET_KEY')!;
 
-// Map product slugs → Stripe Price IDs
+// Map product slugs → Stripe Price IDs. The live 'dhq' product is priced per
+// billing period; the rest are legacy single-price products.
 const PRICE_MAP: Record<string, string | undefined> = {
+  dhq_monthly: Deno.env.get('STRIPE_PRICE_DHQ_MONTHLY'),
+  dhq_annual:  Deno.env.get('STRIPE_PRICE_DHQ_ANNUAL'),
   war_room:  Deno.env.get('STRIPE_PRICE_WAR_ROOM'),
   dynast_hq: Deno.env.get('STRIPE_PRICE_DYNASTY_HQ'),
   bundle:    Deno.env.get('STRIPE_PRICE_FANTASY_WARS_PRO'),
 };
+
+// Match the App Store products' 7-day free trial so web and iOS subscribers
+// get the same deal.
+const DHQ_TRIAL_DAYS = 7;
 
 Deno.serve(async (req) => {
   const options = handleOptions(req);
@@ -54,8 +65,9 @@ Deno.serve(async (req) => {
     const userId = appSession.userId;
     const userEmail = appSession.email || undefined;
 
-    const { productSlug: rawProductSlug = 'war_room', successUrl, cancelUrl } = await req.json();
+    const { productSlug: rawProductSlug = 'dhq', billing: rawBilling, successUrl, cancelUrl } = await req.json();
     const productSlug = normalizeProductSlug(rawProductSlug);
+    const billingPeriod = String(rawBilling || 'monthly').toLowerCase() === 'annual' ? 'annual' : 'monthly';
     const safeSuccessUrl = validateCheckoutUrl(successUrl, `${SUPABASE_URL}/checkout-success?session_id={CHECKOUT_SESSION_ID}`);
     const safeCancelUrl = validateCheckoutUrl(cancelUrl, `${SUPABASE_URL}/landing.html`);
     if (!safeSuccessUrl || !safeCancelUrl) {
@@ -63,7 +75,9 @@ Deno.serve(async (req) => {
       return json(req, { error: 'Checkout redirect URL is not allowed.' }, 400);
     }
 
-    const priceId = PRICE_MAP[productSlug];
+    const priceId = productSlug === 'dhq'
+      ? PRICE_MAP[`dhq_${billingPeriod}`]
+      : PRICE_MAP[productSlug];
     const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' as any });
     const rateLimit = await checkRateLimit(admin, 'fw-create-checkout:user', userId, { limit: 10, windowSeconds: 3600, lockoutSeconds: 900 });
     const ipLimit = await checkRateLimit(admin, 'fw-create-checkout:ip', clientIp(req), { limit: 30, windowSeconds: 3600, lockoutSeconds: 900 });
@@ -108,9 +122,11 @@ Deno.serve(async (req) => {
       success_url: safeSuccessUrl,
       cancel_url:  safeCancelUrl,
       subscription_data: {
+        ...(productSlug === 'dhq' ? { trial_period_days: DHQ_TRIAL_DAYS } : {}),
         metadata: {
           user_id:      userId,
           product_slug: productSlug,
+          billing_period: billingPeriod,
         },
       },
       allow_promotion_codes: true,
@@ -126,7 +142,7 @@ Deno.serve(async (req) => {
 });
 
 function allowedCheckoutOrigins(): string[] {
-  return (Deno.env.get('APP_ALLOWED_ORIGINS') || 'http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002,https://jcc100218.github.io,https://warroom.skjjcruz.com')
+  return (Deno.env.get('APP_ALLOWED_ORIGINS') || 'http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002,https://jcc100218.github.io,https://warroom.skjjcruz.com,https://skjjcruz.github.io,https://dhqfootball.com,https://www.dhqfootball.com')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);

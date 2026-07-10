@@ -59,6 +59,7 @@ jobs:
               '20260610000000': 'supabase/migrations/20260610000000_ai_response_cache.sql',
               '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
               '20260615000000': 'supabase/migrations/20260615000000_mfl_connection.sql',
+              '20260710000000': 'supabase/migrations/20260710000000_dhq_pro_billing.sql',
           }
 
           def run_query(query):
@@ -125,6 +126,7 @@ jobs:
               '20260610000000': 'supabase/migrations/20260610000000_ai_response_cache.sql',
               '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
               '20260615000000': 'supabase/migrations/20260615000000_mfl_connection.sql',
+              '20260710000000': 'supabase/migrations/20260710000000_dhq_pro_billing.sql',
           }
 
           for path in expected.values():
@@ -200,6 +202,9 @@ jobs:
 
       - name: Deploy fw-stripe-webhook function
         run: supabase functions deploy fw-stripe-webhook --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+
+      - name: Deploy fw-revenuecat-webhook
+        run: supabase functions deploy fw-revenuecat-webhook --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
       - name: Deploy fw-request-password-reset function
         run: supabase functions deploy fw-request-password-reset --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
