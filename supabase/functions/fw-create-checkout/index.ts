@@ -142,10 +142,16 @@ Deno.serve(async (req) => {
 });
 
 function allowedCheckoutOrigins(): string[] {
-  return (Deno.env.get('APP_ALLOWED_ORIGINS') || 'http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002,https://jcc100218.github.io,https://warroom.skjjcruz.com,https://skjjcruz.github.io,https://dhqfootball.com,https://www.dhqfootball.com')
+  // Union the known production origins with any env-configured extras — the
+  // same policy as the shared corsHeaders. APP_ALLOWED_ORIGINS must widen the
+  // list, never narrow it: a stale env value predating a deploy origin was
+  // silently rejecting every checkout redirect from the live app.
+  const defaults = 'http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002,https://jcc100218.github.io,https://warroom.skjjcruz.com,https://skjjcruz.github.io,https://dhqfootball.com,https://www.dhqfootball.com';
+  const configured = (Deno.env.get('APP_ALLOWED_ORIGINS') || '')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
+  return [...new Set([...defaults.split(','), ...configured])];
 }
 
 function validateCheckoutUrl(value: unknown, fallback: string): string | null {
