@@ -183,7 +183,7 @@ test('ambient insight types are server-cached and bypass budgets on hits', () =>
   ok(source.includes("ai_call_cached"), 'cache hits should be recorded in analytics');
   ok(source.includes('computeCacheKey'), 'missing cache key derivation');
   ok(source.includes('forceRefresh'), 'explicit refresh should bypass cache reads');
-  ok(source.includes('countRequest: cacheTtlMs <= 0 || forceRefresh'),
+  ok(source.includes('const countRequest = cacheTtlMs <= 0 || forceRefresh'),
     'ambient calls must not consume request allowance; forced refreshes must');
   ok(cacheMigration.includes('create table if not exists public.ai_response_cache'), 'missing cache table');
   ok(cacheMigration.includes('alter table public.ai_response_cache enable row level security'), 'cache table should have RLS');
@@ -297,6 +297,17 @@ test('server AI enforces plan and prompt/output caps', () => {
   ok(source.includes("monthlyRequests: 450"), 'Pro monthly included AI cap should be explicit');
   ok(source.includes("maxInputChars"), 'missing input context cap');
   ok(source.includes("AI_MAX_OUTPUT_TOKENS"), 'missing global output cap');
+});
+
+test('user cost caps degrade to eco mode instead of hard-blocking', () => {
+  ok(source.includes('degradedDailyCostUsd: 1.50'), 'Pro should carry a degraded daily cost ceiling');
+  ok(source.includes('degradedMonthlyCostUsd: 4.50'), 'Pro should carry a degraded monthly cost ceiling');
+  ok(source.includes('function ecoRouteForCost'), 'missing eco route downgrade helper');
+  ok(source.includes('function planSupportsEcoMode'), 'missing eco mode plan gate');
+  ok(/reservationReason === 'daily_cost' \|\| reservationReason === 'monthly_cost'/.test(source),
+    'eco mode must trigger only on user cost caps — request counts and global caps stay hard');
+  ok(source.includes('&& !useWebSearch'), 'web search requests must not degrade (premium route required)');
+  ok(source.includes('ecoModeReason'), 'eco mode should be visible in telemetry and responses');
 });
 
 test('Opus routes are gated by entitlement instead of available to every paid user', () => {
