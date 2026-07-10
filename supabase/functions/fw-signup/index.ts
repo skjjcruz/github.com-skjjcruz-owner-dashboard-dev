@@ -50,11 +50,17 @@ Deno.serve(async (req) => {
     }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const ipLimit = await checkRateLimit(admin, 'fw-signup:ip', clientIp(req), { limit: 10, windowSeconds: 3600, lockoutSeconds: 3600 });
-    const emailLimit = await checkRateLimit(admin, 'fw-signup:email', normalizedEmail, { limit: 3, windowSeconds: 3600, lockoutSeconds: 3600 });
-    if (!ipLimit.allowed || !emailLimit.allowed) {
-      await auditEvent(admin, req, 'fw_signup_rate_limited', 'blocked', { email: normalizedEmail }, {});
-      return json(req, { error: 'Too many sign-up attempts. Try again later.' }, 429);
+    // Designated QA accounts (TEST_RESET_EMAILS) sign up repeatedly by design,
+    // so they skip the abuse limits. Exposure is bounded: the exemption only
+    // ever creates/resets the listed accounts themselves.
+    const isTestReset = testResetEmails().has(normalizedEmail);
+    if (!isTestReset) {
+      const ipLimit = await checkRateLimit(admin, 'fw-signup:ip', clientIp(req), { limit: 10, windowSeconds: 3600, lockoutSeconds: 3600 });
+      const emailLimit = await checkRateLimit(admin, 'fw-signup:email', normalizedEmail, { limit: 3, windowSeconds: 3600, lockoutSeconds: 3600 });
+      if (!ipLimit.allowed || !emailLimit.allowed) {
+        await auditEvent(admin, req, 'fw_signup_rate_limited', 'blocked', { email: normalizedEmail }, {});
+        return json(req, { error: 'Too many sign-up attempts. Try again later.' }, 429);
+      }
     }
 
     // ── Check for existing account ────────────────────────────
