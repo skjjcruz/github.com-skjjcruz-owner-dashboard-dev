@@ -294,7 +294,7 @@ test('AI analytics do not record raw prompt text', () => {
 test('server AI enforces plan and prompt/output caps', () => {
   ok(source.includes("const AI_LIMITS"), 'missing plan limit matrix');
   ok(source.includes("monthlyRequests: 20"), 'War Room monthly included AI cap should be explicit');
-  ok(source.includes("monthlyRequests: 200"), 'Pro monthly included AI cap should be explicit');
+  ok(source.includes("monthlyRequests: 450"), 'Pro monthly included AI cap should be explicit');
   ok(source.includes("maxInputChars"), 'missing input context cap');
   ok(source.includes("AI_MAX_OUTPUT_TOKENS"), 'missing global output cap');
 });
