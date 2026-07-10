@@ -35,12 +35,19 @@
         // the URL fragment (never sent to the server, same trick as OAuth).
         // Ingest it before the session checks below so the user lands signed in.
         var hs = (window.location.hash || '').match(/[#&]dhq_session=([^&]+)/);
+        var handedIsNew = false;
         if (hs) {
           try {
             var b64 = hs[1].replace(/-/g, '+').replace(/_/g, '/');
             while (b64.length % 4) b64 += '=';
             var handed = JSON.parse(decodeURIComponent(escape(window.atob(b64))));
-            if (handed && handed.token) localStorage.setItem('fw_session_v1', JSON.stringify(handed));
+            if (handed && handed.token) {
+              // isNew is a one-shot routing hint, not session state — consume
+              // it here so later visits don't re-trigger onboarding.
+              handedIsNew = handed.isNew === true;
+              delete handed.isNew;
+              localStorage.setItem('fw_session_v1', JSON.stringify(handed));
+            }
           } catch (e) {}
           try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
         }
@@ -69,6 +76,9 @@
         var profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
         var legacy  = JSON.parse(localStorage.getItem('od_auth_v1') || 'null');
         var onboarded = (profile && profile.sleeperUsername) || (legacy && legacy.username);
+        // Brand-new accounts go through the full onboarding funnel (plan
+        // selection first); accounts mid-setup resume at the Sleeper connect.
+        if (!onboarded && handedIsNew) { window.location.replace('onboarding.html'); return; }
         if (!onboarded) { window.location.replace('connect-sleeper.html'); return; }
         var pref = localStorage.getItem('fw_preferred_view');
         window.location.replace(pref === 'scout' ? 'https://skjjcruz.github.io/ReconAI-sandbox-dev/' : 'index.html');
@@ -839,8 +849,10 @@
         }
         localStorage.setItem(SESSION_KEY, JSON.stringify(data));
         trackLandingEvent(signup ? 'signup_succeeded' : 'signin_succeeded');
-        showAlert('success', 'Account ready \u2014 connecting Sleeper\u2026');
-        setTimeout(() => { window.location.href = nextAfterAuth(); }, 600);
+        showAlert('success', signup ? 'Account ready \u2014 pick your plan\u2026' : 'Welcome back\u2026');
+        // New accounts go through the full onboarding funnel (plan first);
+        // returning sign-ins resume wherever they left off.
+        setTimeout(() => { window.location.href = signup ? 'onboarding.html' : nextAfterAuth(); }, 600);
       } catch (err) {
         trackLandingEvent(signup ? 'signup_failed' : 'signin_failed', { reason: 'network' });
         showAlert('error', 'Network error: ' + (err?.message || String(err)));
@@ -903,7 +915,9 @@
           }
         }
         trackLandingEvent('oauth_succeeded', { provider: 'google' });
-        window.location.href = nextAfterAuth();
+        // First-ever sign-in (fw-oauth-sync just created the account): route
+        // through onboarding for plan selection instead of straight in.
+        window.location.href = (appSession && appSession.isNew === true) ? 'onboarding.html' : nextAfterAuth();
       } catch (e) { console.warn('[WR] OAuth callback error:', e); }
     })();
 

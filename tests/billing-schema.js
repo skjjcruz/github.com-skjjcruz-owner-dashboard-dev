@@ -273,6 +273,20 @@ test('revenuecat webhook mirrors App Store entitlements into subscriptions', () 
   ok(deployWorkflow.includes('supabase functions deploy fw-revenuecat-webhook'), 'rc webhook must be in the deploy list');
 });
 
+test('new accounts route through the onboarding plan funnel', () => {
+  const oauthSync = fs.readFileSync(
+    path.join(ROOT, 'supabase', 'functions', 'fw-oauth-sync', 'index.ts'),
+    'utf8'
+  );
+  ok(oauthSync.includes('isNew,'), 'fw-oauth-sync must expose isNew so clients can route first sign-ins');
+  hasEvery(landingSource, [
+    'handedIsNew',
+    "signup ? 'onboarding.html'",
+    "appSession.isNew === true) ? 'onboarding.html'",
+    "handedIsNew) { window.location.replace('onboarding.html')",
+  ], 'landing new-user routing');
+});
+
 test('onboarding requests the live dhq product with a billing period', () => {
   hasEvery(onboardingSource, [
     "productSlug: 'dhq'",
