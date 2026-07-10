@@ -1038,7 +1038,8 @@
             'Content-Type':  'application/json',
           },
           body: JSON.stringify({
-            productSlug: 'bundle',
+            productSlug: 'dhq',
+            billing:     selectedProBilling === 'annual' ? 'annual' : 'monthly',
             successUrl:  window.location.origin + window.location.pathname + '?payment=success',
             cancelUrl:   window.location.origin + window.location.pathname + '?payment=cancel',
           }),

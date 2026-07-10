@@ -356,7 +356,8 @@ async function testCheckoutFlow(context, baseUrl, network, failures) {
   expect(network.checkout.length > 0, `checkout endpoint was not called; alert="${alertText || ''}" url="${page.url()}"`);
   const request = network.checkout.at(-1);
   expect(request?.auth === `Bearer ${QA_TOKEN}`, 'checkout request did not include the app session token');
-  expect(request?.body?.productSlug === 'bundle', 'pro checkout did not request the bundle product');
+  expect(request?.body?.productSlug === 'dhq', 'pro checkout did not request the live dhq product');
+  expect(request?.body?.billing === 'monthly' || request?.body?.billing === 'annual', 'pro checkout did not carry a billing period');
   expect(request?.body?.successUrl?.includes('payment=success'), 'checkout success URL missing payment=success');
   await page.close();
 }

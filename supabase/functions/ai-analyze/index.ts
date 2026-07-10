@@ -60,12 +60,15 @@ async function checkRateLimit(identifier: string): Promise<{ allowed: boolean; r
 
 type AIPlanName = 'free' | 'scout' | 'warroom' | 'pro' | 'commissioner' | 'legacy';
 
+type AIBillingPeriod = 'monthly' | 'annual' | null;
+
 interface AISession {
     identifier: string;
     username: string | null;
     userId: string | null;
     email: string | null;
     plan: AIPlanName;
+    billing: AIBillingPeriod;
     products: string[];
     source: 'app' | 'sleeper';
 }
@@ -80,45 +83,55 @@ function normalizeAIPlan(value: unknown): AIPlanName {
     return 'free';
 }
 
+function normalizeBillingPeriod(value: unknown): AIBillingPeriod {
+    const period = String(value || '').toLowerCase();
+    return period === 'monthly' || period === 'annual' ? period : null;
+}
+
 async function loadAppAIPlan(
     supabase: any,
     userId: string,
     payload: Record<string, any>,
-): Promise<{ plan: AIPlanName; products: string[] }> {
+): Promise<{ plan: AIPlanName; billing: AIBillingPeriod; products: string[] }> {
     const metadata = payload?.app_metadata || {};
     const fallbackPlan = normalizeAIPlan(metadata.tier);
     const fallbackProducts = Array.isArray(metadata.products) ? metadata.products.map(String) : [];
 
     const isAdmin = await hasAdminRole(supabase, userId).catch(() => false);
     if (isAdmin) {
-        return { plan: 'commissioner', products: fallbackProducts };
+        return { plan: 'commissioner', billing: null, products: fallbackProducts };
     }
 
     const subs = await safeSupabaseData(supabase
         .from('subscriptions')
-        .select('product_slug, tier, status')
+        .select('product_slug, tier, status, billing_period')
         .eq('user_id', userId)
         .in('status', ['active', 'trialing']));
 
     const activePaid = (subs || []).filter((s: any) => s?.tier === 'pro');
     const paidProducts = activePaid.map((s: any) => String(s.product_slug || ''));
+    // 'dhq' (the live Pro line) and legacy 'bundle' both mean full access.
     const products = paidProducts.length
-        ? [...new Set(paidProducts.flatMap((slug: string) => slug === 'bundle' ? ['war_room', 'dynast_hq'] : [slug]))]
+        ? [...new Set(paidProducts.flatMap((slug: string) => (slug === 'bundle' || slug === 'dhq') ? ['war_room', 'dynast_hq'] : [slug]))]
         : fallbackProducts;
 
+    const dhqSub = activePaid.find((s: any) => String(s.product_slug) === 'dhq');
+    if (dhqSub) {
+        return { plan: 'pro', billing: normalizeBillingPeriod(dhqSub.billing_period), products };
+    }
     if (paidProducts.includes('bundle') || (products.includes('war_room') && products.includes('dynast_hq'))) {
-        return { plan: 'pro', products };
+        return { plan: 'pro', billing: null, products };
     }
     if (paidProducts.includes('war_room')) {
-        return { plan: 'warroom', products };
+        return { plan: 'warroom', billing: null, products };
     }
     if (paidProducts.includes('dynast_hq')) {
-        return { plan: 'scout', products };
+        return { plan: 'scout', billing: null, products };
     }
     if (fallbackPlan !== 'free') {
-        return { plan: fallbackPlan, products };
+        return { plan: fallbackPlan, billing: null, products };
     }
-    return { plan: 'free', products };
+    return { plan: 'free', billing: null, products };
 }
 
 async function resolveAISession(req: Request): Promise<AISession | null> {
@@ -135,6 +148,7 @@ async function resolveAISession(req: Request): Promise<AISession | null> {
                 userId: appSession.userId,
                 email: appSession.email,
                 plan: entitlement.plan,
+                billing: entitlement.billing,
                 products: entitlement.products,
                 source: 'app',
             };
@@ -149,6 +163,7 @@ async function resolveAISession(req: Request): Promise<AISession | null> {
             userId: null,
             email: null,
             plan: 'legacy',
+            billing: null,
             products: ['legacy_sleeper'],
             source: 'sleeper',
         };
@@ -291,6 +306,9 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
         // promise). The cost caps are whale circuit breakers: a typical Pro user
         // spends $1.50–2.50/mo of AI against ~$7–8.50/mo net revenue; the caps
         // bound the worst case at ~$3.75 so no subscriber is unprofitable.
+        // The annual allowance (15/day); monthly subscribers are clamped to
+        // their advertised 10/day by effectivePlanLimits once the billing
+        // period is known from the store webhooks.
         dailyRequests: 15,
         monthlyRequests: 450,
         dailyCostUsd: 1.00,
@@ -330,6 +348,18 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
         allowWebSearch: false,
     },
 };
+
+// Pro's advertised AI allowance differs by billing period: 10/day monthly,
+// 15/day annual. The matrix row carries the annual ceiling; monthly
+// subscribers get the monthly promise. Unknown billing (legacy bundle rows,
+// or a store event that omitted it) keeps the generous default.
+function effectivePlanLimits(session: AISession): AIPlanLimits {
+    const base = AI_LIMITS[session.plan] || AI_LIMITS.free;
+    if (session.plan === 'pro' && session.billing === 'monthly') {
+        return { ...base, dailyRequests: 10, monthlyRequests: 300 };
+    }
+    return base;
+}
 
 // Web search is normally restricted to the top plans (allowWebSearch). The
 // dynasty_read type is the one exception: its result is shared and cached weekly,
@@ -2435,7 +2465,7 @@ Deno.serve(async (req) => {
                 { status: 503, headers: { ...responseHeaders, 'Content-Type': 'application/json' } }
             );
         }
-        const planLimits = AI_LIMITS[aiSession.plan] || AI_LIMITS.free;
+        const planLimits = effectivePlanLimits(aiSession);
 
         const body = await req.json();
         const { type, context } = body;
