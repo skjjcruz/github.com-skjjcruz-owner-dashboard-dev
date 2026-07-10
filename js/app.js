@@ -1047,6 +1047,11 @@
                     ))}
 
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.7, margin: '2px 0 10px' }}>{EMPIRE_ENABLED && isPaid ? 'Or enter a single league' : 'Select franchise'}</div>
+                    {(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true) && tier === 'free' && !AppStorage.get('wr_free_league_id_v1') && leagues.length > 1 && (
+                        <div style={{ fontSize: 'var(--text-label, 0.8rem)', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '10px', padding: '10px 12px', margin: '0 0 12px', background: 'rgba(212,175,55,0.05)' }}>
+                            Scout includes <strong>1 league</strong> — choose wisely: the first league you enter becomes your free league. Upgrade to Pro anytime for all of them.
+                        </div>
+                    )}
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                         {leagues.map(l => {
@@ -1056,12 +1061,14 @@
                             const title = showTeam ? team : l.name;
                             const sub = showTeam ? l.name : null;
                             const isLast = String(l.id) === String(lastLeagueId);
-                            // Scout (free) = 1 league: everything beyond the free
-                            // slot renders locked; clicks route to the upgrade page
-                            // via the handleSelectLeague gate.
+                            // Scout (free) = 1 league, owner's choice: nothing is
+                            // locked until they claim a free league; after that,
+                            // every other tile locks. Clicks route to the upgrade
+                            // page via the handleSelectLeague gate.
                             const enforceTiers = typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true;
-                            const freeTileId = (enforceTiers && tier === 'free' && leagues.length)
-                                ? (leagues.some(x => String(x.id) === String(lastLeagueId)) ? String(lastLeagueId) : String(leagues[0].id))
+                            const chosenFreeId = AppStorage.get('wr_free_league_id_v1');
+                            const freeTileId = (enforceTiers && tier === 'free' && chosenFreeId && leagues.some(x => String(x.id) === String(chosenFreeId)))
+                                ? String(chosenFreeId)
                                 : null;
                             const lockedTile = freeTileId !== null && String(l.id) !== freeTileId;
                             const recordCol = h.wp === null ? 'var(--silver)' : h.wp >= 60 ? 'var(--win-green)' : h.wp < 40 ? 'var(--loss-red)' : 'var(--silver)';
@@ -1106,19 +1113,25 @@
         // franchise showing team name · league name · league settings, then "Add a league".
 
         // Scout (free) includes exactly one league — the advertised "1 free
-        // league". The free slot is the last league the user opened (stable:
-        // selecting it keeps it the last), falling back to their first league.
+        // league" — and the OWNER PICKS IT: until a choice exists every league
+        // is open, and the first one they enter becomes their free league.
         // Paid tiers and owner/admin overrides are exempt via getUserTier().
+        const FREE_LEAGUE_CHOICE_KEY = 'wr_free_league_id_v1';
+
         function freeLeagueIdFor(leagues) {
-            const last = AppStorage.get(APP_WR_KEYS.LAST_LEAGUE_ID);
-            if (last && leagues.some(l => String(l.id) === String(last))) return String(last);
-            return leagues.length ? String(leagues[0].id) : null;
+            const chosen = AppStorage.get(FREE_LEAGUE_CHOICE_KEY);
+            if (chosen && leagues.some(l => String(l.id) === String(chosen))) return String(chosen);
+            return null; // no valid choice yet — nothing locks until they pick
+        }
+
+        function freeTierEnforced() {
+            if (!(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true)) return false;
+            const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
+            return tier === 'free';
         }
 
         function isLeagueLockedForTier(league, leagues) {
-            if (!(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true)) return false;
-            const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
-            if (tier !== 'free') return false;
+            if (!freeTierEnforced()) return false;
             const freeId = freeLeagueIdFor(leagues);
             return freeId !== null && String(league.id) !== freeId;
         }
@@ -1128,6 +1141,10 @@
             if (isLeagueLockedForTier(league, allKnownLeagues)) {
                 if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
                 return;
+            }
+            // First selection by a free user claims the free slot.
+            if (freeTierEnforced() && !freeLeagueIdFor(allKnownLeagues)) {
+                AppStorage.set(FREE_LEAGUE_CHOICE_KEY, String(league.id));
             }
             setActiveLeagueId(league.id);
             setSelectedLeague(league);
