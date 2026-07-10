@@ -227,6 +227,11 @@ interface AIPlanLimits {
     monthlyRequests: number;
     dailyCostUsd: number;
     monthlyCostUsd: number;
+    // Eco mode: when set (and above the soft caps), a tripped daily/monthly
+    // cost cap degrades the request to a cheaper model bounded by these hard
+    // ceilings instead of returning 429. Plans without them keep hard caps.
+    degradedDailyCostUsd?: number;
+    degradedMonthlyCostUsd?: number;
     maxOutputTokens: number;
     mockDraftMaxOutputTokens: number;
     maxInputChars: number;
@@ -290,6 +295,12 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
         monthlyRequests: 450,
         dailyCostUsd: 1.00,
         monthlyCostUsd: 3.75,
+        // Paying subscribers never hit a hard dollar wall while their request
+        // allowance remains: past the soft caps, calls run on cheaper models
+        // until these ceilings. Worst case exposure rises $3.75 → $4.50/mo,
+        // still far under net revenue (~$7-8.50/mo).
+        degradedDailyCostUsd: 1.50,
+        degradedMonthlyCostUsd: 4.50,
         maxOutputTokens: 4200,
         mockDraftMaxOutputTokens: 10000,
         maxInputChars: 90000,
@@ -466,6 +477,20 @@ function modelTier(model: string): AIModelTier {
 
 function allowsModelTier(limit: AIPlanLimits, tier: AIModelTier): boolean {
     return MODEL_TIER_RANK[tier] <= MODEL_TIER_RANK[limit.maxModelTier];
+}
+
+// Eco mode target: one tier cheaper than the planned route, floor 'fast'.
+// A route already on 'fast' keeps its model — the eco retry then only buys
+// headroom from the plan's degraded cost ceilings.
+function ecoRouteForCost(route: AIRoute): AIRoute {
+    if (MODEL_TIER_RANK[route.tier] >= MODEL_TIER_RANK.premium) return routeForTier('standard');
+    if (route.tier === 'standard') return routeForTier('fast');
+    return route;
+}
+
+function planSupportsEcoMode(limits: AIPlanLimits): boolean {
+    return Number(limits.degradedDailyCostUsd || 0) > limits.dailyCostUsd
+        && Number(limits.degradedMonthlyCostUsd || 0) > limits.monthlyCostUsd;
 }
 
 function downgradeRouteForEntitlement(route: AIRoute, limits: AIPlanLimits): { route: AIRoute; downgraded: boolean } {
@@ -823,6 +848,8 @@ async function recordAIAccounting(args: {
     providerFallback: boolean;
     providerFallbackReason: string | null;
     routeDowngraded: boolean;
+    ecoMode: boolean;
+    ecoModeReason: string | null;
     promptTruncated: boolean;
     webSearchDisabled: boolean;
 }) {
@@ -886,6 +913,8 @@ async function recordAIAccounting(args: {
             providerFallbackReason: args.providerFallbackReason,
             useWebSearch: !!args.genericContext?.useWebSearch,
             routeDowngraded: args.routeDowngraded,
+            ecoMode: args.ecoMode,
+            ecoModeReason: args.ecoModeReason,
             promptTruncated: args.promptTruncated,
             webSearchDisabled: args.webSearchDisabled,
             plan: args.aiSession.plan,
@@ -956,6 +985,8 @@ async function recordAIUsageFailed(args: {
     providerFallback: boolean;
     providerFallbackReason: string | null;
     routeDowngraded: boolean;
+    ecoMode: boolean;
+    ecoModeReason: string | null;
     promptTruncated: boolean;
     webSearchDisabled: boolean;
 }) {
@@ -1001,6 +1032,8 @@ async function recordAIUsageFailed(args: {
             providerFallback: args.providerFallback,
             providerFallbackReason: args.providerFallbackReason,
             routeDowngraded: args.routeDowngraded,
+            ecoMode: args.ecoMode,
+            ecoModeReason: args.ecoModeReason,
             promptTruncated: args.promptTruncated,
             webSearchDisabled: args.webSearchDisabled,
             plan: args.aiSession.plan,
@@ -2612,15 +2645,54 @@ Deno.serve(async (req) => {
         let providerFallbackReason = configuredRoute.providerFallbackReason;
 
         const estimatedInputTokens = estimatePromptTokens(systemPrompt + '\n' + userPrompt);
-        const estimatedRequestCostUsd = estimateCostUsd(route.model, estimatedInputTokens, maxTokens, 0);
-        const usageReservation = await reserveAIUsage({
+        let estimatedRequestCostUsd = estimateCostUsd(route.model, estimatedInputTokens, maxTokens, 0);
+        // Ambient (cacheable) insights stay inside cost budgets but do not
+        // consume the plan's request allowance — except explicit refreshes.
+        const countRequest = cacheTtlMs <= 0 || forceRefresh;
+        let usageReservation = await reserveAIUsage({
             aiSession,
             limits: planLimits,
             estimatedRequestCostUsd,
-            // Ambient (cacheable) insights stay inside cost budgets but do not
-            // consume the plan's request allowance — except explicit refreshes.
-            countRequest: cacheTtlMs <= 0 || forceRefresh,
+            countRequest,
         });
+
+        // ── Eco mode: user dollar caps degrade instead of blocking ────────
+        // The plan's request-count caps and the global cost caps stay hard
+        // stops; only the user's own soft cost cap triggers a downgrade. Web
+        // search is excluded because it requires the premium route — there is
+        // no cheaper model that can serve it.
+        let ecoMode = false;
+        let ecoModeReason: string | null = null;
+        const reservationReason = String(usageReservation.reason || '');
+        if (
+            !usageReservation.allowed
+            && (reservationReason === 'daily_cost' || reservationReason === 'monthly_cost')
+            && planSupportsEcoMode(planLimits)
+            && !useWebSearch
+        ) {
+            const ecoResolved = await resolveConfiguredRoute(ecoRouteForCost(route), planLimits, false);
+            if (ecoResolved.route) {
+                const ecoEstimate = estimateCostUsd(ecoResolved.route.model, estimatedInputTokens, maxTokens, 0);
+                const ecoReservation = await reserveAIUsage({
+                    aiSession,
+                    limits: {
+                        ...planLimits,
+                        dailyCostUsd: planLimits.degradedDailyCostUsd!,
+                        monthlyCostUsd: planLimits.degradedMonthlyCostUsd!,
+                    },
+                    estimatedRequestCostUsd: ecoEstimate,
+                    countRequest,
+                });
+                if (ecoReservation.allowed) {
+                    usageReservation = ecoReservation;
+                    ecoMode = true;
+                    ecoModeReason = reservationReason;
+                    route = ecoResolved.route;
+                    estimatedRequestCostUsd = ecoEstimate;
+                }
+            }
+        }
+
         if (!usageReservation.allowed) {
             await recordAIUsageDenied({
                 req,
@@ -2665,6 +2737,8 @@ Deno.serve(async (req) => {
                 providerFallback,
                 providerFallbackReason,
                 routeDowngraded: downgradedRoute.downgraded,
+                ecoMode,
+                ecoModeReason,
                 promptTruncated: promptClamp.truncated,
                 webSearchDisabled,
             });
@@ -2736,6 +2810,8 @@ Deno.serve(async (req) => {
             providerFallback,
             providerFallbackReason,
             routeDowngraded: downgradedRoute.downgraded,
+            ecoMode,
+            ecoModeReason,
             promptTruncated: promptClamp.truncated,
             webSearchDisabled,
         });
@@ -2799,6 +2875,8 @@ Deno.serve(async (req) => {
                     providerFallback,
                     providerFallbackReason,
                     routeDowngraded: downgradedRoute.downgraded,
+                    ecoMode,
+                    ecoModeReason,
                     promptTruncated: promptClamp.truncated,
                     webSearchDisabled,
                     plan: aiSession.plan,
