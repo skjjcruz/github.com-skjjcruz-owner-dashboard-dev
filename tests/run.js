@@ -841,6 +841,19 @@ test('session issuers share one entitlements helper (trialing counts)',
     }
   });
 
+test('league hub brand icon returns to the app front page, which stays put',
+  () => {
+    const app = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    // Owner ruling 2026-07-11: hub icon → landing.html (the app's condensed
+    // front page), NOT the full marketing site.
+    ok(app.includes("DHQ_HOME_URL = 'landing.html?home'"), 'hub icon must point at landing.html?home');
+    ok(landing.includes('STAY_HOME'), 'landing.html must honor ?home');
+    // A fresh OAuth return must never be hijacked by the existing-session
+    // redirect before the sync/repair completes.
+    ok(landing.includes('if (FRESH_OAUTH_RETURN) return;'), 'checkSession must yield to the OAuth callback');
+  });
+
 // ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════
