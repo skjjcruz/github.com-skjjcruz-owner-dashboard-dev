@@ -889,6 +889,33 @@
         const savedPlan = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')?.tier || 'pro';
         selectedPlan = savedPlan;
         patchProfile({ tier: savedPlan });
+        // The stored JWT was minted before checkout and still carries
+        // tier:'free' — without a re-mint the new subscriber reads as Scout
+        // for up to a day (fw-refresh-session only fires on day-old tokens).
+        // Re-mint now, retrying briefly because Stripe's webhook (which
+        // writes the subscription row) can land a few seconds after this
+        // redirect. Fire-and-forget: the funnel continues underneath.
+        (async function remintAfterCheckout() {
+          for (const delayMs of [0, 4000, 10000]) {
+            if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+            try {
+              const cur = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+              if (!cur?.token) return;
+              const resp = await fetch(`${FW_ONBOARD_SUPABASE_URL}/functions/v1/fw-refresh-session`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${cur.token}` },
+              });
+              if (!resp.ok) continue;
+              const data = await resp.json();
+              if (data?.token && data?.user?.id) {
+                localStorage.setItem(SESSION_KEY, JSON.stringify(
+                  Object.assign({}, cur, { token: data.token, user: Object.assign({}, cur.user || {}, data.user) })
+                ));
+                if (data.user.tier === 'pro') return; // entitlement landed
+              }
+            } catch { /* transient — next attempt */ }
+          }
+        })();
         showStep('2b'); // optional AI key step after payment
         return;
       }
