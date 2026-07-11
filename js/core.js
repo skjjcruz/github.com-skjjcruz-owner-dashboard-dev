@@ -151,11 +151,20 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         // Sandbox deploy unlocks every feature, including commissioner-only ones.
         if (typeof window.isSandbox === 'function' && window.isSandbox()) return 'commissioner';
 
-        // Owner override: these accounts get full (commissioner) access in every
-        // environment, including live — keyed on the current Sleeper username.
+        // Owner override: full (commissioner) access in every environment.
+        // Keyed on the SIGNED-IN APP ACCOUNT's email — not the connected
+        // Sleeper username, which the owner's own QA accounts also connect
+        // (that leak silently disabled all tier gating on test accounts the
+        // moment a league loaded). The Sleeper-username key applies only in
+        // legacy sleeper-only mode with no app session at all.
         try {
-            const _u = (window.OD?.getCurrentUsername?.() || '').toLowerCase();
-            if (FULL_ACCESS_USERNAMES.has(_u)) return 'commissioner';
+            const _sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
+            const _email = String(_sess?.user?.email || '').toLowerCase();
+            if (_email === 'steven.crusinberry@gmail.com') return 'commissioner';
+            if (!_sess?.token) {
+                const _u = (window.OD?.getCurrentUsername?.() || '').toLowerCase();
+                if (FULL_ACCESS_USERNAMES.has(_u)) return 'commissioner';
+            }
         } catch (e) { /* non-fatal */ }
 
         // shared/tier.js returns 'free' | 'trial' | 'paid'

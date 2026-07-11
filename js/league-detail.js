@@ -3231,7 +3231,7 @@
                     padding: '16px 0', zIndex: 100, transition: 'width 0.18s ease, transform 0.2s ease'
                 }}>
                     {/* Logo — click to go home */}
-                    <div className="wr-sidebar-brand" onClick={onBack} style={{ padding: '0 14px', marginBottom: sidebarCollapsed ? '10px' : '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} title="Back to Dynasty HQ home">
+                    <div className="wr-sidebar-brand" onClick={() => { window.location.href = window.App?.DHQ_HOME_URL || 'https://skjjcruz.github.io/DHQ-Web-Page/?home'; }} style={{ padding: '0 14px', marginBottom: sidebarCollapsed ? '10px' : '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} title="Back to the Dynasty HQ marketing page">
                       <img src={iconSrc} alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: '6px' }} onError={e => { e.target.style.display = 'none'; }} />
                       <div className="wr-sidebar-wordmark">
                         <div className="wr-wordmark" style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', lineHeight: 1.1 }}>DYNASTY HQ</div>
