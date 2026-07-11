@@ -877,6 +877,13 @@
     }
 
     // Handle Google redirect back: store session, then route to step 2.
+    // Captured before Supabase's client consumes the URL: a fresh OAuth return
+    // must always re-sync and replace any stored session — the old "skip if a
+    // token already exists" rule meant a stale or malformed saved session
+    // could never be repaired by signing in again.
+    const FRESH_OAUTH_RETURN =
+      (window.location.hash || '').indexOf('access_token=') !== -1 ||
+      /[?&]code=/.test(window.location.search || '');
     (async function handleOAuthCallback() {
       try {
         if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT) return;
@@ -887,10 +894,10 @@
         const user = data.session.user;
         const fallbackName = user.user_metadata?.full_name || user.user_metadata?.name || user.email;
         const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-        if (!existing?.token) {
+        let appSession = null;
+        if (FRESH_OAUTH_RETURN || !existing?.token) {
           // Exchange the Supabase OAuth token for a Dynasty HQ app session so the
           // user is registered in app_users and accepted by authenticated APIs.
-          let appSession = null;
           try {
             const res = await fetch(`${FW_API_BASE}/fw-oauth-sync`, {
               method: 'POST',
@@ -901,11 +908,18 @@
           } catch (syncErr) { console.warn('[WR] OAuth sync error:', syncErr); }
 
           if (appSession?.token) {
+            // Store the WHOLE user record — id/tier/products included. The
+            // shared client refuses account sessions without user.id, so
+            // dropping the id here is what locked every Google sign-in to
+            // the free tier once gating went live.
             localStorage.setItem(SESSION_KEY, JSON.stringify({
               token: appSession.token,
-              user: { email: appSession.user?.email || user.email, displayName: appSession.user?.displayName || fallbackName },
+              user: Object.assign({}, appSession.user || {}, {
+                email: appSession.user?.email || user.email,
+                displayName: appSession.user?.displayName || fallbackName,
+              }),
             }));
-          } else {
+          } else if (!existing?.token) {
             // Fallback: keep the raw Supabase token so sign-in still works even
             // if the sync endpoint is unavailable.
             localStorage.setItem(SESSION_KEY, JSON.stringify({
