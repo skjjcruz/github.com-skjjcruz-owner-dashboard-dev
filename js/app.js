@@ -627,6 +627,12 @@
                         setActiveTab('dashboard');
                         if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
                     } else if (league) {
+                        // Every successful entry claims the free slot — not
+                        // just picker clicks — so the one-league limit sees
+                        // the league the user actually lives in.
+                        if (freeTierEnforced() && !freeLeagueIdFor(allLeagues)) {
+                            AppStorage.set(FREE_LEAGUE_CHOICE_KEY, String(league.id));
+                        }
                         setActiveLeagueId(league.id);
                         setSelectedLeague(league);
                         // Legacy 'brief' tab folded into dashboard
@@ -671,6 +677,11 @@
             if (isLeagueLockedForTier(league, allLeagues)) {
                 if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
                 return;
+            }
+            // First entry through a restored URL (the normal path right after
+            // onboarding) claims the free slot, same as a picker click.
+            if (freeTierEnforced() && !freeLeagueIdFor(allLeagues)) {
+                AppStorage.set(FREE_LEAGUE_CHOICE_KEY, String(league.id));
             }
             isNavigatingRef.current = true;
             setActiveLeagueId(league.id);
