@@ -25,4 +25,8 @@ regexes = [
   # client-side storage keys, not credentials).
   '''wr_compare_h2h_v3_''',
   '''fw_pending_sleeper_v1''',
+  # RevenueCat PUBLIC SDK key (Apple). Public by design — it ships in the app
+  # binary and cannot move money or read accounts (the private .p8 In-App
+  # Purchase key and the REVENUECAT_WEBHOOK_AUTH secret stay server-side).
+  '''appl_kiqhxjGyAcGvGMIhXyHMnxHgMEp''',
 ]

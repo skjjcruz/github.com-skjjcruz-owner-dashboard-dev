@@ -835,6 +835,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="js/shared/shared-loader.js?v=20260531sandbox2"></script>
   <script>WRShared.load('supabase-client.js');</script>
+  <script src="js/billing.js?v=20260711iap1"></script>
   <script>
     // ═══════════════════════════════════════════════════════
     // CONFIG
@@ -1050,6 +1051,28 @@
       if (!token) {
         alertEl.className = 'alert alert-error show';
         alertEl.textContent = 'Session expired. Please sign in again.';
+        return;
+      }
+
+      // iOS app: digital subscriptions must go through Apple In-App Purchase
+      // (App Store guideline 3.1.1) — and the RevenueCat purchase is what the
+      // fw-revenuecat-webhook mirrors into subscriptions. Web keeps Stripe.
+      if (window.DHQBilling?.available()) {
+        btn.disabled = true;
+        btn.textContent = 'Opening App Store purchase…';
+        alertEl.className = 'alert';
+        const result = await window.DHQBilling.purchase(selectedProBilling === 'annual' ? 'annual' : 'monthly');
+        if (result.ok) {
+          patchProfile({ tier: 'pro', billing: selectedProBilling, subscribed: true });
+          showStep('2b');
+          return;
+        }
+        btn.disabled = false;
+        btn.textContent = 'Proceed to Secure Checkout →';
+        if (!result.cancelled) {
+          alertEl.className = 'alert alert-error show';
+          alertEl.textContent = result.error || 'Purchase failed. You have not been charged.';
+        }
         return;
       }
 
