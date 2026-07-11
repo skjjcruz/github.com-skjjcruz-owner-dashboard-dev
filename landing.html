@@ -41,7 +41,11 @@
             var b64 = hs[1].replace(/-/g, '+').replace(/_/g, '/');
             while (b64.length % 4) b64 += '=';
             var handed = JSON.parse(decodeURIComponent(escape(window.atob(b64))));
-            if (handed && handed.token) {
+            // Only ingest complete sessions. A stale cached copy of the
+            // marketing page can still hand off records without user.id (the
+            // Jul 9–11 sign-in bug shape), which the shared client resolves
+            // to the free tier — storing one would re-poison this origin.
+            if (handed && handed.token && handed.user && handed.user.id) {
               // isNew is a one-shot routing hint, not session state — consume
               // it here so later visits don't re-trigger onboarding.
               handedIsNew = handed.isNew === true;
@@ -887,6 +891,24 @@
     const FRESH_OAUTH_RETURN =
       (window.location.hash || '').indexOf('access_token=') !== -1 ||
       /[?&]code=/.test(window.location.search || '');
+
+    // Best-effort JWT expiry check (mirrors the shared client): true only when
+    // a decodable `exp` claim is in the past (30s skew).
+    function jwtExpired(token) {
+      try {
+        const part = String(token).split('.')[1];
+        if (!part) return false;
+        const claims = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+        if (typeof claims?.exp !== 'number') return false;
+        return Date.now() >= claims.exp * 1000 - 30 * 1000;
+      } catch { return false; }
+    }
+    // A session is only worth acting on when it can pass the shared client's
+    // checks in the app: token present, not expired, and user.id attached
+    // (id-less sessions — the Jul 9–11 sign-in bug shape — resolve free).
+    function sessionHealthy(s) {
+      return !!(s?.token && s?.user?.id && !jwtExpired(s.token));
+    }
     // Cover the OAuth landing bounce with a calm full-screen state instead of
     // flashing the marketing page mid-redirect. Removed only on paths that
     // stay on this page; successful sign-ins navigate away underneath it.
@@ -911,7 +933,10 @@
         const fallbackName = user.user_metadata?.full_name || user.user_metadata?.name || user.email;
         const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
         let appSession = null;
-        if (FRESH_OAUTH_RETURN || !existing?.token) {
+        // Re-sync on a fresh OAuth return, when nothing usable is stored, and
+        // also when the stored session is damaged (no user.id / expired) —
+        // a lingering Supabase session is exactly what lets us repair those.
+        if (FRESH_OAUTH_RETURN || !sessionHealthy(existing)) {
           // Exchange the Supabase OAuth token for a Dynasty HQ app session so the
           // user is registered in app_users and accepted by authenticated APIs.
           try {
@@ -923,7 +948,7 @@
             if (res.ok) appSession = await res.json();
           } catch (syncErr) { console.warn('[WR] OAuth sync error:', syncErr); }
 
-          if (appSession?.token) {
+          if (appSession?.token && appSession?.user?.id) {
             // Store the WHOLE user record — id/tier/products included. The
             // shared client refuses account sessions without user.id, so
             // dropping the id here is what locked every Google sign-in to
@@ -931,17 +956,20 @@
             localStorage.setItem(SESSION_KEY, JSON.stringify({
               token: appSession.token,
               user: Object.assign({}, appSession.user || {}, {
-                email: appSession.user?.email || user.email,
-                displayName: appSession.user?.displayName || fallbackName,
+                email: appSession.user.email || user.email,
+                displayName: appSession.user.displayName || fallbackName,
               }),
             }));
-          } else if (!existing?.token) {
-            // Fallback: keep the raw Supabase token so sign-in still works even
-            // if the sync endpoint is unavailable.
-            localStorage.setItem(SESSION_KEY, JSON.stringify({
-              token: data.session.access_token,
-              user: { email: user.email, displayName: fallbackName },
-            }));
+          } else if (!sessionHealthy(existing)) {
+            // The sync failed and there is no healthy session to fall back
+            // on. Do NOT store the raw Supabase token: a session without
+            // user.id is refused by the shared client and reads as free
+            // tier — the exact shape that locked Google sign-ins to Scout.
+            // Stay here so the user can retry.
+            dropOAuthOverlay();
+            trackLandingEvent('oauth_sync_failed', { provider: 'google' });
+            showAlert('error', 'Sign-in hit a snag finishing your account setup. Please try again in a moment.');
+            return;
           }
         }
         trackLandingEvent('oauth_succeeded', { provider: 'google' });
@@ -1011,10 +1039,37 @@
         }
         if (FRESH_OAUTH_RETURN) return; // the OAuth callback owns this visit
         const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-        if (session?.token) {
+        if (!session?.token) return;
+        if (sessionHealthy(session)) {
           trackLandingEvent('landing_existing_session_redirected');
           window.location.href = nextAfterAuth();
+          return;
         }
+        // Damaged (no user.id) or expired session: repair it through
+        // fw-refresh-session before entering the app — entering with it
+        // shows the account as free tier. Unrepairable ones are cleared so
+        // the normal sign-in flow is the recovery path.
+        (async () => {
+          if (!jwtExpired(session.token)) {
+            try {
+              const res = await fetch(`${FW_API_BASE}/fw-refresh-session`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${session.token}`, 'apikey': FW_ANON_KEY },
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data?.token && data?.user?.id) {
+                  localStorage.setItem(SESSION_KEY, JSON.stringify({ token: data.token, user: data.user }));
+                  trackLandingEvent('landing_session_repaired');
+                  window.location.href = nextAfterAuth();
+                  return;
+                }
+              }
+            } catch {}
+          }
+          localStorage.removeItem(SESSION_KEY);
+          trackLandingEvent('landing_dead_session_cleared');
+        })();
       } catch {}
     })();
 

@@ -6,8 +6,10 @@
 (function () {
   'use strict';
 
-  // TODO: Replace with live Stripe Checkout URL when payments are configured
-  const STRIPE_URL = null;
+  // Checkout runs through the onboarding funnel (plan picker → Stripe via
+  // fw-create-checkout), which needs the user's session token — a static
+  // payment link can't attach the subscription to the right account.
+  const CHECKOUT_URL = 'onboarding.html?manage=true';
   const INTEREST_KEY = 'dhq_pro_interest';
 
   const PRO_FEATURES = [
@@ -94,13 +96,9 @@
       metadata: { source: 'pro_launch', tier: typeof getTier === 'function' ? getTier() : 'unknown' },
     });
 
-    if (STRIPE_URL) {
-      window.open(STRIPE_URL, '_blank');
-      return;
-    }
-
-    const toast = typeof showToast === 'function' ? showToast : msg => alert(msg);
-    toast('Subscription coming soon — you\'ll be the first to know!');
+    // Same tab: the funnel is part of the app, and every page that loads
+    // this module lives in the same directory as onboarding.html.
+    window.location.href = CHECKOUT_URL;
   }
 
   // ── DOM ────────────────────────────────────────────────────────
