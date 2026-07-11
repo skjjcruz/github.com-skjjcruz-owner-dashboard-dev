@@ -819,6 +819,29 @@ test('marks DHQ as degraded when LI loaded but owned assets are unvalued',
   });
 
 // ══════════════════════════════════════════════════════════════════
+// Sign-in session contract (source pins — full suite in billing-schema.js)
+// ══════════════════════════════════════════════════════════════════
+console.log('\n\nSign-in session contract');
+
+test('google oauth callback stores the full user record (id included)',
+  () => {
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    // getAppSession() refuses sessions without user.id — rebuilding the user
+    // object as {email, displayName} silently locks Google accounts to free.
+    ok(landing.includes('FRESH_OAUTH_RETURN'), 'oauth callback must re-sync on fresh returns');
+    ok(landing.includes('Object.assign({}, appSession.user || {}'), 'oauth callback must keep the whole user record');
+  });
+
+test('session issuers share one entitlements helper (trialing counts)',
+  () => {
+    for (const fn of ['fw-signup', 'fw-signin', 'fw-oauth-sync', 'fw-refresh-session']) {
+      const src = fs.readFileSync(path.join(ROOT, 'supabase', 'functions', fn, 'index.ts'), 'utf8');
+      ok(src.includes("from '../_shared/entitlements.ts'"), `${fn} must use _shared/entitlements.ts`);
+      ok(!src.includes(".eq('status', 'active')"), `${fn} must not drop trialing subscriptions`);
+    }
+  });
+
+// ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════
 console.log('\n');

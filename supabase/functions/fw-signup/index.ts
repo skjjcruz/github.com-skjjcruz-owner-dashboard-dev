@@ -7,11 +7,10 @@
  * Returns: { token, user: { id, email, displayName } }
  *
  * Uses Web Crypto PBKDF2 for password hashing (no external deps).
- * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+ * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { SignJWT } from 'npm:jose';
 import {
   auditEvent,
   checkRateLimit,
@@ -20,10 +19,10 @@ import {
   json,
   normalizeEmail,
 } from '../_shared/security.ts';
+import { expandProductSlugs, mintAppSessionJWT } from '../_shared/entitlements.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const JWT_SECRET           = Deno.env.get('JWT_SECRET')!;
 const VALID_PRODUCT_SLUGS  = new Set(['war_room', 'dynast_hq', 'bundle', 'dhq']);
 
 Deno.serve(async (req) => {
@@ -118,7 +117,8 @@ Deno.serve(async (req) => {
     }
 
     // ── Issue JWT ─────────────────────────────────────────────
-    const token = await mintJWT(newUser.id, newUser.email, 'free', [productSlug], newUser.session_version || 1);
+    const products = expandProductSlugs([productSlug]);
+    const token = await mintAppSessionJWT({ userId: newUser.id, email: newUser.email, tier: 'free', products, sessionVersion: newUser.session_version || 1 });
     await auditEvent(admin, req, 'fw_signup', 'success', { userId: newUser.id, email: normalizedEmail }, { productSlug });
 
     return json(req, {
@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
         email:       newUser.email,
         displayName: newUser.display_name,
         tier:        'free',
-        products:    [productSlug],
+        products,
       },
     });
 
@@ -151,23 +151,6 @@ async function hashPassword(password: string): Promise<string> {
   );
   const toHex = (buf: Uint8Array) => Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
   return `${toHex(salt)}:${toHex(new Uint8Array(bits))}`;
-}
-
-async function mintJWT(
-  userId: string,
-  email: string,
-  tier: string,
-  products: string[],
-  sessionVersion: number,
-): Promise<string> {
-  const secret = new TextEncoder().encode(JWT_SECRET);
-  return new SignJWT({ role: 'authenticated', app_metadata: { user_id: userId, email, tier, products, session_version: sessionVersion } })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuer(SUPABASE_URL + '/auth/v1')
-    .setSubject(userId)
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(secret);
 }
 
 // QA accounts that reset to a blank slate on every sign-up. Comma-separated

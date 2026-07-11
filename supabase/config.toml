@@ -34,6 +34,9 @@ verify_jwt = false
 [functions.fw-profile]
 verify_jwt = false
 
+[functions.fw-refresh-session]
+verify_jwt = false
+
 [functions.fw-request-password-reset]
 verify_jwt = false
 

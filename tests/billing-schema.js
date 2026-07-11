@@ -287,6 +287,54 @@ test('new accounts route through the onboarding plan funnel', () => {
   ], 'landing new-user routing');
 });
 
+test('every session issuer resolves entitlements through the shared helper', () => {
+  const entitlements = fs.readFileSync(
+    path.join(ROOT, 'supabase', 'functions', '_shared', 'entitlements.ts'),
+    'utf8'
+  );
+  // Trial subscriptions count as entitled and 'dhq' unlocks both apps —
+  // fw-profile learned both long ago while fw-signin/fw-oauth-sync kept
+  // stale inline copies, so Pro-trial users signed in as free.
+  hasEvery(entitlements, [
+    "['active', 'trialing']",
+    "slug === 'bundle' || slug === 'dhq'",
+    'mintAppSessionJWT',
+  ], 'entitlements helper contract');
+  for (const fn of ['fw-signup', 'fw-signin', 'fw-oauth-sync', 'fw-refresh-session']) {
+    const src = fs.readFileSync(path.join(ROOT, 'supabase', 'functions', fn, 'index.ts'), 'utf8');
+    ok(src.includes("from '../_shared/entitlements.ts'"), `${fn} must use the shared entitlements helper`);
+    ok(!src.includes(".eq('status', 'active')"), `${fn} must not filter subscriptions with an inline active-only query`);
+    ok(!src.includes('function mintJWT'), `${fn} must not carry its own JWT mint (claims drift)`);
+  }
+});
+
+test('fw-refresh-session slides live sessions and is deployed', () => {
+  const refresh = fs.readFileSync(
+    path.join(ROOT, 'supabase', 'functions', 'fw-refresh-session', 'index.ts'),
+    'utf8'
+  );
+  hasEvery(refresh, [
+    'requireActiveAppSession',
+    'resolveEntitlements',
+    'mintAppSessionJWT',
+  ], 'refresh endpoint contract');
+  ok(configToml.includes('[functions.fw-refresh-session]'), 'fw-refresh-session must pin verify_jwt in config.toml');
+  ok(deployWorkflow.includes('supabase functions deploy fw-refresh-session'), 'fw-refresh-session must be in the deploy list');
+});
+
+test('google oauth stores the full user record and re-syncs on fresh returns', () => {
+  // The shared client refuses account sessions without user.id — a session
+  // saved as {email, displayName} only silently locks the account to the
+  // free tier. The OAuth callback must store fw-oauth-sync's whole user
+  // object and must not skip the sync when a stale session already exists.
+  hasEvery(landingSource, [
+    'FRESH_OAUTH_RETURN',
+    'Object.assign({}, appSession.user || {}',
+  ], 'landing oauth session contract');
+  ok(!landingSource.includes("user: { email: appSession.user?.email || user.email, displayName: appSession.user?.displayName || fallbackName }"),
+    'landing oauth callback must not rebuild the user object without its id');
+});
+
 test('onboarding requests the live dhq product with a billing period', () => {
   hasEvery(onboardingSource, [
     "productSlug: 'dhq'",

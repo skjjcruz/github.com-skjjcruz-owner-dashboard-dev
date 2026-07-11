@@ -21,7 +21,6 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { SignJWT } from 'npm:jose';
 import {
   auditEvent,
   bearerToken,
@@ -31,11 +30,11 @@ import {
   json,
   normalizeEmail,
 } from '../_shared/security.ts';
+import { mintAppSessionJWT, resolveEntitlements } from '../_shared/entitlements.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const JWT_SECRET           = Deno.env.get('JWT_SECRET')!;
-const VALID_PRODUCT_SLUGS  = new Set(['war_room', 'dynast_hq', 'bundle']);
+const VALID_PRODUCT_SLUGS  = new Set(['war_room', 'dynast_hq', 'bundle', 'dhq']);
 
 Deno.serve(async (req) => {
   const options = handleOptions(req);
@@ -135,17 +134,13 @@ Deno.serve(async (req) => {
     }
 
     // ── Resolve products + tier from subscriptions ────────────
-    const { data: subs } = await admin
-      .from('subscriptions')
-      .select('product_slug, tier, status')
-      .eq('user_id', appUser.id);
-    const active   = (subs ?? []).filter((s: any) => s.status === 'active');
-    const products = active.map((s: any) => s.product_slug);
-    const tier     = active.some((s: any) => s.tier === 'pro') ? 'pro' : 'free';
+    // (active + trialing, dhq/bundle expanded — shared with fw-signin,
+    // fw-profile, and fw-refresh-session so trial users never sign in free)
+    const { tier, products } = await resolveEntitlements(admin, appUser.id);
     if (!products.length) products.push(productSlug);
 
     const sessionVersion = Number(appUser.session_version || 1);
-    const token = await mintJWT(appUser.id, appUser.email, tier, products, sessionVersion);
+    const token = await mintAppSessionJWT({ userId: appUser.id, email: appUser.email, tier, products, sessionVersion });
 
     await auditEvent(admin, req, 'fw_oauth_sync', 'success', { userId: appUser.id, email: normalizedEmail }, { provider, isNew });
 
@@ -170,23 +165,6 @@ Deno.serve(async (req) => {
 });
 
 // ── Helpers (mirrors fw-signup) ───────────────────────────────
-
-async function mintJWT(
-  userId: string,
-  email: string,
-  tier: string,
-  products: string[],
-  sessionVersion: number,
-): Promise<string> {
-  const secret = new TextEncoder().encode(JWT_SECRET);
-  return new SignJWT({ role: 'authenticated', app_metadata: { user_id: userId, email, tier, products, session_version: sessionVersion } })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuer(SUPABASE_URL + '/auth/v1')
-    .setSubject(userId)
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(secret);
-}
 
 // QA accounts that reset to a blank slate on every OAuth sign-in.
 // Comma-separated emails in TEST_RESET_EMAILS; empty/unset disables.

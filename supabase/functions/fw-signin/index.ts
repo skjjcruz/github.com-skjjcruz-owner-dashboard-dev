@@ -7,11 +7,10 @@
  * Returns: { token, user: { id, email, displayName, tier, products[] } }
  *
  * Uses Web Crypto PBKDF2 for password verification (no external deps).
- * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+ * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { SignJWT } from 'npm:jose';
 import {
   auditEvent,
   checkRateLimit,
@@ -21,10 +20,10 @@ import {
   json,
   normalizeEmail,
 } from '../_shared/security.ts';
+import { mintAppSessionJWT, resolveEntitlements } from '../_shared/entitlements.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const JWT_SECRET           = Deno.env.get('JWT_SECRET')!;
 
 Deno.serve(async (req) => {
   const options = handleOptions(req);
@@ -68,30 +67,20 @@ Deno.serve(async (req) => {
       return json(req, { error: 'Invalid email or password.' }, 401);
     }
 
-    // ── Fetch active subscriptions ────────────────────────────
-    const { data: subs, error: subsErr } = await admin
-      .from('subscriptions')
-      .select('product_slug, tier, status')
-      .eq('user_id', user.id)
-      .eq('status', 'active');
-
-    if (subsErr) {
+    // ── Resolve entitlements (active + trialing, dhq-aware) ───
+    let tier: 'pro' | 'free';
+    let products: string[];
+    try {
+      ({ tier, products } = await resolveEntitlements(admin, user.id));
+    } catch (subsErr) {
       console.error('fw-signin subscriptions error:', subsErr);
-      return json(req, { error: `Subscriptions query failed: ${subsErr.message} (${subsErr.code})` }, 500);
+      return json(req, { error: subsErr instanceof Error ? subsErr.message : String(subsErr) }, 500);
     }
-
-    // Expand 'bundle' → both individual products so app access checks work
-    const products = [...new Set(
-      (subs ?? []).flatMap((s) =>
-        s.product_slug === 'bundle' ? ['war_room', 'dynast_hq'] : [s.product_slug]
-      )
-    )];
-    const tier     = (subs ?? []).some((s) => s.tier === 'pro') ? 'pro' : 'free';
 
     // ── Issue JWT ─────────────────────────────────────────────
     let token: string;
     try {
-      token = await mintJWT(user.id, user.email, tier, products, user.session_version || 1);
+      token = await mintAppSessionJWT({ userId: user.id, email: user.email, tier, products, sessionVersion: user.session_version || 1 });
     } catch (jwtErr) {
       console.error('fw-signin JWT error:', jwtErr);
       return json(req, { error: `JWT minting failed: ${jwtErr instanceof Error ? jwtErr.message : String(jwtErr)}` }, 500);
@@ -143,19 +132,3 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
   }
 }
 
-async function mintJWT(
-  userId: string,
-  email: string,
-  tier: string,
-  products: string[],
-  sessionVersion: number,
-): Promise<string> {
-  const secret = new TextEncoder().encode(JWT_SECRET);
-  return new SignJWT({ role: 'authenticated', app_metadata: { user_id: userId, email, tier, products, session_version: sessionVersion } })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuer(SUPABASE_URL + '/auth/v1')
-    .setSubject(userId)
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(secret);
-}
