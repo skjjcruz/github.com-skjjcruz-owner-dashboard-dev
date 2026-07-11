@@ -49,7 +49,9 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['md', 'lg', 'tall', 'xl', 'xxl'],
         clickTarget: {},
-        pro: true, proFeature: 'briefing_reasoning', formatFlag: null,
+        // Free on purpose (owner call 2026-07-11): the brief is the hook that
+        // shows free users what Alex can do and pulls them toward Pro.
+        pro: false, proFeature: 'briefing_reasoning', formatFlag: null,
     },
     'roster-pulse': {
         label: 'Roster Pulse',

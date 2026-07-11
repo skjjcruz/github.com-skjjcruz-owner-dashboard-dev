@@ -310,7 +310,18 @@
         const draftNavTouchedRef = useRef(false);
         // setDraftView wrapper for click-driven navigation (nav strip, jump-to-board
         // shortcuts). Programmatic view changes keep calling setDraftView directly.
-        const navDraftView = (view) => { draftNavTouchedRef.current = true; setDraftView(view); };
+        // Mock Draft Center and Follow-Live are Pro rooms (owner call
+        // 2026-07-11); free users get the upgrade page instead.
+        const draftViewLocked = (view) =>
+            (view === 'mock' || view === 'live')
+            && typeof window.wrIsPro === 'function' && !window.wrIsPro();
+        const navDraftView = (view) => {
+            if (draftViewLocked(view)) {
+                if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
+                return;
+            }
+            draftNavTouchedRef.current = true; setDraftView(view);
+        };
 
         useEffect(() => {
             const openPickFocus = (event) => {
@@ -2470,6 +2481,10 @@
             live: 'Live Sleeper mirror with your board, roster build, and opponent intel.'
         };
         const launchLiveDraft = () => {
+            if (draftViewLocked('live')) {
+                if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
+                return;
+            }
             draftNavTouchedRef.current = true; // always click-driven (banner/strip buttons)
             setLiveAutoStartToken(Date.now());
             setDraftView('live');

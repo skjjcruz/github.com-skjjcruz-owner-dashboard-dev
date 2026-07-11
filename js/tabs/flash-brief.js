@@ -429,12 +429,11 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // ── FREE TEASER (all sizes) — Scout Today-brief precedent ────────
-    // Free sees the greeting + section titles with counts only: the tier
-    // read (tierMsg/briefText) and the action recs (waiver target, trade
-    // steers, CTAs) never reach the DOM. Defense-in-depth behind the
-    // dashboard registry gate (WIDGET_MODULES['intel-brief'].pro).
-    const briefPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+    // ── Intel Brief is FREE for every tier (owner call 2026-07-11) ───
+    // The full brief — tier read, action recs, CTAs — renders for free
+    // users as the showcase that pulls them toward Pro. The teaser branch
+    // below is kept for a future re-gate but never taken.
+    const briefPro = true;
     if (!briefPro) {
         const tight = size === 'md' || size === 'lg' || size === 'xl';
         const teaserRows = [
