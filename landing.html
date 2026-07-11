@@ -700,6 +700,9 @@
     // ?signout — arrive here from the DHQ logo to land on the sign-in page and
     // stay put. Suppresses the auto-redirects below and clears the session.
     const FORCE_SIGNOUT = new URLSearchParams(window.location.search).has('signout');
+    // ?home: deliberate visit to this page (league hub brand icon) — stay here
+    // instead of bouncing a signed-in visitor straight back into the app.
+    const STAY_HOME = new URLSearchParams(window.location.search).has('home');
 
     // Supabase client — used only for lightweight landing analytics below.
     let _sbClient = null;
@@ -884,13 +887,26 @@
     const FRESH_OAUTH_RETURN =
       (window.location.hash || '').indexOf('access_token=') !== -1 ||
       /[?&]code=/.test(window.location.search || '');
+    // Cover the OAuth landing bounce with a calm full-screen state instead of
+    // flashing the marketing page mid-redirect. Removed only on paths that
+    // stay on this page; successful sign-ins navigate away underneath it.
+    let _oauthOverlay = null;
+    if (FRESH_OAUTH_RETURN) {
+      _oauthOverlay = document.createElement('div');
+      _oauthOverlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#0a0c10;display:flex;align-items:center;justify-content:center;color:#e6e9ed;font-family:"JetBrains Mono",monospace;font-size:.85rem;letter-spacing:.12em;text-transform:uppercase';
+      _oauthOverlay.textContent = 'Signing you in…';
+      document.body.appendChild(_oauthOverlay);
+    }
+    function dropOAuthOverlay() {
+      try { if (_oauthOverlay) { _oauthOverlay.remove(); _oauthOverlay = null; } } catch {}
+    }
     (async function handleOAuthCallback() {
       try {
-        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT) return;
+        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT || STAY_HOME) { dropOAuthOverlay(); return; }
         const db = getSbClient();
-        if (!db) return;
+        if (!db) { dropOAuthOverlay(); return; }
         const { data } = await db.auth.getSession();
-        if (!data?.session) return;
+        if (!data?.session) { dropOAuthOverlay(); return; }
         const user = data.session.user;
         const fallbackName = user.user_metadata?.full_name || user.user_metadata?.name || user.email;
         const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
@@ -932,7 +948,7 @@
         // First-ever sign-in (fw-oauth-sync just created the account): route
         // through onboarding for plan selection instead of straight in.
         window.location.href = (appSession && appSession.isNew === true) ? 'onboarding.html' : nextAfterAuth();
-      } catch (e) { console.warn('[WR] OAuth callback error:', e); }
+      } catch (e) { dropOAuthOverlay(); console.warn('[WR] OAuth callback error:', e); }
     })();
 
     // \u2500\u2500 Forgot password \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -978,7 +994,22 @@
 
     (function checkSession() {
       try {
-        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT) return;
+        // STAY_HOME (?home): the league hub's brand icon lands here on
+        // purpose — a signed-in visitor must be able to look at this page
+        // without being bounced straight back into the app. Their way back
+        // in is the nav button, which flips from "Sign in" to "Open app".
+        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT || STAY_HOME) {
+          try {
+            const staySession = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+            const navBtn = document.getElementById('navSignin');
+            if (STAY_HOME && staySession?.token && navBtn) {
+              navBtn.textContent = 'Open app';
+              navBtn.onclick = () => { window.location.href = nextAfterAuth(); };
+            }
+          } catch {}
+          return;
+        }
+        if (FRESH_OAUTH_RETURN) return; // the OAuth callback owns this visit
         const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
         if (session?.token) {
           trackLandingEvent('landing_existing_session_redirected');
