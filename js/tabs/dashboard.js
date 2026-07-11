@@ -794,6 +794,21 @@ function DashboardPanel({
         if (typeof window.IntelligenceBriefWidget !== 'function') {
             return <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)' }}>Intelligence brief unavailable</div>;
         }
+        // Never grade a half-loaded league: until league intelligence is built
+        // and player scores exist, a fresh sign-in would compute the tier from
+        // a partial snapshot (wrong grade that later flips). Hold a reading
+        // state instead — the dashboard re-renders when the data lands.
+        const briefDataReady = !!(window.App?.LI?.builtAt)
+            && Object.keys(window.App?.LI?.playerScores || {}).length > 0
+            && !!(myRoster?.players?.length);
+        if (!briefDataReady) {
+            return (
+                <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--silver)' }}>
+                    <span style={{ fontSize: '1.1rem' }}>🧠</span>
+                    <span style={{ fontSize: 'var(--text-label, 0.8rem)', fontFamily: 'var(--font-mono)' }}>Alex is reading your league…</span>
+                </div>
+            );
+        }
         return React.createElement(window.IntelligenceBriefWidget, {
             size,
             myRoster,
