@@ -281,10 +281,19 @@ test('new accounts route through the onboarding plan funnel', () => {
   ok(oauthSync.includes('isNew,'), 'fw-oauth-sync must expose isNew so clients can route first sign-ins');
   hasEvery(landingSource, [
     'handedIsNew',
-    "signup ? 'onboarding.html'",
+    'const freshStart = signup || data.isNew === true;',
+    "freshStart ? 'onboarding.html'",
     "appSession.isNew === true) ? 'onboarding.html'",
     "handedIsNew) { window.location.replace('onboarding.html')",
   ], 'landing new-user routing');
+  const signinSource = fs.readFileSync(
+    path.join(ROOT, 'supabase', 'functions', 'fw-signin', 'index.ts'),
+    'utf8'
+  );
+  ok(signinSource.includes('testResetEmails().has(normalizedEmail)'),
+    'fw-signin must reset QA accounts on sign-in');
+  ok(signinSource.indexOf('testResetEmails().has(normalizedEmail)') > signinSource.indexOf('await verifyPassword(password'),
+    'QA reset must only run after password verification succeeds');
 });
 
 test('onboarding requests the live dhq product with a billing period', () => {

@@ -68,6 +68,31 @@ Deno.serve(async (req) => {
       return json(req, { error: 'Invalid email or password.' }, 401);
     }
 
+    // ── QA reset accounts start fresh on EVERY join ───────────
+    // Designated test emails (TEST_RESET_EMAILS secret) get a blank slate on
+    // sign-in as well as sign-up: credentials are kept, but the account row
+    // is recreated empty so the full onboarding funnel runs again. Only
+    // reached after password verification succeeds.
+    let isNew = false;
+    if (testResetEmails().has(normalizedEmail)) {
+      await admin.from('app_users').delete().eq('id', user.id);
+      const { data: recreated, error: recreateErr } = await admin
+        .from('app_users')
+        .insert({ email: normalizedEmail, password_hash: user.password_hash, display_name: user.display_name })
+        .select('id, email, display_name, session_version')
+        .single();
+      if (recreateErr || !recreated) {
+        console.error('fw-signin test reset error:', recreateErr);
+        return json(req, { error: 'Could not reset test account.' }, 500);
+      }
+      await admin.from('subscriptions').insert({ user_id: recreated.id, product_slug: 'war_room', tier: 'free', status: 'active' });
+      await auditEvent(admin, req, 'fw_signin', 'success', { userId: recreated.id, email: normalizedEmail }, { reason: 'test_account_reset' });
+      user.id = recreated.id;
+      user.display_name = recreated.display_name;
+      user.session_version = recreated.session_version;
+      isNew = true;
+    }
+
     // ── Fetch active subscriptions ────────────────────────────
     const { data: subs, error: subsErr } = await admin
       .from('subscriptions')
@@ -103,6 +128,9 @@ Deno.serve(async (req) => {
 
     return json(req, {
       token,
+      // True only for QA reset accounts (fresh slate this sign-in): clients
+      // route isNew sessions into the onboarding funnel.
+      isNew,
       user: {
         id:          user.id,
         email:       user.email,
@@ -158,4 +186,15 @@ async function mintJWT(
     .setIssuedAt()
     .setExpirationTime('7d')
     .sign(secret);
+}
+
+// QA accounts that reset to a blank slate on every sign-in.
+// Comma-separated emails in TEST_RESET_EMAILS; empty/unset disables.
+function testResetEmails(): Set<string> {
+  return new Set(
+    (Deno.env.get('TEST_RESET_EMAILS') || '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
 }

@@ -849,10 +849,12 @@
         }
         localStorage.setItem(SESSION_KEY, JSON.stringify(data));
         trackLandingEvent(signup ? 'signup_succeeded' : 'signin_succeeded');
-        showAlert('success', signup ? 'Account ready \u2014 pick your plan\u2026' : 'Welcome back\u2026');
-        // New accounts go through the full onboarding funnel (plan first);
-        // returning sign-ins resume wherever they left off.
-        setTimeout(() => { window.location.href = signup ? 'onboarding.html' : nextAfterAuth(); }, 600);
+        // Fresh-slate sessions go through the full onboarding funnel (plan
+        // first): every signup, plus QA reset accounts whose sign-IN also
+        // starts over (fw-signin returns isNew for TEST_RESET_EMAILS).
+        const freshStart = signup || data.isNew === true;
+        showAlert('success', freshStart ? 'Account ready \u2014 pick your plan\u2026' : 'Welcome back\u2026');
+        setTimeout(() => { window.location.href = freshStart ? 'onboarding.html' : nextAfterAuth(); }, 600);
       } catch (err) {
         trackLandingEvent(signup ? 'signup_failed' : 'signin_failed', { reason: 'network' });
         showAlert('error', 'Network error: ' + (err?.message || String(err)));
