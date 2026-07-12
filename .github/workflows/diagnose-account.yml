@@ -31,7 +31,12 @@ jobs:
               req = urllib.request.Request(
                   endpoint,
                   data=json.dumps({'query': sql}).encode(),
-                  headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json',
+                      'User-Agent': 'ReconAI-WarRoom-GitHub-Actions',
+                  },
                   method='POST')
               with urllib.request.urlopen(req) as resp:
                   return json.loads(resp.read().decode())
