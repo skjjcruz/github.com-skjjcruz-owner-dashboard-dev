@@ -46,11 +46,13 @@
     window.App.WR_DISCORD_URL = WR_DISCORD_URL;
     window.WR_DISCORD_URL = WR_DISCORD_URL;
 
-    // The league hub's brand icon goes to the marketing page. ?home keeps a
-    // signed-in visitor on the page instead of bouncing them straight back
-    // into the app. Owner ruling 2026-07-12. Flip to
-    // https://dhqfootball.com/?home at the domain cutover.
-    const DHQ_HOME_URL = 'https://skjjcruz.github.io/DHQ-Web-Page/?home';
+    // The league hub's brand icon goes to the app's own front page
+    // (landing.html). Owner ruling 2026-07-12 (supersedes the same-day
+    // marketing-page ruling): the separate DHQ-Web-Page marketing site is
+    // SIDELINED — still deployed at its own URL, but nothing links to it;
+    // landing.html is the single face for browser and app. ?home keeps its
+    // signed-in redirect from bouncing straight back into the app.
+    const DHQ_HOME_URL = 'landing.html?home';
     window.App.DHQ_HOME_URL = DHQ_HOME_URL;
 
     // ── Owner default: bigloco's locked-in MFL franchise in the "MLS Dynasty
