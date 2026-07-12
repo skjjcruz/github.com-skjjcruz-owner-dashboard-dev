@@ -1,0 +1,84 @@
+name: Diagnose sign-in accounts (read-only)
+
+# Manually-dispatched, READ-ONLY diagnostic for the sign-in/tier pipeline.
+# Runs a FIXED set of SELECT queries through the Supabase Management API and
+# prints masked results (emails hashed, never echoed) so account/subscription
+# state and recent auth audit events can be inspected without dashboard
+# access. The queries are hardcoded — no inputs — so this workflow cannot be
+# steered into arbitrary SQL from the dispatch UI.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    if: github.repository == 'skjjcruz/github.com-skjjcruz-owner-dashboard-dev'
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Account + subscription + audit snapshot
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys, urllib.request
+
+          token = os.environ.get('SUPABASE_ACCESS_TOKEN', '')
+          if not token:
+              print('SUPABASE_ACCESS_TOKEN missing', file=sys.stderr); sys.exit(1)
+          endpoint = 'https://api.supabase.com/v1/projects/sxshiqyxhhifvtfqawbq/database/query'
+
+          def q(sql):
+              req = urllib.request.Request(
+                  endpoint,
+                  data=json.dumps({'query': sql}).encode(),
+                  headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+                  method='POST')
+              with urllib.request.urlopen(req) as resp:
+                  return json.loads(resp.read().decode())
+
+          # Fixed accounts of interest: the owner's Google account and the QA
+          # reset account. Emails are matched in SQL and only masked labels are
+          # ever printed.
+          who = ("case when u.email = 'steven.crusinberry@gmail.com' then 'OWNER-GMAIL' "
+                 "when u.email = 'skjjcruz@netzero.com' then 'QA-NETZERO' "
+                 "else 'other-' || left(md5(u.email), 6) end")
+
+          print('=== app_users + subscriptions ===')
+          rows = q(f"""
+              select {who} as who, left(u.id::text, 8) as uid,
+                     u.created_at as user_created, u.session_version,
+                     s.product_slug, s.tier, s.status, s.store, s.billing_period,
+                     s.current_period_end, s.updated_at as sub_updated
+              from public.app_users u
+              left join public.subscriptions s on s.user_id = u.id
+              where u.email in ('steven.crusinberry@gmail.com', 'skjjcruz@netzero.com')
+              order by u.created_at, s.updated_at;
+          """)
+          print(json.dumps(rows, indent=2, default=str))
+
+          print('=== duplicate-row check (same emails, count only) ===')
+          rows = q(f"""
+              select {who} as who, count(*) as user_rows
+              from public.app_users u
+              where u.email in ('steven.crusinberry@gmail.com', 'skjjcruz@netzero.com')
+              group by 1;
+          """)
+          print(json.dumps(rows, indent=2, default=str))
+
+          print('=== last 48h of auth audit events for these accounts (email masked) ===')
+          rows = q("""
+              select case when actor_email = 'steven.crusinberry@gmail.com' then 'OWNER-GMAIL'
+                          when actor_email = 'skjjcruz@netzero.com' then 'QA-NETZERO'
+                          else 'other' end as who,
+                     event_type, outcome, metadata, created_at
+              from public.security_events
+              where actor_email in ('steven.crusinberry@gmail.com', 'skjjcruz@netzero.com')
+                and created_at > now() - interval '48 hours'
+                and event_type in ('fw_signin','fw_signup','fw_oauth_sync','fw_refresh_session',
+                                   'fw_profile_read','fw_signin_rate_limited','fw_oauth_sync_rate_limited',
+                                   'fw_refresh_session_rate_limited')
+              order by created_at desc
+              limit 60;
+          """)
+          print(json.dumps(rows, indent=2, default=str))
+          PYEOF
