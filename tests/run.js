@@ -854,6 +854,17 @@ test('league hub brand icon returns to the app front page, which stays put',
     ok(landing.includes('if (FRESH_OAUTH_RETURN) return;'), 'checkSession must yield to the OAuth callback');
   });
 
+test('deploy build stamps the shared-loader cache version',
+  () => {
+    const buildScript = fs.readFileSync(path.join(ROOT, 'scripts/build-deploy.cjs'), 'utf8');
+    const loader = fs.readFileSync(path.join(ROOT, 'js/shared/shared-loader.js'), 'utf8');
+    // The shared modules load at runtime via the loader's DEFAULT_VERSION —
+    // <script>-tag ?v= hashing never covers them. A hardcoded stamp pinned
+    // week-old tier code in returning browsers for a full week of deploys.
+    ok(buildScript.includes('stampSharedLoaderVersion'), 'build-deploy must stamp the shared-loader version');
+    ok(/const DEFAULT_VERSION = '[^']+'/.test(loader), 'shared-loader must keep a regex-stampable DEFAULT_VERSION line');
+  });
+
 // ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════
