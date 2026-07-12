@@ -845,8 +845,9 @@ test('league hub brand icon returns to the app front page, which stays put',
   () => {
     const app = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
     const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
-    // Owner ruling 2026-07-12: hub icon → the marketing page.
-    ok(app.includes("DHQ_HOME_URL = 'https://skjjcruz.github.io/DHQ-Web-Page/?home'"), 'hub icon must point at the marketing page');
+    // Owner ruling 2026-07-12: marketing site sidelined — hub icon → the
+    // app's own front page (landing.html), the single face for everything.
+    ok(app.includes("DHQ_HOME_URL = 'landing.html?home'"), 'hub icon must point at the app front page');
     ok(landing.includes('STAY_HOME'), 'landing.html must honor ?home');
     // A fresh OAuth return must never be hijacked by the existing-session
     // redirect before the sync/repair completes.
