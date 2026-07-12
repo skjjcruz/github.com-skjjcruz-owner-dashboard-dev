@@ -149,9 +149,40 @@ function processEntry(entry) {
   console.log(`[build-deploy]   ${entry}: rewrote ${entryExternal} external babel scripts`);
 }
 
+// 0. Stamp the shared-loader's DEFAULT_VERSION with a content hash of the
+// vendored shared engine, so browsers refetch reconai-shared/* exactly when
+// its bytes change. The shared modules are loaded at runtime by
+// js/shared/shared-loader.js — NOT by <script> tags — so step 4's ?v=
+// hashing never covered them: a hardcoded stamp pinned week-old tier code
+// in every returning browser while the files underneath kept changing.
+// Rewrites the loader IN PLACE (the deploy artifact copies js/ afterwards);
+// its own <script> tag hash then updates too since step 4 hashes the source.
+function stampSharedLoaderVersion() {
+  const loaderPath = path.join(ROOT, 'js', 'shared', 'shared-loader.js');
+  const sharedDir = path.join(ROOT, 'reconai-shared');
+  if (!fs.existsSync(loaderPath) || !fs.existsSync(sharedDir)) {
+    console.log('[build-deploy] shared-loader stamp skipped (loader or reconai-shared/ missing)');
+    return;
+  }
+  const h = crypto.createHash('sha256');
+  for (const f of fs.readdirSync(sharedDir).sort()) {
+    const p = path.join(sharedDir, f);
+    if (fs.statSync(p).isFile()) h.update(f).update(fs.readFileSync(p));
+  }
+  const stamp = h.digest('hex').slice(0, 10);
+  const src = fs.readFileSync(loaderPath, 'utf8');
+  const next = src.replace(/const DEFAULT_VERSION = '[^']*';/, `const DEFAULT_VERSION = '${stamp}';`);
+  if (next === src && !src.includes(`'${stamp}'`)) {
+    throw new Error('shared-loader.js: DEFAULT_VERSION line not found — cache stamping broken');
+  }
+  fs.writeFileSync(loaderPath, next, 'utf8');
+  console.log(`[build-deploy] shared-loader DEFAULT_VERSION stamped -> ${stamp}`);
+}
+
 function build() {
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
   ensureDir(OUT_DIR);
+  stampSharedLoaderVersion();
   for (const e of ENTRIES) processEntry(e);
   console.log(`[build-deploy] compiled ${compiledCount} unique Babel sources across ${ENTRIES.length} entries -> ${path.relative(ROOT, OUT_DIR)}/`);
 }
