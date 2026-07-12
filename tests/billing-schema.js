@@ -341,6 +341,12 @@ test('onboarding requests the live dhq product with a billing period', () => {
     "billing:     selectedProBilling === 'annual' ? 'annual' : 'monthly'",
   ], 'onboarding checkout payload');
   ok(!onboardingSource.includes("productSlug: 'bundle'"), 'onboarding must not sell the legacy bundle product');
+  // Declining payment must record the FREE plan — never stamp the chosen
+  // paid tier into the profile without a checkout.
+  ok(onboardingSource.includes("patchProfile({ tier: 'scout', betaAccess: false, subscribed: false })"),
+    'skipping payment must record the scout plan');
+  ok(!onboardingSource.includes('patchProfile({ tier: selectedPlan, betaAccess: false, subscribed: false })'),
+    'skipping payment must not record an unpaid pro tier');
 });
 
 group('security');

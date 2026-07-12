@@ -596,7 +596,7 @@
       </div>
 
       <div id="alertPayment" class="alert"></div>
-      <span class="skip-link" onclick="skipToAI()">Skip payment — I'll subscribe later in Settings</span>
+      <span class="skip-link" onclick="skipToAI()">No thanks — continue with Scout (free). Upgrade anytime from Billing.</span>
     </div>
 
 
@@ -1110,8 +1110,12 @@
     }
 
     function skipToAI() {
-      // Allow proceeding without payment — limited access until subscribed
-      patchProfile({ tier: selectedPlan, betaAccess: false, subscribed: false });
+      // Declining payment IS choosing the free plan — say so and record it.
+      // The old label ("subscribe later") stamped the chosen paid tier into
+      // the local profile without payment, so users believed they had Pro
+      // while the server correctly kept them on Scout.
+      selectedPlan = 'scout';
+      patchProfile({ tier: 'scout', betaAccess: false, subscribed: false });
       showStep('2b');
     }
 
