@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>DHQ Tier Check</title>
+<style>
+  body { margin:0; padding:24px; background:#0b0d12; color:#e6e9ed; font-family:"JetBrains Mono","SF Mono",Menlo,monospace; }
+  h1 { font-size:1.05rem; letter-spacing:.1em; color:#d4af37; text-transform:uppercase; }
+  .row { display:flex; gap:12px; align-items:baseline; padding:10px 12px; border:1px solid #27262e; border-radius:8px; margin:8px 0; font-size:.95rem; line-height:1.5; }
+  .k { width:290px; flex-shrink:0; color:#98a1ad; }
+  .v { word-break:break-word; }
+  .ok { color:#4caf7d; } .bad { color:#e05252; } .warn { color:#d4af37; }
+  .verdict { margin-top:18px; padding:16px; border-radius:10px; border:1px solid #d4af37; font-size:1.05rem; }
+  a { color:#d4af37; }
+  .note { color:#98a1ad; font-size:.8rem; margin-top:16px; }
+</style>
+<script src="js/shared/shared-loader.js"></script>
+<script>
+// Same shared chain as the app, minimum needed for tier resolution.
+WRShared.loadMany(['app-config.js','constants.js','utils.js','storage.js','event-bus.js','supabase-client.js','tier.js']);
+</script>
+</head>
+<body>
+<h1>Dynasty HQ — Tier Check</h1>
+<div id="out">Running…</div>
+<div class="note">This page only reads your own signed-in state and asks the Dynasty HQ servers what plan they see. Nothing is changed, and no passwords or tokens are shown.</div>
+<div class="note"><a href="index.html">← Back to Dynasty HQ</a></div>
+<script>
+(async function run() {
+  const rows = [];
+  function row(label, value, cls) {
+    rows.push('<div class="row"><span class="k">' + label + '</span><span class="v ' + (cls || '') + '">' + value + '</span></div>');
+  }
+  function decode(token) {
+    try {
+      const p = JSON.parse(atob(String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return { iat: p.iat, exp: p.exp, tier: p.app_metadata && p.app_metadata.tier };
+    } catch (e) { return null; }
+  }
+
+  // 1. What is stored on this device?
+  let session = null;
+  try { session = JSON.parse(localStorage.getItem('fw_session_v1') || 'null'); } catch (e) {}
+  if (!session || !session.token) {
+    row('1. Saved sign-in on this device', 'NONE — you are signed out in this browser', 'bad');
+  } else {
+    const claims = decode(session.token) || {};
+    const expired = claims.exp ? (Date.now() / 1000 > claims.exp) : false;
+    row('1. Saved sign-in on this device', 'found' + (session.user && session.user.email ? ' (' + session.user.email + ')' : ''), 'ok');
+    row('1a. Has account id (user.id)', session.user && session.user.id ? 'YES' : 'NO — old broken shape', session.user && session.user.id ? 'ok' : 'bad');
+    row('1b. Token age', claims.iat ? Math.round((Date.now() / 1000 - claims.iat) / 3600) + ' hours' + (expired ? ' — EXPIRED' : '') : 'unreadable', expired ? 'bad' : 'ok');
+    row('1c. Plan stamped inside token', claims.tier || 'unknown', claims.tier === 'pro' ? 'ok' : 'warn');
+  }
+
+  // 2. Boot repair / renewal (the same call the app makes on load)
+  let repaired = null;
+  try { repaired = window.OD && OD.ensureFreshAppSession ? await OD.ensureFreshAppSession() : 'helper missing'; } catch (e) { repaired = 'error: ' + e.message; }
+  if (repaired && repaired.user) {
+    row('2. Session after boot repair/renewal', 'plan ' + (repaired.user.tier || 'unknown') + ', id ' + (repaired.user.id ? 'present' : 'MISSING'), repaired.user.tier === 'pro' ? 'ok' : 'warn');
+  } else {
+    row('2. Session after boot repair/renewal', String(repaired), repaired === 'helper missing' ? 'bad' : 'warn');
+  }
+
+  // 3. Ask the server directly (fw-profile — the authoritative answer)
+  let profile = null;
+  try { profile = window.OD && OD.loadProfile ? await OD.loadProfile() : null; } catch (e) {}
+  if (profile && profile.tier) {
+    row('3. Server says your plan is', String(profile.tier).toUpperCase() + (Array.isArray(profile.products) ? ' — products: ' + profile.products.join(', ') : ''), profile.tier === 'pro' ? 'ok' : 'bad');
+  } else {
+    row('3. Server says your plan is', 'NO ANSWER (request failed or signed out)', 'bad');
+  }
+
+  // 4. What the app concludes (the number every gate uses)
+  let resolved = null;
+  try { if (typeof loadUserTier === 'function') { await loadUserTier(); } } catch (e) {}
+  try { resolved = typeof getTier === 'function' ? getTier() : null; } catch (e) {}
+  const appTier = (window.App && window.App._productTier) || resolved;
+  row('4. This device concludes', String(resolved || 'unknown').toUpperCase() + (window.App && window.App._productTier ? ' (level: ' + window.App._productTier + ')' : ''), resolved === 'paid' ? 'ok' : 'bad');
+
+  // 5. Which code version this device is running
+  let loaderV = 'unknown';
+  try { loaderV = (document.querySelector('script[src*="shared-loader"]') && 'see below') || 'unknown'; } catch (e) {}
+  try {
+    const seen = (window.WRShared && WRShared.src && WRShared.src('tier.js')) || '';
+    const m = seen.match(/v=([^&]+)/);
+    loaderV = m ? m[1] : 'unversioned';
+  } catch (e) {}
+  row('5. Engine version on this device', loaderV, /^2026070/.test(loaderV) ? 'bad' : 'ok');
+
+  const good = resolved === 'paid';
+  rows.push('<div class="verdict">' + (good
+    ? '✅ This device resolves your account as <strong>PRO</strong>. Any Scout text still visible elsewhere is a stale page — reload it.'
+    : '❌ This device resolves <strong>' + String(resolved || 'unknown').toUpperCase() + '</strong>. Screenshot this page — rows 1–5 show exactly which link broke.') + '</div>');
+
+  document.getElementById('out').innerHTML = rows.join('');
+})();
+</script>
+</body>
+</html>

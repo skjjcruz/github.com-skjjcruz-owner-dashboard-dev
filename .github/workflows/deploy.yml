@@ -88,7 +88,7 @@ jobs:
           set -euo pipefail
           mkdir -p pages-artifact
           cp -R \
-            index.html admin.html landing.html connect-sleeper.html onboarding.html login.html reset-password.html gift.html \
+            index.html admin.html landing.html connect-sleeper.html onboarding.html login.html reset-password.html gift.html debug-tier.html \
             free-agency.html draft-warroom.html trade-calculator.html draft-war-room team-comps \
             js css content reconai-shared icons vendor legal *.js *.json *.webmanifest *.css *.png *.ico *.svg \
             pages-artifact/ 2>/dev/null || true
