@@ -878,6 +878,9 @@ test('league picker re-renders when the async server tier resolves',
     // (banner, locked tiles) until a full page reload.
     ok(proGate.includes("dhq:tier-resolved"), 'pro-gate must announce tier resolution');
     ok(app.includes("addEventListener('dhq:tier-resolved'"), 'FranchisePicker must re-render on tier resolution');
+    // And Scout-only copy must not FLASH while the tier is still resolving:
+    // the banner and tile locks render only once _userTierResolved is set.
+    ok(app.includes('tierKnown && tier === \'free\''), 'Scout-only picker UI must wait for the resolved tier');
   });
 
 // ══════════════════════════════════════════════════════════════════
