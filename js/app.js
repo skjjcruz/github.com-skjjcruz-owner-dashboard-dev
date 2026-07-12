@@ -1009,6 +1009,16 @@
         // Empire Command hero on top (launch for paid / upgrade for free), then a tile per
         // franchise showing team name · league name · league settings, then "Add a league".
         function FranchisePicker({ leagues, onSelect }) {
+            // The server tier resolves asynchronously AFTER first render; without
+            // this re-render a Pro subscriber keeps the pre-resolution 'free'
+            // snapshot (Scout banner, locked tiles) until a full reload.
+            const [, setTierEpoch] = React.useState(0);
+            React.useEffect(() => {
+                const bump = () => setTierEpoch(n => n + 1);
+                if (window.App && window.App._userTierResolved) bump(); // resolved before mount
+                window.addEventListener('dhq:tier-resolved', bump);
+                return () => window.removeEventListener('dhq:tier-resolved', bump);
+            }, []);
             const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
             const isPaid = EMPIRE_FREE_PRELIVE || tier === 'pro' || tier === 'warroom' || tier === 'war_room' || tier === 'commissioner';
             return (

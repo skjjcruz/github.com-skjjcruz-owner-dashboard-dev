@@ -135,5 +135,10 @@
     window.App = window.App || {};
     window.App._userTierResolved = true;
     _applyScoutProChrome();
+    // Announce resolution: React surfaces that read getUserTier() during
+    // their FIRST render (league picker banner/tiles) captured the
+    // pre-resolution 'free' answer and never re-render on their own — a
+    // Pro subscriber otherwise keeps seeing Scout copy until a reload.
+    try { window.dispatchEvent(new CustomEvent('dhq:tier-resolved')); } catch (_) { /* ignore */ }
   });
 })();
