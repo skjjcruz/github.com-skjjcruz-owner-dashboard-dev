@@ -86,4 +86,32 @@ jobs:
               limit 60;
           """)
           print(json.dumps(rows, indent=2, default=str))
+
+          print('=== oauth sign-ins last 12h by provider (emails hashed, domain shown) ===')
+          rows = q("""
+              select left(md5(coalesce(actor_email,'')), 6) as who_hash,
+                     split_part(coalesce(actor_email,''), '@', 2) as email_domain,
+                     metadata->>'provider' as provider,
+                     metadata->>'isNew' as is_new,
+                     outcome, created_at
+              from public.security_events
+              where event_type = 'fw_oauth_sync'
+                and created_at > now() - interval '12 hours'
+              order by created_at desc
+              limit 20;
+          """)
+          print(json.dumps(rows, indent=2, default=str))
+
+          print('=== accounts created in the last 12h (emails hashed, domain shown) ===')
+          rows = q("""
+              select left(md5(u.email), 6) as who_hash,
+                     split_part(u.email, '@', 2) as email_domain,
+                     u.created_at, s.product_slug, s.tier, s.status
+              from public.app_users u
+              left join public.subscriptions s on s.user_id = u.id
+              where u.created_at > now() - interval '12 hours'
+              order by u.created_at desc
+              limit 20;
+          """)
+          print(json.dumps(rows, indent=2, default=str))
           PYEOF
