@@ -1022,6 +1022,12 @@
                 return () => window.removeEventListener('dhq:tier-resolved', bump);
             }, []);
             const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
+            // Scout-only UI (advisory banner, tile locks) waits for the
+            // RESOLVED server tier: the picker mounts a beat before the async
+            // profile lands, and a Pro subscriber must never see a flash of
+            // Scout copy (same rule as the wordmark chrome in pro-gate.js).
+            // Genuinely-free users get the banner one beat later instead.
+            const tierKnown = typeof window !== 'undefined' && window.App && window.App._userTierResolved === true;
             const isPaid = EMPIRE_FREE_PRELIVE || tier === 'pro' || tier === 'warroom' || tier === 'war_room' || tier === 'commissioner';
             return (
                 <div className="hub-franchise-picker" style={{ padding: '4px 12px 14px' }}>
@@ -1060,7 +1066,7 @@
                     ))}
 
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.7, margin: '2px 0 10px' }}>{EMPIRE_ENABLED && isPaid ? 'Or enter a single league' : 'Select franchise'}</div>
-                    {(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true) && tier === 'free' && !AppStorage.get('wr_free_league_id_v1') && leagues.length > 1 && (
+                    {(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true) && tierKnown && tier === 'free' && !AppStorage.get('wr_free_league_id_v1') && leagues.length > 1 && (
                         <div style={{ fontSize: 'var(--text-label, 0.8rem)', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '10px', padding: '10px 12px', margin: '0 0 12px', background: 'rgba(212,175,55,0.05)' }}>
                             Scout includes <strong>1 league</strong> — choose wisely: the first league you enter becomes your free league. Upgrade to Pro anytime for all of them.
                         </div>
@@ -1080,7 +1086,7 @@
                             // page via the handleSelectLeague gate.
                             const enforceTiers = typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true;
                             const chosenFreeId = AppStorage.get('wr_free_league_id_v1');
-                            const freeTileId = (enforceTiers && tier === 'free' && chosenFreeId && leagues.some(x => String(x.id) === String(chosenFreeId)))
+                            const freeTileId = (enforceTiers && tierKnown && tier === 'free' && chosenFreeId && leagues.some(x => String(x.id) === String(chosenFreeId)))
                                 ? String(chosenFreeId)
                                 : null;
                             const lockedTile = freeTileId !== null && String(l.id) !== freeTileId;
