@@ -865,6 +865,17 @@ test('deploy build stamps the shared-loader cache version',
     ok(/const DEFAULT_VERSION = '[^']+'/.test(loader), 'shared-loader must keep a regex-stampable DEFAULT_VERSION line');
   });
 
+test('league picker re-renders when the async server tier resolves',
+  () => {
+    const proGate = fs.readFileSync(path.join(ROOT, 'js/shared/pro-gate.js'), 'utf8');
+    const app = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
+    // The picker snapshots getUserTier() at first render; without the
+    // resolution event + listener a Pro subscriber keeps Scout copy
+    // (banner, locked tiles) until a full page reload.
+    ok(proGate.includes("dhq:tier-resolved"), 'pro-gate must announce tier resolution');
+    ok(app.includes("addEventListener('dhq:tier-resolved'"), 'FranchisePicker must re-render on tier resolution');
+  });
+
 // ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════
