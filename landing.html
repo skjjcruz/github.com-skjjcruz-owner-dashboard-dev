@@ -55,8 +55,12 @@
           } catch (e) {}
           try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
         }
-        // Editor preview and explicit sign-out stay on this page.
-        if (q.has('landingPreview') || q.has('signout')) { reveal(); return; }
+        // Editor preview, explicit sign-out, and ?home (the league hub's
+        // brand icon — a deliberate visit to this page) stay on this page.
+        // Without the ?home escape this head-level check bounces a signed-in
+        // visitor back into the app before the body's STAY_HOME-aware
+        // handlers ever run, making the hub logo appear to do nothing.
+        if (q.has('landingPreview') || q.has('signout') || q.has('home')) { reveal(); return; }
         // OAuth return: Supabase brings us back here with the session in the URL
         // (hash #access_token=… for implicit, ?code=… for PKCE) BEFORE the page's
         // callback handler has stored it. Show a neutral splash, not the marketing
