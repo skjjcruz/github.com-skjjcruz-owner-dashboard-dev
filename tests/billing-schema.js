@@ -282,8 +282,8 @@ test('new accounts route through the onboarding plan funnel', () => {
   hasEvery(landingSource, [
     'handedIsNew',
     "signup ? 'onboarding.html'",
-    "appSession.isNew === true) ? 'onboarding.html'",
-    "handedIsNew) { window.location.replace('onboarding.html')",
+    'appSession.isNew === true) {',
+    'resetDeviceOnboardingForNewAccount',
   ], 'landing new-user routing');
 });
 

@@ -853,6 +853,11 @@ test('league hub brand icon returns to the app front page, which stays put',
     // the body handlers run — it must honor ?home too, or the hub logo
     // bounces straight back and appears dead.
     ok(landing.includes("q.has('signout') || q.has('home')"), 'landing.html head boot-check must honor ?home');
+    // A brand-new account walks the FULL funnel even on a device where a
+    // previous account finished onboarding — that memory is per device, and
+    // inheriting it skips plan selection + Sleeper connect entirely.
+    ok(landing.includes('resetDeviceOnboardingForNewAccount'), 'new accounts must reset device onboarding memory');
+    ok(landing.includes('if (signup) resetDeviceOnboardingForNewAccount()'), 'email signup must reset onboarding memory');
     // A fresh OAuth return must never be hijacked by the existing-session
     // redirect before the sync/repair completes.
     ok(landing.includes('if (FRESH_OAUTH_RETURN) return;'), 'checkSession must yield to the OAuth callback');

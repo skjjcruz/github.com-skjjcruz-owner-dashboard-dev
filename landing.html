@@ -84,9 +84,23 @@
         var profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
         var legacy  = JSON.parse(localStorage.getItem('od_auth_v1') || 'null');
         var onboarded = (profile && profile.sleeperUsername) || (legacy && legacy.username);
-        // Brand-new accounts go through the full onboarding funnel (plan
-        // selection first); accounts mid-setup resume at the Sleeper connect.
-        if (!onboarded && handedIsNew) { window.location.replace('onboarding.html'); return; }
+        // Brand-new accounts ALWAYS walk the full onboarding funnel (plan
+        // selection first) — even on a device where a previous account already
+        // finished it. Onboarding progress is stored per DEVICE, so without
+        // this reset a fresh account inherits the old session's completed
+        // journey and jumps straight to the league page.
+        if (handedIsNew) {
+          try {
+            var np = JSON.parse(localStorage.getItem('od_profile_v1') || 'null') || {};
+            delete np.sleeperUsername; delete np.sleeperUserId;
+            np.onboardingComplete = false;
+            localStorage.setItem('od_profile_v1', JSON.stringify(np));
+          } catch (e) {}
+          try { localStorage.removeItem('od_auth_v1'); } catch (e) {}
+          try { localStorage.removeItem('od_locked_username_v2'); } catch (e) {}
+          try { localStorage.removeItem('dynastyhq_username'); } catch (e) {}
+          window.location.replace('onboarding.html'); return;
+        }
         if (!onboarded) { window.location.replace('connect-sleeper.html'); return; }
         var pref = localStorage.getItem('fw_preferred_view');
         window.location.replace(pref === 'scout' ? 'https://skjjcruz.github.io/ReconAI-sandbox-dev/' : 'index.html');
@@ -785,6 +799,22 @@
     const WARROOM_URL = 'index.html';
     const AUTH_KEY = 'od_auth_v1';
     const PROFILE_KEY = 'od_profile_v1';
+
+    // A brand-new account must walk the full funnel (plan -> Sleeper connect)
+    // even on a device where a previous account already finished onboarding —
+    // that progress is per DEVICE, and inheriting it skips the journey.
+    function resetDeviceOnboardingForNewAccount() {
+      try {
+        const prof = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null') || {};
+        delete prof.sleeperUsername;
+        delete prof.sleeperUserId;
+        prof.onboardingComplete = false;
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(prof));
+      } catch {}
+      try { localStorage.removeItem(AUTH_KEY); } catch {}
+      try { localStorage.removeItem('od_locked_username_v2'); } catch {}
+      try { localStorage.removeItem('dynastyhq_username'); } catch {}
+    }
     const FW_API_BASE = SUPABASE_URL + '/functions/v1';
 
     let authMode = 'signup'; // 'signup' | 'signin'
@@ -859,6 +889,7 @@
           return;
         }
         localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        if (signup) resetDeviceOnboardingForNewAccount();
         trackLandingEvent(signup ? 'signup_succeeded' : 'signin_succeeded');
         showAlert('success', signup ? 'Account ready \u2014 pick your plan\u2026' : 'Welcome back\u2026');
         // New accounts go through the full onboarding funnel (plan first);
@@ -979,7 +1010,12 @@
         trackLandingEvent('oauth_succeeded', { provider: 'google' });
         // First-ever sign-in (fw-oauth-sync just created the account): route
         // through onboarding for plan selection instead of straight in.
-        window.location.href = (appSession && appSession.isNew === true) ? 'onboarding.html' : nextAfterAuth();
+        if (appSession && appSession.isNew === true) {
+          resetDeviceOnboardingForNewAccount();
+          window.location.href = 'onboarding.html';
+        } else {
+          window.location.href = nextAfterAuth();
+        }
       } catch (e) { dropOAuthOverlay(); console.warn('[WR] OAuth callback error:', e); }
     })();
 
