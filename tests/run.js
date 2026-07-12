@@ -849,6 +849,10 @@ test('league hub brand icon returns to the app front page, which stays put',
     // app's own front page (landing.html), the single face for everything.
     ok(app.includes("DHQ_HOME_URL = 'landing.html?home'"), 'hub icon must point at the app front page');
     ok(landing.includes('STAY_HOME'), 'landing.html must honor ?home');
+    // The HEAD boot-check redirects signed-in visitors into the app before
+    // the body handlers run — it must honor ?home too, or the hub logo
+    // bounces straight back and appears dead.
+    ok(landing.includes("q.has('signout') || q.has('home')"), 'landing.html head boot-check must honor ?home');
     // A fresh OAuth return must never be hijacked by the existing-session
     // redirect before the sync/repair completes.
     ok(landing.includes('if (FRESH_OAUTH_RETURN) return;'), 'checkSession must yield to the OAuth callback');
