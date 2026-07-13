@@ -28,8 +28,8 @@ buyer would stay on Scout.
 ## Already in place
 
 - `js/billing.js` — identification at boot, purchase, restore, and post-purchase
-  session re-mint. Loaded by `index.html` and `onboarding.html`. No-op on web.
-- `onboarding.html` payment step routes to Apple IAP when running native
+  session re-mint. Loaded by `index.html` and `upgrade.html`. No-op on web.
+- `upgrade.html` (the Go Pro page) routes to Apple IAP when running native
   (App Store guideline 3.1.1), Stripe otherwise.
 - `fw-revenuecat-webhook` deployed with `REVENUECAT_WEBHOOK_AUTH` secret.
 - RevenueCat dashboard: entitlement `dhq`, offering `default`, packages
@@ -46,7 +46,7 @@ buyer would stay on Scout.
    matches RevenueCat → Project settings → API keys → Apple App Store
    (public `appl_…` key). Update if it was regenerated.
 4. Build to a device / TestFlight and verify with a sandbox Apple ID:
-   - sign in, buy Pro monthly in onboarding → Settings should show Pro
+   - sign in, buy Pro monthly on the Go Pro page → Settings should show Pro
      within seconds (webhook + fw-refresh-session);
    - `subscriptions` row appears with `store = 'app_store'`;
    - Restore Purchases works after deleting/reinstalling the app.

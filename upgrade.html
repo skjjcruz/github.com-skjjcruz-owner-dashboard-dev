@@ -86,7 +86,14 @@
 
       <button class="btn" id="stripeBtn" onclick="goToStripe()">Proceed to Secure Checkout &rarr;</button>
       <p class="hint">Payments are handled by Stripe (or the App Store on iPad/iPhone). We never see your card details.</p>
+      <p class="hint">Subscriptions renew automatically at the price shown until cancelled. On the App Store, manage or cancel in your Apple ID settings; on the web, from Settings inside the app.</p>
+
+      <!-- Restore Purchases: App Store review requires a reachable restore
+           control. Only shown inside the native iOS app. -->
+      <button class="back" id="restoreBtn" style="display:none" onclick="restorePurchases()">Restore Purchases</button>
     </div>
+
+    <p class="hint" style="margin-top:16px"><a href="legal/terms-of-service.html" style="color:rgba(255,255,255,.5)">Terms of Use</a> &nbsp;&middot;&nbsp; <a href="legal/privacy-policy.html" style="color:rgba(255,255,255,.5)">Privacy Policy</a></p>
 
     <button class="back" onclick="window.location.href='index.html'">&larr; Back to my leagues</button>
   </main>
@@ -101,6 +108,24 @@
       selectedBilling = which === 'annual' ? 'annual' : 'monthly';
       document.getElementById('planMonthly').classList.toggle('on', selectedBilling === 'monthly');
       document.getElementById('planAnnual').classList.toggle('on', selectedBilling === 'annual');
+    }
+
+    // Restore Purchases — surfaced only in the native iOS app, where App
+    // Store review requires a reachable restore control.
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.DHQBilling?.available()) document.getElementById('restoreBtn').style.display = '';
+    });
+    async function restorePurchases() {
+      const btn = document.getElementById('restoreBtn');
+      btn.disabled = true; btn.textContent = 'Restoring…';
+      const result = await window.DHQBilling.restore();
+      btn.disabled = false; btn.textContent = 'Restore Purchases';
+      if (result.ok) {
+        showAlert('success', 'Purchases restored — reloading your plan…');
+        onPaymentConfirmed();
+      } else {
+        showAlert('error', result.error || 'No purchases found to restore.');
+      }
     }
 
     function showAlert(type, message) {
