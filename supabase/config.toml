@@ -22,6 +22,9 @@ verify_jwt = false
 [functions.admin-analytics-report]
 verify_jwt = false
 
+[functions.admin-delete-user]
+verify_jwt = false
+
 [functions.admin-list-users]
 verify_jwt = false
 

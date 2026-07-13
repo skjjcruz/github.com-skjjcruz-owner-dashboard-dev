@@ -349,6 +349,28 @@ test('onboarding requests the live dhq product with a billing period', () => {
     'skipping payment must not record an unpaid pro tier');
 });
 
+test('admin delete-user tooling is wired with guardrails', () => {
+  const adminDelete = fs.readFileSync(
+    path.join(ROOT, 'supabase', 'functions', 'admin-delete-user', 'index.ts'),
+    'utf8'
+  );
+  const adminPage = fs.readFileSync(path.join(ROOT, 'admin.html'), 'utf8');
+  hasEvery(adminDelete, [
+    'hasAdminRole',
+    'You cannot delete your own account',
+    'target_is_admin',
+    "'paying_customer'",
+    'deleteAuthUsersByEmail',
+  ], 'admin delete guardrails');
+  hasEvery(adminPage, [
+    'admin-delete-user',
+    'row-delete-btn',
+    'paying_customer',
+  ], 'admin page delete flow');
+  ok(configToml.includes('[functions.admin-delete-user]'), 'admin-delete-user must pin verify_jwt in config.toml');
+  ok(deployWorkflow.includes('supabase functions deploy admin-delete-user'), 'admin-delete-user must be in the deploy list');
+});
+
 group('security');
 
 test('billing tables keep RLS enabled with user-scoped read policies', () => {
