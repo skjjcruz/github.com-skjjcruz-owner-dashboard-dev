@@ -303,12 +303,16 @@ async function testSigninAndReset(context, baseUrl, failures) {
 }
 
 async function testOnboardingFreeFlow(context, baseUrl, failures) {
+  // The 4-step wizard is retired: new accounts land on connect-sleeper.html
+  // (Connect your leagues), link Sleeper, and enter the app.
   const page = await newPage(context, failures);
   await page.addInitScript(token => {
     try {
       if (!sessionStorage.getItem('__qa_onboarding_seeded')) {
         localStorage.setItem('fw_session_v1', JSON.stringify({ token, user: { email: 'qa@example.com', displayName: 'QA User' } }));
         localStorage.removeItem('od_profile_v1');
+        localStorage.removeItem('od_auth_v1');
+        localStorage.removeItem('mfl_league_id');
         sessionStorage.setItem('__qa_onboarding_seeded', '1');
       }
     } catch (err) {
@@ -316,21 +320,22 @@ async function testOnboardingFreeFlow(context, baseUrl, failures) {
     }
   }, QA_TOKEN);
   await page.setViewportSize({ width: 430, height: 900 });
-  await page.goto(`${baseUrl}/onboarding.html`, { waitUntil: 'domcontentloaded', timeout: 12000 });
+  await page.goto(`${baseUrl}/connect-sleeper.html`, { waitUntil: 'domcontentloaded', timeout: 12000 });
   await page.waitForTimeout(250);
-  await assertNoHorizontalOverflow(page, 'onboarding mobile step 1');
-  await page.locator('#plan-scout').click();
-  await page.locator('#step1Btn').click();
-  await page.locator('#step3.active').waitFor({ state: 'attached', timeout: 4000 });
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await page.locator('#sleeperUsernameInput').fill('bigloco');
-  await page.locator('#sleeperBtn').click();
+  await assertNoHorizontalOverflow(page, 'connect leagues mobile');
+  const enterDisabled = await page.locator('#enterBtn').isDisabled();
+  expect(enterDisabled === true, 'Enter button must stay locked until a platform is linked');
+  await page.locator('#tabSleeper').click();
+  await page.locator('#sleeperName').fill('bigloco');
+  await page.locator('#btnSleeper').click();
+  await page.locator('#tabSleeper.linked').waitFor({ state: 'attached', timeout: 6000 });
+  await page.locator('#enterBtn').click();
   await page.waitForURL('**/index.html', { timeout: 5000 });
   const profile = await page.evaluate(() => JSON.parse(localStorage.getItem('od_profile_v1') || '{}'));
   const auth = await page.evaluate(() => JSON.parse(localStorage.getItem('od_auth_v1') || '{}'));
-  expect(profile.onboardingComplete === true, 'onboarding did not mark profile complete');
-  expect(profile.sleeperUsername === 'bigloco', 'onboarding did not persist Sleeper username');
-  expect(auth.username === 'bigloco', 'onboarding did not persist legacy Sleeper auth compatibility');
+  expect(profile.onboardingComplete === true, 'connect page did not mark profile complete');
+  expect(profile.sleeperUsername === 'bigloco', 'connect page did not persist Sleeper username');
+  expect(auth.username === 'bigloco', 'connect page did not persist legacy Sleeper auth compatibility');
   await page.close();
 }
 
@@ -347,9 +352,7 @@ async function testCheckoutFlow(context, baseUrl, network, failures) {
       window.__qaInitError = err.message;
     }
   }, QA_TOKEN);
-  await page.goto(`${baseUrl}/onboarding.html`, { waitUntil: 'domcontentloaded', timeout: 12000 });
-  await page.locator('#plan-pro').click();
-  await page.locator('#step1Btn').click();
+  await page.goto(`${baseUrl}/upgrade.html`, { waitUntil: 'domcontentloaded', timeout: 12000 });
   await page.locator('#stripeBtn').click();
   for (let i = 0; i < 30 && !network.checkout.length; i++) await wait(100);
   const alertText = await page.locator('#alertPayment').textContent().catch(() => '');

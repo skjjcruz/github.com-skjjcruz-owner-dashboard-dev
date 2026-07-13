@@ -38,7 +38,7 @@
     // ── Empire Dashboard is sandbox-only while it bakes. Flip EMPIRE_SANDBOX_ONLY
     // to false to relaunch it on production (EMPIRE_FREE_PRELIVE above then decides
     // whether the relaunched surface is paid-gated). ──
-    const EMPIRE_SANDBOX_ONLY = false; // prod keeps Empire live (was true in C2 sandbox parking)
+    const EMPIRE_SANDBOX_ONLY = true; // owner ruling 2026-07-13: Empire hidden on prod until it's ready for prime time
     const EMPIRE_ENABLED = PLATFORM_SANDBOX_ACCESS || !EMPIRE_SANDBOX_ONLY;
     window.App.EMPIRE_ENABLED = EMPIRE_ENABLED;
 
@@ -1270,7 +1270,7 @@
                     </div>
                     {/* Calm control row — sits left of the absolutely-positioned gear (44px + gutter) */}
                     <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '52px' }}>
-                        <button onClick={() => { window.location.href = 'onboarding.html?manage=true'; }} style={hubCtrlStyle}>BILLING</button>
+                        <button onClick={() => { window.location.href = 'upgrade.html'; }} style={hubCtrlStyle}>BILLING</button>
                         {WR_DISCORD_URL && (
                             <a href={WR_DISCORD_URL} target="_blank" rel="noopener" style={hubCtrlStyle}>DISCORD</a>
                         )}

@@ -19,7 +19,7 @@ const setPassword = read('supabase/functions/set-password/index.ts');
 const resetRequest = read('supabase/functions/fw-request-password-reset/index.ts');
 const resetConfirm = read('supabase/functions/fw-confirm-password-reset/index.ts');
 const resetPage = read('reset-password.html');
-const onboarding = read('onboarding.html');
+const aiSetup = read('ai-setup.html');
 const leagueDetail = read('js/league-detail.js');
 const deployFunctionsWorkflow = read('.github/workflows/deploy-functions.yml');
 const pagesWorkflow = read('.github/workflows/deploy.yml');
@@ -186,17 +186,17 @@ test('AI endpoint uses shared CORS helper instead of wildcard CORS', () => {
 });
 
 test('BYO AI keys are session-only and legacy localStorage keys are cleared', () => {
-  hasEvery(onboarding, [
+  hasEvery(aiSetup, [
     'sessionStorage.setItem',
     'localStorage.removeItem(name)',
     'only for this browser session',
-  ], 'onboarding BYO key handling');
+  ], 'ai-setup BYO key handling');
   hasEvery(leagueDetail, [
     'sessionStorage.getItem',
     'localStorage.removeItem(name)',
     'BYO keys are session-only',
   ], 'league BYO key handling');
-  ok(!onboarding.includes("localStorage.setItem('dynastyhq_ai_key'"), 'onboarding must not persist BYO key in localStorage');
+  ok(!aiSetup.includes("localStorage.setItem('dynastyhq_ai_key'"), 'ai-setup must not persist BYO key in localStorage');
 });
 
 test('admin list uses admin role table instead of static bearer secret', () => {

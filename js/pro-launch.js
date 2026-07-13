@@ -6,10 +6,10 @@
 (function () {
   'use strict';
 
-  // Checkout runs through the onboarding funnel (plan picker → Stripe via
+  // Checkout runs through upgrade.html (billing picker → Stripe via
   // fw-create-checkout), which needs the user's session token — a static
   // payment link can't attach the subscription to the right account.
-  const CHECKOUT_URL = 'onboarding.html?manage=true';
+  const CHECKOUT_URL = 'upgrade.html';
   const INTEREST_KEY = 'dhq_pro_interest';
 
   const PRO_FEATURES = [

@@ -83,12 +83,14 @@
         if (!sess || !sess.token) { reveal(); return; } // not signed in -> show landing
         var profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
         var legacy  = JSON.parse(localStorage.getItem('od_auth_v1') || 'null');
-        var onboarded = (profile && profile.sleeperUsername) || (legacy && legacy.username);
-        // Brand-new accounts ALWAYS walk the full onboarding funnel (plan
-        // selection first) — even on a device where a previous account already
-        // finished it. Onboarding progress is stored per DEVICE, so without
-        // this reset a fresh account inherits the old session's completed
-        // journey and jumps straight to the league page.
+        var onboarded = (profile && (profile.onboardingComplete === true || profile.sleeperUsername))
+          || (legacy && legacy.username)
+          || localStorage.getItem('mfl_league_id');
+        // Brand-new accounts ALWAYS start at the connect-your-leagues page —
+        // even on a device where a previous account already finished
+        // onboarding. That progress is stored per DEVICE, so without this
+        // reset a fresh account inherits the old session's linked leagues
+        // and jumps straight to the league page.
         if (handedIsNew) {
           try {
             var np = JSON.parse(localStorage.getItem('od_profile_v1') || 'null') || {};
@@ -99,7 +101,10 @@
           try { localStorage.removeItem('od_auth_v1'); } catch (e) {}
           try { localStorage.removeItem('od_locked_username_v2'); } catch (e) {}
           try { localStorage.removeItem('dynastyhq_username'); } catch (e) {}
-          window.location.replace('onboarding.html'); return;
+          try { localStorage.removeItem('mfl_league_id'); } catch (e) {}
+          try { localStorage.removeItem('mfl_year'); } catch (e) {}
+          try { localStorage.removeItem('mfl_franchise_id'); } catch (e) {}
+          window.location.replace('connect-sleeper.html'); return;
         }
         if (!onboarded) { window.location.replace('connect-sleeper.html'); return; }
         var pref = localStorage.getItem('fw_preferred_view');
@@ -666,7 +671,7 @@
   <section class="auth" id="auth">
     <img src="icon-192.png" alt="Dynasty HQ" style="display:block;width:56px;height:56px;border-radius:14px;margin:0 auto 16px;box-shadow:0 4px 20px rgba(212,175,55,.2)">
     <h2 class="auth-title" id="authTitle">Create your account</h2>
-    <p id="authSub" style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 22px">Step 1 of 2 — create your account with Google or email. Next, you'll connect your Sleeper account.</p>
+    <p id="authSub" style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 22px">Step 1 of 2 — create your account with Google or email. Next, you'll connect your leagues.</p>
 
     <div class="alert" id="alertJoin"></div>
 
@@ -690,7 +695,7 @@
     <button class="auth-submit" id="btnJoin" onclick="handleEmailAuth()">Create account →</button>
 
     <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:12px">
-      <span id="sleeperHint">Step 1 of 2 — next you'll connect your Sleeper account.</span>
+      <span id="sleeperHint">Step 1 of 2 — next you'll connect your leagues (Sleeper or MFL).</span>
     </p>
     <div style="text-align:center;margin-top:14px;font-size:13px">
       <button class="auth-linkbtn" id="toggleMode" onclick="toggleAuthMode()">Already have an account? Sign in</button>
@@ -814,6 +819,9 @@
       try { localStorage.removeItem(AUTH_KEY); } catch {}
       try { localStorage.removeItem('od_locked_username_v2'); } catch {}
       try { localStorage.removeItem('dynastyhq_username'); } catch {}
+      try { localStorage.removeItem('mfl_league_id'); } catch {}
+      try { localStorage.removeItem('mfl_year'); } catch {}
+      try { localStorage.removeItem('mfl_franchise_id'); } catch {}
     }
     const FW_API_BASE = SUPABASE_URL + '/functions/v1';
 
@@ -838,13 +846,14 @@
       if (type !== 'success') setTimeout(() => el.classList.remove('show'), 6000);
     }
 
-    // Where to send a signed-in user: connect-sleeper page until a Sleeper
-    // account is bound; the app once it is.
+    // Where to send a signed-in user: the connect-your-leagues page until a
+    // league source (Sleeper or MFL) is bound; the app once one is.
     function nextAfterAuth() {
       try {
         const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
         const legacy = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
-        if (profile?.sleeperUsername || legacy?.username) return destForUser();
+        if (profile?.onboardingComplete === true || profile?.sleeperUsername || legacy?.username
+          || localStorage.getItem('mfl_league_id')) return destForUser();
       } catch {}
       return CONNECT_URL;
     }
@@ -854,7 +863,7 @@
       const signup = authMode === 'signup';
       document.getElementById('authTitle').textContent = signup ? 'Create your account' : 'Welcome back';
       document.getElementById('authSub').textContent = signup
-        ? "Step 1 of 2 \u2014 create your account with Google or email. Next, you'll connect your Sleeper account."
+        ? "Step 1 of 2 \u2014 create your account with Google or email. Next, you'll connect your leagues."
         : 'Sign in to your Dynasty HQ account.';
       document.getElementById('sleeperHint').parentElement.style.display = signup ? '' : 'none';
       document.getElementById('btnJoin').textContent = signup ? 'Create account \u2192' : 'Sign in \u2192';
@@ -891,10 +900,10 @@
         localStorage.setItem(SESSION_KEY, JSON.stringify(data));
         if (signup) resetDeviceOnboardingForNewAccount();
         trackLandingEvent(signup ? 'signup_succeeded' : 'signin_succeeded');
-        showAlert('success', signup ? 'Account ready \u2014 pick your plan\u2026' : 'Welcome back\u2026');
-        // New accounts go through the full onboarding funnel (plan first);
+        showAlert('success', signup ? 'Account ready \u2014 connect your leagues\u2026' : 'Welcome back\u2026');
+        // New accounts go straight to the connect-your-leagues page;
         // returning sign-ins resume wherever they left off.
-        setTimeout(() => { window.location.href = signup ? 'onboarding.html' : nextAfterAuth(); }, 600);
+        setTimeout(() => { window.location.href = signup ? CONNECT_URL : nextAfterAuth(); }, 600);
       } catch (err) {
         trackLandingEvent(signup ? 'signup_failed' : 'signin_failed', { reason: 'network' });
         showAlert('error', 'Network error: ' + (err?.message || String(err)));
@@ -1009,10 +1018,10 @@
         }
         trackLandingEvent('oauth_succeeded', { provider: 'google' });
         // First-ever sign-in (fw-oauth-sync just created the account): route
-        // through onboarding for plan selection instead of straight in.
+        // to the connect-your-leagues page instead of straight in.
         if (appSession && appSession.isNew === true) {
           resetDeviceOnboardingForNewAccount();
-          window.location.href = 'onboarding.html';
+          window.location.href = CONNECT_URL;
         } else {
           window.location.href = nextAfterAuth();
         }

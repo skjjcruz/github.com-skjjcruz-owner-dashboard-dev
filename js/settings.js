@@ -162,10 +162,10 @@
         const tierBg    = { free: 'rgba(192,192,192,0.12)', trial: 'rgba(192,192,192,0.12)', scout: 'rgba(192,192,192,0.12)', warroom: 'var(--acc-fill2, rgba(212,175,55,0.12))', pro: 'var(--acc-fill2, rgba(212,175,55,0.12))', power: 'rgba(168,85,247,0.12)', paid: 'var(--acc-fill2, rgba(212,175,55,0.12))' };
 
         function goToManagePlan() {
-            window.location.href = 'onboarding.html?manage=true';
+            window.location.href = 'upgrade.html';
         }
-        // No Stripe customer portal exists yet — onboarding.html?manage=true is the
-        // plan wizard, so nothing here may claim to be a cancellation ('Cancel'
+        // No Stripe customer portal exists yet — upgrade.html is the plan +
+        // checkout page, so nothing here may claim to be a cancellation ('Cancel'
         // affordances were merged into the honest 'Change Plan' button, 2026-07-06).
 
         function handleDisplayNameSave() {
@@ -392,9 +392,9 @@
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>AI KEY</div>
                                 <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
-                                    Session-only BYO keys are supported during onboarding and in the AI controls.
+                                    Session-only BYO keys are supported in the AI controls.
                                 </div>
-                                <button onClick={() => { window.location.href = 'onboarding.html?manage=true#byo'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: 'var(--text-body, 1rem)' }}>Review AI Setup</button>
+                                <button onClick={() => { window.location.href = 'ai-setup.html'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: 'var(--text-body, 1rem)' }}>Review AI Setup</button>
                             </div>
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>DATA</div>
@@ -618,9 +618,9 @@
                     <div style={sectionStyle}>
                         <div style={sectionTitle}>BYO AI KEY</div>
                         <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
-                            Session-only BYO keys are supported during onboarding and in the AI controls. They are not stored in localStorage and they bypass included query limits only for that session.
+                            Session-only BYO keys are supported in the AI controls. They are not stored in localStorage and they bypass included query limits only for that session.
                         </div>
-                        <button onClick={() => { window.location.href = 'onboarding.html?manage=true#byo'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: 'var(--text-body, 1rem)' }}>Review AI Setup</button>
+                        <button onClick={() => { window.location.href = 'ai-setup.html'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: 'var(--text-body, 1rem)' }}>Review AI Setup</button>
                     </div>
                     </>)}
 
