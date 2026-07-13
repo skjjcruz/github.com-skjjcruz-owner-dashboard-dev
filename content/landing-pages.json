@@ -178,13 +178,13 @@
       "pricing": {
         "eyebrow": "Plans",
         "title": "Start free. Go Pro when you're ready.",
-        "subtitle": "Scout every one of your Sleeper leagues free, forever. Pro unlocks the full engine — 7-day free trial, cancel anytime.",
+        "subtitle": "Scout every one of your Sleeper leagues free. Pro unlocks the full engine — 7-day free trial, cancel anytime.",
         "plans": [
           {
             "name": "Scout",
             "price": "$0",
             "billing": "",
-            "note": "Free — all your leagues, forever",
+            "note": "Free — all your leagues",
             "badge": "",
             "primary": false,
             "features": [
