@@ -895,6 +895,18 @@ test('landing copy advertises free on all leagues, not one',
     ok(/all your Sleeper leagues/i.test(landing), 'landing must advertise all leagues free');
   });
 
+test('landing-pages.json copy advertises free on all leagues, not one',
+  () => {
+    // js/landing-content.js overwrites the static pricing card at runtime from
+    // this JSON, so stale copy here shows on the live page even when landing.html
+    // is correct. Keep it in lockstep with the static copy above.
+    const json = fs.readFileSync(path.join(ROOT, 'content/landing-pages.json'), 'utf8');
+    ok(!/one Sleeper league/i.test(json), 'landing-pages.json must not say "one Sleeper league"');
+    ok(!/Free — one league/i.test(json), 'landing-pages.json pricing note must not say "one league"');
+    ok(!/free forever for one/i.test(json), 'landing-pages.json hero line must not say "one league"');
+    ok(/all your Sleeper leagues/i.test(json), 'landing-pages.json must advertise all leagues free');
+  });
+
 // ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════

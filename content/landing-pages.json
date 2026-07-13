@@ -20,7 +20,7 @@
         "subtitle": "Most tools stop at player rankings. Dynasty HQ turns your Sleeper league into the model: DHQ values, owner tendencies, draft history, trade memory, and Scout decisions in one operating system.",
         "primaryCta": "Start free with Sleeper",
         "secondaryCta": "View plans",
-        "freeLine": "Free forever for one Sleeper league. No credit card."
+        "freeLine": "Free on all your Sleeper leagues · no credit card"
       },
       "dashboard": {
         "brand": "DYNASTY HQ",
@@ -178,17 +178,17 @@
       "pricing": {
         "eyebrow": "Plans",
         "title": "Start free. Go Pro when you're ready.",
-        "subtitle": "Scout one Sleeper league free, forever. Pro unlocks the full engine — 7-day free trial, cancel anytime.",
+        "subtitle": "Scout every one of your Sleeper leagues free, forever. Pro unlocks the full engine — 7-day free trial, cancel anytime.",
         "plans": [
           {
             "name": "Scout",
             "price": "$0",
             "billing": "",
-            "note": "Free — one league, forever",
+            "note": "Free — all your leagues, forever",
             "badge": "",
             "primary": false,
             "features": [
-              "One Sleeper league",
+              "All your Sleeper leagues",
               "League-specific DHQ values",
               "Player cards with age curves",
               "Team diagnosis",
