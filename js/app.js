@@ -1021,13 +1021,10 @@
                 window.addEventListener('dhq:tier-resolved', bump);
                 return () => window.removeEventListener('dhq:tier-resolved', bump);
             }, []);
+            // Re-read tier once the async server profile resolves (the picker
+            // mounts a beat before it lands) so the Empire hero reflects the
+            // real tier. No Scout-only league gating remains here.
             const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
-            // Scout-only UI (advisory banner, tile locks) waits for the
-            // RESOLVED server tier: the picker mounts a beat before the async
-            // profile lands, and a Pro subscriber must never see a flash of
-            // Scout copy (same rule as the wordmark chrome in pro-gate.js).
-            // Genuinely-free users get the banner one beat later instead.
-            const tierKnown = typeof window !== 'undefined' && window.App && window.App._userTierResolved === true;
             const isPaid = EMPIRE_FREE_PRELIVE || tier === 'pro' || tier === 'warroom' || tier === 'war_room' || tier === 'commissioner';
             return (
                 <div className="hub-franchise-picker" style={{ padding: '4px 12px 14px' }}>
@@ -1066,11 +1063,6 @@
                     ))}
 
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.7, margin: '2px 0 10px' }}>{EMPIRE_ENABLED && isPaid ? 'Or enter a single league' : 'Select franchise'}</div>
-                    {(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true) && tierKnown && tier === 'free' && !AppStorage.get('wr_free_league_id_v1') && leagues.length > 1 && (
-                        <div style={{ fontSize: 'var(--text-label, 0.8rem)', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '10px', padding: '10px 12px', margin: '0 0 12px', background: 'rgba(212,175,55,0.05)' }}>
-                            Scout includes <strong>1 league</strong> — choose wisely: the first league you enter becomes your free league. Upgrade to Pro anytime for all of them.
-                        </div>
-                    )}
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                         {leagues.map(l => {
@@ -1080,20 +1072,13 @@
                             const title = showTeam ? team : l.name;
                             const sub = showTeam ? l.name : null;
                             const isLast = String(l.id) === String(lastLeagueId);
-                            // Scout (free) = 1 league, owner's choice: nothing is
-                            // locked until they claim a free league; after that,
-                            // every other tile locks. Clicks route to the upgrade
-                            // page via the handleSelectLeague gate.
-                            const enforceTiers = typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true;
-                            const chosenFreeId = AppStorage.get('wr_free_league_id_v1');
-                            const freeTileId = (enforceTiers && tierKnown && tier === 'free' && chosenFreeId && leagues.some(x => String(x.id) === String(chosenFreeId)))
-                                ? String(chosenFreeId)
-                                : null;
-                            const lockedTile = freeTileId !== null && String(l.id) !== freeTileId;
+                            // Scout (free) can enter ANY of their leagues — no
+                            // per-league limit (owner ruling 2026-07-13). Pro is
+                            // feature-gated, not league-gated. No tiles lock.
                             const recordCol = h.wp === null ? 'var(--silver)' : h.wp >= 60 ? 'var(--win-green)' : h.wp < 40 ? 'var(--loss-red)' : 'var(--silver)';
                             return (
                                 <div key={l.id} onClick={() => onSelect(l)}
-                                    style={{ position: 'relative', cursor: 'pointer', opacity: lockedTile ? 0.55 : 1, background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (isLast && !lockedTile ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'), borderRadius: '12px', padding: '14px', transition: 'all .14s' }}
+                                    style={{ position: 'relative', cursor: 'pointer', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (isLast ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'), borderRadius: '12px', padding: '14px', transition: 'all .14s' }}
                                     onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
                                     onMouseLeave={e => { e.currentTarget.style.borderColor = isLast ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'; e.currentTarget.style.transform = 'none'; }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
@@ -1101,8 +1086,7 @@
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                                                 <span style={{ fontSize: 'var(--text-body, 1rem)', fontWeight: 600, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
-                                                {isLast && !lockedTile && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 600, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '4px', padding: '0 4px', flexShrink: 0 }}>LAST</span>}
-                                                {lockedTile && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 700, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: '4px', padding: '0 4px', flexShrink: 0 }}>🔒 PRO</span>}
+                                                {isLast && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', fontWeight: 600, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '4px', padding: '0 4px', flexShrink: 0 }}>LAST</span>}
                                             </div>
                                             {sub && <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>}
                                         </div>
@@ -1131,40 +1115,12 @@
         // Empire Command hero on top (launch for paid / upgrade for free), then a tile per
         // franchise showing team name · league name · league settings, then "Add a league".
 
-        // Scout (free) includes exactly one league — the advertised "1 free
-        // league" — and the OWNER PICKS IT: until a choice exists every league
-        // is open, and the first one they enter becomes their free league.
-        // Paid tiers and owner/admin overrides are exempt via getUserTier().
-        const FREE_LEAGUE_CHOICE_KEY = 'wr_free_league_id_v1';
-
-        function freeLeagueIdFor(leagues) {
-            const chosen = AppStorage.get(FREE_LEAGUE_CHOICE_KEY);
-            if (chosen && leagues.some(l => String(l.id) === String(chosen))) return String(chosen);
-            return null; // no valid choice yet — nothing locks until they pick
-        }
-
-        function freeTierEnforced() {
-            if (!(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true)) return false;
-            const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
-            return tier === 'free';
-        }
-
-        function isLeagueLockedForTier(league, leagues) {
-            if (!freeTierEnforced()) return false;
-            const freeId = freeLeagueIdFor(leagues);
-            return freeId !== null && String(league.id) !== freeId;
-        }
-
+        // Scout (free) can enter ALL of their leagues — no per-league limit
+        // (owner ruling 2026-07-13). Dynasty HQ is feature-gated, not
+        // league-gated: Pro unlocks the smart tools inside every league, but
+        // free users are never blocked from opening a league. (The old
+        // one-free-league claim/lock machinery was removed here.)
         function handleSelectLeague(league) {
-            const allKnownLeagues = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues];
-            if (isLeagueLockedForTier(league, allKnownLeagues)) {
-                if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
-                return;
-            }
-            // First selection by a free user claims the free slot.
-            if (freeTierEnforced() && !freeLeagueIdFor(allKnownLeagues)) {
-                AppStorage.set(FREE_LEAGUE_CHOICE_KEY, String(league.id));
-            }
             setActiveLeagueId(league.id);
             setSelectedLeague(league);
             setActiveTab('dashboard');
