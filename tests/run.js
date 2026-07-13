@@ -874,18 +874,25 @@ test('deploy build stamps the shared-loader cache version',
     ok(/const DEFAULT_VERSION = '[^']+'/.test(loader), 'shared-loader must keep a regex-stampable DEFAULT_VERSION line');
   });
 
-test('league picker re-renders when the async server tier resolves',
+test('no one-free-league gating remains in the league picker',
   () => {
-    const proGate = fs.readFileSync(path.join(ROOT, 'js/shared/pro-gate.js'), 'utf8');
     const app = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
-    // The picker snapshots getUserTier() at first render; without the
-    // resolution event + listener a Pro subscriber keeps Scout copy
-    // (banner, locked tiles) until a full page reload.
-    ok(proGate.includes("dhq:tier-resolved"), 'pro-gate must announce tier resolution');
-    ok(app.includes("addEventListener('dhq:tier-resolved'"), 'FranchisePicker must re-render on tier resolution');
-    // And Scout-only copy must not FLASH while the tier is still resolving:
-    // the banner and tile locks render only once _userTierResolved is set.
-    ok(app.includes('tierKnown && tier === \'free\''), 'Scout-only picker UI must wait for the resolved tier');
+    // Owner ruling 2026-07-13: free (Scout) can enter ALL leagues. The
+    // one-free-league claim/lock machinery is gone; Dynasty HQ is
+    // feature-gated, not league-gated.
+    ok(!app.includes('wr_free_league_id_v1'), 'free-league claim key must be gone');
+    ok(!app.includes('isLeagueLockedForTier'), 'per-league lock check must be gone');
+    ok(!app.includes('freeLeagueIdFor'), 'free-league resolver must be gone');
+    ok(!app.includes('Scout includes'), 'the one-league advisory banner must be gone');
+    ok(!/🔒 PRO/.test(app), 'locked-league PRO badge must be gone');
+  });
+
+test('landing copy advertises free on all leagues, not one',
+  () => {
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    ok(!/one Sleeper league/i.test(landing), 'landing must not say "one Sleeper league"');
+    ok(!/Free — one league/i.test(landing), 'pricing note must not say "one league"');
+    ok(/all your Sleeper leagues/i.test(landing), 'landing must advertise all leagues free');
   });
 
 // ══════════════════════════════════════════════════════════════════
