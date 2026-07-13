@@ -202,6 +202,11 @@
       transition: background 0.15s;
     }
     tbody tr:hover { background: rgba(212,175,55,0.05); }
+    .row-delete-btn {
+      background: transparent; border: 1px solid rgba(224,82,82,0.5); color: #e05252;
+      border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 0.78rem; cursor: pointer;
+    }
+    .row-delete-btn:hover { background: rgba(224,82,82,0.12); border-color: #e05252; }
 
     tbody td {
       padding: 0.65rem 1rem;
@@ -458,6 +463,7 @@
           <th>Tier</th>
           <th>Products</th>
           <th>Joined</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="users-tbody"></tbody>
@@ -617,6 +623,56 @@
     }
   }
 
+  // ── Admin delete (support tooling) ────────────────────────────
+  // Typed-email confirmation; a live paying subscription requires a second
+  // explicit confirm (server answers 409 paying_customer until force:true).
+  async function requestDelete(email, force) {
+    return fetch(`${FN_BASE}/admin-delete-user`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminSecret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(force ? { email, force: true } : { email }),
+    });
+  }
+
+  async function deleteUserFlow(email) {
+    const typed = prompt(
+      `This permanently deletes the account and ALL its data, and forgets its Google/Apple sign-ins so the person can start over.
+
+Type the email to confirm:
+${email}`);
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== email.trim().toLowerCase()) {
+      alert('Email did not match — nothing was deleted.');
+      return;
+    }
+    try {
+      let res = await requestDelete(email, false);
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        const go = confirm(
+          `⚠️ ${data.message || 'This account has a LIVE PAID subscription.'}
+
+Deleting will cancel their billing. Delete anyway?`);
+        if (!go) return;
+        res = await requestDelete(email, true);
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        alert(`Deleted. (sign-in records removed: ${data.deletedAuthUsers ?? 0})`);
+        loadUsers();
+      } else {
+        alert('Delete failed: ' + (data.error || res.status));
+      }
+    } catch (e) {
+      alert('Delete failed: network error.');
+    }
+  }
+
+  document.getElementById('users-tbody').addEventListener('click', (e) => {
+    const btn = e.target.closest('.row-delete-btn');
+    if (btn && btn.dataset.email) deleteUserFlow(btn.dataset.email);
+  });
+
   async function loadAnalytics() {
     document.getElementById('analytics-loading').style.display = 'block';
     document.getElementById('analytics-loading').textContent = 'Loading analytics…';
@@ -660,6 +716,7 @@
         <td><span class="badge badge-${u.tier}">${u.tier}</span></td>
         <td class="products-cell">${u.products.length ? u.products.map(p => esc(p)).join(', ') : '—'}</td>
         <td>${formatDate(u.createdAt)}</td>
+        <td><button class="row-delete-btn" data-email="${esc(u.email)}" title="Delete this account">Delete</button></td>
       </tr>
     `).join('');
 

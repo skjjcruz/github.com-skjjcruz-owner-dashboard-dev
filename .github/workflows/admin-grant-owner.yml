@@ -1,0 +1,45 @@
+name: Grant the owner account its admin role
+
+# Manually-dispatched, idempotent: gives steven.crusinberry@gmail.com the
+# 'owner' role in app_user_roles so /admin.html unlocks for that account.
+# Fixed SQL — no dispatch inputs.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  grant:
+    if: github.repository == 'skjjcruz/github.com-skjjcruz-owner-dashboard-dev'
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Grant owner role
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys, urllib.request
+          token = os.environ.get('SUPABASE_ACCESS_TOKEN', '')
+          if not token:
+              print('SUPABASE_ACCESS_TOKEN missing', file=sys.stderr); sys.exit(1)
+          endpoint = 'https://api.supabase.com/v1/projects/sxshiqyxhhifvtfqawbq/database/query'
+          req = urllib.request.Request(
+              endpoint,
+              data=json.dumps({'query': """
+                  insert into public.app_user_roles (user_id, role)
+                  select id, 'owner' from public.app_users
+                  where email = 'steven.crusinberry@gmail.com'
+                  on conflict (user_id, role) do nothing;
+                  select count(*) as owner_roles from public.app_user_roles r
+                  join public.app_users u on u.id = r.user_id
+                  where u.email = 'steven.crusinberry@gmail.com';
+              """}).encode(),
+              headers={
+                  'Authorization': f'Bearer {token}',
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'User-Agent': 'ReconAI-WarRoom-GitHub-Actions',
+              },
+              method='POST')
+          with urllib.request.urlopen(req) as resp:
+              print(json.dumps(json.loads(resp.read().decode()), indent=2))
+          PYEOF
