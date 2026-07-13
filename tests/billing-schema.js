@@ -367,6 +367,13 @@ test('admin delete-user tooling is wired with guardrails', () => {
     'row-delete-btn',
     'paying_customer',
   ], 'admin page delete flow');
+  // Owner can sign in on the gate itself (Google or email) — no token juggling.
+  hasEvery(adminPage, [
+    "id=\"google-btn\"",
+    'signInWithOAuth',
+    'emailSignIn',
+    'fw-oauth-sync',
+  ], 'admin gate sign-in');
   ok(configToml.includes('[functions.admin-delete-user]'), 'admin-delete-user must pin verify_jwt in config.toml');
   ok(deployWorkflow.includes('supabase functions deploy admin-delete-user'), 'admin-delete-user must be in the deploy list');
 });
