@@ -366,7 +366,9 @@ test('admin delete-user tooling is wired with guardrails', () => {
     'admin-delete-user',
     'row-delete-btn',
     'paying_customer',
+    'Delete this account?',
   ], 'admin page delete flow');
+  ok(!adminPage.includes('Type the email to confirm'), 'delete must not require typing the email');
   // Owner can sign in on the gate itself (Google or email) — no token juggling.
   hasEvery(adminPage, [
     "id=\"google-btn\"",

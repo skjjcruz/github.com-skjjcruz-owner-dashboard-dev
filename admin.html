@@ -764,16 +764,12 @@
   }
 
   async function deleteUserFlow(email) {
-    const typed = prompt(
-      `This permanently deletes the account and ALL its data, and forgets its Google/Apple sign-ins so the person can start over.
-
-Type the email to confirm:
-${email}`);
-    if (typed === null) return;
-    if (typed.trim().toLowerCase() !== email.trim().toLowerCase()) {
-      alert('Email did not match — nothing was deleted.');
-      return;
-    }
+    // One-tap confirm (typing the email was too fiddly on tablets). The real
+    // guardrails live server-side: can't delete yourself or another admin, and
+    // a paying customer needs the second explicit confirm below.
+    const ok = confirm(
+      `Delete this account?\n\n${email}\n\nThis permanently removes the account and ALL its data, and forgets its Google/Apple sign-ins so the person can start over.`);
+    if (!ok) return;
     try {
       let res = await requestDelete(email, false);
       if (res.status === 409) {
