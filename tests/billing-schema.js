@@ -39,7 +39,7 @@ const rcWebhookSource = fs.readFileSync(
   path.join(ROOT, 'supabase', 'functions', 'fw-revenuecat-webhook', 'index.ts'),
   'utf8'
 );
-const onboardingSource = fs.readFileSync(path.join(ROOT, 'onboarding.html'), 'utf8');
+const upgradeSource = fs.readFileSync(path.join(ROOT, 'upgrade.html'), 'utf8');
 const configToml = fs.readFileSync(path.join(ROOT, 'supabase', 'config.toml'), 'utf8');
 const deployWorkflow = fs.readFileSync(
   path.join(ROOT, '.github', 'workflows', 'deploy-functions.yml'),
@@ -273,7 +273,7 @@ test('revenuecat webhook mirrors App Store entitlements into subscriptions', () 
   ok(deployWorkflow.includes('supabase functions deploy fw-revenuecat-webhook'), 'rc webhook must be in the deploy list');
 });
 
-test('new accounts route through the onboarding plan funnel', () => {
+test('new accounts route to the connect-your-leagues page', () => {
   const oauthSync = fs.readFileSync(
     path.join(ROOT, 'supabase', 'functions', 'fw-oauth-sync', 'index.ts'),
     'utf8'
@@ -281,10 +281,11 @@ test('new accounts route through the onboarding plan funnel', () => {
   ok(oauthSync.includes('isNew,'), 'fw-oauth-sync must expose isNew so clients can route first sign-ins');
   hasEvery(landingSource, [
     'handedIsNew',
-    "signup ? 'onboarding.html'",
+    'signup ? CONNECT_URL',
     'appSession.isNew === true) {',
     'resetDeviceOnboardingForNewAccount',
   ], 'landing new-user routing');
+  ok(!landingSource.includes('onboarding.html'), 'landing must not route anywhere to the retired onboarding wizard');
 });
 
 test('every session issuer resolves entitlements through the shared helper', () => {
@@ -335,18 +336,16 @@ test('google oauth stores the full user record and re-syncs on fresh returns', (
     'landing oauth callback must not rebuild the user object without its id');
 });
 
-test('onboarding requests the live dhq product with a billing period', () => {
-  hasEvery(onboardingSource, [
+test('upgrade page requests the live dhq product with a billing period', () => {
+  hasEvery(upgradeSource, [
     "productSlug: 'dhq'",
-    "billing:     selectedProBilling === 'annual' ? 'annual' : 'monthly'",
-  ], 'onboarding checkout payload');
-  ok(!onboardingSource.includes("productSlug: 'bundle'"), 'onboarding must not sell the legacy bundle product');
-  // Declining payment must record the FREE plan — never stamp the chosen
-  // paid tier into the profile without a checkout.
-  ok(onboardingSource.includes("patchProfile({ tier: 'scout', betaAccess: false, subscribed: false })"),
-    'skipping payment must record the scout plan');
-  ok(!onboardingSource.includes('patchProfile({ tier: selectedPlan, betaAccess: false, subscribed: false })'),
-    'skipping payment must not record an unpaid pro tier');
+    "billing: selectedBilling === 'annual' ? 'annual' : 'monthly'",
+  ], 'upgrade checkout payload');
+  ok(!upgradeSource.includes("productSlug: 'bundle'"), 'upgrade page must not sell the legacy bundle product');
+  // Tiers come from server entitlements, never a client-side stamp: the page
+  // re-mints the session after checkout instead of writing tier locally.
+  ok(upgradeSource.includes('fw-refresh-session'), 'upgrade page must re-mint the session after payment');
+  ok(!upgradeSource.includes('patchProfile'), 'upgrade page must not stamp tiers into the local profile');
 });
 
 test('admin delete-user tooling is wired with guardrails', () => {

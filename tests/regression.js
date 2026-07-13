@@ -99,7 +99,7 @@ function extractSpanMap(source, name) {
 
 const appSrc = read('js/app.js');
 const indexHtml = read('index.html');
-const onboardingSrc = read('onboarding.html');
+const connectSrc = read('connect-sleeper.html');
 const leagueDetailSrc = read('js/league-detail.js');
 const leagueSkinSrc = read('js/league-skin.js');
 const themeSrc = read('js/theme.js');
@@ -407,11 +407,14 @@ test('War Room app filters beta-platform leagues out of live route data', () => 
   sourceHas(appSrc, 'const allLeagues = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues];', 'resume must use filtered platform leagues');
 });
 
-test('onboarding only persists allowed platforms for the current environment', () => {
-  sourceHas(onboardingSrc, 'window.FW_PLATFORM_SANDBOX_ACCESS = betaPlatforms;', 'onboarding sandbox flag missing');
-  sourceHas(onboardingSrc, '.live-platforms .sandbox-platform { display: none; }', 'live onboarding should hide beta platform cards');
-  sourceHas(onboardingSrc, 'if (!platformAccessAllowed(id)) return;', 'platform toggle must block live beta selection');
-  sourceHas(onboardingSrc, 'patchProfile({ platforms: Array.from(selectedPlatforms).filter(platformAccessAllowed) });', 'saved onboarding platforms must be filtered');
+test('connect page validates both live platforms and records what was linked', () => {
+  // The 4-step onboarding wizard is gone (owner ruling 2026-07-13); the
+  // connect-your-leagues page offers exactly the two live connectors.
+  sourceHas(connectSrc, 'https://api.sleeper.app/v1/user/', 'sleeper username must be validated against the Sleeper API');
+  sourceHas(connectSrc, 'TYPE=league&L=', 'mfl league id must be validated against the MFL API');
+  sourceHas(connectSrc, "localStorage.setItem('mfl_league_id', leagueId)", 'mfl league id must persist where the app loads it');
+  sourceHas(connectSrc, 'patchProfile({ platforms, onboardingComplete: true })', 'entering must record linked platforms and completion');
+  sourceHas(connectSrc, "if (linked.sleeper) platforms.push('sleeper')", 'profile platforms must reflect only what was actually linked');
 });
 
 group('mobile overflow');
