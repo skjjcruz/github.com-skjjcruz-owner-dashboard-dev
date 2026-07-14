@@ -2,8 +2,11 @@
  * js/billing.js — Dynasty HQ in-app purchases (Apple StoreKit via RevenueCat)
  *
  * Platform-aware billing:
- *   • iOS app (Capacitor native) → Apple In-App Purchase through RevenueCat
- *   • Web browser                → caller falls back to the existing Stripe flow
+ *   • iOS app (Capacitor native)          → Apple IAP through RevenueCat (Capacitor plugin)
+ *   • iOS app (Swift Playgrounds shell)   → Apple IAP through RevenueCat (WKWebView bridge:
+ *     the shell registers a WKScriptMessageHandler named 'dhqBilling'; this module posts
+ *     {id, action, userId?, plan?} and the shell replies via DHQBilling._nativeResult(id, result))
+ *   • Web browser                         → caller falls back to the existing Stripe flow
  *
  * RevenueCat dashboard wiring (live lineup, project "Dynasty HQ Fantasy Football"):
  *   entitlement: 'dhq'   offering: 'default'
@@ -45,7 +48,7 @@
   const SUPABASE_URL = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
   const SESSION_KEY = 'fw_session_v1';
 
-  function isNative() {
+  function capNative() {
     return !!(window.Capacitor &&
       (typeof window.Capacitor.isNativePlatform === 'function'
         ? window.Capacitor.isNativePlatform()
@@ -56,8 +59,45 @@
     return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Purchases) || null;
   }
 
+  // Swift Playgrounds shell: the native side registers a script message
+  // handler named 'dhqBilling' and answers through DHQBilling._nativeResult.
+  function wkBridge() {
+    try { return (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dhqBilling) || null; }
+    catch { return null; }
+  }
+
+  function isNative() {
+    return capNative() || !!wkBridge();
+  }
+
   function available() {
-    return isNative() && !!plugin();
+    return (capNative() && !!plugin()) || !!wkBridge();
+  }
+
+  // ── WKWebView bridge plumbing (Playgrounds shell) ───────────────
+  // Each call gets an id; the shell replies by evaluating
+  //   window.DHQBilling._nativeResult(id, { ok, cancelled?, error?, entitled? })
+  const _pending = new Map();
+  let _seq = 0;
+  function callShell(action, extra, timeoutMs) {
+    return new Promise((resolve) => {
+      const id = 'b' + (++_seq) + '_' + Date.now();
+      const timer = setTimeout(() => {
+        if (_pending.delete(id)) resolve({ ok: false, error: 'The App Store did not respond. Please try again.' });
+      }, timeoutMs || 180000); // sandbox purchases can take 15s+; give real ones headroom
+      _pending.set(id, (result) => { clearTimeout(timer); resolve(result || { ok: false, error: 'Empty response.' }); });
+      try {
+        wkBridge().postMessage(Object.assign({ id, action }, extra || {}));
+      } catch (e) {
+        clearTimeout(timer);
+        _pending.delete(id);
+        resolve({ ok: false, error: e && e.message ? e.message : 'Could not reach the App Store bridge.' });
+      }
+    });
+  }
+  function _nativeResult(id, result) {
+    const cb = _pending.get(id);
+    if (cb) { _pending.delete(id); cb(result); }
   }
 
   function sessionUserId() {
@@ -77,6 +117,12 @@
     const uid = appUserId || sessionUserId();
     if (!uid) return false;
     if (_identifiedAs === uid) return true;
+    if (wkBridge()) {
+      const result = await callShell('identify', { userId: uid }, 30000);
+      if (result.ok) { _identifiedAs = uid; return true; }
+      console.warn('[billing] shell identify failed:', result.error);
+      return false;
+    }
     const rc = plugin();
     try {
       if (!_configured) {
@@ -133,8 +179,20 @@
     if (!available()) return { ok: false, error: 'In-app purchase is only available in the iOS app.' };
     const identified = await identify();
     if (!identified) return { ok: false, error: 'Sign in before purchasing so the subscription attaches to your account.' };
+    const plan = billing === 'annual' ? 'annual' : 'monthly';
+    if (wkBridge()) {
+      // Long timeout: the user can sit on Apple's sheet, and sandbox
+      // purchases are documented to take 15s+ to settle.
+      const result = await callShell('purchase', { plan }, 240000);
+      if (result.cancelled) return { ok: false, cancelled: true };
+      if (!result.ok || result.entitled === false) {
+        return { ok: false, error: result.error || 'Purchase did not complete. You have not been charged.' };
+      }
+      await remintSession();
+      return { ok: true };
+    }
     const rc = plugin();
-    const productId = PRODUCT_IDS[billing === 'annual' ? 'annual' : 'monthly'];
+    const productId = PRODUCT_IDS[plan];
     try {
       const offerings = await rc.getOfferings();
       const offering = offerings?.all?.[OFFERING_ID] || offerings?.current;
@@ -159,6 +217,14 @@
     if (!available()) return { ok: false, error: 'Restore is only available in the iOS app.' };
     const identified = await identify();
     if (!identified) return { ok: false, error: 'Sign in first, then restore purchases.' };
+    if (wkBridge()) {
+      const result = await callShell('restore', {}, 120000);
+      if (!result.ok || result.entitled === false) {
+        return { ok: false, error: result.error || 'No previous purchases found for this Apple ID.' };
+      }
+      await remintSession();
+      return { ok: true };
+    }
     try {
       const result = await plugin().restorePurchases();
       const info = result?.customerInfo || result;
@@ -185,5 +251,5 @@
     boot();
   }
 
-  window.DHQBilling = { available, isNative, identify, purchase, restore, remintSession };
+  window.DHQBilling = { available, isNative, identify, purchase, restore, remintSession, _nativeResult };
 })();
