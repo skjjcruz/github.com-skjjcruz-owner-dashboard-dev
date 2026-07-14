@@ -2743,17 +2743,40 @@
               : typeof callClaude === 'function'
                 ? await callClaude(messages)
                 : 'AI not available. Add an API key in Settings.';
+            const cleanReply = (typeof reply === 'string' ? reply : String(reply || '')).trim();
+            if (!cleanReply || cleanReply === 'No response.') {
+              // Empty answer: show a recoverable prompt and do NOT burn the
+              // free daily send — the user got nothing back.
+              setReconMessages(prev => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { role: 'assistant', content: "I didn't catch that one — mind rephrasing it, or tap send again?" };
+                return updated;
+              });
+              return;
+            }
             if (isFreeCountedSend && (typeof dhqAI === 'function' || typeof callClaude === 'function')) trackAIUse();
             setReconMessages(prev => {
               const updated = [...prev];
-              updated[updated.length - 1] = { role: 'assistant', content: reply };
+              updated[updated.length - 1] = { role: 'assistant', content: cleanReply };
               return updated;
             });
           } catch(e) {
-            console.warn('[Alex Ingram] AI error:', e.message);
+            const raw = String((e && e.message) || '');
+            console.warn('[Alex Ingram] AI error:', raw);
+            // Translate the failure into a plain, recoverable message instead
+            // of a raw "Error: ..." string or a dead spinner. The shared
+            // transport now aborts a stalled request after 45s, so a hang
+            // arrives here as a timeout the user can simply resend.
+            const friendly = /timed out|timeout|abort/i.test(raw)
+              ? "That one took too long to come back — tap send again and I'll pick it right up."
+              : /load failed|failed to fetch|network/i.test(raw)
+                ? "I couldn't reach the server just now — check your connection and try again."
+                : /limit|429|rate/i.test(raw)
+                  ? "The AI's a little busy right now — give it a moment and try again."
+                  : "Something hiccupped on that one — give it another try.";
             setReconMessages(prev => {
               const updated = [...prev];
-              updated[updated.length - 1] = { role: 'assistant', content: 'Error: ' + e.message };
+              updated[updated.length - 1] = { role: 'assistant', content: friendly };
               return updated;
             });
           }
