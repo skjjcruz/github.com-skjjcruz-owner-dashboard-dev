@@ -426,6 +426,12 @@ function IntelligenceBriefWidget({
                 'INTELLIGENCE BRIEFING',
             ),
             React.createElement('div', { style: { fontSize: tight ? '0.92rem' : '1.2rem', fontWeight: 700, color: 'var(--white)' } }, greetingText),
+            // AI Conductor — Situation Room "what changed" line. Renders only
+            // when the flag is on AND something material changed since last
+            // visit; otherwise returns null and the template is unchanged.
+            (window.WR && window.WR.BriefPulse && window.WR.BriefPulse.Line)
+                ? React.createElement(window.WR.BriefPulse.Line, { league: currentLeague, roster: myRoster, playersData: playersData, tight: tight })
+                : null,
         );
     }
 
