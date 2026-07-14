@@ -2767,13 +2767,20 @@
             // of a raw "Error: ..." string or a dead spinner. The shared
             // transport now aborts a stalled request after 45s, so a hang
             // arrives here as a timeout the user can simply resend.
+            // Quota messages ("Daily AI limit reached…") are already accurate
+            // and user-facing — surface them verbatim so a hard daily cap is
+            // never mislabeled as a transient "try again". Only a bare 429 /
+            // provider rate-limit (no quota wording) is the "busy" case.
+            const isQuota = /limit reached|daily ai limit|monthly ai limit|budget limit|allowance|resets (next|tomorrow)|upgrade your plan|use your own ai key/i.test(raw);
             const friendly = /timed out|timeout|abort/i.test(raw)
               ? "That one took too long to come back — tap send again and I'll pick it right up."
               : /load failed|failed to fetch|network/i.test(raw)
                 ? "I couldn't reach the server just now — check your connection and try again."
-                : /limit|429|rate/i.test(raw)
-                  ? "The AI's a little busy right now — give it a moment and try again."
-                  : "Something hiccupped on that one — give it another try.";
+                : isQuota
+                  ? raw
+                  : /\b429\b|rate limit/i.test(raw)
+                    ? "The AI's a little busy right now — give it a moment and try again."
+                    : "Something hiccupped on that one — give it another try.";
             setReconMessages(prev => {
               const updated = [...prev];
               updated[updated.length - 1] = { role: 'assistant', content: friendly };
