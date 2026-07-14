@@ -65,6 +65,15 @@
       'font-size:.72em;' +
       'color:var(--silver,#98A1AD);' +
       'letter-spacing:.08em;' +
+    '}' +
+    // Pro mirror of the Scout suffix: gold "· PRO" after the wordmark, keyed on
+    // body.is-pro so it only shows once the tier is confirmed Pro (never flashes
+    // for a free user, whose pre-resolve default carries no class).
+    'body.is-pro .wr-wordmark::after{' +
+      'content:" \\00B7 PRO";' +
+      'font-size:.72em;' +
+      'color:var(--gold,#d4af37);' +
+      'letter-spacing:.08em;' +
     '}';
 
   function _ensureProGateCss() {
