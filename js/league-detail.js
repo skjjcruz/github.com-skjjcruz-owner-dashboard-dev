@@ -1775,7 +1775,13 @@
                     return { ...t, totalDHQ, healthScore, tierColor };
                 }).sort((a,b) => {
                     if (b.healthScore !== a.healthScore) return b.healthScore - a.healthScore;
-                    return b.totalDHQ - a.totalDHQ;
+                    if (b.totalDHQ !== a.totalDHQ) return b.totalDHQ - a.totalDHQ;
+                    // Deterministic final tiebreak by roster/owner id. Without it,
+                    // two teams tied on both health score and total DHQ keep their
+                    // incoming array order, which can differ between recomputes —
+                    // that's what makes a rank flicker 7th<->8th on back-to-back
+                    // views. Pinning to a stable id keeps the order fixed.
+                    return String(a.userId ?? '').localeCompare(String(b.userId ?? ''));
                 });
                 setRankedTeams(ranked);
             }
