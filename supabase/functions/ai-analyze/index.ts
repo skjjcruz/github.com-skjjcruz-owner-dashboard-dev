@@ -486,6 +486,7 @@ const AI_ROUTES: Record<string, AIWorkloadTier> = {
     team_diagnosis:   'standard',
     dashboard_digest: 'fast',
     insight:          'fast',
+    surface_read:     'fast',
     // ReconAI / Scout generic chat routes.
     'trade-chat':        'premium',
     'trade-scout':       'premium',
@@ -775,7 +776,7 @@ function clampTextToChars(text: string, maxChars: number): { text: string; trunc
     return { text: value.slice(0, Math.max(0, maxChars - suffix.length)) + suffix, truncated: true };
 }
 
-const STRUCTURED_TYPES = new Set(['league', 'team', 'partners', 'fa_targets', 'rookies', 'fa_chat', 'mock_draft', 'chat', 'trade_verdict', 'team_diagnosis', 'dashboard_digest', 'insight', 'dynasty_read']);
+const STRUCTURED_TYPES = new Set(['league', 'team', 'partners', 'fa_targets', 'rookies', 'fa_chat', 'mock_draft', 'chat', 'trade_verdict', 'team_diagnosis', 'dashboard_digest', 'insight', 'dynasty_read', 'surface_read']);
 
 interface GenericAIContext {
     callType: string;
@@ -1206,12 +1207,18 @@ const CACHEABLE_TYPES: Record<string, number> = {
     // Dynasty Read: web-search news synthesis, keyed on player+season+week and
     // NOT user-scoped, so one synthesis is shared across every user for the week.
     dynasty_read:     7 * 24 * 60 * 60 * 1000,
+    // Surface Read: the reusable "explain this screen in one line" layer. Keyed
+    // on the surface id + roster/situation fingerprint, so any roster or week
+    // change produces a fresh line; 6h covers intra-day score drift. Ambient +
+    // server-cached + request-uncounted, so drop-in narration on any Tier-1
+    // screen never burns a user's daily AI allowance.
+    surface_read:     6 * 60 * 60 * 1000,
 };
 
 // User-scoped cache types include the caller identity in the key; team
 // diagnosis is keyed purely on league/roster context (same roster state =>
 // same diagnosis, regardless of which league member asks).
-const USER_SCOPED_CACHE_TYPES = new Set(['dashboard_digest', 'insight']);
+const USER_SCOPED_CACHE_TYPES = new Set(['dashboard_digest', 'insight', 'surface_read']);
 
 function stableStringify(value: any): string {
     if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -2310,6 +2317,50 @@ Output ONLY a valid JSON array, no markdown, no backticks, no prose:
 [{"severity":"pattern","confidence":75,"title":"max 8 words","body":"2-3 sentences citing the specific data behind the pattern"}]`;
 }
 
+// Surface Read — the reusable "explain this screen in one line" layer. The
+// client passes a small, stable descriptor of whatever Tier-1 screen the GM is
+// looking at (its id, a human title, and the handful of numbers actually on it)
+// plus the shared Situation Room read of their team. We return ONE plain-text
+// sentence: what this screen is telling them, and the single highest-leverage
+// takeaway — the "so what" a static chart can't provide. Deliberately format-
+// and screen-agnostic so one route serves Analytics, Free Agency, Compare, etc.
+function buildSurfaceReadPrompt(ctx: any): string {
+    const c = ctx || {};
+    const surface = c.surface || {};
+    const sit = c.situation || c.team || {};
+    const title = String(surface.title || surface.id || 'this screen').trim();
+    // Whatever numbers the screen chose to hand us, rendered as "key: value"
+    // lines. Kept generic so no screen needs a bespoke server prompt.
+    const metrics = surface.metrics && typeof surface.metrics === 'object'
+        ? Object.entries(surface.metrics)
+            .filter(([, v]) => v !== null && v !== undefined && v !== '')
+            .slice(0, 12)
+            .map(([k, v]) => `  ${k}: ${v}`)
+            .join('\n')
+        : '';
+    const needs = Array.isArray(sit.needs)
+        ? sit.needs.map((n: any) => (n && (n.pos || n.position)) || n).filter(Boolean).slice(0, 6).join(', ')
+        : '';
+    const teamLine = [
+        sit.tier ? `tier ${sit.tier}` : '',
+        (sit.window || sit.tradeWindow) ? `window ${sit.window || sit.tradeWindow}` : '',
+        sit.healthScore ? `health ${sit.healthScore}` : '',
+        sit.powerRank ? `power rank #${sit.powerRank}` : '',
+        sit.record ? `record ${sit.record}` : '',
+        needs ? `needs ${needs}` : '',
+    ].filter(Boolean).join(' · ');
+
+    return `You are the DHQ analyst narrating a screen for a dynasty GM in **${c.leagueName || 'their league'}**. They are looking at the "${title}" screen.
+
+WHAT'S ON THE SCREEN:
+${metrics || '  (no numbers supplied)'}
+
+THEIR TEAM (shared read, already reconciled with the rest of the app):
+  ${teamLine || '(team read unavailable)'}
+
+Write ONE sentence (max 26 words) that tells them what this screen is really saying about their team and the single highest-leverage thing to do about it. Ground it in the numbers above — never invent players, trades, or stats. Be specific and plain-spoken. No greeting, no preamble, no lists, no markdown. Output only the sentence.`;
+}
+
 // Dynasty Read — web-search-backed news synthesis for a single player. Context is
 // intentionally minimal and stable (pid/name/team/pos/age/season/week) so the
 // shared weekly cache key is identical for every user viewing this player. The
@@ -2526,6 +2577,7 @@ Deno.serve(async (req) => {
             case 'team_diagnosis':   userPrompt = buildTeamDiagnosisPrompt(context);   break;
             case 'dashboard_digest': userPrompt = buildDashboardDigestPrompt(context); break;
             case 'insight':          userPrompt = buildInsightPrompt(context);         break;
+            case 'surface_read':     userPrompt = buildSurfaceReadPrompt(parseContextPayload(context)); break;
             case 'dynasty_read':     userPrompt = buildDynastyReadPrompt(parseContextPayload(context)); break;
             default:
                 if (genericContext) {
