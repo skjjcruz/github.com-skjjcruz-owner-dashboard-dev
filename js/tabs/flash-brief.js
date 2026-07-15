@@ -95,7 +95,15 @@ function IntelligenceBriefWidget({
     const hs = myAssess?.healthScore || 0;
     const needs = rosterState.isUsable ? (myAssess?.needs || []) : [];
     const elites = rosterState.isUsable && typeof window.App?.countElitePlayers === 'function' ? window.App.countElitePlayers(myRoster?.players || []) : 0;
-    const myRank = rosterState.isUsable ? ((rankedTeams || []).findIndex(t => t.userId === sleeperUserId) + 1) : 0;
+    // Read powerRank DIRECTLY from the one engine — the same value the elites
+    // badge shows — so the pecking-order line can't drift from it. A team's
+    // position in rankedTeams can differ by one from its true powerRank on a
+    // tie or a mid-load recompute; that drift produced "#8 pecking order" next
+    // to "#7 elites badge". Fall back to the list position only if the engine
+    // hasn't produced a rank yet.
+    const myRank = rosterState.isUsable
+        ? ((myAssess && myAssess.powerRank) || ((rankedTeams || []).findIndex(t => t.userId === sleeperUserId) + 1))
+        : 0;
     const scores = window.App?.LI?.playerScores || {};
     const ownerProfiles = window.App?.LI?.ownerProfiles || {};
 
