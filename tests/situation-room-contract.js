@@ -88,7 +88,7 @@ function loadRoom(opts) {
     ctx.window.__DHQ_SITUATION_ROOM = opts.flagOn === true ? true
         : opts.flagOff === true ? false : undefined;
     ctx.window.OD = { getCurrentUsername: () => opts.username || '' };
-    ctx.window.S = { nflState: { week: opts.week != null ? opts.week : 3 }, currentWeek: opts.week != null ? opts.week : 3 };
+    ctx.window.S = { nflState: { week: opts.week != null ? opts.week : 3 }, currentWeek: opts.week != null ? opts.week : 3, myUserId: opts.myUserId || null };
     ctx.window.WR = {
         AIContext: {
             detectFormat: () => ({ isSuperFlex: true, numQBSlots: 2, scoringType: 'ppr' }),
@@ -252,6 +252,8 @@ test('enabled() is false by default, true with force flag / owner', () => {
     eq(loadRoom({ username: 'skjjcruz' }).SR.enabled(), true, 'app owner account on');
     eq(loadRoom({ username: 'SKJJCRUZ' }).SR.enabled(), true, 'app owner account on (case-insensitive)');
     eq(loadRoom({ username: 'someone_else' }).SR.enabled(), false, 'non-owner stays off');
+    eq(loadRoom({ username: 'a_different_handle', myUserId: '540392203863576576' }).SR.enabled(), true, 'owner Sleeper user_id on even when the typed handle differs');
+    eq(loadRoom({ username: 'nobody', myUserId: '111' }).SR.enabled(), false, 'non-owner user_id stays off');
     eq(loadRoom({ username: 'bigloco', flagOff: true }).SR.enabled(), false, 'explicit off overrides owner');
 });
 

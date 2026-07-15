@@ -58,6 +58,13 @@
             // Conductor surfaces before the wider rollout.
             var OWNERS = { skjjcruz: 1, bigloco: 1 };
             if (OWNERS[String(u || '').toLowerCase()]) return true;
+            // Also gate on the stable Sleeper user_id, not just the typed connect
+            // handle — a display name and a login username can differ, and the id
+            // never does. This is the reliable owner signal.
+            var uid = '';
+            try { uid = String((window.S && (window.S.myUserId || (window.S.user && window.S.user.user_id))) || ''); } catch (_) { /* no app state yet */ }
+            var OWNER_IDS = { '540392203863576576': 1 }; // skjjcruz
+            if (uid && OWNER_IDS[uid]) return true;
         } catch (_) { /* non-fatal */ }
         return false;
     }
