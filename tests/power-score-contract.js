@@ -114,6 +114,66 @@ test('recompute yields identical ranks (no flicker)', () => {
     all.forEach(a => eq(map[a.rosterId], a.powerRank, 'stable rid ' + a.rosterId));
 });
 
+// ── Stability pin: same value on refresh, updates only on real change ──
+// Loads the engine with a SHARED localStorage + a toggleable data-ready flag +
+// mutable scores/rosters, to prove the pin freezes a full-data snapshot and
+// serves it on later (partial-data) loads until the league state changes.
+function pinEngine(store, ready, scores, rosters) {
+    const ctx = {
+        console, Date, Math, JSON, Object, Array, Number, String, Boolean,
+        Set, Map, parseInt, parseFloat, isNaN, RegExp, window: null,
+    };
+    ctx.window = ctx;
+    ctx.window.localStorage = store;
+    ctx.window.dynastyValue = pid => scores[pid] || 0;
+    ctx.window.App = { LI: { playerScores: scores, builtAt: ready ? 't1' : '', ownerProfiles: {} }, LI_LOADED: ready };
+    const players = {};
+    rosters.forEach(r => r.players.forEach((pid, i) => { players[pid] = { player_id: pid, position: ['QB', 'RB', 'WR', 'TE'][i % 4], active: true, team: 'X' }; }));
+    ctx.window.S = {
+        rosters, players, playerStats: ready ? { x: {} } : {},
+        leagueUsers: rosters.map(r => ({ user_id: r.owner_id, display_name: 'T' + r.roster_id })),
+        currentLeagueId: 'L1', tradedPicks: [], myRosterId: 1, nflState: { week: 2 }, currentWeek: 2,
+        leagues: [{ league_id: 'L1', roster_positions: ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'SUPER_FLEX'], scoring_settings: { rec: 1 } }],
+    };
+    vm.runInNewContext(fs.readFileSync(enginePath, 'utf8'), ctx, { filename: 'team-assess.js' });
+    return ctx.window;
+}
+function memStore() {
+    const s = {};
+    return { getItem: k => (k in s ? s[k] : null), setItem: (k, v) => { s[k] = String(v); }, removeItem: k => { delete s[k]; }, _s: s };
+}
+function powerOf(win2, rid) { return (win2.assessAllTeamsFromGlobal().find(a => a.rosterId === rid) || {}).powerScore; }
+
+test('pins a full-data snapshot and serves it stably on refresh', () => {
+    const store = memStore();
+    const scores = { a1: 2000, a2: 2000, a3: 2000, a4: 2000, b1: 1500, b2: 1500, b3: 1500, b4: 1500 };
+    const rosters = () => [
+        { roster_id: 1, owner_id: 'u1', players: ['a1', 'a2', 'a3', 'a4'], settings: { wins: 5, losses: 5 } },
+        { roster_id: 2, owner_id: 'u2', players: ['b1', 'b2', 'b3', 'b4'], settings: { wins: 5, losses: 5 } },
+    ];
+    // Load 1 — data ready → computes + pins.
+    const p1 = powerOf(pinEngine(store, true, scores, rosters()), 1);
+    ok(store._s['dhq_power_pin_v2:L1'], 'pinned to localStorage');
+    // Values drift underneath (market refresh), then a "refresh" with data NOT ready.
+    ['a1', 'a2', 'a3', 'a4'].forEach(pid => { scores[pid] = 6000; });
+    const p2 = powerOf(pinEngine(store, false, scores, rosters()), 1);
+    eq(p2, p1, 'refresh serves the pinned value, not a half-loaded recompute');
+});
+
+test('pin updates when the roster actually changes', () => {
+    const store = memStore();
+    const scores = { a1: 2000, a2: 2000, a3: 2000, a4: 2000, b1: 1500, b2: 1500, b3: 1500, b4: 1500, z9: 6000 };
+    const base = () => [
+        { roster_id: 1, owner_id: 'u1', players: ['a1', 'a2', 'a3', 'a4'], settings: { wins: 5, losses: 5 } },
+        { roster_id: 2, owner_id: 'u2', players: ['b1', 'b2', 'b3', 'b4'], settings: { wins: 5, losses: 5 } },
+    ];
+    const p1 = powerOf(pinEngine(store, true, scores, base()), 1);
+    // Team 1 makes a trade — players change → fingerprint busts → fresh compute.
+    const changed = base(); changed[0].players = ['a1', 'a2', 'a3', 'z9'];
+    const p3 = powerOf(pinEngine(store, true, scores, changed), 1);
+    ok(p3 !== p1, 'a real roster change recomputes (pin does not freeze it)');
+});
+
 process.stdout.write('\n\n');
 if (failures.length) {
     console.log(failures.join('\n'));
