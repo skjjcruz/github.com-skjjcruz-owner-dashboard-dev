@@ -1763,25 +1763,29 @@
                 allAssess.forEach(a => { if (a?.rosterId) assessMap[a.rosterId] = a; });
                 const ranked = standings.map(t => {
                     const r = currentLeague.rosters.find(r => r.owner_id === t.userId);
-                    const totalDHQ = r?.players?.reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0) || 0;
                     let healthScore = 0;
+                    let powerScore = 0;
                     let tierColor = 'var(--silver)';
                     const assessment = r ? assessMap[r.roster_id] : null;
+                    // Prefer the engine's total DHQ so rank order matches powerRank exactly.
+                    const totalDHQ = (assessment && assessment.totalDHQ != null)
+                        ? assessment.totalDHQ
+                        : (r?.players?.reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0) || 0);
                     if (assessment) {
                         healthScore = assessment.healthScore || 0;
+                        powerScore = assessment.powerScore || 0;
                         const tier = (assessment.tier || '').toUpperCase();
                         tierColor = tier === 'ELITE' ? 'var(--k-d4af37, #d4af37)' : tier === 'CONTENDER' ? 'var(--k-2ecc71, #2ecc71)' : tier === 'CROSSROADS' ? 'var(--k-f0a500, #f0a500)' : tier === 'REBUILDING' ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)';
                     }
-                    return { ...t, totalDHQ, healthScore, tierColor };
+                    return { ...t, rosterId: r?.roster_id, totalDHQ, healthScore, powerScore, tierColor };
                 }).sort((a,b) => {
-                    if (b.healthScore !== a.healthScore) return b.healthScore - a.healthScore;
+                    // Rank by the single blended Power Score (strength + assets),
+                    // using the SAME tiebreak as team-assess powerRank so the
+                    // brief's "you're Nth" matches the widget and Alex exactly and
+                    // never flickers between close teams.
+                    if (b.powerScore !== a.powerScore) return b.powerScore - a.powerScore;
                     if (b.totalDHQ !== a.totalDHQ) return b.totalDHQ - a.totalDHQ;
-                    // Deterministic final tiebreak by roster/owner id. Without it,
-                    // two teams tied on both health score and total DHQ keep their
-                    // incoming array order, which can differ between recomputes —
-                    // that's what makes a rank flicker 7th<->8th on back-to-back
-                    // views. Pinning to a stable id keeps the order fixed.
-                    return String(a.userId ?? '').localeCompare(String(b.userId ?? ''));
+                    return String(a.rosterId ?? '').localeCompare(String(b.rosterId ?? ''));
                 });
                 setRankedTeams(ranked);
             }
