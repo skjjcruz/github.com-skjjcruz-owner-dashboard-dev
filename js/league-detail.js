@@ -2781,18 +2781,22 @@
             // of a raw "Error: ..." string or a dead spinner. The shared
             // transport now aborts a stalled request after 45s, so a hang
             // arrives here as a timeout the user can simply resend.
-            // "Out of calls" covers both the daily/monthly quota AND the
-            // anti-abuse rate limiter — from the user's seat both mean the same
-            // thing: no more AI right now. Per owner, state it plainly as
-            // reaching the daily AI-call limit instead of a vague "I'm busy".
-            const outOfCalls = /limit reached|daily ai limit|monthly ai limit|budget limit|allowance|resets|upgrade your plan|use your own ai key|rate limit exceeded|\b429\b|rate limit/i.test(raw);
+            // Two different "no AI right now" cases must read differently:
+            //   • the per-minute burst valve (429 "Rate limit exceeded") clears
+            //     in seconds — tell the user to just try again;
+            //   • a real daily/monthly quota resets tomorrow.
+            // Check the burst valve FIRST (its message also contains "limit").
+            const isRateLimit = /rate limit exceeded|try again in \d+\s*s/i.test(raw);
+            const isDailyQuota = !isRateLimit && /limit reached|daily ai limit|monthly ai limit|budget limit|allowance|resets|upgrade your plan|use your own ai key/i.test(raw);
             const friendly = /timed out|timeout|abort/i.test(raw)
               ? "That one took too long to come back — tap send again and I'll pick it right up."
               : /load failed|failed to fetch|network/i.test(raw)
                 ? "I couldn't reach the server just now — check your connection and try again."
-                : outOfCalls
-                  ? "You've reached your AI call limit for the day. It resets tomorrow."
-                  : "Something hiccupped on that one — give it another try.";
+                : isRateLimit
+                  ? "Alex is catching up — give it a few seconds, then send it again."
+                  : isDailyQuota
+                    ? "You've reached your AI call limit for the day. It resets tomorrow."
+                    : "Something hiccupped on that one — give it another try.";
             setReconMessages(prev => {
               const updated = [...prev];
               updated[updated.length - 1] = { role: 'assistant', content: friendly };
