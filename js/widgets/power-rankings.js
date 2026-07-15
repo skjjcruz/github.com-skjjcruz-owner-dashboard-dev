@@ -204,14 +204,20 @@
                         color: 'var(--white)',
                         letterSpacing: '0.04em',
                         whiteSpace: 'nowrap',
+                        // Let the title give way to the tabs in a narrow column
+                        // (the Tall slot) instead of forcing a wrap.
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
                     }
                 }, 'Power Rankings'),
                 showTabs ? React.createElement('div', {
                     style: {
                         marginLeft: 'auto',
                         display: 'flex',
-                        gap: '4px',
+                        gap: compact ? '3px' : '4px',
                         minWidth: 0,
+                        flex: '0 0 auto',
                     }
                 }, ...['blended', 'contender', 'dynasty'].map(k =>
                     React.createElement('button', {
@@ -220,7 +226,7 @@
                         title: VIEW_META[k].help,
                         style: {
                             minHeight: compact ? '30px' : '32px',
-                            padding: compact ? '0 9px' : '0 11px',
+                            padding: compact ? '0 7px' : '0 11px',
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -516,19 +522,25 @@
         }
 
         if (size === 'tall') {
+            // Terse unit for the narrow Tall card, so the stat sub-line stays one
+            // short phrase instead of the tab's full help text (which used to
+            // truncate to "62 60% strength + 40\u2026").
+            const tallUnit = view === 'contender' ? 'pts' : view === 'dynasty' ? 'DHQ' : 'score';
             return React.createElement('div', { style: { ...base, gap: '8px' } },
                 React.createElement(Header, { compact: true, showTabs: true }),
                 React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' } },
                     React.createElement(StatTile, {
+                        compact: true,
                         label: 'Your Rank',
                         value: myRank ? '#' + myRank : '\u2014',
-                        sub: myTeam ? cur.fmtFn(myVal) + ' ' + metricLabel(view).toLowerCase() : 'not found',
+                        sub: myTeam ? cur.fmtFn(myVal) + ' ' + tallUnit : 'not found',
                         tone: myRank ? rankTone(myRank) : TONE.middle,
                     }),
                     React.createElement(StatTile, {
+                        compact: true,
                         label: 'Average',
                         value: cur.fmtFn(avgVal),
-                        sub: myTeam ? (gapToAvg >= 0 ? cur.gapFmt(gapToAvg) + ' above avg' : cur.gapFmt(Math.abs(gapToAvg)) + ' below avg') : 'league mean',
+                        sub: myTeam ? (gapToAvg >= 0 ? '+' + cur.gapFmt(gapToAvg) + ' vs avg' : '\u2212' + cur.gapFmt(Math.abs(gapToAvg)) + ' vs avg') : 'league mean',
                         tone: gapToAvg >= 0 ? TONE.elite : TONE.weak,
                     })
                 ),
