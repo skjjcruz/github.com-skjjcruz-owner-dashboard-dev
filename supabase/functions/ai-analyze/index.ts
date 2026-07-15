@@ -301,14 +301,10 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
         allowWebSearch: false,
     },
     pro: {
-        // Matches the advertised Pro allowance (10/day monthly, 15/day annual —
-        // billing period isn't visible here, so the ceiling covers the annual
-        // promise). The cost caps are whale circuit breakers: a typical Pro user
-        // spends $1.50–2.50/mo of AI against ~$7–8.50/mo net revenue; the caps
-        // bound the worst case at ~$3.75 so no subscriber is unprofitable.
-        // The annual allowance (15/day); monthly subscribers are clamped to
-        // their advertised 10/day by effectivePlanLimits once the billing
-        // period is known from the store webhooks.
+        // Flat 15 AI calls/day for both monthly and annual Pro (owner call
+        // 2026-07-15). The cost caps are whale circuit breakers: a typical Pro
+        // user spends $1.50–2.50/mo of AI against ~$7–8.50/mo net revenue; the
+        // caps bound the worst case at ~$3.75 so no subscriber is unprofitable.
         dailyRequests: 15,
         monthlyRequests: 450,
         dailyCostUsd: 1.00,
@@ -349,16 +345,11 @@ const AI_LIMITS: Record<AIPlanName, AIPlanLimits> = {
     },
 };
 
-// Pro's advertised AI allowance differs by billing period: 10/day monthly,
-// 15/day annual. The matrix row carries the annual ceiling; monthly
-// subscribers get the monthly promise. Unknown billing (legacy bundle rows,
-// or a store event that omitted it) keeps the generous default.
+// Pro is a flat 15 AI calls/day for BOTH monthly and annual (owner call
+// 2026-07-15). The earlier 10/day monthly clamp is removed so billing period
+// no longer changes the allowance.
 function effectivePlanLimits(session: AISession): AIPlanLimits {
-    const base = AI_LIMITS[session.plan] || AI_LIMITS.free;
-    if (session.plan === 'pro' && session.billing === 'monthly') {
-        return { ...base, dailyRequests: 10, monthlyRequests: 300 };
-    }
-    return base;
+    return AI_LIMITS[session.plan] || AI_LIMITS.free;
 }
 
 // Web search is normally restricted to the top plans (allowWebSearch). The

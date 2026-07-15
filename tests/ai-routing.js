@@ -299,14 +299,11 @@ test('server AI enforces plan and prompt/output caps', () => {
   ok(source.includes("AI_MAX_OUTPUT_TOKENS"), 'missing global output cap');
 });
 
-test('pro AI allowance is billing-aware (10/day monthly, 15/day annual)', () => {
-  ok(source.includes('function effectivePlanLimits'), 'missing billing-aware limit selection');
-  ok(source.includes("session.plan === 'pro' && session.billing === 'monthly'"),
-    'monthly clamp must apply only to pro subscribers with known monthly billing');
-  ok(source.includes('dailyRequests: 10, monthlyRequests: 300'),
-    'monthly Pro must be clamped to the advertised 10/day allowance');
-  ok(source.includes("'product_slug, tier, status, billing_period'"),
-    'plan lookup should read billing_period from subscriptions');
+test('pro AI allowance is a flat 15/day (monthly and annual)', () => {
+  ok(source.includes('function effectivePlanLimits'), 'missing plan limit selection');
+  ok(source.includes('dailyRequests: 15'), 'Pro base allowance should be 15/day');
+  ok(!source.includes('dailyRequests: 10, monthlyRequests: 300'),
+    'the old monthly 10/day clamp must be removed — Pro is a flat 15/day');
   ok(source.includes("String(s.product_slug) === 'dhq'"),
     'the live dhq product must resolve to the pro plan');
 });
