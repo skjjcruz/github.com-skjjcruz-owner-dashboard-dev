@@ -1771,20 +1771,24 @@
                     const totalDHQ = (assessment && assessment.totalDHQ != null)
                         ? assessment.totalDHQ
                         : (r?.players?.reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0) || 0);
+                    let powerRank = 0;
                     if (assessment) {
                         healthScore = assessment.healthScore || 0;
                         powerScore = assessment.powerScore || 0;
+                        powerRank = assessment.powerRank || 0;
                         const tier = (assessment.tier || '').toUpperCase();
                         tierColor = tier === 'ELITE' ? 'var(--k-d4af37, #d4af37)' : tier === 'CONTENDER' ? 'var(--k-2ecc71, #2ecc71)' : tier === 'CROSSROADS' ? 'var(--k-f0a500, #f0a500)' : tier === 'REBUILDING' ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)';
                     }
-                    return { ...t, rosterId: r?.roster_id, totalDHQ, healthScore, powerScore, tierColor };
+                    return { ...t, rosterId: r?.roster_id, totalDHQ, healthScore, powerScore, powerRank, tierColor };
                 }).sort((a,b) => {
-                    // Rank by the single blended Power Score (strength + assets),
-                    // using the SAME tiebreak as team-assess powerRank so the
-                    // brief's "you're Nth" matches the widget and Alex exactly and
-                    // never flickers between close teams.
+                    // Order by the engine's powerRank DIRECTLY (not a re-sort of
+                    // powerScore) so the brief's "you're Nth" is byte-identical to
+                    // the widget, elites badge, and Alex — a private re-sort can
+                    // drift by one when a team's data hasn't landed yet. Teams
+                    // with no rank yet sort last; powerScore/id only break ties.
+                    const ar = a.powerRank || 9999, br = b.powerRank || 9999;
+                    if (ar !== br) return ar - br;
                     if (b.powerScore !== a.powerScore) return b.powerScore - a.powerScore;
-                    if (b.totalDHQ !== a.totalDHQ) return b.totalDHQ - a.totalDHQ;
                     return String(a.rosterId ?? '').localeCompare(String(b.rosterId ?? ''));
                 });
                 setRankedTeams(ranked);
