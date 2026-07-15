@@ -313,21 +313,6 @@ function AnalyticsPanel({
             </div>
         </div>
 
-        {/* AI Conductor Phase 3 — one-line "what this screen is telling you" read.
-            Flag-gated (owner only) and additive: renders nothing when off or when
-            the read hasn't landed. First consumer of the reusable WR.SurfaceRead. */}
-        {window.WR?.SurfaceRead?.Line && React.createElement(window.WR.SurfaceRead.Line, {
-            surfaceId: 'analytics:' + analyticsViewTab,
-            title: 'Analytics — ' + (activeSubTab.label || activeSubTab.navLabel || analyticsViewTab),
-            league: currentLeague,
-            roster: myRoster,
-            metrics: () => ({
-                view: analyticsViewTab,
-                focus: _analyticsContext[analyticsViewTab] || '',
-                healthScore: (window.assessTeamFromGlobal && myRoster) ? (window.assessTeamFromGlobal(myRoster.roster_id)?.healthScore || null) : null,
-            }),
-        })}
-
         {!d ? (
             <div style={{ ...aCardStyle, color: 'var(--silver)', textAlign: 'center', padding: '40px' }}>
                 {window.App?.LI_LOADED ? 'Computing analytics...' : 'League Intelligence is still loading. Please wait...'}
