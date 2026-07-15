@@ -248,7 +248,10 @@ test('peek() returns the last snapshot without recompute', () => {
 test('enabled() is false by default, true with force flag / owner', () => {
     eq(loadRoom().SR.enabled(), false, 'off for everyone by default');
     eq(loadRoom({ flagOn: true }).SR.enabled(), true, 'window force-on');
-    eq(loadRoom({ username: 'BigLoco' }).SR.enabled(), true, 'owner account on (case-insensitive)');
+    eq(loadRoom({ username: 'BigLoco' }).SR.enabled(), true, 'QA owner account on (case-insensitive)');
+    eq(loadRoom({ username: 'skjjcruz' }).SR.enabled(), true, 'app owner account on');
+    eq(loadRoom({ username: 'SKJJCRUZ' }).SR.enabled(), true, 'app owner account on (case-insensitive)');
+    eq(loadRoom({ username: 'someone_else' }).SR.enabled(), false, 'non-owner stays off');
     eq(loadRoom({ username: 'bigloco', flagOff: true }).SR.enabled(), false, 'explicit off overrides owner');
 });
 
