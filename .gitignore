@@ -20,3 +20,4 @@ icon.PNG
 .playwright-cli/
 .DS_Store
 **/.DS_Store
+rank-consistency-pass*.png
