@@ -200,11 +200,15 @@
 
         // ── LG / TALL / XXL: vital-signs + position health ───────
         if (size === 'lg' || size === 'tall' || size === 'xxl') {
-            const healthRank = [...allAssess].sort((a, b) => (b.healthScore || 0) - (a.healthScore || 0)).findIndex(a => a.rosterId === myRoster?.roster_id) + 1;
+            // Headline standing = the single blended Power Score rank (the
+            // engine already computed powerRank; fall back to sorting by
+            // powerScore) so this agrees with the brief, widget, and Alex.
+            const powerRank = (assess && assess.powerRank)
+                || ([...allAssess].sort((a, b) => (b.powerScore || 0) - (a.powerScore || 0)).findIndex(a => a.rosterId === myRoster?.roster_id) + 1);
             const totalTeams = allAssess.length || 1;
-            // healthRank 0 = roster not found in the assessment list — no
+            // powerRank 0 = roster not found in the assessment list — no
             // percentile claim (the formula would exceed 100 otherwise).
-            const percentile = (healthRank > 0 && totalTeams > 1) ? Math.round((1 - (healthRank - 1) / totalTeams) * 100) : 0;
+            const percentile = (powerRank > 0 && totalTeams > 1) ? Math.round((1 - (powerRank - 1) / totalTeams) * 100) : 0;
             const healthCol = health >= 80 ? colors.positive : health >= 60 ? colors.accent : health >= 40 ? colors.warn : colors.negative;
 
             // WINDOW vital — calibrated to GM Strategy timeline. A short
@@ -229,7 +233,7 @@
 
             // Compact 4-vital grid for lg (no scroll); 6 for tall/xxl
             const vitals4 = [
-                { label: 'HEALTH', value: healthKv.value, color: healthKv.color || healthCol, sub: (pro ? tier + ' · ' : '') + '#' + (healthRank || '—') },
+                { label: 'HEALTH', value: healthKv.value, color: healthKv.color || healthCol, sub: (pro ? tier + ' · ' : '') + '#' + (powerRank || '—') },
                 { label: 'ELITES', value: eliteKv.value, color: eliteKv.color || colors.positive, sub: 'top-tier' },
                 { label: 'CONTEND.', value: contenderKv.value, color: contenderKv.color || colors.accent, sub: contenderKv.sub || 'this season' },
                 { label: 'WINDOW', value: windowKv.value, color: windowCol, sub: windowSub },
@@ -249,7 +253,7 @@
                         <span style={{ fontSize: '1.1rem' }}>💊</span>
                         <span style={{ fontFamily: fonts.display, fontSize: fs(1.0), fontWeight: 700, color: colors.accent, letterSpacing: '0.07em', textTransform: 'uppercase', flex: 1 }}>Roster Pulse</span>
                         {/* free keeps the raw rank; the tier verdict word is Pro */}
-                        <Badge label={(pro ? tier + ' · ' : '') + '#' + (healthRank || '—')} color={pro ? tierCol : colors.accent} theme={theme} />
+                        <Badge label={(pro ? tier + ' · ' : '') + '#' + (powerRank || '—')} color={pro ? tierCol : colors.accent} theme={theme} />
                         <button onClick={openMyRoster} title="Open My Roster" style={{ padding: '3px 8px', minHeight: '44px', marginTop: '-12px', marginBottom: '-12px', display: 'flex', alignItems: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.58), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Roster</button>
                     </div>
 
@@ -310,7 +314,7 @@
                             <div style={{ marginBottom: '8px', flexShrink: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: fs(0.6), color: colors.textMuted, fontFamily: fonts.ui, marginBottom: '2px' }}>
                                     <span style={{ fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>League Health</span>
-                                    <span>You: {healthRank > 0 ? percentile + ordinalSuffix(percentile) + ' percentile · ' : ''}#{healthRank || '—'} of {totalTeams}</span>
+                                    <span>You: {powerRank > 0 ? percentile + ordinalSuffix(percentile) + ' percentile · ' : ''}#{powerRank || '—'} of {totalTeams}</span>
                                 </div>
                                 <MiniBarChart data={healthSparkData} highlight={health} colors={colors} fonts={fonts} fs={fs} height={36} />
                             </div>
@@ -366,7 +370,7 @@
                             myRoster={myRoster} playersData={playersData}
                             posOrder={posOrder} colors={colors} fonts={fonts} fs={fs} theme={theme}
                             healthSparkData={healthSparkData} health={health}
-                            percentile={percentile} healthRank={healthRank} totalTeams={totalTeams}
+                            percentile={percentile} powerRank={powerRank} totalTeams={totalTeams}
                             tier={tier} needs={needs} strengths={strengths}
                             untouchable={untouchable}
                             setActiveTab={setActiveTab}
@@ -463,7 +467,7 @@
     }
 
     // ── Mini roster panel (xxl) ─────────────────────────────────
-    function MiniRoster({ myRoster, playersData, posOrder, colors, fonts, fs, theme, healthSparkData, health, percentile, healthRank, totalTeams, tier, needs, strengths, untouchable, setActiveTab }) {
+    function MiniRoster({ myRoster, playersData, posOrder, colors, fonts, fs, theme, healthSparkData, health, percentile, powerRank, totalTeams, tier, needs, strengths, untouchable, setActiveTab }) {
         const untouchableSet = untouchable || new Set();
         const scores = window.App?.LI?.playerScores || {};
         const normPos = window.App?.normPos || (p => p);

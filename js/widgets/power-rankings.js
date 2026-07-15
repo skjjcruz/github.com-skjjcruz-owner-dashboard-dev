@@ -23,7 +23,7 @@
     };
 
     const VIEW_META = {
-        blended: { label: 'Blended', short: 'Blend', help: 'Health score' },
+        blended: { label: 'Power', short: 'Power', help: '60% strength + 40% assets' },
         contender: { label: 'Contender', short: 'Now', help: 'Optimal lineup' },
         dynasty: { label: 'Dynasty', short: 'Future', help: 'Roster DHQ' },
     };
@@ -78,7 +78,14 @@
             const rosters = currentLeague?.rosters || [];
             const stats = (window.S && window.S.playerStats) || {};
 
-            const blended = [...assessments].sort((a, b) => (b.healthScore || 0) - (a.healthScore || 0));
+            // "Power" = the single blended Power Score (60% strength + 40%
+            // assets) computed in the assessment engine. Deterministic tiebreak
+            // matches team-assess so this widget agrees with the brief + Alex.
+            const blended = [...assessments].sort((a, b) => {
+                if ((b.powerScore || 0) !== (a.powerScore || 0)) return (b.powerScore || 0) - (a.powerScore || 0);
+                if ((b.totalDHQ || 0) !== (a.totalDHQ || 0)) return (b.totalDHQ || 0) - (a.totalDHQ || 0);
+                return String(a.rosterId).localeCompare(String(b.rosterId));
+            });
 
             const contender = assessments.map(t => {
                 const r = rosters.find(r2 => r2.roster_id === t.rosterId);
@@ -99,7 +106,7 @@
             // dynasty gaps shouldn't collapse to '0.0K'.
             return {
                 blended: {
-                    label: 'Blended', data: blended, valFn: t => t.healthScore || 0,
+                    label: 'Power', data: blended, valFn: t => t.powerScore || 0,
                     fmtFn: v => String(Math.round(v || 0)),
                     gapFmt: v => String(Math.round(v || 0)),
                 },
