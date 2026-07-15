@@ -22,9 +22,13 @@ import {
 } from '../_shared/security.ts';
 
 // ── Rate limiting ─────────────────────────────────────────────
-// 10 AI requests per user per minute to protect Anthropic API costs.
+// Per-user, per-minute burst valve (anti-abuse — NOT the daily allowance,
+// which is the request/cost caps in reserve_ai_usage). Only calls that
+// actually hit a model count: cache hits are refunded (see refundRateLimit),
+// so browsing cached scouting reads can no longer trip it. 20/min leaves ample
+// headroom for a normal session's mix of ambient + manual calls.
 // Uses Deno KV (shared across Edge Function instances).
-const RATE_LIMIT_MAX     = 10;
+const RATE_LIMIT_MAX     = 20;
 const RATE_LIMIT_WINDOW  = 60 * 1000; // 1 minute in ms
 
 function extractUsernameFromJWT(authHeader: string | null): string {
@@ -56,6 +60,21 @@ async function checkRateLimit(identifier: string): Promise<{ allowed: boolean; r
         // If KV is unavailable, allow the request (fail open)
         return { allowed: true };
     }
+}
+
+// Give back a rate-limit slot for a request that turned out to be free (a cache
+// hit that never touched a model). Without this, glancing at a handful of
+// already-cached scouting reads burned the burst valve and the next real
+// question got a spurious 429. Best-effort: a failed refund just costs one slot.
+async function refundRateLimit(identifier: string): Promise<void> {
+    try {
+        const kv = await Deno.openKv();
+        const bucket = Math.floor(Date.now() / RATE_LIMIT_WINDOW);
+        const key = ['rate_limit', 'ai_analyze', identifier, bucket];
+        const entry = await kv.get<number>(key);
+        const count = entry.value ?? 0;
+        if (count > 0) await kv.set(key, count - 1, { expireIn: RATE_LIMIT_WINDOW });
+    } catch { /* fail open */ }
 }
 
 type AIPlanName = 'free' | 'scout' | 'warroom' | 'pro' | 'commissioner' | 'legacy';
@@ -2557,6 +2576,8 @@ Deno.serve(async (req) => {
             if (!forceRefresh) {
                 const cached = await readAIResponseCache(cacheKey);
                 if (cached) {
+                    // Free (never touched a model) — give the burst-valve slot back.
+                    await refundRateLimit(aiSession.identifier);
                     await recordAICacheHit({
                         req,
                         aiSession,

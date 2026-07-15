@@ -517,10 +517,14 @@ function MyTeamTab({
       season: nfl.season || '',
       week: nfl.display_week || nfl.week || 0,
     };
-    window.fetchDynastyRead(ctx, { fallback: '' }).then((txt) => {
-      if (alive && txt) setAiReads(prev => (prev[pid] ? prev : { ...prev, [pid]: txt }));
-    });
-    return () => { alive = false; };
+    // Debounce: only fetch after the row stays expanded briefly, so quickly
+    // expanding/collapsing rows doesn't fire a scouting call per glance.
+    const timer = setTimeout(() => {
+      window.fetchDynastyRead(ctx, { fallback: '' }).then((txt) => {
+        if (alive && txt) setAiReads(prev => (prev[pid] ? prev : { ...prev, [pid]: txt }));
+      });
+    }, 600);
+    return () => { alive = false; clearTimeout(timer); };
   }, [expandedPid]);
   const dismissDrop = React.useCallback((pid) => {
     const playerName = window.App?.playersData?.[pid]?.full_name || pid;
