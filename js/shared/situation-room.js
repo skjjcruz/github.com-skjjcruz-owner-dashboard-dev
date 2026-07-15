@@ -40,7 +40,7 @@
     // OFF for everyone unless one of these opts in:
     //   • window.__DHQ_SITUATION_ROOM === true   (page / QA harness force-on)
     //   • localStorage 'dhq_ff_situation' === '1' (manual QA opt-in)
-    //   • the owner QA account (username 'bigloco')
+    //   • an owner account (the app owner 'skjjcruz' or the QA account 'bigloco')
     // An explicit `false` (window flag or ls '0') force-disables even for the
     // owner, so QA can verify the OFF path on any account.
     function enabled() {
@@ -53,7 +53,11 @@
             if (ls === '0') return false;
             var u = (window.OD && typeof window.OD.getCurrentUsername === 'function')
                 ? window.OD.getCurrentUsername() : '';
-            if (String(u || '').toLowerCase() === 'bigloco') return true;
+            // Owner allowlist: the app owner's real Sleeper account plus the QA
+            // account used in the verification harness. Both see the flagged AI
+            // Conductor surfaces before the wider rollout.
+            var OWNERS = { skjjcruz: 1, bigloco: 1 };
+            if (OWNERS[String(u || '').toLowerCase()]) return true;
         } catch (_) { /* non-fatal */ }
         return false;
     }
