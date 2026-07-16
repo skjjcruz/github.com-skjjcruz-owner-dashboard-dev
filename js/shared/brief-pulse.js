@@ -237,7 +237,24 @@
             return function () { alive = false; };
         }, [active, curr && curr.fingerprint]);
 
-        if (!active || !change.material || !line) return null;
+        // No material change: normally render nothing. In `quiet` mode (used
+        // as the Intelligence Brief's lead line) render a muted "nothing moved"
+        // status instead, so the brief always opens with its 24-hour read.
+        if (!active || !change.material || !line) {
+            if (!active || !props || !props.quiet) return null;
+            return h('div', {
+                style: {
+                    display: 'flex', alignItems: 'flex-start', gap: '7px',
+                    margin: tight ? '4px 0 0' : '8px 0 0',
+                    padding: tight ? '5px 8px' : '7px 10px',
+                    fontSize: tight ? '0.74rem' : '0.82rem',
+                    lineHeight: 1.4, color: 'var(--silver, #9aa4b2)',
+                },
+            },
+                h('span', { 'aria-hidden': 'true', style: { color: 'var(--silver, #9aa4b2)', opacity: 0.7, flex: '0 0 auto' } }, '⟳'),
+                h('span', { style: { flex: 1 } }, 'No change in your roster strength over the last 24 hours.'),
+            );
+        }
 
         return h('div', {
             style: {
