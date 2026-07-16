@@ -1131,15 +1131,14 @@ function DashboardPanel({
                 onMouseLeave={() => setShowGear(false)}
                 style={{
                     gridColumn: sizeSpan[widget.size] || 'span 1',
-                    gridRow: rowSpan[widget.size] || 'span 1',
+                    // Intel Brief (tall) reserves 3 rows instead of 4 — it fills
+                    // them, so its content sits tight AND the widget beneath it
+                    // slides up flush to the border (no unfillable dead row).
+                    gridRow: (widget.key === 'intel-brief' && widget.size === 'tall') ? 'span 3' : (rowSpan[widget.size] || 'span 1'),
                     position: 'relative',
                     opacity: dragIdx === idx ? 0.4 : 1,
                     transition: theme.effects?.transition || 'opacity 0.15s',
                     minHeight: widget.size === 'sm' ? '160px' : undefined,
-                    // Intel Brief (tall) sizes to its content and sits at the top
-                    // of its grid area instead of stretching to fill the reserved
-                    // rows, so the box closes up on its last line.
-                    alignSelf: (widget.key === 'intel-brief' && widget.size === 'tall') ? 'start' : undefined,
                 }}
             >
                 {children}

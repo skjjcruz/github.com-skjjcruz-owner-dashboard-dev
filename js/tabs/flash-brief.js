@@ -569,7 +569,7 @@ function IntelligenceBriefWidget({
         } catch (e) { return null; }
         if (days == null) return null;
         return React.createElement('div', {
-            style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px', flexShrink: 0, marginTop: '4px', padding: '11px 12px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px', flexShrink: 0, marginTop: 'auto', padding: '11px 12px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
         },
             React.createElement('span', { style: { fontSize: '1.15rem' } }, '🏈'),
             React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1.1rem', color: 'var(--gold)' } }, days === 0 ? 'KICKOFF' : String(days)),
@@ -631,11 +631,11 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // ── tall — living brief; box shrinks to content (closes on the last line)
+    // ── tall — living brief; fills its (3-row) slot, countdown pinned bottom
     if (size === 'tall') {
-        return React.createElement('div', { style: { ...cardStyle, height: 'auto' } },
+        return React.createElement('div', { style: cardStyle },
             header({ noPulse: true }),
-            React.createElement('div', { style: { padding: '12px 18px 14px', display: 'flex', flexDirection: 'column', gap: '10px' } },
+            React.createElement('div', { style: { padding: '12px 18px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
                 renderIntelBody(),
                 // Action cards moved off the board for now (owner call) — the
                 // brief is the intel lines + kickoff countdown.
@@ -706,9 +706,9 @@ function IntelligenceBriefWidget({
     }
 
     // Default: living-brief layout (same as tall)
-    return React.createElement('div', { style: { ...cardStyle, height: 'auto' } },
+    return React.createElement('div', { style: cardStyle },
         header({ noPulse: true }),
-        React.createElement('div', { style: { padding: '12px 18px 14px', display: 'flex', flexDirection: 'column', gap: '10px' } },
+        React.createElement('div', { style: { padding: '12px 18px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
             renderIntelBody(),
             // Action cards moved off the board for now (owner call).
             renderCountdown(),
