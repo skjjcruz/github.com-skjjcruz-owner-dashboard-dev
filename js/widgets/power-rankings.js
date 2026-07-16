@@ -229,7 +229,10 @@
                     alignItems: 'center',
                     gap: micro ? '5px' : dense ? '7px' : '10px',
                     minHeight: micro ? '23px' : dense ? '30px' : '36px',
-                    padding: micro ? '1px 6px' : dense ? '3px 7px' : '5px 8px',
+                    // 9px side padding on micro rows matches the StatTile boxes
+                    // above, so the team list lines up flush under the Your Rank
+                    // / Average boxes on both edges.
+                    padding: micro ? '1px 9px' : dense ? '3px 7px' : '5px 8px',
                     borderRadius: '6px',
                     background: isMe ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'transparent',
                     border: isMe ? '1px solid var(--acc-line1, rgba(212,175,55,0.2))' : '1px solid transparent',
@@ -241,7 +244,10 @@
                         fontSize: micro ? 'var(--text-micro, 0.6875rem)' : dense ? '0.78rem' : '0.9rem',
                         fontWeight: 800,
                         color: rank <= 3 ? TONE.gold : 'var(--silver)',
-                        textAlign: 'right',
+                        // Left-align the rank on micro rows so the "1" sits
+                        // directly under the Your Rank box's label, not floated
+                        // inward by the right-align used on the wider layouts.
+                        textAlign: micro ? 'left' : 'right',
                     }
                 }, rank),
                 React.createElement('div', { style: { minWidth: 0 } },
@@ -470,7 +476,8 @@
                         label: 'Your Rank',
                         value: myRank ? '#' + myRank : '\u2014',
                         sub: myTeam ? cur.fmtFn(myVal) + ' ' + tallUnit : 'not found',
-                        tone: myRank ? rankTone(myRank) : TONE.middle,
+                        // Owner wants the personal rank called out in red.
+                        tone: TONE.weak,
                     }),
                     React.createElement(StatTile, {
                         compact: true,
