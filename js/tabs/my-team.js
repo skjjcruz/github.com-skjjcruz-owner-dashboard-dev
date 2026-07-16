@@ -752,14 +752,12 @@ function MyTeamTab({
         const pts = p.points[obj] || 0;
         const isStart = !!(weeklyLineup && weeklyLineup.starterSet.has(String(r.pid)));
         const g = p.matchupGrade;
-        const gcol = g === 'A' ? 'var(--good)' : g === 'B' ? 'var(--gold)' : g === 'D' ? 'var(--warn)' : g === 'F' ? 'var(--bad)' : 'var(--silver)';
         // Free: raw projected pts keep rendering; START/SIT (optimizer output)
-        // + matchup grade (interpretive read) are the Pro line. Dynasty (E2):
-        // only the START/SIT verdict is suppressed — Pro keeps the matchup
-        // grade, and saved views keep the raw pts.
+        // is the Pro line. The bare matchup-grade letter is not surfaced in the
+        // column (it read as a stray "c"); it stays in the hover tooltip only.
         return <div key={colKey} style={{...base, flexDirection: 'column', gap: '0px'}} title={'Projected ' + pts.toFixed(1) + ' pts' + (isPro ? ' · matchup ' + g : '') + (p.opponent && p.opponent.abbr ? ' vs ' + p.opponent.abbr : '')}>
           <span style={{ color: 'var(--white)', fontWeight: 600, fontSize: '0.76rem', fontFamily: 'var(--font-body)' }}>{pts > 0 ? pts.toFixed(1) : '—'}</span>
-          {isPro && <span style={{ fontSize: '0.54rem', fontWeight: 700, letterSpacing: '0.03em', color: wkVerdict ? (isStart ? 'var(--good)' : 'var(--silver)') : gcol }}>{wkVerdict ? (isStart ? 'START' : 'SIT') : ''}<span style={{ color: gcol, marginLeft: wkVerdict ? '3px' : '0px' }}>{g}</span></span>}
+          {isPro && wkVerdict && <span style={{ fontSize: '0.54rem', fontWeight: 700, letterSpacing: '0.03em', color: isStart ? 'var(--good)' : 'var(--silver)' }}>{isStart ? 'START' : 'SIT'}</span>}
         </div>;
       }
       case 'hi': { const fs = window.App?.WeeklyProj?.formStats?.(r.pid, 'season'); return <div key={colKey} style={{...base}}><span style={{ color: fs ? 'var(--good, #2ecc71)' : 'var(--silver)', opacity: fs ? 1 : 0.45, fontWeight: 550 }}>{fs ? fs.high.toFixed(1) : '—'}</span></div>; }
