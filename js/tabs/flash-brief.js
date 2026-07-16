@@ -255,6 +255,9 @@ function IntelligenceBriefWidget({
     const userName = window.S?.user?.display_name || window.S?.user?.username || 'Commander';
     const p = BRIEF_VOICE;
     const greetingText = p.greeting(hour, userName);
+    // Date stamp for the brief header (owner's living-brief template).
+    let briefDate = '';
+    try { briefDate = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(); } catch (e) { briefDate = ''; }
 
     // Build Alex's conversational briefing
     const needPos = needs.length ? (typeof needs[0] === 'string' ? needs[0] : needs[0]?.pos) : '';
@@ -288,12 +291,6 @@ function IntelligenceBriefWidget({
     const strategyFrame = gm.hasStrategy
         ? 'Your plan: ' + (gm.modeLabel || gm.mode) + ', ' + (TIMELINE_FRAME[gm.timeline] || 'on your timeline') + ' — everything below is read against that.'
         : '';
-
-    // Brief prose at tall/xl/default: strategy frame (lead) + tier read, and
-    // nothing else. Elites, gaps, trades, and FAAB all render as KPIs or
-    // action rows on this same widget — never narrated twice (de-busying
-    // rule: prose is a lead, not a summary).
-    const briefText = strategyFrame ? strategyFrame + ' ' + tierMsg : tierMsg;
 
     // Three-sentence summary — fits a 160px-tall md row, no scroll
     const threeSentence = (() => {
@@ -429,18 +426,100 @@ function IntelligenceBriefWidget({
     function header(opts = {}) {
         const tight = !!opts.tight;
         return React.createElement('div', { style: { padding: tight ? '8px 14px 6px' : '20px 20px 0', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', paddingBottom: tight ? '6px' : '12px', flexShrink: 0 } },
-            React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: tight ? '0.62rem' : '0.72rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: tight ? '2px' : '4px', display: 'flex', alignItems: 'center', gap: '6px' } },
-                window.AlexAvatar ? React.createElement(window.AlexAvatar, { size: tight ? 14 : 16 }) : null,
-                'INTELLIGENCE BRIEFING',
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: tight ? '2px' : '4px' } },
+                React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: tight ? '0.62rem' : '0.72rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' } },
+                    window.AlexAvatar ? React.createElement(window.AlexAvatar, { size: tight ? 14 : 16 }) : null,
+                    'INTELLIGENCE BRIEFING',
+                ),
+                // Living-brief date stamp (owner's template) — right-aligned.
+                React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: tight ? '0.6rem' : '0.68rem', color: 'var(--silver)', opacity: 0.7, letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, briefDate),
             ),
             React.createElement('div', { style: { fontSize: tight ? '0.92rem' : '1.2rem', fontWeight: 700, color: 'var(--white)' } }, greetingText),
             // AI Conductor — Situation Room "what changed" line. Renders only
             // when the flag is on AND something material changed since last
-            // visit; otherwise returns null and the template is unchanged.
-            (window.WR && window.WR.BriefPulse && window.WR.BriefPulse.Line)
+            // visit; otherwise returns null. Suppressed (noPulse) on the sizes
+            // whose body carries the structured brief, which leads with its own
+            // quiet 24-hour line.
+            (!opts.noPulse && window.WR && window.WR.BriefPulse && window.WR.BriefPulse.Line)
                 ? React.createElement(window.WR.BriefPulse.Line, { league: currentLeague, roster: myRoster, playersData: playersData, tight: tight })
                 : null,
         );
+    }
+
+    // ── Structured "living brief" body (owner's template) ───────────
+    // Each line fills from live data and is OMITTED entirely when its data
+    // isn't available (never a blank / "___"). Every data line carries a
+    // tappable source that jumps to the tab it's pulled from. The cutdown-date
+    // line is intentionally left out — Sleeper doesn't expose it (owner call).
+    function renderIntelBody(opts = {}) {
+        const compact = !!opts.compact;
+        const bodyFs = compact ? '0.82rem' : 'var(--text-body, 1rem)';
+
+        const val = (t, col) => React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: col } }, t);
+        const chip = (t) => React.createElement('span', { key: t, style: { display: 'inline-block', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.82em', fontWeight: 700, padding: '0 6px', borderRadius: '4px', margin: '0 3px 0 0', background: 'rgba(232,106,90,0.13)', color: 'var(--bad, #e86a5a)', border: '1px solid rgba(232,106,90,0.28)' } }, t);
+        const source = (label, target) => React.createElement('button', {
+            onClick: (e) => { e.stopPropagation(); goTo(target); },
+            style: { display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '3px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', letterSpacing: '0.03em', color: 'var(--gold-dim, #b8912f)' },
+            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--gold, #d4af37)'; e.currentTarget.style.textDecoration = 'underline'; },
+            onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--gold-dim, #b8912f)'; e.currentTarget.style.textDecoration = 'none'; },
+        }, '↳ ' + label + ' →');
+
+        // Roster capacity — read live from the league + your roster.
+        const rosterPositions = currentLeague?.roster_positions || [];
+        const activeCap = rosterPositions.length;
+        const taxiCap = currentLeague?.settings?.taxi_slots || 0;
+        const irCap = currentLeague?.settings?.reserve_slots || 0;
+        const totalCap = activeCap + taxiCap + irCap;
+        const taxiCount = (myRoster?.taxi || []).length;
+        const irCount = (myRoster?.reserve || []).length;
+        const totalPlayers = (myRoster?.players || []).length;
+        const activeCount = Math.max(0, totalPlayers - taxiCount - irCount);
+
+        const weakPos = needs.map(n => (typeof n === 'string' ? n : n?.pos)).filter(Boolean).slice(0, 4);
+        const hasWaiverNames = !!(waiverTarget || (keyDrops && keyDrops.length));
+
+        const lines = [];
+        if (myRank > 0 && tier !== 'UNKNOWN') {
+            lines.push({ key: 'rank', target: 'analytics', src: 'Power Rankings',
+                body: ["You're ranked ", val(ordinal(myRank), 'var(--bad, #e86a5a)'), ' with an overall Health score of ', val(String(hs), 'var(--white)'), ' — ', React.createElement('strong', { key: 't', style: { color: 'var(--white)' } }, tier), ' tier.'] });
+        }
+        if (activeCap > 0) {
+            const detail = taxiCap > 0
+                ? [' — ', val(activeCount + '/' + activeCap, 'var(--silver)'), ' active · ', val(taxiCount + '/' + taxiCap, 'var(--silver)'), ' taxi']
+                : [];
+            lines.push({ key: 'roster', target: 'myteam', src: 'My Roster',
+                body: ['Roster: ', val(String(totalPlayers), 'var(--white)'), ' of ', val(String(totalCap), 'var(--white)'), ...detail] });
+        }
+        if (weakPos.length) {
+            lines.push({ key: 'weak', target: 'fa', src: 'Free Agency',
+                body: ['Key positional weaknesses: ', ...weakPos.map(chip)] });
+        }
+        if (budget > 0) {
+            lines.push({ key: 'faab', target: 'fa', src: 'Free Agency',
+                body: ["You've got ", val('$' + faabRemaining.toLocaleString(), 'var(--k-7c6bf8, #7c6bf8)'), ' FAAB left' + (hasWaiverNames ? ', with names available on waivers.' : '.')] });
+        }
+
+        const rowStyle = { display: 'grid', gridTemplateColumns: '14px 1fr', gap: '10px', padding: compact ? '7px 0' : '10px 0', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', alignItems: 'start' };
+        const kids = [];
+        // Lead line — the Situation Room's 24-hour read (quiet mode shows "no
+        // change" instead of rendering nothing). Only when the Room is enabled.
+        if (window.WR && window.WR.SituationRoom && typeof window.WR.SituationRoom.enabled === 'function' && window.WR.SituationRoom.enabled() && window.WR.BriefPulse && window.WR.BriefPulse.Line) {
+            kids.push(React.createElement('div', { key: 'pulse', style: { padding: '0 0 2px' } },
+                React.createElement(window.WR.BriefPulse.Line, { league: currentLeague, roster: myRoster, playersData: playersData, tight: compact, quiet: true })));
+        }
+        lines.forEach((ln) => {
+            kids.push(React.createElement('div', { key: ln.key, style: rowStyle },
+                React.createElement('div', { style: { marginTop: '4px', color: 'var(--gold-dim, #b8912f)', fontSize: '11px', lineHeight: 1 } }, '◆'),
+                React.createElement('div', { style: { minWidth: 0 } },
+                    React.createElement('div', { style: { fontSize: bodyFs, color: '#cdd3de', lineHeight: 1.5 } }, ...ln.body),
+                    source(ln.src, ln.target),
+                ),
+            ));
+        });
+
+        // Natural height (no flex-grow) so the action CTAs sit directly beneath
+        // the last line instead of being pushed to the card's bottom edge.
+        return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', minHeight: 0, flexShrink: 0 } }, ...kids);
     }
 
     // ── Intel Brief is FREE for every tier (owner call 2026-07-11) ───
@@ -496,14 +575,14 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // ── tall (2×4, 640px tall) — full vertical layout ────────────────
+    // ── tall (2×4, 640px tall) — living brief: structured lines + CTAs ──
     if (size === 'tall') {
         return React.createElement('div', { style: cardStyle },
-            header(),
-            React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
-                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
-                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-                    ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'tall-' + i)),
+            header({ noPulse: true }),
+            React.createElement('div', { style: { padding: '12px 18px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+                renderIntelBody(),
+                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', flexShrink: 0 } },
+                    ...actions.slice(0, 3).map((a, i) => renderActionBtn(a, 'tall-' + i, { compact: true })),
                 ),
             ),
         );
@@ -513,10 +592,10 @@ function IntelligenceBriefWidget({
     if (size === 'xl') {
         const top4 = actions.slice(0, 4);
         return React.createElement('div', { style: cardStyle },
-            header({ tight: true }),
+            header({ tight: true, noPulse: true }),
             React.createElement('div', { className: 'wr-ib-xl-body', style: { padding: '10px 14px', flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' } },
-                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.65, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 9, WebkitBoxOrient: 'vertical' } }, briefText),
-                React.createElement('div', { className: 'wr-ib-xl-actions', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', minHeight: 0 } },
+                renderIntelBody({ compact: true }),
+                React.createElement('div', { className: 'wr-ib-xl-actions', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', minHeight: 0, alignContent: 'start' } },
                     ...top4.map((a, i) => renderActionBtn(a, 'xl-' + i, { compact: true, titleClamp: 2 })),
                 ),
             ),
@@ -573,13 +652,13 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // Default: tall layout
+    // Default: living-brief layout (same as tall)
     return React.createElement('div', { style: cardStyle },
-        header(),
-        React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
-            React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-                ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'def-' + i)),
+        header({ noPulse: true }),
+        React.createElement('div', { style: { padding: '12px 18px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+            renderIntelBody(),
+            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', flexShrink: 0 } },
+                ...actions.slice(0, 3).map((a, i) => renderActionBtn(a, 'def-' + i, { compact: true })),
             ),
         ),
     );
