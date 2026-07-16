@@ -114,11 +114,12 @@ const WIDGET_MODULES = {
     'league-standings': {
         label: 'League Standings',
         icon: '📊',
-        // Tall / Full Page show EVERY team (md/lg cap the list to fit).
+        // Narrow (skinny side column) + Tall / Full Page show EVERY team;
+        // md/lg cap the list to fit.
         description: 'Current records, value, and roster strength by team',
         accent: () => T().color?.('accent') || 'var(--k-d4af37, #d4af37)',
         metrics: [],
-        sizes: ['md', 'lg', 'tall', 'xxl'],
+        sizes: ['narrow', 'md', 'lg', 'tall', 'xxl'],
         clickTarget: { md: 'analytics' },
         pro: false, formatFlag: null,
     },
@@ -1008,9 +1009,10 @@ function DashboardPanel({
     // ══════════════════════════════════════════════════════════════
     function renderStandings(size) {
         const isOffseason = currentLeague?.status === 'complete' || currentLeague?.status === 'pre_draft';
-        const isCompact = size === 'md';
-        // Tall / Full Page show every team (scrolls if needed); md/lg cap to fit.
-        const showAll = size === 'tall' || size === 'xxl' || size === 'xl';
+        // md and the skinny narrow/slim column use the tight 4-column layout.
+        const isCompact = size === 'md' || size === 'narrow' || size === 'slim';
+        // Narrow / Tall / Full Page show every team (scrolls if needed); md/lg/slim cap to fit.
+        const showAll = size === 'tall' || size === 'xxl' || size === 'xl' || size === 'narrow';
         // skjjcruz production keeps division-grouped standings on the dashboard
         // (explicitly preserved in the prod sync — do not replace with the flat list).
         const divisions = {};
@@ -1047,7 +1049,7 @@ function DashboardPanel({
                             if (b.wins !== a.wins) return b.wins - a.wins;
                             if (a.losses !== b.losses) return a.losses - b.losses;
                             return b.pointsFor - a.pointsFor;
-                        }).slice(0, isCompact ? 5 : showAll ? 999 : 8).map((team, idx) => {
+                        }).slice(0, showAll ? 999 : isCompact ? 5 : 8).map((team, idx) => {
                             const isMe = team.userId === sleeperUserId;
                             const roster = currentLeague?.rosters?.find(r => r.owner_id === team.userId);
                             const totalDHQ = roster?.players?.reduce((s, pid) => s + ((window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid) : (window.App?.LI?.playerScores?.[pid] || 0))), 0) || 0;
@@ -1309,13 +1311,22 @@ function DashboardPanel({
                 </WidgetShell>
             );
         }
-        // Skinny side-column sizes for the inline-rendered ticker (slim/narrow).
-        if ((size === 'slim' || size === 'narrow') && key === 'transaction-ticker') {
-            return (
-                <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
-                    {renderTransactionTicker(size)}
-                </WidgetShell>
-            );
+        // Skinny side-column sizes for the inline-rendered ticker + standings.
+        if (size === 'slim' || size === 'narrow') {
+            if (key === 'transaction-ticker') {
+                return (
+                    <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
+                        {renderTransactionTicker(size)}
+                    </WidgetShell>
+                );
+            }
+            if (key === 'league-standings') {
+                return (
+                    <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
+                        {renderStandings(size)}
+                    </WidgetShell>
+                );
+            }
         }
         return null;
     }
