@@ -741,8 +741,8 @@
                             // Clamp the AI read to ~4 lines with a "Full read" expand
                             // (de-busying rule: long-form stays behind a disclosure).
                             ? (window.WR && window.WR.ClampedRead
-                                ? React.createElement(window.WR.ClampedRead, { text: scoutNews.text, maxHeight: 104, style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 }, fadeColor: 'var(--k-0a0b0d, #0a0b0d)' })
-                                : React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, scoutNews.text))
+                                ? React.createElement(window.WR.ClampedRead, { html: (window.WR.formatAI ? window.WR.formatAI(scoutNews.text) : scoutNews.text), maxHeight: 104, style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 }, fadeColor: 'var(--k-0a0b0d, #0a0b0d)' })
+                                : React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 }, dangerouslySetInnerHTML: { __html: (window.WR && window.WR.formatAI) ? window.WR.formatAI(scoutNews.text) : scoutNews.text } }))
                             : scoutNews.status === 'locked'
                                 ? React.createElement('button', {
                                     onClick: () => { if (window.showProLaunchPage) window.showProLaunchPage(); else if (window.showUpgradePrompt) window.showUpgradePrompt('dynasty_read_ai'); },

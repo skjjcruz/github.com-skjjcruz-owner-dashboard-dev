@@ -264,6 +264,9 @@
                                 return next;
                             });
                         };
+                        // Shared AI-text formatter (bold + spacing + dividers),
+                        // so draft commentary reads like every other AI surface.
+                        const fmtAI = (window.WR && window.WR.formatAI) ? window.WR.formatAI : (x => String(x == null ? '' : x));
                         const textClamp = isExpandable && !isExpanded ? {
                             display: '-webkit-box',
                             WebkitLineClamp: 2,
@@ -321,11 +324,10 @@
                                             color: 'var(--silver)',
                                             opacity: 0.8,
                                             marginTop: '1px',
-                                            lineHeight: 1.4,
+                                            lineHeight: 1.5,
                                             wordBreak: 'break-word',
-                                            whiteSpace: 'pre-wrap',
                                             ...textClamp,
-                                        }}>{item.text}</div>
+                                        }} dangerouslySetInnerHTML={{ __html: fmtAI(item.text) }} />
                                     )}
                                     {isExpanded && item.fullText && item.fullText !== item.text && (
                                         <div style={{
@@ -338,14 +340,14 @@
                                                     fontSize: 'var(--text-label, 0.75rem)',
                                                     color: 'var(--silver)',
                                                     opacity: 0.85,
-                                                    lineHeight: 1.45,
+                                                    lineHeight: 1.5,
                                                     wordBreak: 'break-word',
                                                     whiteSpace: 'normal',
                                                     border: '1px solid var(--ov-4, rgba(255,255,255,0.055))',
                                                     borderRadius: 'var(--card-radius-sm)',
                                                     padding: '5px 6px',
                                                     background: 'var(--ov-1, rgba(255,255,255,0.018))',
-                                                }}>{block}</div>
+                                                }} dangerouslySetInnerHTML={{ __html: fmtAI(block) }} />
                                             ))}
                                         </div>
                                     )}

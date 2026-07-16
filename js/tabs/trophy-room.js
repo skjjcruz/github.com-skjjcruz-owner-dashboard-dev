@@ -1130,11 +1130,11 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
         // Season Recap result card (only shown after generation). Long-form
         // starts collapsed past ~12 lines (268px ≈ 12 × 1.7-line-height) with
         // a "Full read" expand — the de-busying long-form rule.
-        view === 'league' && recapStatus === 'done' && recapText && React.createElement('div', { style: { ...cardStyle, whiteSpace: 'pre-wrap' } },
+        view === 'league' && recapStatus === 'done' && recapText && React.createElement('div', { style: { ...cardStyle } },
             React.createElement('div', { style: headerStyle }, 'SEASON RECAP'),
             (window.WR && window.WR.ClampedRead)
-                ? React.createElement(window.WR.ClampedRead, { text: recapText, maxHeight: 268, style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.7 }, fadeColor: 'var(--black, #000)' })
-                : React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.7 } }, recapText),
+                ? React.createElement(window.WR.ClampedRead, { html: (window.WR.formatAI ? window.WR.formatAI(recapText) : recapText), maxHeight: 268, style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.5 }, fadeColor: 'var(--black, #000)' })
+                : React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.5 }, dangerouslySetInnerHTML: { __html: (window.WR && window.WR.formatAI) ? window.WR.formatAI(recapText) : recapText } }),
         ),
 
         view === 'league' ? renderLeagueView()

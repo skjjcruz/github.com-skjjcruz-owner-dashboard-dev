@@ -64,6 +64,10 @@
             .replace(/'/g, '&#39;');
     }
     function markdownToHtml(str) {
+        // Use the shared AI-text formatter so Alex's chat matches every other
+        // AI surface (bold, paragraph spacing, tidy dividers). Falls back to
+        // the original inline behavior if the shared helper hasn't loaded.
+        if (window.WR && typeof window.WR.formatAI === 'function') return window.WR.formatAI(str);
         return escapeHtml(str).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
     }
 
@@ -4058,7 +4062,7 @@
                   msg.role === 'user' ? (
                     <div key={i} style={{
                       alignSelf: 'flex-end', maxWidth: '85%', padding: '8px 12px', borderRadius: '12px',
-                      fontSize: 'var(--text-body, 1rem)', lineHeight: 1.4,
+                      fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5,
                       background: 'rgba(124,107,248,0.12)', border: '1px solid rgba(124,107,248,0.18)',
                       color: 'var(--text-primary)'
                     }} dangerouslySetInnerHTML={{ __html: markdownToHtml(msg.content) }} />
@@ -4081,7 +4085,7 @@
                         }
                         return (
                           <React.Fragment>
-                            <div style={{ fontSize: 'var(--text-body, 1rem)', lineHeight: 1.4, color: 'var(--text-primary)' }}
+                            <div style={{ fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5, color: 'var(--text-primary)' }}
                               dangerouslySetInnerHTML={{ __html: markdownToHtml(textContent) }} />
                             {tradeCard && (
                               <div style={{ marginTop: '10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', padding: '10px', fontSize: 'var(--text-body, 1rem)' }}>

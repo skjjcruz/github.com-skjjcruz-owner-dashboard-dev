@@ -273,7 +273,7 @@
     //   style     — style object for the content div (both modes).
     //   fadeColor — color the fade dissolves into (match the surface bg).
     // Consume guarded: window.WR?.ClampedRead (script-order safety).
-    function ClampedRead({ text, children, maxHeight, style, fadeColor }) {
+    function ClampedRead({ text, html, children, maxHeight, style, fadeColor }) {
         const limit = maxHeight || 104;
         const [open, setOpen] = React.useState(false);
         const [overflow, setOverflow] = React.useState(false);
@@ -291,12 +291,14 @@
             const ro = new ResizeObserver(measure);
             ro.observe(el);
             return () => ro.disconnect();
-        }, [text, limit]);
+        }, [text, html, limit]);
         const clamped = overflow && !open;
         const fade = fadeColor || 'var(--surf-solid, rgba(12,12,18,0.99))';
         return h('div', null,
             h('div', { style: { position: 'relative', maxHeight: clamped ? limit + 'px' : 'none', overflow: clamped ? 'hidden' : 'visible' } },
-                h('div', { ref: ref, style: style }, text != null ? text : children),
+                html != null
+                    ? h('div', { ref: ref, style: style, dangerouslySetInnerHTML: { __html: html } })
+                    : h('div', { ref: ref, style: style }, text != null ? text : children),
                 clamped ? h('div', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '38px', background: 'linear-gradient(180deg, transparent, ' + fade + ')', pointerEvents: 'none' } }) : null
             ),
             overflow ? h('button', {
