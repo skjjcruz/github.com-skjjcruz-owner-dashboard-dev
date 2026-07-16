@@ -1128,6 +1128,10 @@ function DashboardPanel({
                     opacity: dragIdx === idx ? 0.4 : 1,
                     transition: theme.effects?.transition || 'opacity 0.15s',
                     minHeight: widget.size === 'sm' ? '160px' : undefined,
+                    // Intel Brief (tall) sizes to its content and sits at the top
+                    // of its grid area instead of stretching to fill the reserved
+                    // rows, so the box closes up on its last line.
+                    alignSelf: (widget.key === 'intel-brief' && widget.size === 'tall') ? 'start' : undefined,
                 }}
             >
                 {children}
