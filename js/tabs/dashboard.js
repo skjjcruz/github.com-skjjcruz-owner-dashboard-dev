@@ -239,7 +239,7 @@ const WIDGET_MODULES = {
         description: 'Next league date + a running agenda — draft, deadline, playoffs, waivers',
         accent: () => T().color?.('info') || 'var(--k-3498db, #3498db)',
         metrics: [],
-        sizes: ['sm', 'md', 'lg', 'tall', 'xl', 'xxl'],
+        sizes: ['sm', 'narrow', 'md', 'lg', 'tall', 'xl', 'xxl'],
         clickTarget: { sm: 'trophies', md: 'trophies' },
         pro: false, formatFlag: null,
     },
