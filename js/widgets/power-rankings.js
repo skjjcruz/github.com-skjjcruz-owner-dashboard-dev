@@ -485,7 +485,12 @@
                     style: {
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '1px',
+                        // Spread the 16 rows to fill the column's full height so
+                        // they line up evenly with the tall brief beside them,
+                        // instead of bunching at the top with dead space below.
+                        // Falls back to top-anchored scrolling if they overflow.
+                        justifyContent: 'space-between',
+                        gap: '2px',
                         minHeight: 0,
                         flex: 1,
                         overflow: 'auto',
