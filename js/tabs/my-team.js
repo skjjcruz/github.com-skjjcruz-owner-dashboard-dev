@@ -255,7 +255,7 @@ function MyTeamTab({
     age:        { label: 'Age', shortLabel: 'Age', width: '38px', group: 'dynasty' },
     dhq:        { label: valueLabel, shortLabel: valueShortLabel, width: '60px', group: 'dynasty' },
     ppg:        { label: 'Points Per Game', shortLabel: 'PPG', width: '48px', group: 'stats' },
-    proj:       { label: isPro && wkVerdict ? 'This Week — projected pts + start/sit (league-scored)' : 'This Week — projected pts (league-scored)', shortLabel: 'Wk', width: '62px', group: 'stats' },
+    proj:       { label: isPro && wkVerdict ? 'This Week — projected pts + start/sit (league-scored)' : 'This Week — projected pts (league-scored)', shortLabel: 'Proj', width: '62px', group: 'stats' },
     hi:         { label: 'Season High — most fantasy pts in a week', shortLabel: 'Hi', width: '40px', group: 'stats' },
     lo:         { label: 'Season Low — fewest fantasy pts in a played week', shortLabel: 'Lo', width: '40px', group: 'stats' },
     prev:       { label: 'Previous Season PPG', shortLabel: 'Last', width: '44px', group: 'stats' },
@@ -898,6 +898,37 @@ function MyTeamTab({
     }
   }
 
+  // \u2500\u2500 Draft-pick inventory (owned future picks) \u2014 shown under the roster \u2500\u2500
+  // Mirrors the draft-capital widget: a pick is yours unless you traded it
+  // away; picks acquired via trade show who they came from.
+  const myDraftPicks = (() => {
+    try {
+      const myRid = myRoster?.roster_id;
+      if (myRid == null || !currentLeague) return [];
+      const season = parseInt(currentLeague.season || new Date().getFullYear(), 10);
+      const draftRounds = currentLeague.settings?.draft_rounds || 5;
+      const tradedPicks = window.S?.tradedPicks || [];
+      const rosters = currentLeague.rosters || [];
+      const users = window.S?.leagueUsers || currentLeague.users || [];
+      const out = [];
+      for (let yr = season; yr <= season + 2; yr++) {
+        for (let rd = 1; rd <= draftRounds; rd++) {
+          const tradedAway = tradedPicks.find(p => parseInt(p.season, 10) === yr && p.round === rd && p.roster_id === myRid && p.owner_id !== myRid);
+          const acquired = tradedPicks.filter(p => parseInt(p.season, 10) === yr && p.round === rd && p.owner_id === myRid && p.roster_id !== myRid);
+          if (!tradedAway) out.push({ year: yr, round: rd, own: true, from: null });
+          acquired.forEach(a => {
+            const fromRoster = rosters.find(r => r.roster_id === a.roster_id);
+            const fromUser = fromRoster ? users.find(u => u.user_id === fromRoster.owner_id) : null;
+            out.push({ year: yr, round: rd, own: false, from: (fromUser?.display_name || ('Team ' + a.roster_id)) });
+          });
+        }
+      }
+      return out.sort((a, b) => a.year - b.year || a.round - b.round);
+    } catch (e) { return []; }
+  })();
+  const picksByYear = {};
+  myDraftPicks.forEach(p => { (picksByYear[p.year] = picksByYear[p.year] || []).push(p); });
+
   return (
     <div style={{ padding: 'var(--card-pad, 16px 18px)', display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
       {isCompactRoster && (() => {
@@ -1283,6 +1314,27 @@ function MyTeamTab({
           </div>
         </div>
       </div>
+
+      {myDraftPicks.length > 0 && (
+        <div style={{ marginTop: '12px', border: '1px solid var(--ov-5, rgba(255,255,255,0.075))', borderRadius: 'var(--card-radius)', overflow: 'hidden', background: 'var(--surf-solid, rgba(12,12,17,0.98))', boxShadow: '0 10px 24px rgba(0,0,0,0.2)' }}>
+          <div style={{ padding: '7px 10px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'var(--ov-1, rgba(255,255,255,0.018))', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700 }}>Draft Picks</div>
+            <div style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)' }}>{myDraftPicks.length} pick{myDraftPicks.length === 1 ? '' : 's'}</div>
+          </div>
+          <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {Object.keys(picksByYear).sort().map(yr => (
+              <div key={yr} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', minWidth: '42px' }}>{yr}</span>
+                {picksByYear[yr].map((p, i) => (
+                  <span key={i} title={p.own ? 'Your own pick' : ('Acquired from ' + p.from)} style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '5px', fontFamily: 'JetBrains Mono, monospace', background: p.own ? 'var(--acc-fill2, rgba(212,175,55,0.10))' : 'rgba(124,107,248,0.13)', color: p.own ? 'var(--gold)' : 'var(--k-9b8afb, #9b8afb)', border: '1px solid ' + (p.own ? 'var(--acc-fill3, rgba(212,175,55,0.2))' : 'rgba(124,107,248,0.28)') }}>
+                    R{p.round}{p.own ? '' : ' · ' + String(p.from).slice(0, 8)}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       </div>
     </div>
