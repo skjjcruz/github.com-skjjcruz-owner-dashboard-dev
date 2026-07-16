@@ -193,7 +193,14 @@
             }));
         }
 
-        function StatTile({ label, value, sub, tone = 'var(--white)', compact = false }) {
+        function StatTile({ label, value, sub, tone = 'var(--white)', compact = false, inline = false }) {
+            const labelEl = React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, label);
+            const valueEl = React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: compact ? '0.95rem' : '1.18rem', lineHeight: 1.1, fontWeight: 900, color: tone, marginTop: inline ? 0 : (compact ? '2px' : '4px'), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, value);
+            // inline: label on the left, number on the right of the same row
+            // (instead of stacked). Keeps the sub-line below both.
+            const head = inline
+                ? React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' } }, labelEl, valueEl)
+                : [labelEl, valueEl];
             return React.createElement('div', {
                 style: {
                     background: TONE.panel,
@@ -203,8 +210,8 @@
                     minWidth: 0,
                 }
             },
-                React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, label),
-                React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: compact ? '0.95rem' : '1.18rem', lineHeight: 1.1, fontWeight: 900, color: tone, marginTop: compact ? '2px' : '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, value),
+                inline ? head : head[0],
+                inline ? null : head[1],
                 sub ? React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.62, marginTop: compact ? '1px' : '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, sub) : null
             );
         }
@@ -459,6 +466,7 @@
                 React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' } },
                     React.createElement(StatTile, {
                         compact: true,
+                        inline: true,
                         label: 'Your Rank',
                         value: myRank ? '#' + myRank : '\u2014',
                         sub: myTeam ? cur.fmtFn(myVal) + ' ' + tallUnit : 'not found',
@@ -466,6 +474,7 @@
                     }),
                     React.createElement(StatTile, {
                         compact: true,
+                        inline: true,
                         label: 'Average',
                         value: cur.fmtFn(avgVal),
                         sub: myTeam ? (gapToAvg >= 0 ? '+' + cur.gapFmt(gapToAvg) + ' vs avg' : '\u2212' + cur.gapFmt(Math.abs(gapToAvg)) + ' vs avg') : 'league mean',
