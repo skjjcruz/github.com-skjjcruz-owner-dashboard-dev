@@ -1127,7 +1127,7 @@ function CompareTab({
         }
         const atMax = comparePlayerIds.length >= 4;
         return (
-            <div style={{ position: 'relative', minWidth: '230px', flex: '1 1 250px', maxWidth: '440px' }}>
+            <div style={{ position: 'relative', minWidth: '230px', flex: '1 1 340px', maxWidth: '640px' }}>
                 <input
                     ref={playerSearchRef}
                     value={playerQuery}
@@ -1568,7 +1568,7 @@ function CompareTab({
             }
         `}</style>
         <div className="wr-module-strip">
-          <div className="wr-module-actions">
+          <div className="wr-module-actions" style={compareScope === 'players' ? { flex: '1 1 100%', justifyContent: 'space-between' } : undefined}>
             {renderScopeControls()}
             {compareScope === 'duel' ? (
                 <select className="wr-module-select" value={compareTeamId || ''} onChange={e => setCompareTeamId(e.target.value || null)} style={selectStyle}>
