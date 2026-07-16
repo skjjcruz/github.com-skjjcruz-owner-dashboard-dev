@@ -246,6 +246,16 @@
             const vitals = (size === 'lg') ? vitals4 : vitals6;
             const vitalCols = (size === 'lg') ? 4 : 3;
 
+            // The actual elite players (same test the ELITES count uses:
+            // window.App.isElitePlayer — 7000+ DHQ or top-5 at position), so
+            // "open it up" shows exactly WHO is elite, not just how many.
+            const scoresMap = window.App?.LI?.playerScores || {};
+            const isElite = (pid) => (window.App?.isElitePlayer ? window.App.isElitePlayer(String(pid)) : (scoresMap[pid] || 0) >= 7000);
+            const eliteCore = (myRoster?.players || [])
+                .filter(isElite)
+                .map(pid => ({ pid, name: playersData?.[pid]?.full_name || pid, pos: window.App?.normPos?.(playersData?.[pid]?.position) || '', dhq: scoresMap[pid] || 0 }))
+                .sort((a, b) => b.dhq - a.dhq);
+
             return (
                 <div style={{ ...cardStyle, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {/* Header */}
@@ -306,6 +316,28 @@
                     </div>
 
                     {/* LG STOPS HERE (fits in 320px) */}
+
+                    {/* Elite core — the actual elite players (tall/xxl have room) */}
+                    {(size === 'tall' || size === 'xxl') && (
+                        <div style={{ marginBottom: '8px', flexShrink: 0 }}>
+                            <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.positive, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Elite Core · {eliteCore.length}</div>
+                            {eliteCore.length === 0 ? (
+                                <div style={{ fontSize: fs(0.62), color: colors.textFaint, fontStyle: 'italic', fontFamily: fonts.ui }}>No elite-tier players yet — build toward a 7000+ DHQ anchor.</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                    {eliteCore.slice(0, size === 'xxl' ? 12 : 6).map(p => (
+                                        <div key={p.pid} role="button" tabIndex={0} title="Open player card"
+                                            onClick={() => { if (window.WR?.openPlayerCard) window.WR.openPlayerCard(p.pid); else if (typeof window.openPlayerModal === 'function') window.openPlayerModal(p.pid); }}
+                                            style={{ display: 'grid', gridTemplateColumns: '30px 1fr auto', gap: '6px', alignItems: 'center', padding: '3px 5px', borderRadius: '4px', cursor: 'pointer', background: 'var(--ov-1, rgba(255,255,255,0.02))' }}>
+                                            <span style={{ fontSize: fs(0.56), fontWeight: 700, color: colors.textMuted, fontFamily: fonts.ui }}>{window.App?.posLabel?.(p.pos) || p.pos}</span>
+                                            <span style={{ fontSize: fs(0.66), color: colors.text || 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                                            <span style={{ fontSize: fs(0.6), fontFamily: fonts.mono, fontWeight: 700, color: colors.positive }}>{p.dhq >= 1000 ? (p.dhq / 1000).toFixed(1) + 'k' : p.dhq}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* TALL extras: percentile + needs/strengths + recommendation */}
                     {size === 'tall' && (
