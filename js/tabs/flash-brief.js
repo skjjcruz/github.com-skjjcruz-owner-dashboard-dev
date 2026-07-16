@@ -569,7 +569,7 @@ function IntelligenceBriefWidget({
         } catch (e) { return null; }
         if (days == null) return null;
         return React.createElement('div', {
-            style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px', flexShrink: 0, marginTop: 'auto', padding: '11px 12px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '9px', flexShrink: 0, marginTop: 'auto', padding: '11px 4px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
         },
             React.createElement('span', { style: { fontSize: '1.15rem' } }, '🏈'),
             React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1.1rem', color: 'var(--gold)' } }, days === 0 ? 'KICKOFF' : String(days)),
