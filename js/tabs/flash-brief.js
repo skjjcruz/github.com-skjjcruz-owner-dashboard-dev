@@ -620,24 +620,20 @@ function IntelligenceBriefWidget({
             header({ noPulse: true }),
             React.createElement('div', { style: { padding: '12px 18px 0', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
                 renderIntelBody(),
-                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', flexShrink: 0 } },
-                    ...actions.slice(0, 3).map((a, i) => renderActionBtn(a, 'tall-' + i, { compact: true })),
-                ),
+                // Action cards moved off the board for now (owner call) — the
+                // brief is the intel lines + kickoff countdown.
                 renderCountdown(),
             ),
         );
     }
 
-    // ── xl (4×2, 320×640) — split columns, no scroll ─────────────────
+    // ── xl (4×2) — living brief, single column (action cards off for now) ──
     if (size === 'xl') {
-        const top4 = actions.slice(0, 4);
         return React.createElement('div', { style: cardStyle },
             header({ tight: true, noPulse: true }),
-            React.createElement('div', { className: 'wr-ib-xl-body', style: { padding: '10px 14px', flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' } },
-                renderIntelBody({ compact: true }),
-                React.createElement('div', { className: 'wr-ib-xl-actions', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', minHeight: 0, alignContent: 'start' } },
-                    ...top4.map((a, i) => renderActionBtn(a, 'xl-' + i, { compact: true, titleClamp: 2 })),
-                ),
+            React.createElement('div', { style: { padding: '10px 16px 0', flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', overflow: 'hidden' } },
+                renderIntelBody(),
+                renderCountdown(),
             ),
         );
     }
@@ -697,9 +693,7 @@ function IntelligenceBriefWidget({
         header({ noPulse: true }),
         React.createElement('div', { style: { padding: '12px 18px 0', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
             renderIntelBody(),
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', flexShrink: 0 } },
-                ...actions.slice(0, 3).map((a, i) => renderActionBtn(a, 'def-' + i, { compact: true })),
-            ),
+            // Action cards moved off the board for now (owner call).
             renderCountdown(),
         ),
     );
