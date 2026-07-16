@@ -180,7 +180,9 @@ const WIDGET_MODULES = {
         description: 'Blended health, contender PPG, and value rankings',
         accent: () => T().color?.('positive') || 'var(--k-2ecc71, #2ecc71)',
         metrics: [],
-        sizes: ['sm', 'md', 'lg', 'tall', 'xxl'],
+        // 'narrow' (1 col × 4 rows) shows the full 16-team board in a single
+        // column so it can tuck into a side column next to a wide command brief.
+        sizes: ['sm', 'md', 'narrow', 'lg', 'tall', 'xxl'],
         clickTarget: { sm: 'analytics', md: 'analytics' },
         pro: false, formatFlag: null, // ranking, not advice (owner Q7)
     },

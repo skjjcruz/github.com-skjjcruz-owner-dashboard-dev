@@ -446,7 +446,10 @@
             );
         }
 
-        if (size === 'tall') {
+        if (size === 'tall' || size === 'narrow') {
+            // Both the half-width Tall and the single-column Narrow slot render the
+            // full 16-team board in a tall, thin column — Narrow just spans one grid
+            // column so it fits beside a wide command brief.
             // Terse unit for the narrow Tall card, so the stat sub-line stays one
             // short phrase instead of the tab's full help text (which used to
             // truncate to "62 60% strength + 40\u2026").
