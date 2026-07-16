@@ -114,20 +114,22 @@ const WIDGET_MODULES = {
     'league-standings': {
         label: 'League Standings',
         icon: '📊',
+        // Tall / Full Page show EVERY team (md/lg cap the list to fit).
         description: 'Current records, value, and roster strength by team',
         accent: () => T().color?.('accent') || 'var(--k-d4af37, #d4af37)',
         metrics: [],
-        sizes: ['md', 'lg'],
+        sizes: ['md', 'lg', 'tall', 'xxl'],
         clickTarget: { md: 'analytics' },
         pro: false, formatFlag: null,
     },
     'transaction-ticker': {
         label: 'Transaction Ticker',
         icon: '📰',
+        // slim / narrow are skinny side-column versions.
         description: 'Recent adds, drops, waivers, and trade drill-ins',
         accent: () => T().color?.('info') || 'var(--k-3498db, #3498db)',
         metrics: [],
-        sizes: ['md', 'lg'],
+        sizes: ['slim', 'narrow', 'md', 'lg'],
         clickTarget: {},
         pro: false, formatFlag: null,
     },
@@ -714,12 +716,14 @@ function DashboardPanel({
     // ══════════════════════════════════════════════════════════════
     // LARGE CARD — 2×2 — mini-panel with multiple stats + list
     // ══════════════════════════════════════════════════════════════
-    function LargeModuleCard({ moduleKey, primaryMetric }) {
+    function LargeModuleCard({ moduleKey, primaryMetric, size = 'lg' }) {
         const mod = WIDGET_MODULES[moduleKey];
         if (!mod) return null;
 
-        if (moduleKey === 'league-standings') return renderStandings('lg');
-        if (moduleKey === 'transaction-ticker') return renderTransactionTicker('lg');
+        // Standings/ticker honor the real size so Tall/Full Page can show all
+        // teams instead of the lg cap.
+        if (moduleKey === 'league-standings') return renderStandings(size === 'md' ? 'lg' : size);
+        if (moduleKey === 'transaction-ticker') return renderTransactionTicker(size === 'md' ? 'lg' : size);
         if (moduleKey === 'intel-brief') return renderIntelligenceBrief('lg');
         if (moduleKey === 'field-notes') return renderFieldNotes('lg');
 
@@ -843,8 +847,10 @@ function DashboardPanel({
     // ══════════════════════════════════════════════════════════════
     function renderTransactionTicker(size) {
         // Row budget per size: each entry is ~46px (2 lines). md = 1 grid row
-        // (160px) fits 2 entries after the header; lg (2 rows, ~330px) fits 5.
-        const transactionLimit = size === 'lg' ? 5 : 2;
+        // (160px) fits 2 entries after the header; lg (2 rows, ~330px) fits 5;
+        // the skinny side-column sizes are tall — slim (2 rows) ~4, narrow
+        // (4 rows) ~12 — and reuse the same vertical list, just narrower.
+        const transactionLimit = size === 'narrow' ? 12 : size === 'lg' ? 5 : size === 'slim' ? 4 : 2;
         let visibleTransactions = (transactions || []).slice(0, transactionLimit);
         if (size === 'lg' && !visibleTransactions.some(t => t.type === 'trade')) {
             const firstTrade = (transactions || []).find(t => t.type === 'trade');
@@ -958,7 +964,7 @@ function DashboardPanel({
                 </div>
                 <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
                 {(!transactions || transactions.length === 0) ? (
-                    <SkeletonRows count={size === 'lg' ? 5 : 2} />
+                    <SkeletonRows count={size === 'narrow' ? 8 : size === 'lg' ? 5 : size === 'slim' ? 4 : 2} />
                 ) : visibleTransactions.map((txn, ti) => (
                     <div key={ti} {...tickerTradeProps(txn)} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))', cursor: txn.type === 'trade' ? 'pointer' : 'default', outline: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', flexWrap: 'wrap' }}>
@@ -1003,6 +1009,8 @@ function DashboardPanel({
     function renderStandings(size) {
         const isOffseason = currentLeague?.status === 'complete' || currentLeague?.status === 'pre_draft';
         const isCompact = size === 'md';
+        // Tall / Full Page show every team (scrolls if needed); md/lg cap to fit.
+        const showAll = size === 'tall' || size === 'xxl' || size === 'xl';
         // skjjcruz production keeps division-grouped standings on the dashboard
         // (explicitly preserved in the prod sync — do not replace with the flat list).
         const divisions = {};
@@ -1015,7 +1023,7 @@ function DashboardPanel({
         }
 
         return (
-            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', overflow: 'hidden' }}>
+            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', overflow: showAll ? 'auto' : 'hidden' }}>
                 <div style={{ fontFamily: rajFont, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: G, letterSpacing: '0.07em', marginBottom: '10px' }}>📊 LEAGUE STANDINGS</div>
                 {divKeys.map(divKey => (
                     <div key={divKey} style={{ marginBottom: hasDivisions ? '14px' : 0 }}>
@@ -1039,7 +1047,7 @@ function DashboardPanel({
                             if (b.wins !== a.wins) return b.wins - a.wins;
                             if (a.losses !== b.losses) return a.losses - b.losses;
                             return b.pointsFor - a.pointsFor;
-                        }).slice(0, isCompact ? 5 : 8).map((team, idx) => {
+                        }).slice(0, isCompact ? 5 : showAll ? 999 : 8).map((team, idx) => {
                             const isMe = team.userId === sleeperUserId;
                             const roster = currentLeague?.rosters?.find(r => r.owner_id === team.userId);
                             const totalDHQ = roster?.players?.reduce((s, pid) => s + ((window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid) : (window.App?.LI?.playerScores?.[pid] || 0))), 0) || 0;
@@ -1291,14 +1299,22 @@ function DashboardPanel({
         if (size === 'lg' || size === 'tall') {
             return (
                 <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
-                    <LargeModuleCard moduleKey={key} primaryMetric={primaryMetric} />
+                    <LargeModuleCard moduleKey={key} primaryMetric={primaryMetric} size={size} />
                 </WidgetShell>
             );
         }
         if (size === 'xl' || size === 'xxl') {
             return (
                 <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
-                    <LargeModuleCard moduleKey={key} primaryMetric={primaryMetric} />
+                    <LargeModuleCard moduleKey={key} primaryMetric={primaryMetric} size={size} />
+                </WidgetShell>
+            );
+        }
+        // Skinny side-column sizes for the inline-rendered ticker (slim/narrow).
+        if ((size === 'slim' || size === 'narrow') && key === 'transaction-ticker') {
+            return (
+                <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
+                    {renderTransactionTicker(size)}
                 </WidgetShell>
             );
         }

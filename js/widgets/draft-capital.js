@@ -379,10 +379,13 @@
 
         // ── XXL: lg + Big Board + Pick Strategy + League Capital chart ──
         if (size === 'xxl') {
-            // Top available players (proxy for big board): un-rostered, sorted by DHQ
+            // Top available players (proxy for big board): un-rostered, sorted by DHQ.
+            // Only positions this league actually rosters — otherwise team
+            // defenses (DEF) leak into IDP leagues like Psycho that don't use them.
             const scores = window.App?.LI?.playerScores || {};
             const rostered = new Set();
             (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
+            const allowedPos = (window.App?.leaguePlayablePositions ? window.App.leaguePlayablePositions(currentLeague?.roster_positions) : null);
             const bigBoard = Object.entries(scores)
                 .filter(([pid]) => !rostered.has(pid))
                 .map(([pid, dhq]) => {
@@ -395,6 +398,7 @@
                         team: p.team || 'FA', dhq,
                     };
                 })
+                .filter(p => !allowedPos || !allowedPos.length || allowedPos.includes(p.pos))
                 .sort((a, b) => b.dhq - a.dhq)
                 .slice(0, 20);
 
