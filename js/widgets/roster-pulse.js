@@ -66,6 +66,41 @@
         const windowKv = kv('window');
         const cliffKv = kv('aging-cliff');
 
+        // ── Elite players (hoisted so any size can reveal them on click) ──
+        // Same test the ELITES count uses: window.App.isElitePlayer.
+        const _scoresMap = window.App?.LI?.playerScores || {};
+        const _isElite = (pid) => (window.App?.isElitePlayer ? window.App.isElitePlayer(String(pid)) : (_scoresMap[pid] || 0) >= 7000);
+        const eliteCore = React.useMemo(() => (myRoster?.players || [])
+            .filter(_isElite)
+            .map(pid => ({ pid, name: playersData?.[pid]?.full_name || pid, pos: window.App?.normPos?.(playersData?.[pid]?.position) || '', dhq: _scoresMap[pid] || 0 }))
+            .sort((a, b) => b.dhq - a.dhq), [myRoster?.roster_id, playersData]);
+        const [showElites, setShowElites] = React.useState(false);
+        const openElites = (e) => { if (e) e.stopPropagation(); setShowElites(true); };
+        // Overlay listing the actual elite players — rendered inside whichever
+        // size card is showing, on top, dismissible.
+        const eliteOverlay = showElites ? (
+            React.createElement('div', {
+                onClick: (e) => { e.stopPropagation(); setShowElites(false); },
+                style: { position: 'absolute', inset: 0, background: 'var(--surf-solid, rgba(8,9,12,0.97))', borderRadius: 'inherit', zIndex: 20, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'auto' },
+            },
+                React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 } },
+                    React.createElement('span', { style: { fontFamily: fonts.display, fontSize: fs(0.82), fontWeight: 700, color: colors.positive, letterSpacing: '0.08em', textTransform: 'uppercase' } }, 'Elite Players · ' + eliteCore.length),
+                    React.createElement('button', { onClick: (e) => { e.stopPropagation(); setShowElites(false); }, title: 'Close', style: { width: '28px', height: '28px', borderRadius: '6px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'var(--ov-2, rgba(255,255,255,0.03))', color: colors.textMuted, cursor: 'pointer', fontSize: fs(0.8) } }, '✕'),
+                ),
+                eliteCore.length === 0
+                    ? React.createElement('div', { style: { fontSize: fs(0.66), color: colors.textFaint, fontStyle: 'italic', fontFamily: fonts.ui } }, 'No elite-tier players yet — build toward a 7000+ DHQ anchor.')
+                    : eliteCore.map(p => React.createElement('div', {
+                        key: p.pid,
+                        onClick: (e) => { e.stopPropagation(); if (window.WR?.openPlayerCard) window.WR.openPlayerCard(p.pid); else if (typeof window.openPlayerModal === 'function') window.openPlayerModal(p.pid); },
+                        style: { display: 'grid', gridTemplateColumns: '34px 1fr auto', gap: '8px', alignItems: 'center', padding: '5px 6px', borderRadius: '5px', cursor: 'pointer', background: 'var(--ov-1, rgba(255,255,255,0.02))', flexShrink: 0 },
+                    },
+                        React.createElement('span', { style: { fontSize: fs(0.58), fontWeight: 700, color: colors.textMuted, fontFamily: fonts.ui } }, window.App?.posLabel?.(p.pos) || p.pos),
+                        React.createElement('span', { style: { fontSize: fs(0.72), color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, p.name),
+                        React.createElement('span', { style: { fontSize: fs(0.66), fontFamily: fonts.mono, fontWeight: 700, color: colors.positive } }, p.dhq >= 1000 ? (p.dhq / 1000).toFixed(1) + 'k' : p.dhq),
+                    )),
+            )
+        ) : null;
+
         // ── Primary metric selection (sm/md) ────────────────────
         // Honors the primaryMetric prop chosen in the widget picker.
         const primary = (() => {
@@ -139,13 +174,14 @@
         // ── SM (1×1) ─────────────────────────────────────────────
         if (size === 'sm') {
             return (
-                <div onClick={onClick} style={{
+                <div onClick={primaryMetric === 'elite-count' ? openElites : onClick} style={{
                     ...cardStyle,
                     padding: 'var(--card-pad, 14px 16px)',
-                    cursor: 'pointer',
+                    cursor: 'pointer', position: 'relative',
                     display: 'flex', flexDirection: 'column',
                     justifyContent: 'center', alignItems: 'center', textAlign: 'center',
                 }}>
+                    {eliteOverlay}
                     <div style={{
                         fontFamily: fonts.mono, fontSize: fs(2.0), fontWeight: 700,
                         color: primary.color, lineHeight: 1,
@@ -175,10 +211,11 @@
         // ── MD (2×1) ─────────────────────────────────────────────
         if (size === 'md') {
             return (
-                <div onClick={onClick} style={{
-                    ...cardStyle, padding: 'var(--card-pad, 14px 16px)', cursor: 'pointer',
+                <div onClick={primaryMetric === 'elite-count' ? openElites : onClick} style={{
+                    ...cardStyle, padding: 'var(--card-pad, 14px 16px)', cursor: 'pointer', position: 'relative',
                     display: 'flex', gap: '12px', alignItems: 'center',
                 }}>
+                    {eliteOverlay}
                     <div style={{ textAlign: 'center', flexShrink: 0, minWidth: 60 }}>
                         <div style={{
                             fontFamily: fonts.mono, fontSize: fs(2.0), fontWeight: 700,
@@ -246,18 +283,9 @@
             const vitals = (size === 'lg') ? vitals4 : vitals6;
             const vitalCols = (size === 'lg') ? 4 : 3;
 
-            // The actual elite players (same test the ELITES count uses:
-            // window.App.isElitePlayer — 7000+ DHQ or top-5 at position), so
-            // "open it up" shows exactly WHO is elite, not just how many.
-            const scoresMap = window.App?.LI?.playerScores || {};
-            const isElite = (pid) => (window.App?.isElitePlayer ? window.App.isElitePlayer(String(pid)) : (scoresMap[pid] || 0) >= 7000);
-            const eliteCore = (myRoster?.players || [])
-                .filter(isElite)
-                .map(pid => ({ pid, name: playersData?.[pid]?.full_name || pid, pos: window.App?.normPos?.(playersData?.[pid]?.position) || '', dhq: scoresMap[pid] || 0 }))
-                .sort((a, b) => b.dhq - a.dhq);
-
             return (
-                <div style={{ ...cardStyle, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ ...cardStyle, padding: 'var(--card-pad, 14px 16px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+                    {eliteOverlay}
                     {/* Header */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexShrink: 0 }}>
                         <span style={{ fontSize: '1.1rem' }}>💊</span>
@@ -273,11 +301,15 @@
                         marginBottom: '10px', flexShrink: 0,
                     }}>
                         {vitals.map((v, i) => (
-                            <div key={i} style={{
+                            <div key={i}
+                                onClick={v.label === 'ELITES' ? openElites : undefined}
+                                title={v.label === 'ELITES' ? 'Show elite players' : undefined}
+                                style={{
                                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
-                                border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
+                                border: '1px solid ' + (v.label === 'ELITES' ? wrAlpha(colors.positive, '44') : (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))')),
                                 borderRadius: theme.card?.radius === '0px' ? '0' : '6px',
                                 padding: '6px 4px', textAlign: 'center',
+                                cursor: v.label === 'ELITES' ? 'pointer' : 'default',
                             }}>
                                 <div style={{
                                     fontFamily: fonts.mono, fontSize: fs(1.1), fontWeight: 700,
