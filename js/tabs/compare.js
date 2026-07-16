@@ -1313,9 +1313,12 @@ function CompareTab({
             // instead of engaging the scroll container — hold a 110px floor per
             // player column (two players still fit a 375 side-by-side; 3–4 scroll)
             // and pin the metric-label column sticky-left. Desktop/tablet: unchanged.
+            // Desktop/tablet: a matching spacer column on the RIGHT balances the
+            // left metric-label column, so the players sit centered instead of
+            // shifted right. (Phone scrolls, so it keeps the label-only layout.)
             const gt = isPhone
                 ? 'minmax(84px, 0.62fr) repeat(' + N + ', minmax(110px, 1fr))'
-                : 'minmax(94px, 0.62fr) repeat(' + N + ', minmax(0, 1fr))';
+                : 'minmax(94px, 0.62fr) repeat(' + N + ', minmax(0, 1fr)) minmax(94px, 0.62fr)';
             // Explicit px floor so every row spans the full scroll width (row
             // borders stay continuous mid-scroll): 84px label + N*(110px + 10px gap).
             const rowMinW = isPhone ? (84 + N * 120) + 'px' : undefined;

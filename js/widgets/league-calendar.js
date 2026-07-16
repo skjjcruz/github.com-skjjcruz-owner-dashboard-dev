@@ -114,7 +114,7 @@
         );
 
         // How many agenda rows fit each size.
-        const rowBudget = { md: 2, lg: 4, tall: 7, xl: 4, xxl: 9 };
+        const rowBudget = { md: 2, narrow: 8, lg: 4, tall: 7, xl: 4, xxl: 9 };
         const limit = rowBudget[size] || 4;
         const shown = events.slice(0, limit);
         const hidden = events.length - shown.length;

@@ -136,7 +136,6 @@ function LineupTab({
 
     // ── Game Day Central: DvP, season schedule rail, Alex note, MFL push ──
     const [seasonData, setSeasonData] = React.useState(null);
-    const [note, setNote] = React.useState('');
     const [submit, setSubmit] = React.useState({ status: 'idle', msg: '' });
     // Real DvP: spin up the SOS engine (18-week defense-vs-position rankings),
     // then bump ctxTick so projections recompute with matchup context applied.
@@ -162,110 +161,8 @@ function LineupTab({
         return () => { alive = false; };
     }, [lineupKey, ctxTick, _projReady]);
 
-    // Alex's game-day note: a stable weekly briefing off the CURRENT lineup +
-    // matchup (not the working edits). Seeded template renders instantly; AI
-    // upgrades it in the background when reachable (falls back to the template).
-    function buildNoteFacts() {
-        if (!result || !result.optimal) return null;
-        const proj = result.projections;
-        const curIds = Object.values(currentAssign).filter(Boolean);
-        // MFL never exposes platform starters (starters:[]) — fall back to the
-        // optimal lineup so the note forecasts the same lineup as the hero.
-        // With the fallback there IS no visible bench gap: benchPts reads 0 and
-        // no upgrade is pitched (a delta vs an empty platform lineup would
-        // claim the whole optimal total is "stranded on the bench").
-        const noPlatformLineup = !curIds.length;
-        const noteIds = noPlatformLineup ? result.optimal.starters.map(s => String(s.pid)) : curIds;
-        const curTotal = noteIds.reduce((s, pid) => { const p = proj[pid]; return s + (p && p.available ? (p.points[result.objective] || 0) : 0); }, 0);
-        const benchPts = noPlatformLineup ? 0 : Math.round((result.optimal.total - curTotal) * 10) / 10;
-        let topStart = null;
-        if (!noPlatformLineup) (result.delta && result.delta.startInstead || []).forEach(s => { if (!topStart || s.pts > topStart.pts) topStart = s; });
-        let winPct = null, oppName = null, margin = null;
-        const M = window.App && window.App.Matchup;
-        if (M && oppResult && oppResult.res) {
-            const oppOpt = oppResult.res.optimal.starters.map(s => s.pid);
-            const fc = M.forecast(M.dist(noteIds, proj, 'median'), M.dist(oppOpt, oppResult.res.projections, 'median'));
-            winPct = fc.winPct; margin = fc.margin;
-            const users = (currentLeague && currentLeague.users) || [];
-            const u = users.find(x => String(x.user_id) === String(oppResult.roster.owner_id));
-            oppName = (oppResult.roster.metadata && oppResult.roster.metadata.team_name) || (u && u.display_name) || ('Team ' + oppResult.roster.roster_id);
-        }
-        const injuries = noteIds.map(pid => { const p = proj[pid]; const st = p && p.injuryStatus; return st ? { name: pmeta(pid).name, status: st } : null; }).filter(Boolean);
-        const topName = topStart ? pmeta(topStart.pid).name : null;
-        const byeWatch = (seasonData && seasonData.byeWatch) || [];
-        const topBye = byeWatch.length ? byeWatch[0] : null;   // worst upcoming bye week
-        return {
-            week: result.week, benchPts, topStart, topName, winPct, oppName, margin, injuries, mode: result.mode, topBye,
-            ctx: { week: result.week, winPct, margin, opponent: oppName, pointsLeftOnBench: benchPts, topUpgrade: topName, topUpgradeSlot: topStart ? topStart.slot : null, injuries: injuries.map(i => i.name + ' (' + i.status + ')'), byeWatch: byeWatch.slice(0, 3).map(b => ({ week: b.week, count: b.count, unfilled: b.unfilled, reason: b.reason, positions: b.positions })), objective: result.objective, mode: result.mode },
-        };
-    }
-    function seededNote(f) {
-        const AV = window.AlexVoice;
-        if (!AV) return '';
-        const seed = (currentLeague && (currentLeague.league_id || currentLeague.id) || '') + '|w' + f.week;
-        let lead;
-        if (f.winPct != null && f.oppName) {
-            // Thresholds match the hero's win% coloring: ≥55 favored, ≤45 uphill.
-            if (f.winPct >= 55) lead = AV.pick(seed + 'a', ['You’re favored this week', 'The numbers like your side', 'You’ve got the edge this week']) + ' — about ' + f.winPct + '% to beat ' + f.oppName + '.';
-            else if (f.winPct > 45) lead = AV.pick(seed + 'a', ['Coin-flip week', 'This one’s tight', 'Dead heat']) + ' against ' + f.oppName + ' (~' + f.winPct + '%).';
-            else lead = AV.pick(seed + 'a', ['Uphill week', 'You’re the underdog', 'Tough draw']) + ' vs ' + f.oppName + ' (~' + f.winPct + '%) — chase ceiling.';
-        } else {
-            lead = AV.pick(seed + 'a', ['Let’s set the week', 'Here’s your week', 'Locking in the lineup']) + '.';
-        }
-        let mid;
-        if (f.benchPts >= 1 && f.topName) mid = ' ' + AV.pick(seed + 'b', ['You’re leaving ' + f.benchPts + ' on the bench', 'There’s ' + f.benchPts + ' sitting on your bench', f.benchPts + ' points are stranded on the bench']) + ' — ' + f.topName + (f.topStart && f.topStart.slot ? ' into your ' + String(f.topStart.slot).replace('_', ' ') : '') + ' is the move.';
-        else mid = ' ' + AV.pick(seed + 'b', ['Lineup’s optimal', 'Nothing left on the table', 'Your best is already in']) + ' — no changes needed.';
-        let tail = '';
-        if (f.injuries && f.injuries.length) tail = ' ' + AV.pick(seed + 'c', ['Keep an eye on', 'Watch', 'Monitor']) + ' ' + AV.joinNatural(f.injuries.map(i => i.name)) + '.';
-        let byeTail = '';
-        if (f.topBye && (f.topBye.unfilled || f.topBye.count >= 2)) {
-            const b = f.topBye;
-            // Only blame byes when bye starters actually drive the hole —
-            // count===0 means a roster gap (position unrostered / players OUT).
-            const byeDriven = b.reason ? b.reason === 'bye' : b.count > 0;
-            if (byeDriven) {
-                const c = {}; (b.positions || []).forEach(p => { c[p] = (c[p] || 0) + 1; });
-                const posLabel = Object.keys(c).map(p => c[p] > 1 ? c[p] + ' ' + p + 's' : p).join(' + ');
-                byeTail = ' ' + AV.pick(seed + 'd', ['Bye watch —', 'Plan ahead —', 'Down the road —']) + ' Week ' + b.week + (b.unfilled ? ' leaves a hole' : ' you’re thin') + (posLabel ? ' at ' + posLabel : '') + ', so line up cover.';
-            } else if (b.unfilled) {
-                byeTail = ' ' + AV.pick(seed + 'd', ['Plan ahead —', 'Heads up —', 'Down the road —']) + ' Week ' + b.week + ' you can’t field a full lineup as rostered, so line up cover.';
-            }
-        }
-        return (lead + mid + tail + byeTail).trim();
-    }
-    React.useEffect(() => {
-        // Composed note guard: the seeded copy is itself a rec ("X is the
-        // move"), so the whole note is Pro-only — free renders no note (and
-        // never builds facts, so no optimizer output is computed for free).
-        // Future format carve-outs (cross-track C5) compose in here, e.g.
-        // `pro && isDynastyFormat`. The AV.enhance AI upgrade below is
-        // additionally behind hasAmbientAI() (ambient-AI policy seam) — a Pro
-        // user without AI still keeps the seeded template.
-        const noteAllowed = pro;
-        if (!noteAllowed) { setNote(''); return; }
-        if (!_projReady) return;                 // wait for real projections (avoid a stale AI-note cache)
-        const facts = buildNoteFacts();
-        if (!facts) { setNote(''); return; }
-        const seeded = seededNote(facts);
-        setNote(seeded);
-        let alive = true;
-        const AV = window.AlexVoice;
-        if (AV && AV.enhance && (typeof AV.hasAmbientAI !== 'function' || AV.hasAmbientAI())) {
-            // Bucket win% into the cache key so a materially different matchup
-            // outlook re-generates rather than reusing an early note. v2: the
-            // facts source changed (optimal-lineup fallback) — don't let notes
-            // cached off the old empty-lineup facts survive the fix.
-            const wpBucket = facts.winPct == null ? 'na' : Math.round(facts.winPct / 10);
-            AV.enhance({
-                type: 'start-sit',
-                message: 'Give me a punchy 1-2 sentence game-day coaching note for my fantasy team this week. Are we favored? Any must-start upgrade sitting on the bench? Any injuries to watch, or an upcoming bye-week hole to plan for? Natural prose, no lists, no sign-off.',
-                context: JSON.stringify(facts.ctx),
-                fallback: seeded,
-                cacheKey: 'gd-note-v2-' + lineupKey + '-w' + facts.week + '-' + wpBucket + (facts.topBye ? '-b' + facts.topBye.week + (facts.topBye.unfilled ? 'x' : '') : ''),
-            }).then(txt => { if (alive && txt && typeof txt === 'string') setNote(txt); }).catch(() => {});
-        }
-        return () => { alive = false; };
-    }, [lineupKey, ctxTick, oppRosterId, _projReady, seasonData]);
+    // Alex's game-day note (builder + seeded copy + background AI enhance)
+    // was removed from the top of Game Day per owner request.
 
     // MFL is the only platform with a public lineup-write API (Sleeper has none).
     const _plat = (window.App && window.App.Matchup && window.App.Matchup._platform) ? window.App.Matchup._platform(currentLeague) : 'sleeper';
@@ -665,14 +562,7 @@ function LineupTab({
 
     return (
         <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px 16px 60px' }}>
-            {/* Alex's game-day note */}
-            {note ? (
-                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderLeft: `3px solid ${GOLD}`, borderRadius: '6px', padding: '12px 16px', marginBottom: '14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: fz('0.6rem'), fontWeight: 800, letterSpacing: '0.08em', color: GOLD, marginTop: '3px', whiteSpace: 'nowrap' }}>ALEX ·</span>
-                    <span style={{ fontSize: '0.86rem', color: TEXT, lineHeight: 1.5 }}>{note}</span>
-                </div>
-            ) : null}
-
+            {/* Alex's game-day note removed from the top per owner request. */}
             <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 300px', gap: '16px', alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                     {renderMflPush()}
