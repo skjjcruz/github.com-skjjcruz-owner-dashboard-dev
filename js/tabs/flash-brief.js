@@ -446,6 +446,28 @@ function IntelligenceBriefWidget({
         );
     }
 
+    // ── 24-hour lead read (owner's line 1) ──────────────────────────
+    // Compute the "what changed since last visit" read once, read-only, then
+    // acknowledge it via an effect (save the snapshot) so a real change shows
+    // once and then settles back to the steady line. Mirrors BriefPulse.Line's
+    // internals, but lets us render line 1 as a full bullet like the others.
+    let leadChangeText = 'No change in League rankings or posture over the past 24 hours.';
+    let _leadCurr = null, _leadLeagueId = null, _leadMaterial = false;
+    try {
+        if (window.WR && window.WR.SituationRoom && typeof window.WR.SituationRoom.enabled === 'function' && window.WR.SituationRoom.enabled() && window.WR.BriefPulse && rosterState.isUsable && currentLeague && myRoster) {
+            const bp = window.WR.BriefPulse;
+            const got = window.WR.SituationRoom.get(currentLeague, myRoster);
+            _leadCurr = bp.snapshotFromState(got && got.state);
+            _leadLeagueId = (got && got.state && got.state.leagueId) || null;
+            const chg = bp.computeChange(bp.loadSnapshot(_leadLeagueId), _leadCurr, playersData);
+            if (chg && chg.material && chg.line) { leadChangeText = chg.line; _leadMaterial = true; }
+        }
+    } catch (e) { /* keep the steady no-change line */ }
+    useEffect(() => {
+        if (!_leadMaterial || !_leadCurr || !(window.WR && window.WR.BriefPulse && window.WR.BriefPulse.saveSnapshot)) return;
+        try { window.WR.BriefPulse.saveSnapshot(_leadLeagueId, { fingerprint: _leadCurr.fingerprint, players: _leadCurr.players, record: _leadCurr.record, tier: _leadCurr.tier, draftPhase: _leadCurr.draftPhase }); } catch (e) {}
+    }, [_leadMaterial, _leadCurr && _leadCurr.fingerprint]);
+
     // ── Structured "living brief" body (owner's template) ───────────
     // Each line fills from live data and is OMITTED entirely when its data
     // isn't available (never a blank / "___"). Every data line carries a
@@ -457,12 +479,6 @@ function IntelligenceBriefWidget({
 
         const val = (t, col) => React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: col } }, t);
         const chip = (t) => React.createElement('span', { key: t, style: { display: 'inline-block', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.82em', fontWeight: 700, padding: '0 6px', borderRadius: '4px', margin: '0 3px 0 0', background: 'rgba(232,106,90,0.13)', color: 'var(--bad, #e86a5a)', border: '1px solid rgba(232,106,90,0.28)' } }, t);
-        const source = (label, target) => React.createElement('button', {
-            onClick: (e) => { e.stopPropagation(); goTo(target); },
-            style: { display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '3px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', letterSpacing: '0.03em', color: 'var(--gold-dim, #b8912f)' },
-            onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--gold, #d4af37)'; e.currentTarget.style.textDecoration = 'underline'; },
-            onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--gold-dim, #b8912f)'; e.currentTarget.style.textDecoration = 'none'; },
-        }, '↳ ' + label + ' →');
 
         // Roster capacity — read live from the league + your roster.
         const rosterPositions = currentLeague?.roster_positions || [];
@@ -479,6 +495,9 @@ function IntelligenceBriefWidget({
         const hasWaiverNames = !!(waiverTarget || (keyDrops && keyDrops.length));
 
         const lines = [];
+        // Line 1 — the 24-hour lead read, a full bullet like the rest. Links to
+        // standings/rankings, where league posture is compared.
+        lines.push({ key: 'lead', target: 'analytics', src: 'Power Rankings', body: [leadChangeText] });
         if (myRank > 0 && tier !== 'UNKNOWN') {
             lines.push({ key: 'rank', target: 'analytics', src: 'Power Rankings',
                 body: ["You're ranked ", val(ordinal(myRank), 'var(--bad, #e86a5a)'), ' with an overall Health score of ', val(String(hs), 'var(--white)'), ' — ', React.createElement('strong', { key: 't', style: { color: 'var(--white)' } }, tier), ' tier.'] });
@@ -499,27 +518,47 @@ function IntelligenceBriefWidget({
                 body: ["You've got ", val('$' + faabRemaining.toLocaleString(), 'var(--k-7c6bf8, #7c6bf8)'), ' FAAB left' + (hasWaiverNames ? ', with names available on waivers.' : '.')] });
         }
 
-        const rowStyle = { display: 'grid', gridTemplateColumns: '14px 1fr', gap: '10px', padding: compact ? '7px 0' : '10px 0', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', alignItems: 'start' };
-        const kids = [];
-        // Lead line — the Situation Room's 24-hour read (quiet mode shows "no
-        // change" instead of rendering nothing). Only when the Room is enabled.
-        if (window.WR && window.WR.SituationRoom && typeof window.WR.SituationRoom.enabled === 'function' && window.WR.SituationRoom.enabled() && window.WR.BriefPulse && window.WR.BriefPulse.Line) {
-            kids.push(React.createElement('div', { key: 'pulse', style: { padding: '0 0 2px' } },
-                React.createElement(window.WR.BriefPulse.Line, { league: currentLeague, roster: myRoster, playersData: playersData, tight: compact, quiet: true })));
-        }
-        lines.forEach((ln) => {
-            kids.push(React.createElement('div', { key: ln.key, style: rowStyle },
-                React.createElement('div', { style: { marginTop: '4px', color: 'var(--gold-dim, #b8912f)', fontSize: '11px', lineHeight: 1 } }, '◆'),
-                React.createElement('div', { style: { minWidth: 0 } },
-                    React.createElement('div', { style: { fontSize: bodyFs, color: '#cdd3de', lineHeight: 1.5 } }, ...ln.body),
-                    source(ln.src, ln.target),
-                ),
-            ));
-        });
+        // Each line is a full, tappable bullet — click anywhere on it to jump
+        // to the tab it's pulled from. The "↳ source →" hint shows the target.
+        const kids = lines.map((ln, i) => React.createElement('div', {
+            key: ln.key,
+            onClick: () => goTo(ln.target),
+            onMouseEnter: (e) => { e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))'; },
+            onMouseLeave: (e) => { e.currentTarget.style.background = 'transparent'; },
+            style: { display: 'grid', gridTemplateColumns: '14px 1fr', gap: '10px', padding: compact ? '8px' : '11px 8px', borderTop: i === 0 ? 'none' : '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', alignItems: 'start', cursor: 'pointer', transition: 'background 0.12s' },
+        },
+            React.createElement('div', { style: { marginTop: '4px', color: 'var(--gold-dim, #b8912f)', fontSize: '11px', lineHeight: 1 } }, '◆'),
+            React.createElement('div', { style: { minWidth: 0 } },
+                React.createElement('div', { style: { fontSize: bodyFs, color: '#cdd3de', lineHeight: 1.5 } }, ...ln.body),
+                React.createElement('div', { style: { marginTop: '3px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', letterSpacing: '0.03em', color: 'var(--gold-dim, #b8912f)' } }, '↳ ' + ln.src + ' →'),
+            ),
+        ));
 
         // Natural height (no flex-grow) so the action CTAs sit directly beneath
         // the last line instead of being pushed to the card's bottom edge.
         return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', minHeight: 0, flexShrink: 0 } }, ...kids);
+    }
+
+    // ── Countdown to NFL Opening Day / fantasy kickoff (owner's Sep 9) ──
+    // Pinned to the very bottom of the brief (marginTop: auto in the flex
+    // column). Recomputes every render, rolls to next year once Sep 9 passes.
+    function renderCountdown() {
+        let days = null;
+        try {
+            const now = new Date();
+            let t = new Date(now.getFullYear(), 8, 9);
+            if (t.getTime() - now.getTime() < 0) t = new Date(now.getFullYear() + 1, 8, 9);
+            days = Math.max(0, Math.ceil((t.getTime() - now.getTime()) / 86400000));
+        } catch (e) { return null; }
+        if (days == null) return null;
+        return React.createElement('div', {
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px', flexShrink: 0, marginTop: 'auto', padding: '11px 12px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
+        },
+            React.createElement('span', { style: { fontSize: '1.15rem' } }, '🏈'),
+            React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1.1rem', color: 'var(--gold)' } }, days === 0 ? 'KICKOFF' : String(days)),
+            React.createElement('span', { style: { fontSize: '0.8rem', color: 'var(--silver)' } }, days === 0 ? 'NFL Opening Day is here!' : ((days === 1 ? 'day' : 'days') + ' to NFL Opening Day & fantasy kickoff')),
+            React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', color: 'var(--gold-dim, #b8912f)', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, '· SEP 9'),
+        );
     }
 
     // ── Intel Brief is FREE for every tier (owner call 2026-07-11) ───
@@ -579,11 +618,12 @@ function IntelligenceBriefWidget({
     if (size === 'tall') {
         return React.createElement('div', { style: cardStyle },
             header({ noPulse: true }),
-            React.createElement('div', { style: { padding: '12px 18px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+            React.createElement('div', { style: { padding: '12px 18px 0', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
                 renderIntelBody(),
                 React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', flexShrink: 0 } },
                     ...actions.slice(0, 3).map((a, i) => renderActionBtn(a, 'tall-' + i, { compact: true })),
                 ),
+                renderCountdown(),
             ),
         );
     }
@@ -655,11 +695,12 @@ function IntelligenceBriefWidget({
     // Default: living-brief layout (same as tall)
     return React.createElement('div', { style: cardStyle },
         header({ noPulse: true }),
-        React.createElement('div', { style: { padding: '12px 18px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+        React.createElement('div', { style: { padding: '12px 18px 0', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
             renderIntelBody(),
             React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', flexShrink: 0 } },
                 ...actions.slice(0, 3).map((a, i) => renderActionBtn(a, 'def-' + i, { compact: true })),
             ),
+            renderCountdown(),
         ),
     );
 }
