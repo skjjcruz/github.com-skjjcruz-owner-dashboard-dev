@@ -321,6 +321,20 @@ function IntelligenceBriefWidget({
         if (navigateWidget) navigateWidget(target);
         else if (setActiveTab) setActiveTab(target);
     };
+    // Power Rankings is a widget on this same dashboard (not a tab), so a click
+    // scrolls to it. Falls back to the analytics tab if it isn't on the board.
+    const scrollToPowerRankings = () => {
+        try {
+            const heading = Array.from(document.querySelectorAll('*'))
+                .find(e => e.childElementCount === 0 && /^power rankings$/i.test(String(e.textContent || '').trim()));
+            if (heading) {
+                let card = heading;
+                for (let i = 0; i < 8 && card.parentElement; i++) { card = card.parentElement; if (card.offsetHeight > 200) break; }
+                if (card && typeof card.scrollIntoView === 'function') { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+            }
+        } catch (e) { /* fall through */ }
+        goTo('analytics');
+    };
 
     // ── Action list (priority-ordered, focus-gated) ─────────────────
     let actions = [];
@@ -495,13 +509,14 @@ function IntelligenceBriefWidget({
         const hasWaiverNames = !!(waiverTarget || (keyDrops && keyDrops.length));
 
         const lines = [];
-        // Line 1 — the 24-hour lead read, a full bullet like the rest. Links to
-        // standings/rankings, where league posture is compared.
-        lines.push({ key: 'lead', target: 'analytics', src: 'Power Rankings', body: [leadChangeText] });
+        // Line 1 — 24-hour lead read → scrolls to the Power Rankings widget.
+        lines.push({ key: 'lead', pr: true, src: 'Power Rankings', body: [leadChangeText] });
+        // Line 2 — rank + health → Analytics tab.
         if (myRank > 0 && tier !== 'UNKNOWN') {
-            lines.push({ key: 'rank', target: 'analytics', src: 'Power Rankings',
+            lines.push({ key: 'rank', target: 'analytics', src: 'Analytics',
                 body: ["You're ranked ", val(ordinal(myRank), 'var(--bad, #e86a5a)'), ' with an overall Health score of ', val(String(hs), 'var(--white)'), ' — ', React.createElement('strong', { key: 't', style: { color: 'var(--white)' } }, tier), ' tier.'] });
         }
+        // Line 3 — roster count → My Roster.
         if (activeCap > 0) {
             const detail = taxiCap > 0
                 ? [' — ', val(activeCount + '/' + activeCap, 'var(--silver)'), ' active · ', val(taxiCount + '/' + taxiCap, 'var(--silver)'), ' taxi']
@@ -509,10 +524,12 @@ function IntelligenceBriefWidget({
             lines.push({ key: 'roster', target: 'myteam', src: 'My Roster',
                 body: ['Roster: ', val(String(totalPlayers), 'var(--white)'), ' of ', val(String(totalCap), 'var(--white)'), ...detail] });
         }
+        // Line 4 — positional weaknesses → My Roster.
         if (weakPos.length) {
-            lines.push({ key: 'weak', target: 'fa', src: 'Free Agency',
+            lines.push({ key: 'weak', target: 'myteam', src: 'My Roster',
                 body: ['Key positional weaknesses: ', ...weakPos.map(chip)] });
         }
+        // Line 5 — FAAB → Free Agency.
         if (budget > 0) {
             lines.push({ key: 'faab', target: 'fa', src: 'Free Agency',
                 body: ["You've got ", val('$' + faabRemaining.toLocaleString(), 'var(--k-7c6bf8, #7c6bf8)'), ' FAAB left' + (hasWaiverNames ? ', with names available on waivers.' : '.')] });
@@ -522,7 +539,7 @@ function IntelligenceBriefWidget({
         // to the tab it's pulled from. The "↳ source →" hint shows the target.
         const kids = lines.map((ln, i) => React.createElement('div', {
             key: ln.key,
-            onClick: () => goTo(ln.target),
+            onClick: () => (ln.pr ? scrollToPowerRankings() : goTo(ln.target)),
             onMouseEnter: (e) => { e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))'; },
             onMouseLeave: (e) => { e.currentTarget.style.background = 'transparent'; },
             style: { display: 'grid', gridTemplateColumns: '14px 1fr', gap: '10px', padding: compact ? '8px' : '11px 8px', borderTop: i === 0 ? 'none' : '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', alignItems: 'start', cursor: 'pointer', transition: 'background 0.12s' },
@@ -552,7 +569,7 @@ function IntelligenceBriefWidget({
         } catch (e) { return null; }
         if (days == null) return null;
         return React.createElement('div', {
-            style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px', flexShrink: 0, marginTop: 'auto', padding: '11px 12px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px', flexShrink: 0, marginTop: '4px', padding: '11px 12px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
         },
             React.createElement('span', { style: { fontSize: '1.15rem' } }, '🏈'),
             React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1.1rem', color: 'var(--gold)' } }, days === 0 ? 'KICKOFF' : String(days)),
@@ -614,11 +631,11 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // ── tall (2×4, 640px tall) — living brief: structured lines + CTAs ──
+    // ── tall — living brief; box shrinks to content (closes on the last line)
     if (size === 'tall') {
-        return React.createElement('div', { style: cardStyle },
+        return React.createElement('div', { style: { ...cardStyle, height: 'auto' } },
             header({ noPulse: true }),
-            React.createElement('div', { style: { padding: '12px 18px 0', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+            React.createElement('div', { style: { padding: '12px 18px 14px', display: 'flex', flexDirection: 'column', gap: '10px' } },
                 renderIntelBody(),
                 // Action cards moved off the board for now (owner call) — the
                 // brief is the intel lines + kickoff countdown.
@@ -627,11 +644,11 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // ── xl (4×2) — living brief, single column (action cards off for now) ──
+    // ── xl — living brief, single column (fills its slot) ──
     if (size === 'xl') {
         return React.createElement('div', { style: cardStyle },
             header({ tight: true, noPulse: true }),
-            React.createElement('div', { style: { padding: '10px 16px 0', flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', overflow: 'hidden' } },
+            React.createElement('div', { style: { padding: '10px 16px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
                 renderIntelBody(),
                 renderCountdown(),
             ),
@@ -689,9 +706,9 @@ function IntelligenceBriefWidget({
     }
 
     // Default: living-brief layout (same as tall)
-    return React.createElement('div', { style: cardStyle },
+    return React.createElement('div', { style: { ...cardStyle, height: 'auto' } },
         header({ noPulse: true }),
-        React.createElement('div', { style: { padding: '12px 18px 0', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+        React.createElement('div', { style: { padding: '12px 18px 14px', display: 'flex', flexDirection: 'column', gap: '10px' } },
             renderIntelBody(),
             // Action cards moved off the board for now (owner call).
             renderCountdown(),
