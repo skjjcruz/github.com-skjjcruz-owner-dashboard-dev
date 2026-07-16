@@ -814,6 +814,14 @@ function MyTeamTab({
       case 'action': {
         const ann = getPlayerAnnotation(r.pid);
         const gmNudgeTitle = r.gmSellNudge ? 'Nudged to Sell by GM Strategy (position/age trips a sell rule)' : '';
+        // Retired / no-longer-active players (Sleeper active:false) can't help
+        // you — the move is simply to cut them.
+        const isRetired = r.p && r.p.active === false;
+        if (isRetired) {
+          return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title="Player is no longer active in the NFL — cut to free the roster spot">
+            <span style={{ fontSize:'var(--text-micro, 0.6875rem)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.04em', color:'var(--bad)' }}>Cut</span>
+          </div>;
+        }
         return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={gmNudgeTitle || ann?.text || ''}>
           <span style={{ fontSize:'var(--text-micro, 0.6875rem)',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.03em',color:/sell/i.test(r.rec)?'var(--bad)':/buy|build|core/i.test(r.rec)?'var(--good)':'var(--silver)' }}>{r.rec}</span>
           {r.gmSellNudge && <span style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--warn)', letterSpacing: '0.05em', opacity: 0.85, lineHeight: 1 }}>GM</span>}
@@ -1041,7 +1049,10 @@ function MyTeamTab({
             <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700 }}>Roster Board</div>
             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: isDeepData ? 'var(--gold)' : 'var(--silver)', opacity: isDeepData ? 0.86 : 0.58 }}>{activePresetMeta.label} · {visibleCols.length} fields</div>
             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rosterGroupMode === 'none' ? 'var(--silver)' : 'var(--gold)', opacity: 0.62 }}>Grouped by {activeGroupModeLabel}</div>
-            <div style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.52, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>
+              {filtered.length} player{filtered.length === 1 ? '' : 's'}
+            </div>
+            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.52, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               Sort: {ROSTER_COLUMNS[rosterSort.key]?.shortLabel || (rosterSort.key === 'name' ? 'Player' : rosterSort.key)}
             </div>
           </div>
