@@ -18,12 +18,28 @@
 
     // External weekly context, keyed by `${nflTeam}|${week}`: { dvpMult, vegas:{impliedTotal,spread,opp}, injury:{pid:status} }.
     // Empty until the edge function populates it — projections stay neutral.
-    const _ctx = { byTeamWeek: {}, byPid: {} };
+    // projLines: Sleeper's own published weekly projection stat lines, keyed
+    // `${week}|${pid}`. When present, the displayed projection IS Sleeper's
+    // number scored through the league's exact rules — the single source of
+    // truth the owner sees in the Sleeper app ("one voice, many mediums").
+    const _ctx = { byTeamWeek: {}, byPid: {}, projLines: {} };
 
     function setContext(ctx) {
         if (!ctx) return;
         if (ctx.byTeamWeek) Object.assign(_ctx.byTeamWeek, ctx.byTeamWeek);
         if (ctx.byPid) Object.assign(_ctx.byPid, ctx.byPid);
+    }
+
+    // Feed Sleeper's weekly projection lines (pid → statLine) for one week.
+    function setProjections(week, byPid) {
+        if (!byPid || typeof byPid !== 'object') return;
+        const w = Number(week) || 0;
+        for (const pid of Object.keys(byPid)) {
+            if (byPid[pid]) _ctx.projLines[w + '|' + pid] = byPid[pid];
+        }
+    }
+    function projLine(pid, week) {
+        return _ctx.projLines[(Number(week) || 0) + '|' + pid] || null;
     }
     function teamWeekCtx(team, week) {
         return _ctx.byTeamWeek[`${String(team || '').toUpperCase()}|${week}`] || null;
@@ -171,7 +187,47 @@
             injuryStatus,
             roleNote: ctx ? ctx.roleNote : '',
         });
-        return ss.scoreProjection(proj, scoring);
+        const scored = ss.scoreProjection(proj, scoring);
+
+        // ── One voice: prefer Sleeper's published weekly projection ──
+        // The home-grown baseline (season stats + form) is our progressive-
+        // enhancement fallback. When Sleeper has actually published a weekly
+        // projection for this player, score ITS stat line through the league's
+        // exact rules (same calc path as actuals) and make that the number —
+        // so the Proj column matches, to the decimal, what the owner sees in
+        // Sleeper. We keep the engine's floor/ceiling SHAPE by re-centering the
+        // band on Sleeper's median, so start/sit bands stay sensible.
+        const sLine = projLine(pid, week);
+        if (sLine && scored && scored.points && App.calcRawPts) {
+            let sp = App.calcRawPts(sLine, scoring);
+            if (sp != null && Number.isFinite(sp)) {
+                // TE-premium (bonus_rec_te) is position-aware, so calcRawPts (which
+                // is position-blind) can't apply it — mirror scoreProjection here.
+                const teBonus = (pos === 'TE' && scoring && Number(scoring.bonus_rec_te)) ? Number(scoring.bonus_rec_te) : 0;
+                if (teBonus && Number.isFinite(sLine.rec)) sp += teBonus * sLine.rec;
+                sp = Math.max(0, +sp.toFixed(2));
+                const pts = scored.points;
+                const cur = Number(pts.median) || 0;
+                if (cur > 0.5) {
+                    const ratio = sp / cur;
+                    pts.median = sp;
+                    pts.floor = +((Number(pts.floor) || cur * 0.75) * ratio).toFixed(2);
+                    pts.ceiling = +((Number(pts.ceiling) || cur * 1.25) * ratio).toFixed(2);
+                } else {
+                    // Engine had no baseline (rookie / no prior-season line) — build
+                    // a default band around Sleeper's median so the value still shows.
+                    pts.median = sp;
+                    pts.floor = +(sp * 0.75).toFixed(2);
+                    pts.ceiling = +(sp * 1.28).toFixed(2);
+                }
+                scored.projSource = 'sleeper';
+                // A published projection means Sleeper expects the player to play.
+                // Only a real BYE/OUT status (already on the projection) keeps it
+                // unavailable; a null-baseline "unavailable" is now backfilled.
+                if (sp > 0 && scored.available === false && !scored.injuryStatus) scored.available = true;
+            }
+        }
+        return scored;
     }
 
     function projectRoster(playerIds, opts) {
@@ -223,7 +279,7 @@
     }
 
     App.WeeklyProj = App.WeeklyProj || {
-        setContext, currentWeek, recentPPG, weeklyHistory, formStats, buildBaseline,
+        setContext, setProjections, projLine, currentWeek, recentPPG, weeklyHistory, formStats, buildBaseline,
         projectPlayer, projectRoster, optimalForRoster,
         objectiveForMode, modeFor,
         _ctx,
