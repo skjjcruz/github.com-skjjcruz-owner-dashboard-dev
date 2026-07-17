@@ -3446,8 +3446,51 @@
                     <button type="button" className="tc-rail-dna-link" onClick={() => { setExpandedDnaOwner(partner.rosterId); setTcTab('dna'); }}>Full profile ▸</button>
                 </>;
             }
+            // ── League Teams — scrollable scout of every rival roster ──
+            // Compact need/surplus card per team, ranked best-fit-first (partnerBoard
+            // is already scored + sorted, and excludes my own team). Tap → that owner's
+            // full Owner DNA. Reuses the exact assessment data the finder runs on.
+            const POSHEX = { QB:'#e74c3c', RB:'#2ecc71', WR:'#3498db', TE:'#f0a500', K:'#9b59b6', DEF:'#85929e', DL:'#e67e22', LB:'#1abc9c', DB:'#e91e63' };
+            const leagueTargetPts = Math.max(1, ...assessments.map(a => a.weeklyPts || 0));
+            const leagueTeamsBody = !_pro
+                ? React.createElement(TcProTeaser, { label: 'League Teams', feature: 'owner-dna', sub: 'Scan every rival roster — needs, surplus, and trade fit — then open any owner\'s full DNA in a tap.' })
+                : !partnerBoard.length
+                    ? <div className="tc-dhq-empty">No rival rosters in scope yet.</div>
+                    : partnerBoard.map(item => {
+                        const a = item.assessment;
+                        const wp = a.weeklyPts || 0;
+                        const needs = (a.needs || []).slice(0, 5);
+                        const has = (a.strengths || []).slice(0, 6);
+                        return (
+                            <button key={a.rosterId} type="button" className="tc-lt-card"
+                                title={'Open ' + a.ownerName + '’s Owner DNA'}
+                                onClick={() => { setExpandedDnaOwner(a.rosterId); setTcTab('dna'); }}>
+                                <div className="tc-lt-top">
+                                    <span className="tc-lt-nm">{a.ownerName}</span>
+                                    {a.tier && <span className="tc-lt-win" style={{ color: a.tierColor, borderColor: a.tierColor }}>{a.tier}</span>}
+                                </div>
+                                {a.teamName && a.teamName !== a.ownerName && <div className="tc-lt-team">{a.teamName}</div>}
+                                <div className="tc-lt-line">
+                                    {wp > 0 && <span className="tc-lt-p">{wp.toFixed(1)} <small>/ {leagueTargetPts.toFixed(0)} pts</small></span>}
+                                    <span className="tc-lt-fit">{item.compat}% fit</span>
+                                </div>
+                                {needs.length > 0 && <div className="tc-lt-row"><span className="tc-lt-lbl">Needs</span>{needs.map(n => <span key={n.pos} className="tc-lt-chip" style={{ color: POSHEX[n.pos] || 'var(--silver)', borderColor: (POSHEX[n.pos] || '#BDB8AD') + '66', background: (POSHEX[n.pos] || '#BDB8AD') + '18' }}>{n.pos}</span>)}</div>}
+                                {has.length > 0 && <div className="tc-lt-row"><span className="tc-lt-lbl">Has</span>{has.map(p => <span key={p} className="tc-lt-chip tc-lt-has">+{p}</span>)}</div>}
+                                {item.dnaKey && item.dnaKey !== 'NONE' && item.dna && <div className="tc-lt-arch" style={{ color: item.dna.color }}>{item.dna.label}</div>}
+                            </button>
+                        );
+                    });
             return (
                 <aside className="tc-context-rail">
+                    <div className="tc-dhq-panel tc-rail-card">
+                        <div className="tc-dhq-panel-head">
+                            <span>League Teams</span>
+                            <em>{_pro && partnerBoard.length ? partnerBoard.length + ' rivals · tap → DNA' : 'Scout the field'}</em>
+                        </div>
+                        <div className="tc-dhq-panel-body">
+                            <div className="tc-lt-scroll">{leagueTeamsBody}</div>
+                        </div>
+                    </div>
                     <div className="tc-dhq-panel tc-rail-card">
                         <div className="tc-dhq-panel-head">
                             <span>Live Verdict</span>

@@ -1387,6 +1387,26 @@ WRShared.preloadMany(WR_SHARED_FILES);
     .tc-rail-badges .tc-rail-pin { flex: 0 0 36px; padding: 6px 0; }
     .tc-rail-badges .tc-rail-pin.is-on { background: rgba(53,208,214,0.1); border-color: rgba(53,208,214,0.4); color: #35d0d6; }
     .tc-rail-dna-link { width: 100%; margin-top: 10px; background: rgba(212,175,55,0.06); border: 1px solid rgba(212,175,55,0.2); border-radius: 6px; color: var(--gold); cursor: pointer; font-family: var(--font-body); font-size: 0.74rem; font-weight: 600; padding: 8px 10px; }
+    /* League Teams rail card — scrollable list of every rival's need/surplus, tap → Owner DNA */
+    .tc-lt-scroll { display: flex; flex-direction: column; gap: 8px; max-height: 58vh; overflow-y: auto; padding-right: 2px; }
+    .tc-lt-scroll::-webkit-scrollbar { width: 7px; } .tc-lt-scroll::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.25); border-radius: 8px; }
+    .tc-lt-card { width: 100%; text-align: left; cursor: pointer; color: inherit; background: rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.05); border-radius: 9px; padding: 9px 10px; transition: border-color 0.12s, background 0.12s; }
+    .tc-lt-card:hover { border-color: rgba(212,175,55,0.45); background: rgba(212,175,55,0.05); }
+    .tc-lt-card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .tc-lt-top { display: flex; align-items: center; gap: 7px; }
+    .tc-lt-nm { flex: 1; font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 0.92rem; color: var(--white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tc-lt-win { font-family: 'JetBrains Mono', monospace; font-size: 0.5rem; font-weight: 700; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; border: 1px solid; white-space: nowrap; flex: 0 0 auto; }
+    .tc-lt-team { font-size: 0.66rem; color: var(--silver); opacity: 0.72; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tc-lt-line { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 2px; }
+    .tc-lt-p { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--silver); }
+    .tc-lt-p small { opacity: 0.55; }
+    .tc-lt-fit { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 700; color: var(--good); margin-left: auto; }
+    .tc-lt-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+    .tc-lt-lbl { font-family: 'Rajdhani', sans-serif; font-size: 0.52rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--silver); opacity: 0.6; width: 34px; flex: 0 0 auto; }
+    .tc-lt-chip { font-family: 'JetBrains Mono', monospace; font-size: 0.56rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid; }
+    .tc-lt-has { color: var(--good); border-color: rgba(46,204,113,0.4); background: rgba(46,204,113,0.09); }
+    .tc-lt-arch { font-size: 0.6rem; font-style: italic; margin-top: 7px; }
+    @media (pointer: coarse) { .tc-lt-card { min-height: 44px; } }
     @media(min-width:1281px){
         .tc-adaptive-canvas.has-rail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(296px, 330px); gap: 12px; align-items: start; }
         .tc-adaptive-canvas.has-rail .tc-context-rail { display: flex; position: sticky; top: 10px; max-height: calc(100vh - 84px); }
