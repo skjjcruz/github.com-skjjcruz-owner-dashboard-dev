@@ -482,6 +482,19 @@
         const [timeRecomputeTs, setTimeRecomputeTs] = useState(Date.now());
         const [basePlayersData, setBasePlayersData] = useState(null);
 
+        // The server tier resolves asynchronously a beat after the tab tree first
+        // renders. Without this bump, a Pro subscriber who opened straight into a
+        // gated tab (Trade Center, Free Agency, Draft) captured the pre-resolution
+        // 'free' snapshot and stayed on the "Unlock with Pro" teasers until a full
+        // reload. Re-render every tab once the real tier lands.
+        const [, setTierEpoch] = useState(0);
+        useEffect(() => {
+            const bump = () => setTierEpoch(n => n + 1);
+            if (window.App && window.App._userTierResolved) bump(); // resolved before mount
+            window.addEventListener('dhq:tier-resolved', bump);
+            return () => window.removeEventListener('dhq:tier-resolved', bump);
+        }, []);
+
         useEffect(() => {
             const leagueId = currentLeague?.league_id || currentLeague?.id;
             if (!leagueId) return;
