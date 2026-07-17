@@ -3451,10 +3451,12 @@
                                 onClick={openDna}
                                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDna(); } }}>
                                 <div className="tc-lt-top">
-                                    <span className="tc-lt-av">
+                                    {/* Inline sizing so a stale cached stylesheet can't render the
+                                        avatar at its full ~100px natural size. */}
+                                    <span className="tc-lt-av" style={{ width: '22px', height: '22px', borderRadius: '50%', overflow: 'hidden', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--charcoal)', border: '1px solid rgba(212,175,55,0.25)' }}>
                                         {avatarUrl(a.avatar)
-                                            ? <img src={avatarUrl(a.avatar)} alt="" onError={e => { e.currentTarget.style.display = 'none'; }} />
-                                            : <b>{(a.ownerName || '?').charAt(0).toUpperCase()}</b>}
+                                            ? <img src={avatarUrl(a.avatar)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
+                                            : <b style={{ fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, fontSize: '0.7rem', color: 'var(--gold)' }}>{(a.ownerName || '?').charAt(0).toUpperCase()}</b>}
                                     </span>
                                     <span className="tc-lt-nm">{a.ownerName}</span>
                                     {a.tier && <span className="tc-lt-win" style={{ color: a.tierColor, borderColor: a.tierColor }}>{a.tier}</span>}
