@@ -3567,11 +3567,10 @@
                             .tc-trade-root .tc-rail-dna-link { min-height: 44px; }
                         }
                     `}</style>
-                    <div className="wr-module-strip">
-                        <div className="wr-module-context">
-                            <span>Trade</span>
-                            <strong>Trade Center</strong>
-                        </div>
+                    {/* Trade Center title removed (owner ruling) — the tab buttons stay
+                        put on the right, but the boxed header + label are gone so the
+                        workspace rises to the top and the dead space is reclaimed. */}
+                    <div className="wr-module-strip is-compact">
                         <div className="wr-module-actions">
                             <div className="wr-module-nav">
                                 {surfaces.map(s => (
