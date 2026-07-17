@@ -3423,36 +3423,17 @@
         // OWNER DNA below: live-deal partner → selected partner → top partner; content
         // Pro with a teaser for free. Desktop ≥1281px = sticky rail column; narrower
         // viewports stack the same two cards inline below the builder (index.html CSS).
-        function renderContextRail(_verdict, railItem) {
-            const partner = railItem?.assessment || null;
+        // ── League Teams — scrollable scout of every rival roster ──
+        // Compact need/surplus card per team, ranked best-fit-first (partnerBoard
+        // is already scored + sorted, and excludes my own team). Tap → that owner's
+        // full Owner DNA. Reuses the exact assessment data the finder runs on.
+        // Rendered in the far-right rail (≥1281px) AND inline on narrow/portrait
+        // (<1281px, where the rail is hidden) — CSS keeps exactly one visible.
+        function renderLeagueTeamsCard() {
             const _pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
-            let dnaBody;
-            if (!_pro) {
-                dnaBody = React.createElement(TcProTeaser, { label: 'Owner DNA', feature: 'owner-dna', sub: 'Profile every manager\'s trading psychology — posture, behavior reads, and exactly how to approach each negotiation.' });
-            } else if (!partner) {
-                dnaBody = <div className="tc-dhq-empty">No partner in scope yet — select one on the desk.</div>;
-            } else {
-                const needsLine = (partner.needs || []).slice(0, 4).map(n => n.pos).join(' · ');
-                dnaBody = <>
-                    <div className="tc-dhq-dossier-card">
-                        <h3>{partner.ownerName}</h3>
-                        <div className="tc-dhq-chipline">
-                            <span style={{ color: railItem.posture.color }}>{railItem.posture.label}</span>
-                            {railItem.dnaKey !== 'NONE' && <span style={{ color: railItem.dna.color }}>{railItem.dna.label}</span>}
-                            <span>{railItem.compat}% fit</span>
-                        </div>
-                        <p>{needsLine ? `Needs ${needsLine}. ` : 'No urgent roster hole. '}{railItem.behaviorProfile?.strategy?.offerFrame || railItem.dna?.strategy || railItem.posture.desc}</p>
-                    </div>
-                    <button type="button" className="tc-rail-dna-link" onClick={() => { setExpandedDnaOwner(partner.rosterId); setTcTab('dna'); }}>Full profile ▸</button>
-                </>;
-            }
-            // ── League Teams — scrollable scout of every rival roster ──
-            // Compact need/surplus card per team, ranked best-fit-first (partnerBoard
-            // is already scored + sorted, and excludes my own team). Tap → that owner's
-            // full Owner DNA. Reuses the exact assessment data the finder runs on.
             const POSHEX = { QB:'#e74c3c', RB:'#2ecc71', WR:'#3498db', TE:'#f0a500', K:'#9b59b6', DEF:'#85929e', DL:'#e67e22', LB:'#1abc9c', DB:'#e91e63' };
             const leagueTargetPts = Math.max(1, ...assessments.map(a => a.weeklyPts || 0));
-            const leagueTeamsBody = !_pro
+            const body = !_pro
                 ? React.createElement(TcProTeaser, { label: 'League Teams', feature: 'owner-dna', sub: 'Scan every rival roster — needs, surplus, and trade fit — then open any owner\'s full DNA in a tap.' })
                 : !partnerBoard.length
                     ? <div className="tc-dhq-empty">No rival rosters in scope yet.</div>
@@ -3481,16 +3462,44 @@
                         );
                     });
             return (
-                <aside className="tc-context-rail">
-                    <div className="tc-dhq-panel tc-rail-card">
-                        <div className="tc-dhq-panel-head">
-                            <span>League Teams</span>
-                            <em>{_pro && partnerBoard.length ? partnerBoard.length + ' rivals · tap → DNA' : 'Scout the field'}</em>
-                        </div>
-                        <div className="tc-dhq-panel-body">
-                            <div className="tc-lt-scroll">{leagueTeamsBody}</div>
-                        </div>
+                <div className="tc-dhq-panel tc-rail-card">
+                    <div className="tc-dhq-panel-head">
+                        <span>League Teams</span>
+                        <em>{_pro && partnerBoard.length ? partnerBoard.length + ' rivals · tap → DNA' : 'Scout the field'}</em>
                     </div>
+                    <div className="tc-dhq-panel-body">
+                        <div className="tc-lt-scroll">{body}</div>
+                    </div>
+                </div>
+            );
+        }
+
+        function renderContextRail(_verdict, railItem) {
+            const partner = railItem?.assessment || null;
+            const _pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
+            let dnaBody;
+            if (!_pro) {
+                dnaBody = React.createElement(TcProTeaser, { label: 'Owner DNA', feature: 'owner-dna', sub: 'Profile every manager\'s trading psychology — posture, behavior reads, and exactly how to approach each negotiation.' });
+            } else if (!partner) {
+                dnaBody = <div className="tc-dhq-empty">No partner in scope yet — select one on the desk.</div>;
+            } else {
+                const needsLine = (partner.needs || []).slice(0, 4).map(n => n.pos).join(' · ');
+                dnaBody = <>
+                    <div className="tc-dhq-dossier-card">
+                        <h3>{partner.ownerName}</h3>
+                        <div className="tc-dhq-chipline">
+                            <span style={{ color: railItem.posture.color }}>{railItem.posture.label}</span>
+                            {railItem.dnaKey !== 'NONE' && <span style={{ color: railItem.dna.color }}>{railItem.dna.label}</span>}
+                            <span>{railItem.compat}% fit</span>
+                        </div>
+                        <p>{needsLine ? `Needs ${needsLine}. ` : 'No urgent roster hole. '}{railItem.behaviorProfile?.strategy?.offerFrame || railItem.dna?.strategy || railItem.posture.desc}</p>
+                    </div>
+                    <button type="button" className="tc-rail-dna-link" onClick={() => { setExpandedDnaOwner(partner.rosterId); setTcTab('dna'); }}>Full profile ▸</button>
+                </>;
+            }
+            return (
+                <aside className="tc-context-rail">
+                    {renderLeagueTeamsCard()}
                     <div className="tc-dhq-panel tc-rail-card">
                         <div className="tc-dhq-panel-head">
                             <span>Live Verdict</span>
@@ -3605,6 +3614,8 @@
                             <button type="button" onClick={clearTradeContext} style={{ background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
                         </div>
                     )}
+                    {/* League Teams inline — narrow/portrait only (rail is hidden <1281px). */}
+                    {active === 'desk' && <div className="tc-lt-inline">{renderLeagueTeamsCard()}</div>}
                     {body}
                     {active === 'desk' && (
                         <div style={{ marginTop: '12px', border: '1px solid rgba(53,208,214,0.28)', borderRadius: '8px', background: 'rgba(53,208,214,0.05)', overflow: 'hidden' }}>
