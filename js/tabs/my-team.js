@@ -128,6 +128,19 @@ function MyTeamTab({
   // ── Weekly start/sit projections (redraft) — league-scored via App.WeeklyProj.
   // Computed once; the 'proj' column + its sort read it. Neutral matchup until the
   // projections feed lands; guarded so dynasty/offseason rows just render '—'.
+  // Load Sleeper's OWN published weekly projections so the Proj column shows the
+  // exact number the owner sees in Sleeper (scored to this league); recompute
+  // when they land or when any other tab loads them (wr:proj-updated).
+  const [projTick, setProjTick] = React.useState(0);
+  React.useEffect(() => {
+    const SP = window.App && window.App.SleeperProj;
+    if (!SP || !SP.loadCurrent) return;
+    let alive = true;
+    SP.loadCurrent(currentLeague && currentLeague.season).then(wk => { if (alive && wk) setProjTick(t => t + 1); }).catch(() => {});
+    const onProj = () => { if (alive) setProjTick(t => t + 1); };
+    window.addEventListener('wr:proj-updated', onProj);
+    return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
+  }, [currentLeague && (currentLeague.league_id || currentLeague.id), currentLeague && currentLeague.season]);
   const weeklyLineup = React.useMemo(() => {
     const WP = window.App && window.App.WeeklyProj;
     if (!WP || !myRoster || !currentLeague) return null;
@@ -135,7 +148,7 @@ function MyTeamTab({
       const res = WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: stats2025Data });
       return { res, starterSet: new Set((res.optimal.starters || []).map(s => String(s.pid))), objective: res.objective };
     } catch (e) { if (window.wrLog) window.wrLog('myteam.weeklyProj', e); return null; }
-  }, [myRoster, currentLeague, playersData, statsData, stats2025Data, timeRecomputeTs]);
+  }, [myRoster, currentLeague, playersData, statsData, stats2025Data, timeRecomputeTs, projTick]);
   const projFor = (pid) => (weeklyLineup && weeklyLineup.res.projections[pid]) || null;
 
   // Build rest-of-season values for REDRAFT leagues so the value column + sort

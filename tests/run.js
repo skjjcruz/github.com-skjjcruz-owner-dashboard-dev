@@ -908,6 +908,54 @@ test('landing-pages.json copy advertises free on all leagues, not one',
   });
 
 // ══════════════════════════════════════════════════════════════════
+// Weekly projection — Sleeper's published line is the source of truth
+// ══════════════════════════════════════════════════════════════════
+console.log('\nWeekly projection — Sleeper source of truth');
+loadScript(ctx, 'js/shared/startsit-engine.js');
+loadScript(ctx, 'js/shared/weekly-proj.js');
+// The engine scores stat lines through calcFantasyPts; alias the app's
+// calcRawPts if the sandbox didn't already expose a global one.
+if (typeof ctx.calcFantasyPts !== 'function') ctx.calcFantasyPts = ctx.window.App.calcRawPts;
+
+test('Proj reflects Sleeper\'s published weekly line, scored to the league',
+  () => {
+    const WP = ctx.window.App.WeeklyProj;
+    ok(WP && typeof WP.setProjections === 'function', 'WeeklyProj.setProjections is exposed');
+    const scoring = { pass_yd: 0.04, pass_td: 4, pass_int: -1, rush_yd: 0.1, rush_td: 6 };
+    const line = { pass_yd: 280, pass_td: 2, pass_int: 0.5, rush_yd: 12, rush_td: 0.1, pts_ppr: 21.3 };
+    const expected = ctx.window.App.calcRawPts(line, scoring); // league-scored, not pts_ppr
+    const players = { '3294': { player_id: '3294', position: 'QB', team: 'DAL' } };
+    const opts = { playersData: players, statsData: {}, priorData: {}, scoring, week: 1 };
+
+    // With no Sleeper feed and no season stats, the home-grown engine has
+    // nothing to stand on — this is exactly the offseason blank the owner hit.
+    const before = WP.projectPlayer('3294', opts);
+    ok(!before || before.available === false || (before.points && before.points.median === 0),
+      'no Sleeper feed → engine produces no usable number');
+
+    // Feed Sleeper's line: the Proj becomes that line scored to the league.
+    WP.setProjections(1, { '3294': line });
+    const after = WP.projectPlayer('3294', opts);
+    eq(after.projSource, 'sleeper', 'projection is sourced from Sleeper');
+    near(after.points.median, expected, 0.01, 'median equals league-scored Sleeper line');
+    ok(after.available === true, 'a published projection marks the player available');
+    ok(after.points.floor < after.points.median && after.points.ceiling > after.points.median,
+      'floor/ceiling band brackets the Sleeper median');
+  });
+
+test('a different league scoring yields a different Proj from the same Sleeper line',
+  () => {
+    const WP = ctx.window.App.WeeklyProj;
+    const line = { pass_yd: 280, pass_td: 2, pass_int: 0.5, rush_yd: 12, rush_td: 0.1 };
+    WP.setProjections(1, { '9001': line });
+    const players = { '9001': { player_id: '9001', position: 'QB', team: 'DAL' } };
+    const base = { playersData: players, statsData: {}, priorData: {}, week: 1 };
+    const std = WP.projectPlayer('9001', { ...base, scoring: { pass_yd: 0.04, pass_td: 4, pass_int: -1, rush_yd: 0.1, rush_td: 6 } });
+    const sixPt = WP.projectPlayer('9001', { ...base, scoring: { pass_yd: 0.04, pass_td: 6, pass_int: -1, rush_yd: 0.1, rush_td: 6 } });
+    ok(sixPt.points.median > std.points.median, '6-pt passing TD league scores the QB higher — league rules honored');
+  });
+
+// ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════
 console.log('\n');

@@ -113,6 +113,18 @@ function LineupTab({
         return () => { alive = false; };
     }, [lineupKey]);
 
+    // Load Sleeper's own published weekly projections so start/sit uses the same
+    // number the owner sees in Sleeper (scored to this league), then recompute.
+    React.useEffect(() => {
+        const SP = window.App && window.App.SleeperProj;
+        if (!SP || !SP.loadCurrent) return;
+        let alive = true;
+        SP.loadCurrent(currentLeague && currentLeague.season).then(wk => { if (alive && wk) setCtxTick(t => t + 1); }).catch(() => {});
+        const onProj = () => { if (alive) setCtxTick(t => t + 1); };
+        window.addEventListener('wr:proj-updated', onProj);
+        return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
+    }, [lineupKey]);
+
     // ── Weekly opponent (head-to-head): resolve, project, forecast ──
     const [oppRosterId, setOppRosterId] = React.useState(null);
     const [showOpp, setShowOpp] = React.useState(false);
