@@ -3442,10 +3442,14 @@
                         const wp = a.weeklyPts || 0;
                         const needs = (a.needs || []).slice(0, 5);
                         const has = (a.strengths || []).slice(0, 6);
+                        const openDna = () => { setExpandedDnaOwner(a.rosterId); setTcTab('dna'); };
                         return (
-                            <button key={a.rosterId} type="button" className="tc-lt-card"
+                            // A <div role=button>, not <button>: Safari/WebKit collapses block
+                            // children inside a <button>, which mashed the card rows together.
+                            <div key={a.rosterId} role="button" tabIndex={0} className="tc-lt-card"
                                 title={'Open ' + a.ownerName + '’s Owner DNA'}
-                                onClick={() => { setExpandedDnaOwner(a.rosterId); setTcTab('dna'); }}>
+                                onClick={openDna}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDna(); } }}>
                                 <div className="tc-lt-top">
                                     <span className="tc-lt-nm">{a.ownerName}</span>
                                     {a.tier && <span className="tc-lt-win" style={{ color: a.tierColor, borderColor: a.tierColor }}>{a.tier}</span>}
@@ -3458,7 +3462,7 @@
                                 {needs.length > 0 && <div className="tc-lt-row"><span className="tc-lt-lbl">Needs</span>{needs.map(n => <span key={n.pos} className="tc-lt-chip" style={{ color: POSHEX[n.pos] || 'var(--silver)', borderColor: (POSHEX[n.pos] || '#BDB8AD') + '66', background: (POSHEX[n.pos] || '#BDB8AD') + '18' }}>{n.pos}</span>)}</div>}
                                 {has.length > 0 && <div className="tc-lt-row"><span className="tc-lt-lbl">Has</span>{has.map(p => <span key={p} className="tc-lt-chip tc-lt-has">+{p}</span>)}</div>}
                                 {item.dnaKey && item.dnaKey !== 'NONE' && item.dna && <div className="tc-lt-arch" style={{ color: item.dna.color }}>{item.dna.label}</div>}
-                            </button>
+                            </div>
                         );
                     });
             return (
