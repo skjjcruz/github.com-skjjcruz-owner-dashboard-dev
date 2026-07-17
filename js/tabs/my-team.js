@@ -201,8 +201,8 @@ function MyTeamTab({
         return (bv - av) * dir;
       }
       if (key === 'proj') {
-        const obj = weeklyLineup?.objective || 'median';
-        const pv = r => { const p = projFor(r.pid); return p && p.available ? (p.points[obj] || 0) : -1; };
+        // Sort by the same median projection the column now displays.
+        const pv = r => { const p = projFor(r.pid); return p && p.available ? ((p.points && (p.points.median != null ? p.points.median : p.points.mean)) || 0) : -1; };
         return (pv(b) - pv(a)) * dir;
       }
       if (key === 'hi' || key === 'lo') {
@@ -761,8 +761,10 @@ function MyTeamTab({
         const p = projFor(r.pid);
         if (!p) return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', opacity: 0.45 }}>{'—'}</span></div>;
         if (!p.available) return <div key={colKey} style={{...base}}><span style={{ color: 'var(--warn)', opacity: 0.85, fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.03em' }}>{p.injuryStatus || 'OUT'}</span></div>;
-        const obj = weeklyLineup?.objective || 'median';
-        const pts = p.points[obj] || 0;
+        // Proj = the straight weekly projection (median) — the number the owner
+        // sees in Sleeper. NOT the GM-mode floor/ceiling (win-now optimizes for
+        // floor, which read low here); those bands stay inside start/sit only.
+        const pts = (p.points && (p.points.median != null ? p.points.median : p.points.mean)) || 0;
         const isStart = !!(weeklyLineup && weeklyLineup.starterSet.has(String(r.pid)));
         const g = p.matchupGrade;
         // Free: raw projected pts keep rendering; START/SIT (optimizer output)
