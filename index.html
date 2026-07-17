@@ -1412,15 +1412,17 @@ WRShared.preloadMany(WR_SHARED_FILES);
     .tc-lt-inline .tc-lt-scroll { max-height: 46vh; }
     @media(min-width:1281px){
         .tc-lt-inline { display: none; }
-        /* League Teams is the only rail card now — fill the full rail height so the
-           column runs to the bottom of the page and the list scrolls within. */
-        .tc-context-rail .tc-lt-panel { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-        .tc-context-rail .tc-lt-panel .tc-dhq-panel-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-        .tc-context-rail .tc-lt-panel .tc-lt-scroll { max-height: none; flex: 1 1 auto; min-height: 0; }
+        /* League Teams is the only rail card now. The RAIL itself is the scroll
+           container (explicit max-height + overflow-y:auto — reliable on iOS),
+           so disable the card's inner scroll and let it be natural height; the
+           rail scrolls the full team list to the bottom. Pin the card header so
+           "League Teams" stays visible while the list scrolls. */
+        .tc-context-rail .tc-lt-panel .tc-lt-scroll { max-height: none; overflow: visible; }
+        .tc-context-rail .tc-lt-panel .tc-dhq-panel-head { position: sticky; top: 0; z-index: 2; background: var(--off-black); }
     }
     @media(min-width:1281px){
         .tc-adaptive-canvas.has-rail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(296px, 330px); gap: 12px; align-items: start; }
-        .tc-adaptive-canvas.has-rail .tc-context-rail { display: flex; position: sticky; top: 10px; height: calc(100vh - 84px); max-height: calc(100vh - 84px); overflow: hidden; }
+        .tc-adaptive-canvas.has-rail .tc-context-rail { display: flex; flex-direction: column; position: sticky; top: 10px; max-height: calc(100vh - 84px); max-height: calc(100dvh - 84px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
         .tc-adaptive-canvas.has-rail .tc-dhq-grid { grid-template-columns: minmax(250px, 0.8fr) minmax(430px, 1.45fr); grid-template-areas: "partners packages"; }
         .tc-adaptive-canvas.has-rail .tc-dhq-dossier { display: none; }
         .tc-adaptive-canvas.has-rail .tc-rail-wide-hide { display: none; }
