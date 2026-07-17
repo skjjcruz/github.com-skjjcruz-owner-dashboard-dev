@@ -3451,6 +3451,11 @@
                                 onClick={openDna}
                                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDna(); } }}>
                                 <div className="tc-lt-top">
+                                    <span className="tc-lt-av">
+                                        {avatarUrl(a.avatar)
+                                            ? <img src={avatarUrl(a.avatar)} alt="" onError={e => { e.currentTarget.style.display = 'none'; }} />
+                                            : <b>{(a.ownerName || '?').charAt(0).toUpperCase()}</b>}
+                                    </span>
                                     <span className="tc-lt-nm">{a.ownerName}</span>
                                     {a.tier && <span className="tc-lt-win" style={{ color: a.tierColor, borderColor: a.tierColor }}>{a.tier}</span>}
                                 </div>
