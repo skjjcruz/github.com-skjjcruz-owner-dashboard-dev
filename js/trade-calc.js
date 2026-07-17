@@ -615,9 +615,15 @@
             return c[pos] || 'var(--silver)';
         }
         function avatarUrl(id) { return id ? `https://sleepercdn.com/avatars/thumbs/${id}` : null; }
-        const leagueProfile = typeof window.App?.Intelligence?.buildLeagueProfile === 'function'
-            ? window.App.Intelligence.buildLeagueProfile({ league: currentLeague, rosters: currentLeague?.rosters || [], platform: currentLeague?._platform })
-            : null;
+        // Memoized: buildLeagueProfile returns a fresh object, and this value feeds
+        // teamContextByRosterId → finderDataEpoch. Computing it inline every render
+        // churned the epoch on every render, which cancelled-and-restarted the
+        // league scan effect before a single partner could be scanned (stuck 0/N).
+        const leagueProfile = useMemo(() => (
+            typeof window.App?.Intelligence?.buildLeagueProfile === 'function'
+                ? window.App.Intelligence.buildLeagueProfile({ league: currentLeague, rosters: currentLeague?.rosters || [], platform: currentLeague?._platform })
+                : null
+        ), [currentLeague, currentLeague?.rosters, currentLeague?._platform, timeRecomputeTs]);
         const leagueFormatBadges = leagueProfile && typeof window.App?.Intelligence?.buildFormatBadges === 'function'
             ? window.App.Intelligence.buildFormatBadges(leagueProfile)
             : [];
@@ -2961,14 +2967,21 @@
                 if (cancelled) return;
                 const item = partners[idx];
                 if (item) {
-                    for (const mode of modes) {
-                        for (const deal of evalPartnerDeals(item.assessment, mode, focusPlayerPid, focusPickR)) {
-                            if (deal._sig) {
-                                if (seen.has(deal._sig)) continue;
-                                seen.add(deal._sig);
+                    // A bad partner (malformed assessment, missing roster) must not
+                    // silently kill the whole scan — that's how it hangs at 0/N. Log
+                    // and skip; idx still advances so the league scan keeps moving.
+                    try {
+                        for (const mode of modes) {
+                            for (const deal of evalPartnerDeals(item.assessment, mode, focusPlayerPid, focusPickR)) {
+                                if (deal._sig) {
+                                    if (seen.has(deal._sig)) continue;
+                                    seen.add(deal._sig);
+                                }
+                                pooled.push({ ...deal, partnerScore: item.score });
                             }
-                            pooled.push({ ...deal, partnerScore: item.score });
                         }
+                    } catch (err) {
+                        if (window.wrLog) window.wrLog('trade.finderScan', err);
                     }
                 }
                 idx += 1;
@@ -3240,15 +3253,19 @@
                     Inline overflow overrides: the panel/body CSS clamps for the old
                     fixed-height grid and would clip the typeahead dropdown. */}
                 <section className="tc-dhq-panel" style={{ overflow: 'visible' }}>
-                    <div className="tc-dhq-panel-head">
-                        <span>Trade Finder</span>
+                    {/* Compact header: title + intent chips share the "Trade Finder"
+                        line (chips pulled up out of the body), scanning status stays
+                        pinned far-right. Everything below rises by one row. */}
+                    <div className="tc-dhq-panel-head" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', minWidth: 0 }}>
+                            <span>Trade Finder</span>
+                            <div className="tc-dhq-modebar" role="group" aria-label="Finder intent">
+                                {finderIntents.map(i => <button key={i.key} type="button" className={finderQuery.intent === i.key ? 'is-active' : ''} onClick={() => { setFinderQuery(qr => ({ ...qr, intent: i.key })); setAssetBrowserPos('ALL'); setShowAllDeals(false); }}>{i.label}</button>)}
+                            </div>
+                        </div>
                         <em>{intentLabel} · {finderScopeLabel}</em>
                     </div>
                     <div className="tc-dhq-panel-body" style={{ overflow: 'visible', paddingRight: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div className="tc-dhq-modebar" role="group" aria-label="Finder intent">
-                            {finderIntents.map(i => <button key={i.key} type="button" className={finderQuery.intent === i.key ? 'is-active' : ''} onClick={() => { setFinderQuery(qr => ({ ...qr, intent: i.key })); setAssetBrowserPos('ALL'); setShowAllDeals(false); }}>{i.label}</button>)}
-                        </div>
-
                         <div style={{ position: 'relative', minWidth: 0 }}>
                             <input
                                 type="text"
