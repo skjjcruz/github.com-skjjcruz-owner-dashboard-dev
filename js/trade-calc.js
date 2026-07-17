@@ -3466,7 +3466,7 @@
                         );
                     });
             return (
-                <div className="tc-dhq-panel tc-rail-card">
+                <div className="tc-dhq-panel tc-rail-card tc-lt-panel">
                     <div className="tc-dhq-panel-head">
                         <span>League Teams</span>
                         <em>{_pro && partnerBoard.length ? partnerBoard.length + ' rivals · tap → DNA' : 'Scout the field'}</em>
@@ -3478,55 +3478,13 @@
             );
         }
 
-        function renderContextRail(_verdict, railItem) {
-            const partner = railItem?.assessment || null;
-            const _pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
-            let dnaBody;
-            if (!_pro) {
-                dnaBody = React.createElement(TcProTeaser, { label: 'Owner DNA', feature: 'owner-dna', sub: 'Profile every manager\'s trading psychology — posture, behavior reads, and exactly how to approach each negotiation.' });
-            } else if (!partner) {
-                dnaBody = <div className="tc-dhq-empty">No partner in scope yet — select one on the desk.</div>;
-            } else {
-                const needsLine = (partner.needs || []).slice(0, 4).map(n => n.pos).join(' · ');
-                dnaBody = <>
-                    <div className="tc-dhq-dossier-card">
-                        <h3>{partner.ownerName}</h3>
-                        <div className="tc-dhq-chipline">
-                            <span style={{ color: railItem.posture.color }}>{railItem.posture.label}</span>
-                            {railItem.dnaKey !== 'NONE' && <span style={{ color: railItem.dna.color }}>{railItem.dna.label}</span>}
-                            <span>{railItem.compat}% fit</span>
-                        </div>
-                        <p>{needsLine ? `Needs ${needsLine}. ` : 'No urgent roster hole. '}{railItem.behaviorProfile?.strategy?.offerFrame || railItem.dna?.strategy || railItem.posture.desc}</p>
-                    </div>
-                    <button type="button" className="tc-rail-dna-link" onClick={() => { setExpandedDnaOwner(partner.rosterId); setTcTab('dna'); }}>Full profile ▸</button>
-                </>;
-            }
+        // The far-right rail is now the League Teams scout on its own — it fills the
+        // full rail height (per owner request; the old Live Verdict + single-partner
+        // Owner DNA cards were removed). Tapping a team still opens its full Owner DNA.
+        function renderContextRail() {
             return (
                 <aside className="tc-context-rail">
                     {renderLeagueTeamsCard()}
-                    <div className="tc-dhq-panel tc-rail-card">
-                        <div className="tc-dhq-panel-head">
-                            <span>Live Verdict</span>
-                            <em>{_verdict.hasTrade ? 'Tracks the builder' : 'No live deal'}</em>
-                        </div>
-                        <div className="tc-dhq-panel-body tc-dhq-dossier-body">
-                            {_verdict.hasTrade
-                                ? <>
-                                    {React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}
-                                    {renderAlexVerdict()}
-                                </>
-                                : <div className="tc-dhq-empty">No live deal — load a finder row or open the builder.</div>}
-                        </div>
-                    </div>
-                    <div className="tc-dhq-panel tc-rail-card">
-                        <div className="tc-dhq-panel-head">
-                            <span>Owner DNA</span>
-                            <em>{partner ? partner.ownerName : 'No partner selected'}</em>
-                        </div>
-                        <div className="tc-dhq-panel-body tc-dhq-dossier-body">
-                            {dnaBody}
-                        </div>
-                    </div>
                 </aside>
             );
         }
@@ -3568,11 +3526,6 @@
             // owner > facet) → top partner. Free never receives a ranked partner
             // (the board pick itself is partner intel — a Pro read).
             const railOn = active === 'desk';
-            const railBoard = railOn && _pro ? partnerBoard : [];
-            const liveDealOwnerId = _verdict.hasTrade ? tradeOwner.B : null;
-            const railItem = (liveDealOwnerId != null && railBoard.find(p => String(p.assessment.ownerId) === String(liveDealOwnerId)))
-                || railBoard.find(p => String(p.assessment.ownerId) === String(effPartnerId))
-                || railBoard[0] || null;
             return (
                 <div className="tc-trade-root">
                     {/* Phone-tier touch bumps for the class-styled Trade Desk controls
@@ -3654,7 +3607,7 @@
                         </div>
                     )}
                     </div>
-                    {railOn && renderContextRail(_verdict, railItem)}
+                    {railOn && renderContextRail()}
                     </div>
                 </div>
             );
