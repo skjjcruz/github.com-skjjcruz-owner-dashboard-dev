@@ -1407,6 +1407,10 @@ WRShared.preloadMany(WR_SHARED_FILES);
     .tc-lt-has { color: var(--good); border-color: rgba(46,204,113,0.4); background: rgba(46,204,113,0.09); }
     .tc-lt-arch { font-size: 0.6rem; font-style: italic; margin-top: 7px; }
     @media (pointer: coarse) { .tc-lt-card { min-height: 44px; } }
+    /* Inline League Teams (narrow/portrait) — shown only where the far-right rail is hidden (<1281px). */
+    .tc-lt-inline { display: block; margin-bottom: 12px; }
+    .tc-lt-inline .tc-lt-scroll { max-height: 46vh; }
+    @media(min-width:1281px){ .tc-lt-inline { display: none; } }
     @media(min-width:1281px){
         .tc-adaptive-canvas.has-rail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(296px, 330px); gap: 12px; align-items: start; }
         .tc-adaptive-canvas.has-rail .tc-context-rail { display: flex; position: sticky; top: 10px; max-height: calc(100vh - 84px); }
