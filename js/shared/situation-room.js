@@ -151,6 +151,9 @@
             state.window = (assessment && (assessment.window || assessment.tradeWindow)) || '';
             state.healthScore = (assessment && assessment.healthScore) || 0;
             state.needs = (assessment && Array.isArray(assessment.needs)) ? assessment.needs : [];
+            // Blended power rank (same engine every surface reads) — lets the brief
+            // say "you're now #8" and catch a rank drop after a league shakeup.
+            state.rank = (assessment && assessment.powerRank) || null;
         } catch (_) { /* leave defaults */ }
 
         try {
@@ -206,6 +209,7 @@
             state.gmStrategy || '',
             state.nflWeek || '',
             (state.draft && state.draft.phase) || '',
+            state.rank || '',
         ];
         return _hash(parts.join('|'));
     }
