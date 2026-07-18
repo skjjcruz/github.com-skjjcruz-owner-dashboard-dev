@@ -1183,7 +1183,11 @@ WRShared.preloadMany(WR_SHARED_FILES);
     .tc-ta-side { background: var(--off-black); border: 1px solid rgba(212,175,55,0.2); border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.82rem; }
     .tc-ta-side.tc-side-a { border-color: rgba(93,173,226,0.35); }
     .tc-ta-side.tc-side-b { border-color: rgba(231,76,60,0.35); }
-    .tc-trade-root { width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding:0; -webkit-font-smoothing: subpixel-antialiased; text-rendering: optimizeLegibility; }
+    /* Pull the Trade Center up flush under the league header — reclaim the
+       content-frame's top padding so the tab strip + Trade Finder start at the
+       top instead of sitting in dead space (owner ruling). Scoped to the trade
+       root, so no other tab moves. */
+    .tc-trade-root { width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding:0; margin-top:-14px; -webkit-font-smoothing: subpixel-antialiased; text-rendering: optimizeLegibility; }
     .tc-trade-root .wr-fade-in { animation: none; transform: none; }
     .tc-trade-root .wr-module-strip { background: rgba(255,255,255,0.038); border-color: rgba(212,175,55,0.22); }
     .tc-trade-root .wr-module-context strong { font-size: 1.05rem; }
