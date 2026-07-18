@@ -508,14 +508,15 @@ function DashboardPanel({
     const touchReorder = dashViewport.isPhone || dashViewport.isCoarse;
     const [starredWidgets, setStarredWidgets] = React.useState(() => window.WrStarWidget?.getAll() || []);
     // Transaction Ticker → tap to expand into a full-detail overlay (all
-    // transactions, both sides of every trade). Closed by default.
-    const [txnDetailOpen, setTxnDetailOpen] = React.useState(false);
+    // transactions, both sides of every trade). null = closed, true = show all,
+    // a txn object = open focused on that one. Never navigates to the Trade page.
+    const [txnDetail, setTxnDetail] = React.useState(null);
     React.useEffect(() => {
-        if (!txnDetailOpen) return undefined;
-        const onKey = e => { if (e.key === 'Escape') setTxnDetailOpen(false); };
+        if (!txnDetail) return undefined;
+        const onKey = e => { if (e.key === 'Escape') setTxnDetail(null); };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [txnDetailOpen]);
+    }, [txnDetail]);
     const navigateWidget = React.useCallback((target) => {
         const tab = resolveWidgetDestination(target);
         if (tab && setActiveTab) setActiveTab(tab);
@@ -896,50 +897,18 @@ function DashboardPanel({
                 },
             };
         }
-        function buildTickerTradeContext(txn) {
-            const rosterIds = txn?.roster_ids || [];
-            const owners = rosterIds.map(rid => ({ rosterId: rid, name: getOwnerName(rid) || ('Team ' + rid) }));
-            const adds = Object.keys(txn?.adds || {}).map(pid => ({ pid, name: getPlayerName(pid) }));
-            const drops = Object.keys(txn?.drops || {}).map(pid => ({ pid, name: getPlayerName(pid) }));
-            const pickCount = txn?.draft_picks?.length || 0;
-            const assetSummary = [
-                adds.length ? adds.slice(0, 3).map(p => '+' + p.name).join(', ') : null,
-                drops.length ? drops.slice(0, 3).map(p => '-' + p.name).join(', ') : null,
-                pickCount ? pickCount + ' pick' + (pickCount === 1 ? '' : 's') : null,
-            ].filter(Boolean).join(' | ');
-            return {
-                context: 'transaction_ticker_trade',
-                transactionId: txn?.transaction_id || txn?.transactionId || txn?.created || null,
-                created: txn?.created || null,
-                rosterIds,
-                owners,
-                adds,
-                drops,
-                pickCount,
-                summary: owners.map(o => o.name).join(' vs ') + (assetSummary ? ': ' + assetSummary : ''),
-                transaction: txn,
-            };
-        }
-        function openTickerTrade(txn) {
-            if (txn?.type !== 'trade') return;
-            const detail = buildTickerTradeContext(txn);
-            window._wrTradeContext = detail;
-            try { window.dispatchEvent(new CustomEvent('wr:open-trade-context', { detail })); } catch (_) {}
-            if (navigateWidget) navigateWidget('trades');
-            else if (setActiveTab) setActiveTab('trades');
-            else if (typeof window.wrNavigateTab === 'function') window.wrNavigateTab('trades');
-        }
-        function tickerTradeProps(txn) {
-            if (txn?.type !== 'trade') return {};
+        // Tapping a transaction opens the in-place detail overlay for THAT deal —
+        // it never navigates to the Trade page (owner ruling).
+        function tickerRowProps(txn) {
             return {
                 role: 'button',
                 tabIndex: 0,
-                title: 'Open trade context',
-                onClick: () => openTickerTrade(txn),
+                title: 'See this transaction in full detail',
+                onClick: () => setTxnDetail(txn || true),
                 onKeyDown: e => {
                     if (e.key !== 'Enter' && e.key !== ' ') return;
                     e.preventDefault();
-                    openTickerTrade(txn);
+                    setTxnDetail(txn || true);
                 },
             };
         }
@@ -960,7 +929,7 @@ function DashboardPanel({
         }
         const hiddenCount = Math.max(0, (transactions || []).length - visibleTransactions.length);
         const hasTxns = !!(transactions && transactions.length);
-        const openDetail = () => { if (hasTxns) setTxnDetailOpen(true); };
+        const openDetail = () => { if (hasTxns) setTxnDetail(true); };
         return (
             <div data-wr-widget="transaction-ticker" style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', maxHeight: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 {/* Tap the header to expand the ticker into the full-detail overlay. */}
@@ -980,7 +949,7 @@ function DashboardPanel({
                 {(!transactions || transactions.length === 0) ? (
                     <SkeletonRows count={size === 'narrow' ? 8 : size === 'lg' ? 5 : size === 'slim' ? 4 : 2} />
                 ) : visibleTransactions.map((txn, ti) => (
-                    <div key={ti} {...tickerTradeProps(txn)} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))', cursor: txn.type === 'trade' ? 'pointer' : 'default', outline: 'none' }}>
+                    <div key={ti} {...tickerRowProps(txn)} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))', cursor: 'pointer', outline: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', flexWrap: 'wrap' }}>
                             <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.55, minWidth: '36px' }}>{timeAgo(txn.created)}</span>
                             <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, padding: '1px 5px', borderRadius: '3px',
@@ -1021,7 +990,11 @@ function DashboardPanel({
     // a trade BOTH sides — each owner and exactly what they received (players +
     // picks). Players are tappable into the player card. Backdrop / ✕ / Esc close.
     function renderTransactionDetailModal() {
-        const txns = transactions || [];
+        const all = transactions || [];
+        // A specific tapped transaction opens focused (just that deal); the
+        // header / "See all" chip open the full list. true = show all.
+        const focused = (txnDetail && txnDetail !== true) ? txnDetail : null;
+        const txns = focused ? [focused] : all;
         const openPlayer = (pid) => {
             if (!pid) return;
             if (window.WR?.openPlayerCard) return window.WR.openPlayerCard(pid);
@@ -1068,15 +1041,19 @@ function DashboardPanel({
             );
         };
         return (
-            <div role="dialog" aria-modal="true" aria-label="All transactions"
-                onClick={() => setTxnDetailOpen(false)}
+            <div role="dialog" aria-modal="true" aria-label={focused ? 'Transaction detail' : 'All transactions'}
+                onClick={() => setTxnDetail(null)}
                 style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
                 <div onClick={e => e.stopPropagation()}
                     style={{ ...cardBase, width: '100%', maxWidth: '640px', maxHeight: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid rgba(212,175,55,0.25)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
-                        <span style={{ fontFamily: rajFont, fontSize: '1.05rem', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.06em' }}>📰 ALL TRANSACTIONS</span>
-                        <span style={{ color: S, fontSize: '0.78rem', opacity: 0.7 }}>{txns.length} total</span>
-                        <button type="button" onClick={() => setTxnDetailOpen(false)} aria-label="Close"
+                        <span style={{ fontFamily: rajFont, fontSize: '1.05rem', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.06em' }}>📰 {focused ? 'TRANSACTION' : 'ALL TRANSACTIONS'}</span>
+                        {focused
+                            ? (all.length > 1 && <span role="button" tabIndex={0} onClick={() => setTxnDetail(true)}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTxnDetail(true); } }}
+                                style={{ color: G, fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}>See all {all.length} →</span>)
+                            : <span style={{ color: S, fontSize: '0.78rem', opacity: 0.7 }}>{all.length} total</span>}
+                        <button type="button" onClick={() => setTxnDetail(null)} aria-label="Close"
                             style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', color: W, cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '5px 10px' }}>✕</button>
                     </div>
                     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '10px 14px' }}>
@@ -1701,7 +1678,7 @@ function DashboardPanel({
             <PinnedSection />
 
             {/* Transaction Ticker full-detail overlay */}
-            {txnDetailOpen && renderTransactionDetailModal()}
+            {txnDetail && renderTransactionDetailModal()}
 
             {/* Full-screen widget picker overlay */}
             {pickerOpen && (
