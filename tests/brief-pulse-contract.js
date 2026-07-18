@@ -165,13 +165,59 @@ test('added player with no metadata degrades to a count, no throw', () => {
     match(c.line, /added 1 player/i, 'falls back to a count');
 });
 
+// ── League-wide trade radar + rank (Phase 2b) ───────────────────────
+const TRADE = { id: 'txn1', when: 'last night', involvesMe: false, headline: "iMacduff landed Cam Rivers; MangaMaw landed a 2026 R1 pick" };
+
+test('a fresh league trade leads the brief and sets the eyes flag — no prev needed', () => {
+    const { BP } = load();
+    const c = BP.computeChange(null, snap({ _trade: TRADE }), PLAYERS);
+    eq(c.material, true, 'a live trade is material even on a first visit');
+    eq(c.eyes, true, 'eyes flag drives the 👀 icon');
+    match(c.line, /Huge trade last night/, 'leads with the trade headline');
+    match(c.line, /iMacduff landed Cam Rivers/, 'names the teams and marquee pieces');
+});
+
+test('a league trade anchors to your current power rank', () => {
+    const { BP } = load();
+    const c = BP.computeChange(null, snap({ _trade: TRADE, rank: 8 }), PLAYERS);
+    eq(c.eyes, true, 'still trade-led');
+    match(c.line, /#8/, 'mentions where you now sit');
+});
+
+test('a trade you are in reads "Big trade", not "Huge trade"', () => {
+    const { BP } = load();
+    const c = BP.computeChange(null, snap({ _trade: Object.assign({}, TRADE, { involvesMe: true }) }), PLAYERS);
+    match(c.line, /Big trade last night/, 'your own deal is phrased as yours');
+});
+
+test('a power-rank drop is named with the from/to', () => {
+    const { BP } = load();
+    const c = BP.computeChange(snap({ rank: 5 }), snap({ rank: 8 }), PLAYERS);
+    eq(c.material, true, 'material');
+    match(c.line, /slipped from #5 to #8/, 'names the drop');
+});
+
+test('a power-rank climb is phrased as a climb', () => {
+    const { BP } = load();
+    const c = BP.computeChange(snap({ rank: 8 }), snap({ rank: 4 }), PLAYERS);
+    match(c.line, /climbed from #8 to #4/, 'names the climb');
+});
+
+test('no trade + no rank move stays the plain "since your last visit" voice', () => {
+    const { BP } = load();
+    const c = BP.computeChange(snap({ rank: 8 }), snap({ players: ['1001', '1002', '9999'], rank: 8 }), PLAYERS);
+    eq(c.eyes, false, 'no eyes without a trade');
+    match(c.line, /^Since your last visit —/, 'keeps the original lead');
+});
+
 // ── Snapshot helpers ────────────────────────────────────────────────
 test('snapshotFromState distills the fields we diff', () => {
     const { BP } = load();
-    const s = BP.snapshotFromState({ fingerprint: 'abc', players: ['1001'], record: '5-1', tier: 'ELITE', draft: { phase: 'in-season' }, extra: 'ignored' });
+    const s = BP.snapshotFromState({ fingerprint: 'abc', players: ['1001'], record: '5-1', tier: 'ELITE', draft: { phase: 'in-season' }, rank: 3, extra: 'ignored' });
     eq(s.fingerprint, 'abc', 'fingerprint');
     eq(s.tier, 'ELITE', 'tier');
     eq(s.draftPhase, 'in-season', 'draft phase flattened');
+    eq(s.rank, 3, 'carries power rank');
     ok(!('extra' in s), 'drops unrelated fields');
 });
 test('snapshotFromState(null) is null', () => {
