@@ -108,21 +108,61 @@
         return ts < 1e12 ? ts * 1000 : ts;   // Sleeper is ms; guard a stray seconds value
     }
 
-    // The marquee asset a roster RECEIVED in this trade — the highest-DHQ added
-    // player, else the first traded pick, else null.
-    function _marqueeAddFor(trade, rid, playersData) {
-        var best = null, bestVal = -1;
-        var adds = (trade && trade.adds) || {};
+    // Everything each roster RECEIVED in this trade, sorted by DHQ value desc
+    // (players carry their live power score; picks sort last at value 0). This
+    // is what lets the headline lead with the biggest names that moved.
+    //   → { '<rid>': [{ name, val }], ... }
+    function _addsByRoster(trade, playersData) {
+        var byR = {};
         var scores = (window.App && window.App.LI && window.App.LI.playerScores) || {};
-        Object.keys(adds).forEach(function (pid) {
-            if (String(adds[pid]) !== String(rid)) return;
-            var val = scores[pid] || 0;
-            if (val > bestVal) { bestVal = val; best = pid; }
+        Object.keys((trade && trade.adds) || {}).forEach(function (pid) {
+            var rid = String(trade.adds[pid]);
+            (byR[rid] = byR[rid] || []).push({ name: _name(pid, playersData) || 'a player', val: scores[pid] || 0 });
         });
-        if (best) return _name(best, playersData) || 'a player';
-        var picks = ((trade && trade.draft_picks) || []).filter(function (p) { return String(p.owner_id) === String(rid); });
-        if (picks.length) return ((picks[0].season || '') + ' R' + (picks[0].round || '?') + ' pick').trim();
-        return null;
+        ((trade && trade.draft_picks) || []).forEach(function (p) {
+            var rid = String(p.owner_id);
+            (byR[rid] = byR[rid] || []).push({ name: ((p.season || '') + ' R' + (p.round || '?') + ' pick').trim(), val: 0 });
+        });
+        Object.keys(byR).forEach(function (rid) { byR[rid].sort(function (a, b) { return b.val - a.val; }); });
+        return byR;
+    }
+
+    function _join(arr) {
+        arr = (arr || []).filter(Boolean);
+        if (arr.length <= 1) return arr[0] || '';
+        if (arr.length === 2) return arr[0] + ' and ' + arr[1];
+        return arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1];
+    }
+
+    // Build the headline for a trade. When one side clearly lands the marquee
+    // talent (its top asset outclasses the other side's), lead with "Winner got
+    // A and B from Loser". When it's close — or 3+ teams — fall back to naming
+    // each side's biggest piece ("X landed A; Y landed B"). DHQ decides.
+    function _tradeHeadline(league, trade, playersData) {
+        var byR = _addsByRoster(trade, playersData);
+        var rids = (trade.roster_ids || Object.keys(byR)).slice(0, 4).map(String);
+        var perSide = function () {
+            return rids.map(function (rid) {
+                var got = (byR[rid] || [])[0];
+                var nm = _ownerNameForRoster(league, rid);
+                return (got && got.name) ? (nm + ' landed ' + got.name) : nm;
+            }).join('; ');
+        };
+        if (rids.length !== 2) return perSide();
+        var topA = (byR[rids[0]] || [])[0], topB = (byR[rids[1]] || [])[0];
+        var valA = topA ? topA.val : 0, valB = topB ? topB.val : 0;
+        var winner = valA >= valB ? rids[0] : rids[1];
+        var loser = winner === rids[0] ? rids[1] : rids[0];
+        var winVal = Math.max(valA, valB), loseVal = Math.min(valA, valB);
+        // Lopsided when the winner's headliner clearly outranks the other side's
+        // (and there's real value moving). Otherwise it's "fairly even".
+        if (winVal > 0 && loseVal < winVal * 0.8) {
+            var haul = (byR[winner] || []).filter(function (a) { return a.val > 0; });
+            if (!haul.length) haul = (byR[winner] || []);
+            var names = haul.slice(0, 2).map(function (a) { return a.name; });
+            return _ownerNameForRoster(league, winner) + ' got ' + _join(names) + ' from ' + _ownerNameForRoster(league, loser);
+        }
+        return perSide();
     }
 
     function _tradeWhen(ageMs) {
@@ -144,18 +184,13 @@
             if (!ts) return null;
             var age = Date.now() - ts;
             if (age < 0 || age > TRADE_WINDOW_MS) return null;   // stale ⇒ nothing to shout about
-            var rids = (top.roster_ids || []).slice(0, 3);
+            var rids = (top.roster_ids || []).slice(0, 4);
             var myRid = roster && (roster.roster_id != null ? roster.roster_id : roster.rosterId);
             var involvesMe = rids.map(String).indexOf(String(myRid)) >= 0;
-            var sides = rids.map(function (rid) {
-                var name = _ownerNameForRoster(league, rid);
-                var got = _marqueeAddFor(top, rid, playersData);
-                return got ? (name + ' landed ' + got) : name;
-            });
             return {
                 id: top.transaction_id || (top.type + ':' + ts),
                 ts: ts, ageMs: age, when: _tradeWhen(age),
-                involvesMe: involvesMe, teams: rids, headline: sides.join('; '),
+                involvesMe: involvesMe, teams: rids, headline: _tradeHeadline(league, top, playersData),
             };
         } catch (_) { return null; }
     }
