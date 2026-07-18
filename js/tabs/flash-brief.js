@@ -339,13 +339,14 @@ function IntelligenceBriefWidget({
     // (heading renders as "📰 TRANSACTION TICKER"). Falls back to Power Rankings.
     const scrollToTransactions = () => {
         try {
-            const heading = Array.from(document.querySelectorAll('*'))
-                .find(e => e.childElementCount === 0 && /transaction ticker/i.test(String(e.textContent || '').trim()));
-            if (heading) {
-                let card = heading;
-                for (let i = 0; i < 8 && card.parentElement; i++) { card = card.parentElement; if (card.offsetHeight > 200) break; }
-                if (card && typeof card.scrollIntoView === 'function') { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+            // The ticker card carries a stable anchor (dashboard.js).
+            let card = document.querySelector('[data-wr-widget="transaction-ticker"]');
+            if (!card) {
+                const heading = Array.from(document.querySelectorAll('*'))
+                    .find(e => /transaction ticker/i.test(String(e.textContent || '').trim()) && e.querySelectorAll('*').length < 4);
+                if (heading) { card = heading; for (let i = 0; i < 8 && card.parentElement; i++) { card = card.parentElement; if (card.offsetHeight > 200) break; } }
             }
+            if (card && typeof card.scrollIntoView === 'function') { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
         } catch (e) { /* fall through */ }
         scrollToPowerRankings();
     };

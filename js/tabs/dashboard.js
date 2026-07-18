@@ -507,6 +507,15 @@ function DashboardPanel({
     const dashViewport = window.WR.useViewport();
     const touchReorder = dashViewport.isPhone || dashViewport.isCoarse;
     const [starredWidgets, setStarredWidgets] = React.useState(() => window.WrStarWidget?.getAll() || []);
+    // Transaction Ticker → tap to expand into a full-detail overlay (all
+    // transactions, both sides of every trade). Closed by default.
+    const [txnDetailOpen, setTxnDetailOpen] = React.useState(false);
+    React.useEffect(() => {
+        if (!txnDetailOpen) return undefined;
+        const onKey = e => { if (e.key === 'Escape') setTxnDetailOpen(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [txnDetailOpen]);
     const navigateWidget = React.useCallback((target) => {
         const tab = resolveWidgetDestination(target);
         if (tab && setActiveTab) setActiveTab(tab);
@@ -950,16 +959,20 @@ function DashboardPanel({
             return pids.filter(pid => String(txn.drops[pid]) === String(txn.roster_ids[0]));
         }
         const hiddenCount = Math.max(0, (transactions || []).length - visibleTransactions.length);
+        const hasTxns = !!(transactions && transactions.length);
+        const openDetail = () => { if (hasTxns) setTxnDetailOpen(true); };
         return (
-            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', maxHeight: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontFamily: rajFont, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.07em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div data-wr-widget="transaction-ticker" style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', maxHeight: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                {/* Tap the header to expand the ticker into the full-detail overlay. */}
+                <div role={hasTxns ? 'button' : undefined} tabIndex={hasTxns ? 0 : undefined}
+                    title={hasTxns ? 'Tap to see every transaction in full detail' : undefined}
+                    onClick={openDetail}
+                    onKeyDown={e => { if (hasTxns && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(); } }}
+                    style={{ fontFamily: rajFont, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.07em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', cursor: hasTxns ? 'pointer' : 'default' }}>
                     📰 TRANSACTION TICKER
-                    {hiddenCount > 0 && (
-                        <span role="button" tabIndex={0} title="Open League Analytics"
-                            onClick={() => navigateWidget && navigateWidget('analytics')}
-                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateWidget && navigateWidget('analytics'); } }}
-                            style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: S, opacity: 0.7, fontFamily: dmFont, letterSpacing: 0, textTransform: 'none', cursor: 'pointer' }}>
-                            +{hiddenCount} more →
+                    {hasTxns && (
+                        <span style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: S, opacity: 0.7, fontFamily: dmFont, letterSpacing: 0, textTransform: 'none' }}>
+                            {hiddenCount > 0 ? ('+' + hiddenCount + ' more →') : 'See all →'}
                         </span>
                     )}
                 </div>
@@ -999,6 +1012,91 @@ function DashboardPanel({
                         </div>
                     </div>
                 ))}
+                </div>
+            </div>
+        );
+    }
+
+    // Full-detail overlay for the Transaction Ticker: every transaction, and for
+    // a trade BOTH sides — each owner and exactly what they received (players +
+    // picks). Players are tappable into the player card. Backdrop / ✕ / Esc close.
+    function renderTransactionDetailModal() {
+        const txns = transactions || [];
+        const openPlayer = (pid) => {
+            if (!pid) return;
+            if (window.WR?.openPlayerCard) return window.WR.openPlayerCard(pid);
+            if (typeof window._wrSelectPlayer === 'function') return window._wrSelectPlayer(pid);
+            if (typeof window.openPlayerModal === 'function') window.openPlayerModal(pid);
+        };
+        const badge = (txn) => (
+            <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '1px 6px', borderRadius: '3px',
+                background: txn.type === 'trade' ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : txn.type === 'waiver' ? 'rgba(52,211,153,0.15)' : 'rgba(96,165,250,0.15)',
+                color: txn.type === 'trade' ? G : txn.type === 'waiver' ? 'var(--k-34d399, #34d399)' : 'var(--k-60a5fa, #60a5fa)' }}>
+                {(txn.type === 'free_agent' ? 'FA' : txn.type || '').toUpperCase()}</span>
+        );
+        const pchip = (pid, name, color, ki) => (
+            <span key={ki} role="button" tabIndex={0} title="Open player card"
+                onClick={() => openPlayer(pid)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlayer(pid); } }}
+                style={{ color, cursor: 'pointer', fontSize: '0.82rem', padding: '2px 7px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', whiteSpace: 'nowrap' }}>
+                {name}</span>
+        );
+        const tradeSides = (txn) => (txn.roster_ids || []).map((rid, si) => {
+            const adds = Object.keys(txn.adds || {}).filter(pid => String(txn.adds[pid]) === String(rid));
+            const picks = (txn.draft_picks || []).filter(p => String(p.owner_id) === String(rid)).map(p => ((p.season || '') + ' R' + (p.round || '?')));
+            return (
+                <div key={si} style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: W, marginBottom: '5px' }}>{getOwnerName(rid) || ('Team ' + rid)} <span style={{ color: S, fontWeight: 500, opacity: 0.7 }}>receives</span></div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                        {adds.length === 0 && picks.length === 0 && <span style={{ color: S, fontSize: '0.8rem', opacity: 0.6 }}>—</span>}
+                        {adds.map((pid, ai) => pchip(pid, getPlayerName(pid), 'var(--good)', 'a' + ai))}
+                        {picks.map((lbl, pi) => <span key={'p' + pi} style={{ color: G, fontSize: '0.82rem', padding: '2px 7px', borderRadius: '4px', background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.25)', whiteSpace: 'nowrap' }}>{lbl} pick</span>)}
+                    </div>
+                </div>
+            );
+        });
+        const nonTrade = (txn) => {
+            const adds = Object.keys(txn.adds || {});
+            const drops = Object.keys(txn.drops || {});
+            return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', alignItems: 'center' }}>
+                    {adds.map((pid, ai) => pchip(pid, '+' + getPlayerName(pid), 'var(--good)', 'a' + ai))}
+                    {drops.map((pid, di) => pchip(pid, '−' + getPlayerName(pid), 'var(--bad)', 'd' + di))}
+                    {txn.settings?.waiver_bid > 0 && <span style={{ color: 'var(--warn)', fontSize: '0.82rem', fontWeight: 700 }}>${txn.settings.waiver_bid}</span>}
+                    {adds.length === 0 && drops.length === 0 && <span style={{ color: S, fontSize: '0.8rem', opacity: 0.6 }}>—</span>}
+                </div>
+            );
+        };
+        return (
+            <div role="dialog" aria-modal="true" aria-label="All transactions"
+                onClick={() => setTxnDetailOpen(false)}
+                style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+                <div onClick={e => e.stopPropagation()}
+                    style={{ ...cardBase, width: '100%', maxWidth: '640px', maxHeight: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid rgba(212,175,55,0.25)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+                        <span style={{ fontFamily: rajFont, fontSize: '1.05rem', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.06em' }}>📰 ALL TRANSACTIONS</span>
+                        <span style={{ color: S, fontSize: '0.78rem', opacity: 0.7 }}>{txns.length} total</span>
+                        <button type="button" onClick={() => setTxnDetailOpen(false)} aria-label="Close"
+                            style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', color: W, cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '5px 10px' }}>✕</button>
+                    </div>
+                    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '10px 14px' }}>
+                        {txns.length === 0 ? (
+                            <div style={{ color: S, fontSize: '0.85rem', padding: '20px', textAlign: 'center' }}>No transactions yet.</div>
+                        ) : txns.map((txn, ti) => (
+                            <div key={ti} style={{ padding: '11px 0', borderBottom: ti === txns.length - 1 ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.06))' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '0.72rem', color: S, opacity: 0.6 }}>{timeAgo(txn.created)}</span>
+                                    {badge(txn)}
+                                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: W }}>
+                                        {(txn.roster_ids || []).map(rid => getOwnerName(rid) || ('Team ' + rid)).join(txn.type === 'trade' ? ' ↔ ' : '')}
+                                    </span>
+                                </div>
+                                {txn.type === 'trade'
+                                    ? <div style={{ display: 'grid', gap: '7px' }}>{tradeSides(txn)}</div>
+                                    : nonTrade(txn)}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         );
@@ -1601,6 +1699,9 @@ function DashboardPanel({
 
             {/* Pinned / starred section */}
             <PinnedSection />
+
+            {/* Transaction Ticker full-detail overlay */}
+            {txnDetailOpen && renderTransactionDetailModal()}
 
             {/* Full-screen widget picker overlay */}
             {pickerOpen && (
