@@ -210,6 +210,51 @@ test('no trade + no rank move stays the plain "since your last visit" voice', ()
     match(c.line, /^Since your last visit —/, 'keeps the original lead');
 });
 
+// recentLeagueTrade reads live transactions + DHQ scores to build the headline.
+function txnCtx(ctx, scores, txn) {
+    ctx.window.App = { LI: { playerScores: scores } };
+    ctx.window.S = { transactions: { '5': [txn] } };
+}
+const TRADE_PLAYERS = {
+    KW: { full_name: 'Kenneth Walker' }, ME: { full_name: 'Mike Evans' },
+    SCRUB: { full_name: 'Practice Squad Guy' }, SA: { full_name: 'Star A' }, SB: { full_name: 'Star B' },
+};
+const LEAGUE2 = {
+    league_id: 'L1',
+    rosters: [{ roster_id: 2, owner_id: 'u2' }, { roster_id: 3, owner_id: 'u3' }],
+    users: [{ user_id: 'u2', display_name: 'CovidFacemasks' }, { user_id: 'u3', display_name: 'Big Loco' }],
+};
+
+test('a lopsided trade headlines the two highest-DHQ players and who got them', () => {
+    const { BP, ctx } = load();
+    txnCtx(ctx, { KW: 7200, ME: 6800, SCRUB: 900 }, {
+        type: 'trade', status: 'complete', transaction_id: 'T1', status_updated: Date.now() - 3 * 3600 * 1000,
+        roster_ids: [2, 3], adds: { KW: 2, ME: 2, SCRUB: 3 }, draft_picks: [],
+    });
+    const t = BP.recentLeagueTrade(LEAGUE2, { roster_id: 9 }, TRADE_PLAYERS);
+    ok(t, 'a fresh trade is found');
+    match(t.headline, /CovidFacemasks got Kenneth Walker and Mike Evans from Big Loco/, 'winner + top-2 studs by DHQ + sender');
+});
+
+test('an even trade names each side\'s biggest piece instead', () => {
+    const { BP, ctx } = load();
+    txnCtx(ctx, { SA: 5000, SB: 4800 }, {
+        type: 'trade', status: 'complete', transaction_id: 'T2', status_updated: Date.now() - 3 * 3600 * 1000,
+        roster_ids: [2, 3], adds: { SA: 2, SB: 3 }, draft_picks: [],
+    });
+    const t = BP.recentLeagueTrade(LEAGUE2, { roster_id: 9 }, TRADE_PLAYERS);
+    match(t.headline, /CovidFacemasks landed Star A; Big Loco landed Star B/, 'per-side when the values are close');
+});
+
+test('a trade older than the ~36h window is not surfaced', () => {
+    const { BP, ctx } = load();
+    txnCtx(ctx, { SA: 5000 }, {
+        type: 'trade', status: 'complete', transaction_id: 'T3', status_updated: Date.now() - 72 * 3600 * 1000,
+        roster_ids: [2, 3], adds: { SA: 2 }, draft_picks: [],
+    });
+    eq(BP.recentLeagueTrade(LEAGUE2, { roster_id: 9 }, TRADE_PLAYERS), null, 'stale trade → null');
+});
+
 // ── Snapshot helpers ────────────────────────────────────────────────
 test('snapshotFromState distills the fields we diff', () => {
     const { BP } = load();

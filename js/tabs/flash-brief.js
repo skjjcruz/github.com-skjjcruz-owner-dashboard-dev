@@ -335,6 +335,20 @@ function IntelligenceBriefWidget({
         } catch (e) { /* fall through */ }
         goTo('analytics');
     };
+    // Trade news links to the Transaction Ticker widget on this same dashboard
+    // (heading renders as "📰 TRANSACTION TICKER"). Falls back to Power Rankings.
+    const scrollToTransactions = () => {
+        try {
+            const heading = Array.from(document.querySelectorAll('*'))
+                .find(e => e.childElementCount === 0 && /transaction ticker/i.test(String(e.textContent || '').trim()));
+            if (heading) {
+                let card = heading;
+                for (let i = 0; i < 8 && card.parentElement; i++) { card = card.parentElement; if (card.offsetHeight > 200) break; }
+                if (card && typeof card.scrollIntoView === 'function') { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+            }
+        } catch (e) { /* fall through */ }
+        scrollToPowerRankings();
+    };
 
     // ── Action list (priority-ordered, focus-gated) ─────────────────
     let actions = [];
@@ -508,9 +522,9 @@ function IntelligenceBriefWidget({
         const hasWaiverNames = !!(waiverTarget || (keyDrops && keyDrops.length));
 
         const lines = [];
-        // Line 1 — 24-hour lead read → scrolls to the Power Rankings widget.
-        // A fresh league trade leads with 👀 (owner ruling) to the left of it.
-        lines.push({ key: 'lead', pr: true, src: 'Power Rankings', body: [_leadEyes ? ('👀 ' + leadChangeText) : leadChangeText] });
+        // Line 1 — 24-hour lead read. A fresh league trade leads with 👀 and
+        // links to the Transaction Ticker; otherwise it scrolls to Power Rankings.
+        lines.push({ key: 'lead', pr: !_leadEyes, txn: _leadEyes, src: _leadEyes ? 'Transaction Ticker' : 'Power Rankings', body: [_leadEyes ? ('👀 ' + leadChangeText) : leadChangeText] });
         // Line 2 — rank + health → Analytics tab.
         if (myRank > 0 && tier !== 'UNKNOWN') {
             lines.push({ key: 'rank', target: 'analytics', src: 'Analytics',
@@ -539,7 +553,7 @@ function IntelligenceBriefWidget({
         // to the tab it's pulled from. The "↳ source →" hint shows the target.
         const kids = lines.map((ln, i) => React.createElement('div', {
             key: ln.key,
-            onClick: () => (ln.pr ? scrollToPowerRankings() : goTo(ln.target)),
+            onClick: () => (ln.txn ? scrollToTransactions() : ln.pr ? scrollToPowerRankings() : goTo(ln.target)),
             onMouseEnter: (e) => { e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))'; },
             onMouseLeave: (e) => { e.currentTarget.style.background = 'transparent'; },
             style: { display: 'grid', gridTemplateColumns: '14px 1fr', gap: '10px', padding: compact ? '8px' : '11px 8px', borderTop: i === 0 ? 'none' : '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', alignItems: 'start', cursor: 'pointer', transition: 'background 0.12s' },
