@@ -1186,8 +1186,19 @@ WRShared.preloadMany(WR_SHARED_FILES);
     /* Pull the Trade Center up flush under the league header — reclaim the
        content-frame's top padding so the tab strip + Trade Finder start at the
        top instead of sitting in dead space (owner ruling). Scoped to the trade
-       root, so no other tab moves. */
-    .tc-trade-root { width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding:0; margin-top:-14px; -webkit-font-smoothing: subpixel-antialiased; text-rendering: optimizeLegibility; }
+       root, so no other tab moves. position:relative anchors the floated tab
+       strip on wide screens (see the ≥1281 rule below). */
+    .tc-trade-root { position:relative; width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding:0; margin-top:-14px; -webkit-font-smoothing: subpixel-antialiased; text-rendering: optimizeLegibility; }
+    /* Wide screens (rail visible): float the Trade Desk / Owner DNA / Trade Log
+       tabs into the top-right corner so the Trade Finder (left) and League Teams
+       (right) columns rise to the very top instead of starting a full row below
+       the tab strip. The tabs stay exactly where they were; the rail gets just
+       enough top room to clear the floated tabs. Narrow/portrait keeps the tabs
+       in their own row (no rail there to collide with). */
+    @media (min-width: 1281px) {
+        .tc-trade-root > .wr-module-strip.is-compact { position: absolute; top: 0; right: 0; width: auto; margin: 0; z-index: 6; }
+        .tc-trade-root .tc-adaptive-canvas.has-rail .tc-context-rail { margin-top: 42px; }
+    }
     .tc-trade-root .wr-fade-in { animation: none; transform: none; }
     .tc-trade-root .wr-module-strip { background: rgba(255,255,255,0.038); border-color: rgba(212,175,55,0.22); }
     .tc-trade-root .wr-module-context strong { font-size: 1.05rem; }
