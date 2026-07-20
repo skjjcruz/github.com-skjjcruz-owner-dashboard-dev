@@ -951,7 +951,7 @@ function DashboardPanel({
                 ) : visibleTransactions.map((txn, ti) => (
                     <div key={ti} {...tickerRowProps(txn)} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))', cursor: 'pointer', outline: 'none' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.55, minWidth: '36px' }}>{timeAgo(txn.created)}</span>
+                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.55, minWidth: '36px' }}>{timeAgo(txn.status_updated || txn.created)}</span>
                             <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, padding: '1px 5px', borderRadius: '3px',
                                 background: txn.type === 'trade' ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : txn.type === 'waiver' ? 'rgba(52,211,153,0.15)' : 'rgba(96,165,250,0.15)',
                                 color: txn.type === 'trade' ? G : txn.type === 'waiver' ? 'var(--k-34d399, #34d399)' : 'var(--k-60a5fa, #60a5fa)',
@@ -1062,7 +1062,7 @@ function DashboardPanel({
                         ) : txns.map((txn, ti) => (
                             <div key={ti} style={{ padding: '11px 0', borderBottom: ti === txns.length - 1 ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.06))' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '0.72rem', color: S, opacity: 0.6 }}>{timeAgo(txn.created)}</span>
+                                    <span style={{ fontSize: '0.72rem', color: S, opacity: 0.6 }}>{timeAgo(txn.status_updated || txn.created)}</span>
                                     {badge(txn)}
                                     <span style={{ fontSize: '0.82rem', fontWeight: 700, color: W }}>
                                         {(txn.roster_ids || []).map(rid => getOwnerName(rid) || ('Team ' + rid)).join(txn.type === 'trade' ? ' ↔ ' : '')}
