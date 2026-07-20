@@ -194,12 +194,13 @@ const surfaces = [
       ['function tickerPlayerProps(pid)', 'exposes shared click and keyboard props'],
       ["role: 'button'", 'player chips are accessible controls'],
       ["if (e.key !== 'Enter' && e.key !== ' ') return;", 'player chips support keyboard activation'],
-      ['function openTickerTrade(txn)', 'centralizes ticker trade opening'],
-      ['window._wrTradeContext = detail;', 'stores trade context for Trade Center'],
-      ["wr:open-trade-context", 'dispatches trade context event'],
-      ["if (navigateWidget) navigateWidget('trades');", 'navigates to Trade Center'],
+      // Owner ruling (PR #255): tapping a ticker row opens the transaction
+      // detail IN PLACE — it must never navigate to the Trade page.
+      ['function tickerRowProps(txn)', 'exposes shared row click and keyboard props'],
+      ['setTxnDetail(txn || true)', 'rows open the in-place transaction detail'],
+      ['renderTransactionDetailModal', 'in-place detail modal is rendered'],
       ["const firstTrade = (transactions || []).find(t => t.type === 'trade');", 'large ticker keeps a trade drill-in visible when possible'],
-      ['{...tickerTradeProps(txn)}', 'trade rows carry click props'],
+      ['{...tickerRowProps(txn)}', 'transaction rows carry click props'],
     ],
     minCounts: [
       ['{...tickerPlayerProps(pid)}', 2, 'adds and drops both need player click props'],
