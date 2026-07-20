@@ -1270,6 +1270,16 @@ function MyTeamTab({
                           {sigRow('Window', sigWindow, true)}
                         </div>
                       </div>
+
+                      {/* Player Brief — the full layered summary (The Wire + DHQ
+                          Read, stamped top-right). Alex's text already shows in the
+                          Dynasty Read box above, so it isn't passed here (no dupe). */}
+                      {window.WR?.PlayerBriefBlock ? React.createElement(window.WR.PlayerBriefBlock, {
+                        pid: r.pid,
+                        playersData,
+                        ppg: parseFloat(r.effectivePPG) || undefined,
+                        style: { marginBottom: '10px' },
+                      }) : null}
                     </React.Fragment>);
                   })()}
 
