@@ -2061,6 +2061,20 @@
             if (crossClassUnrealistic(input)) return;
             const deal = buildDeal(partner, input);
             if (!deal) return;
+            // _core — the deal's IDEA identity (owner ruling: the board kept
+            // showing the same trade over and over with only the payment
+            // shuffled — "Oluokun → Hines-Allen" three times with R6/R7/FAAB
+            // variants, Kyler Murray offered three ways). The idea a user reads
+            // is WHO the deal lands (per partner): rows keyed on the receive-side
+            // player set; sell-for-picks rows keyed on the give-side player set;
+            // pure pick swaps keyed on the pick sets. Only the best-ranked
+            // package per idea survives — alternates live in Load in Builder.
+            const core = JSON.stringify([
+                deal.partnerOwnerId,
+                deal.receivePlayers.length ? ['get', deal.receivePlayers.map(p => String(p.pid)).sort()]
+                    : deal.givePlayers.length ? ['sell', deal.givePlayers.map(p => String(p.pid)).sort()]
+                        : ['picks', deal.givePicks.map(p => p.id).sort(), deal.receivePicks.map(p => p.id).sort()],
+            ]);
             const sig = JSON.stringify([
                 deal.partnerOwnerId,
                 deal.givePlayers.map(p => p.pid).sort(),
@@ -2073,7 +2087,7 @@
             if (candidates.some(d => d._sig === sig)) return;
             let hash = 0;
             for (let i = 0; i < sig.length; i++) hash = ((hash << 5) - hash + sig.charCodeAt(i)) | 0;
-            candidates.push({ ...deal, id: `deal_${Math.abs(hash).toString(36)}`, _sig: sig });
+            candidates.push({ ...deal, id: `deal_${Math.abs(hash).toString(36)}`, _sig: sig, _core: core });
         }
 
         // ── Finder-query resolution seam (Phase 4a) ──
@@ -2361,16 +2375,25 @@
                 }
             }
 
+            // Core-dedupe AFTER rank sorting: one row per trade idea (player core),
+            // and it's the best-ranked variant of that idea that survives.
+            const seenCore = new Set();
             const ranked = candidates
                 .map(deal => {
                     const rank = scoreDealRecommendation(deal, tuning);
                     return { ...deal, rank, recommendationScore: rank, viability: dealViability(deal, tuning) };
                 })
                 .sort((a, b) => b.rank - a.rank || b.likelihood - a.likelihood || b.fit - a.fit)
+                .filter(deal => {
+                    if (seenCore.has(deal._core)) return false;
+                    seenCore.add(deal._core);
+                    return true;
+                })
                 .slice(0, 8);
             // keepSig: the league-wide pool (Phase 4b) dedupes across modes/partners by
-            // _sig; the pooling layer strips it before deals leave the finder.
-            return opts.keepSig ? ranked : ranked.map(({ _sig, ...deal }) => deal);
+            // _sig and collapses idea-duplicates by _core; the pooling layer strips
+            // both before deals leave the finder.
+            return opts.keepSig ? ranked : ranked.map(({ _sig, _core, ...deal }) => deal);
         }
 
         // Merge-on-write (post-review lost-update fix): league-detail's Alex-chat Save
@@ -3073,15 +3096,26 @@
         const finderDeals = useMemo(() => {
             if (!finderActive) return [];
             if (finderPoolOn) {
+                // Sort first, THEN core-dedupe: dual-mode scans (fillNeed +
+                // sellSurplus) can produce the same trade idea for one partner;
+                // the best-ranked variant is the one that survives.
+                const seenCore = new Set();
                 return finderPool.deals
-                    .map(({ _sig, ...deal }) => deal)
+                    .slice()
                     .sort((a, b) => (b.rank + (b.partnerScore || 0) * 0.2) - (a.rank + (a.partnerScore || 0) * 0.2)
                         || (FINDER_GRADE_RANK[b.grade] || 0) - (FINDER_GRADE_RANK[a.grade] || 0)
                         || b.likelihood - a.likelihood)
+                    .filter(deal => {
+                        if (!deal._core) return true;
+                        if (seenCore.has(deal._core)) return false;
+                        seenCore.add(deal._core);
+                        return true;
+                    })
+                    .map(({ _sig, _core, ...deal }) => deal)
                     .slice(0, 24);
             }
             if (!selectedPartner) return [];
-            return evalPartnerDeals(selectedPartner, effMode, focusPlayerPid, focusPickR).map(({ _sig, ...deal }) => deal);
+            return evalPartnerDeals(selectedPartner, effMode, focusPlayerPid, focusPickR).map(({ _sig, _core, ...deal }) => deal);
         }, [finderActive, finderPoolOn, finderPool, selectedPartner, effMode, focusPlayerPid, focusPickR?.id, finderDataEpoch, finderTuningHash]);
         const finderActionable = finderDeals.filter(deal => deal.likelihood >= finderActionFloor);
         const finderMoonshotCount = Math.max(0, finderDeals.length - finderActionable.length);
