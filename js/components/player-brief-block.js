@@ -73,12 +73,22 @@
                 var phaseLabel = age < pLo ? 'Rising' : age <= pHi ? 'Prime' : age <= declineHi ? 'Veteran' : 'Post-Window';
                 var peakYrs = Math.max(0, pHi - age);
                 var pr = PB.posRank(pid, playersData, scores, norm);
+                // Canonical BUY/HOLD/SELL (getPlayerAction — the same single
+                // source behind the Roster Call chip and the card's Action cell)
+                // so the brief's closing call always matches the chips. Pro-gated
+                // like those chips; free users keep the generic phase framing.
+                var act = null;
+                try {
+                    var pro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+                    if (pro && typeof window.getPlayerAction === 'function') act = window.getPlayerAction(pid);
+                } catch (_) { act = null; }
                 var out = PB.compose({
                     player: p, pos: nPos, dhq: dhq, meta: meta,
                     ppg: props.ppg != null ? props.ppg : undefined,
                     posRank: pr && pr.rank, posTotal: pr && pr.total,
                     phaseLabel: phaseLabel, peakYrs: peakYrs,
                     market: market,
+                    action: act,
                 });
                 return out && out.text && out.text.length > 40 ? out.text : null;
             } catch (_) { return null; }
