@@ -5,7 +5,7 @@
 // Used by: My Roster, Free Agency, Compare, Draft big boards, Trade Center, Home widgets.
 // ══════════════════════════════════════════════════════════════════
 (function () {
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useMemo } = React;
 
     // ── Shared helpers ────────────────────────────────────────────
     function normPos(pos) {
@@ -439,9 +439,27 @@
             window.App.Intelligence.publishRecommendations('player-card', [rosterRecommendation], { surface: 'player-card', playerId: pid });
         }
         const tier = tierFromDhq(dhq);
-        const depthChart = typeof p.depth_chart_order === 'number'
-            ? (pos + (p.depth_chart_order + 1))
+        // Sleeper depth_chart_order is 1-based (1 = the starter) — display it
+        // directly; the old +1 labeled every starter one slot down.
+        const depthChart = typeof p.depth_chart_order === 'number' && p.depth_chart_order >= 1
+            ? (pos + p.depth_chart_order)
             : null;
+        // ── Player Brief (Phase 1 — the DHQ Composer) ──
+        // Universal written summary: deterministic, current-by-construction,
+        // renders for EVERY player. Later phases layer Rotowire/Alex on top.
+        const playerBrief = useMemo(() => {
+            try {
+                const PB = window.WR && window.WR.PlayerBrief;
+                if (!PB) return null;
+                const pr = PB.posRank(pid, playersData, window.App?.LI?.playerScores || {}, normPos);
+                const out = PB.compose({
+                    player: p, pos: nPos, dhq, meta, ppg,
+                    posRank: pr && pr.rank, posTotal: pr && pr.total,
+                    phaseLabel: peakLabel, peakYrs,
+                });
+                return out && out.text && out.text.length > 40 ? out.text : null;
+            } catch (_) { return null; }
+        }, [pid, dhq, ppg, peakLabel, peakYrs]);
         const dhqContext = meta.statusReason
             ? (meta.statusReason + (meta.roleLabel ? ' · ' + meta.roleLabel : ''))
             : [meta.roleLabel, meta.opportunityLabel].filter(Boolean).join(' · ');
@@ -534,6 +552,21 @@
                         React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.05rem', fontWeight: 700, color: s.c } }, s.v),
                         React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, s.l)
                     ))
+                ),
+                // Player Brief — the universal written summary (every player, always).
+                playerBrief && React.createElement('div', {
+                    key: 'player-brief',
+                    style: {
+                        margin: '12px 20px 0',
+                        padding: '11px 13px',
+                        border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))',
+                        borderLeft: '2px solid var(--gold, #d4af37)',
+                        borderRadius: '7px',
+                        background: 'var(--ov-2, rgba(255,255,255,0.025))',
+                    }
+                },
+                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold, #d4af37)', marginBottom: '5px' } }, 'Player Brief'),
+                    React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, playerBrief),
                 ),
                 dhqContext && React.createElement('div', {
                     style: {
