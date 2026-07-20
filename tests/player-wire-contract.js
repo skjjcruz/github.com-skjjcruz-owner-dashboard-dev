@@ -149,6 +149,52 @@ await test('marketFor is fail-safe on network failure', async () => {
     ok(await PW.marketFor('9493') === null, 'failure → null, no throw');
 });
 
+const SEARCH_HIT = { results: [{ type: 'player', contents: [
+    { displayName: 'Abdul Carter', sport: 'football', uid: 's:20~l:28~a:4725996' },
+] }] };
+
+await test('name-search fallback closes the IDP gap (record + crosswalk both miss)', async () => {
+    const { PW, calls, handlers } = load();
+    handlers.push({ match: 'fantasycalc.com', reply: () => ([]) });
+    handlers.push({ match: 'search/v2', reply: () => SEARCH_HIT });
+    handlers.push({ match: '/athletes/4725996/overview', reply: () => OVERVIEW });
+    const pd = { 12574: { full_name: 'Abdul Carter', espn_id: null } };
+    const r = await PW.fetchRead('12574', pd);
+    ok(r && r.story.length > 80, 'wire read resolved via name search');
+    ok(calls.some(u => u.includes('search/v2')), 'search endpoint used');
+    // Positive id cached: second read re-uses it (no second search).
+    const before = calls.filter(u => u.includes('search/v2')).length;
+    await PW.fetchRead('12574', pd);
+    ok(calls.filter(u => u.includes('search/v2')).length === before, 'name id cached');
+});
+
+await test('near-match names are rejected — wrong player is worse than none', async () => {
+    const { PW, calls, handlers } = load();
+    handlers.push({ match: 'fantasycalc.com', reply: () => ([]) });
+    handlers.push({ match: 'search/v2', reply: () => ({ results: [{ type: 'player', contents: [
+        { displayName: 'Abdul Carter Jr.', sport: 'football', uid: 's:20~l:28~a:111' },
+        { displayName: 'Abdul Carter', sport: 'basketball', uid: 's:40~l:46~a:222' },
+    ] }] }) });
+    const pd = { x: { full_name: 'Abdul Carter', espn_id: null } };
+    ok(await PW.fetchRead('x', pd) === null, 'no exact football match → null');
+    ok(!calls.some(u => u.includes('/overview')), 'overview never fetched on a bad match');
+    // Miss is cached (no immediate re-search on next open).
+    const before = calls.filter(u => u.includes('search/v2')).length;
+    await PW.fetchRead('x', pd);
+    ok(calls.filter(u => u.includes('search/v2')).length === before, 'miss cached');
+});
+
+await test('name-search network failure is retried on the next open', async () => {
+    const { PW, calls, handlers } = load();
+    handlers.push({ match: 'fantasycalc.com', reply: () => ([]) });
+    // no search handler → fetchJson null (network failure)
+    const pd = { x: { full_name: 'Someone New', espn_id: null } };
+    ok(await PW.fetchRead('x', pd) === null, 'failure → null');
+    const before = calls.filter(u => u.includes('search/v2')).length;
+    await PW.fetchRead('x', pd);
+    ok(calls.filter(u => u.includes('search/v2')).length === before + 1, 'retried, not negative-cached');
+});
+
 await test('dateLabel is defensive', () => {
     const { PW } = load();
     ok(PW.dateLabel('Fri Jul 17 08:16:46 PDT 2026') === 'Jul 17', 'ESPN format');

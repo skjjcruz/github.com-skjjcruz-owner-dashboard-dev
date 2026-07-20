@@ -109,6 +109,31 @@ test('post-window vet gets win-now rental framing', () => {
     noLeaks(r.text, 'vet paragraph clean');
 });
 
+test('a rising depth-chart STARTER never reads as a stash (Abdul Carter case)', () => {
+    const r = PB.compose({
+        player: { full_name: 'Abdul Carter', team: 'NYG', position: 'DL', age: 22, years_exp: 1, college: 'Penn State', depth_chart_order: 1 },
+        pos: 'DL', dhq: 1656, ppg: 5.2, meta: { roleLabel: 'ROLB1' }, posRank: 18, posTotal: 400, phaseLabel: 'Rising', peakYrs: 7,
+    });
+    match(r.text, /already a starting piece/i, 'ascending-starter framing');
+    ok(!/developmental stash|if the role comes/i.test(r.text), 'no stash contradiction for a starter');
+    noLeaks(r.text, 'starter verdict clean');
+});
+
+test('a rising backup still reads as a developmental stash', () => {
+    const r = PB.compose({
+        player: { full_name: 'Bench Kid', team: 'NYG', position: 'DL', age: 22, years_exp: 1, depth_chart_order: 3 },
+        pos: 'DL', dhq: 900, ppg: 2.0, meta: {}, phaseLabel: 'Rising', peakYrs: 7,
+    });
+    match(r.text, /developmental stash/i, 'backup keeps stash framing');
+});
+
+test('starter detection works from the role label alone — and WR11 is not WR1', () => {
+    const viaRole = PB.compose({ player: { full_name: 'No Slot', team: 'KC', position: 'LB' }, pos: 'LB', dhq: 1200, ppg: 6, meta: { roleLabel: 'MLB1' }, phaseLabel: 'Rising', peakYrs: 5 });
+    match(viaRole.text, /already a starting piece/i, 'MLB1 role → starter');
+    const deep = PB.compose({ player: { full_name: 'Deep Wideout', team: 'KC', position: 'WR' }, pos: 'WR', dhq: 400, ppg: 1, meta: { roleLabel: 'WR11' }, phaseLabel: 'Rising', peakYrs: 6 });
+    ok(!/already a starting piece/i.test(deep.text), 'WR11 does not trip the starter branch');
+});
+
 test('opportunity blockers are named in the outlook', () => {
     const r = PB.compose({
         player: { full_name: 'Backup Talent', team: 'SF', position: 'RB', age: 23, years_exp: 1, depth_chart_order: 2 },

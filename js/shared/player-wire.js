@@ -128,11 +128,58 @@
         }).catch(function () { return null; });
     }
 
+    // ── Name-search fallback (IDP gap) ───────────────────────────────
+    // FantasyCalc's universe is offense-only, so defensive players whose
+    // Sleeper record lacks an espn_id would never get the wire. ESPN's
+    // player search (same allowlisted host) closes that: match strictly by
+    // normalized full name + sport, extract the athlete id from the uid.
+    // A near-match is rejected — the wrong player's news is worse than none.
+    var NAME_STORE = 'dhq_wire_nameid_v1:';   // + pid → { ts, id } | { ts, none:true }
+    var NAME_TTL = 7 * 24 * 60 * 60 * 1000;   // ids are static once found
+    var NAME_MISS_TTL = 24 * 60 * 60 * 1000;  // misses retried daily (rookies get added)
+    function _normName(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
+    function searchIdByName(pid, playersData) {
+        var rec = playersData && playersData[pid];
+        var name = rec && (rec.full_name || ((rec.first_name || '') + ' ' + (rec.last_name || '')).trim());
+        if (!name) return Promise.resolve(null);
+        var key = NAME_STORE + pid;
+        var cached = env.store.get(key);
+        if (cached && cached.ts) {
+            var age = env.now() - cached.ts;
+            if (cached.id && age < NAME_TTL) return Promise.resolve(String(cached.id));
+            if (cached.none && age < NAME_MISS_TTL) return Promise.resolve(null);
+        }
+        var url = 'https://site.web.api.espn.com/apis/search/v2?limit=5&query=' + encodeURIComponent(name);
+        return env.fetchJson(url).then(function (res) {
+            var id = null;
+            var want = _normName(name);
+            var groups = (res && res.results) || [];
+            for (var i = 0; i < groups.length && !id; i++) {
+                if (!groups[i] || groups[i].type !== 'player') continue;
+                var items = groups[i].contents || [];
+                for (var j = 0; j < items.length; j++) {
+                    var it = items[j];
+                    if (!it || it.sport !== 'football') continue;
+                    if (_normName(it.displayName) !== want) continue;
+                    var m = /~a:(\d+)/.exec(String(it.uid || ''));
+                    if (m) { id = m[1]; break; }
+                }
+            }
+            if (id) env.store.set(key, { ts: env.now(), id: id });
+            else if (res) env.store.set(key, { ts: env.now(), none: true });
+            // A null response (network failure) is not cached — next open retries.
+            return id;
+        });
+    }
+
     function resolveEspnId(pid, playersData) {
         var rec = playersData && playersData[pid];
         var own = rec && rec.espn_id;
         if (own) return Promise.resolve(String(own));
-        return loadCrosswalk().then(function (map) { return map[String(pid)] || null; });
+        return loadCrosswalk().then(function (map) {
+            if (map[String(pid)]) return map[String(pid)];
+            return searchIdByName(pid, playersData);
+        });
     }
 
     // ── fetchRead(pid, playersData) → Promise<read|null> ─────────────
