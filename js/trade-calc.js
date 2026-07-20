@@ -699,6 +699,44 @@
         }
         const getPickValue = window.App.PlayerValue.getPickValue;
 
+        // ── Trade liquidity — the market-reality layer (owner ruling, Jul 20) ──
+        // DHQ scores measure LINEUP value; the trade market pays for scarcity.
+        // IDP and K production is streamable, so mid-tier IDP/K trades far below
+        // its points value — only the elite tier (the Parsons/Garrett class)
+        // holds full price. The FINDER matches packages and prices acceptance on
+        // liquidity-adjusted ("market") totals; every displayed number stays raw
+        // DHQ, and the manual builder is untouched (the user controls both sides).
+        const LOW_LIQUIDITY_POS = ['DL', 'LB', 'DB'];
+        const idpRankByPid = useMemo(() => {
+            const scores = window.App?.LI?.playerScores || {};
+            const byPos = { DL: [], LB: [], DB: [] };
+            Object.keys(scores).forEach(pid => {
+                const p = playersData[pid];
+                if (!p) return;
+                const pos = normPos(p.position) || p.position;
+                if (byPos[pos]) byPos[pos].push([String(pid), scores[pid] || 0]);
+            });
+            const rank = new Map();
+            Object.values(byPos).forEach(list => {
+                list.sort((a, b) => b[1] - a[1]);
+                list.forEach(([pid], i) => rank.set(pid, i + 1));
+            });
+            return rank;
+        }, [playersData, timeRecomputeTs]);
+        function tradeLiquidity(asset) {
+            if (!asset || asset.type === 'pick') return 1; // draft capital is fully liquid
+            const pos = asset.pos;
+            if (pos === 'K') return 0.3;
+            if (pos === 'DEF') return 0.35;
+            if (!LOW_LIQUIDITY_POS.includes(pos)) return 1;
+            const rank = idpRankByPid.get(String(asset.pid)) || 999;
+            if (rank <= 5) return 0.95;  // Parsons/Garrett tier — trades near face value
+            if (rank <= 20) return 0.6;  // solid IDP starter
+            return 0.45;                 // streamable depth
+        }
+        function assetMarketValue(asset) { return Math.round((asset?.value || 0) * tradeLiquidity(asset)); }
+        function isLowLiquidAsset(asset) { return asset && asset.type !== 'pick' && tradeLiquidity(asset) < 0.9; }
+
         function formatReasonsForAssets(players = []) {
             if (!leagueProfile || typeof window.App?.Intelligence?.buildPlayerFormatReasons !== 'function') return [];
             const seen = new Set();
@@ -1804,6 +1842,9 @@
             const playerValue = players.reduce((s, a) => s + (a.value || 0), 0);
             const pickValue = picks.reduce((s, a) => s + (a.value || 0), 0);
             const faabValue = Math.round((faab || 0) * FAAB_RATE);
+            // market: liquidity-adjusted total (IDP/K haircut) — what the finder
+            // matches and prices acceptance on. total stays raw DHQ for display.
+            const marketPlayerValue = players.reduce((s, a) => s + assetMarketValue(a), 0);
             return {
                 playerValue,
                 pickValue,
@@ -1811,6 +1852,7 @@
                 faab: faab || 0,
                 faabValue,
                 total: playerValue + pickValue + faabValue,
+                market: marketPlayerValue + pickValue + faabValue,
             };
         }
 
@@ -1867,7 +1909,9 @@
             const receive = sideBreakdown(receivePlayers, receivePicks, receiveFaab);
             if (give.total <= 0 || receive.total <= 0) return null;
             const pieceCount = givePlayers.length + receivePlayers.length + givePicks.length + receivePicks.length;
-            const baseLikelihood = calcAcceptanceLikelihood(give.total, receive.total, dnaKey, acceptanceTaxes, myAssessment, partner, { totalPieces: pieceCount });
+            // Acceptance is priced on MARKET totals (liquidity-adjusted): a side
+            // stuffed with mid-tier IDP value doesn't buy what raw DHQ says it does.
+            const baseLikelihood = calcAcceptanceLikelihood(give.market ?? give.total, receive.market ?? receive.total, dnaKey, acceptanceTaxes, myAssessment, partner, { totalPieces: pieceCount });
             const gradeRaw = window.App?.TradeEngine?.fairnessGrade
                 ? window.App.TradeEngine.fairnessGrade(give.total, receive.total)
                 : { grade: receive.total >= give.total ? 'B+' : 'C', label: receive.total >= give.total ? 'Win' : 'Overpay', color: receive.total >= give.total ? 'var(--good)' : 'var(--bad)' };
@@ -1899,6 +1943,8 @@
             if (!swing.includes('need') && !swing.includes('gap')) caution.push('Weak roster-fit signal');
             if (givePicks.length && receivePicks.length) caution.push('Pick timing matters');
             if (behaviorProfile?.inferences?.includes('low-liquidity')) caution.push('Low-liquidity partner');
+            const mktGap = side => side.total > 0 ? (side.total - (side.market ?? side.total)) / side.total : 0;
+            if (mktGap(give) > 0.15 || mktGap(receive) > 0.15) caution.push('IDP/K priced to market, not points');
             const whyAccept = input.whyAccept || (partner.needs?.length
                 ? `They need ${partner.needs.slice(0, 2).map(n => n.pos).join('/')} and this gives them usable assets.`
                 : `Their ${posture.label.toLowerCase()} posture keeps them open to a clean value offer.`);
@@ -1990,7 +2036,29 @@
             return { giveFaab: 0, receiveFaab: 0 };
         }
 
+        // Market-reality guard (owner ruling): a side whose value is mostly
+        // NON-ELITE IDP/K players cannot pay for a side that is mostly offense —
+        // nobody trades a starting TE for a mid LB, or George Pickens for a
+        // rotational DL. Elite IDPs (top-5 at their position) are liquid and
+        // pass; pick-heavy and FAAB-heavy sides pass (draft capital is liquid).
+        // IDP-for-IDP and IDP-for-picks ideas remain fully allowed.
+        function crossClassUnrealistic(input) {
+            const OFFENSE = ['QB', 'RB', 'WR', 'TE'];
+            const sideRead = (players = [], picks = [], faab = 0) => {
+                const bd = sideBreakdown(players, picks, faab);
+                if (bd.total <= 0) return { lowShare: 0, offShare: 0 };
+                const lowVal = players.reduce((s, a) => s + (isLowLiquidAsset(a) ? (a.value || 0) : 0), 0);
+                const offVal = players.reduce((s, a) => s + (OFFENSE.includes(a.pos) ? (a.value || 0) : 0), 0);
+                return { lowShare: lowVal / bd.total, offShare: offVal / bd.total };
+            };
+            const give = sideRead(input.givePlayers, input.givePicks, input.giveFaab);
+            const receive = sideRead(input.receivePlayers, input.receivePicks, input.receiveFaab);
+            return (give.lowShare >= 0.5 && receive.offShare >= 0.5)
+                || (receive.lowShare >= 0.5 && give.offShare >= 0.5);
+        }
+
         function addCandidate(candidates, partner, input) {
+            if (crossClassUnrealistic(input)) return;
             const deal = buildDeal(partner, input);
             if (!deal) return;
             const sig = JSON.stringify([
@@ -2115,6 +2183,9 @@
                 }).slice(0, 12);
             const balanceFaab = (...args) => priFaab ? maybeBalanceFaab(...args) : { giveFaab: 0, receiveFaab: 0 };
 
+            // targetValue here is a MARKET value (liquidity-adjusted); combos are
+            // matched and banded on their own market totals so an IDP-stuffed
+            // package can't "afford" an offensive starter at face DHQ.
             function sideCombos(players, picks, targetValue, opts = {}) {
                 const playerPool = (players || []).filter(Boolean).slice(0, opts.playerLimit || 12);
                 const pickPool = (picks || []).filter(Boolean).slice(0, opts.pickLimit || 7);
@@ -2122,15 +2193,15 @@
                 const seen = new Set();
                 const push = (comboPlayers = [], comboPicks = []) => {
                     if (!comboPlayers.length && !comboPicks.length) return;
-                    const total = sideBreakdown(comboPlayers, comboPicks, 0).total;
-                    if (total <= 0) return;
+                    const bd = sideBreakdown(comboPlayers, comboPicks, 0);
+                    if (bd.total <= 0) return;
                     const sig = JSON.stringify([
                         comboPlayers.map(p => p.id || p.pid).sort(),
                         comboPicks.map(p => p.id).sort(),
                     ]);
                     if (seen.has(sig)) return;
                     seen.add(sig);
-                    combos.push({ players: comboPlayers, picks: comboPicks, total, pieces: comboPlayers.length + comboPicks.length });
+                    combos.push({ players: comboPlayers, picks: comboPicks, total: bd.total, market: bd.market, pieces: comboPlayers.length + comboPicks.length });
                 };
                 playerPool.forEach(p => push([p], []));
                 for (let i = 0; i < Math.min(playerPool.length, 10); i++) {
@@ -2145,13 +2216,14 @@
                         for (let j = i + 1; j < Math.min(pickPool.length, 5); j++) push([], [pickPool[i], pickPool[j]]);
                     }
                 }
-                return combos.sort((a, b) => Math.abs(a.total - targetValue) - Math.abs(b.total - targetValue) || a.pieces - b.pieces || b.total - a.total);
+                return combos.sort((a, b) => Math.abs(a.market - targetValue) - Math.abs(b.market - targetValue) || a.pieces - b.pieces || b.market - a.market);
             }
 
             function addAcquireTarget(target, playerPool, pickPool, reasonPrefix = '') {
-                const packages = sideCombos(playerPool, pickPool, target.value, { allowPickOnly: true });
+                const targetMkt = assetMarketValue(target);
+                const packages = sideCombos(playerPool, pickPool, targetMkt, { allowPickOnly: true });
                 packages
-                    .filter(pkg => pkg.total >= target.value * lowRatio && pkg.total <= target.value * highRatio)
+                    .filter(pkg => pkg.market >= targetMkt * lowRatio && pkg.market <= targetMkt * highRatio)
                     .slice(0, 4)
                     .forEach(pkg => {
                         const faab = balanceFaab(partner, pkg.players, [target], pkg.picks, []);
@@ -2181,7 +2253,7 @@
             function addAcquirePickTarget(pick, playerPool, pickPool, reasonPrefix = '') {
                 const packages = sideCombos(playerPool, pickPool, pick.value, { allowPickOnly: true });
                 packages
-                    .filter(pkg => pkg.total >= pick.value * lowRatio && pkg.total <= pick.value * highRatio)
+                    .filter(pkg => pkg.market >= pick.value * lowRatio && pkg.market <= pick.value * highRatio)
                     .slice(0, 4)
                     .forEach(pkg => {
                         const faab = balanceFaab(partner, pkg.players, [], pkg.picks, [pick]);
@@ -2209,7 +2281,7 @@
                 const returnLow = 0.72 - aggression * 0.08;
                 const returnHigh = 1.04 + aggression * 0.18;
                 returns
-                    .filter(pkg => pkg.total >= pick.value * returnLow && pkg.total <= pick.value * returnHigh)
+                    .filter(pkg => pkg.market >= pick.value * returnLow && pkg.market <= pick.value * returnHigh)
                     .slice(0, 4)
                     .forEach(pkg => {
                         const faab = balanceFaab(partner, [], pkg.players, [pick], pkg.picks);
@@ -2229,11 +2301,12 @@
             }
 
             function addShopAsset(asset, returnPlayers, returnPicks, reasonPrefix = '') {
-                const returns = sideCombos(returnPlayers, returnPicks, asset.value, { allowPickOnly: true });
+                const assetMkt = assetMarketValue(asset);
+                const returns = sideCombos(returnPlayers, returnPicks, assetMkt, { allowPickOnly: true });
                 const returnLow = mode === 'picks' ? 0.50 : 0.72 - aggression * 0.08;
                 const returnHigh = 1.04 + aggression * 0.18;
                 returns
-                    .filter(pkg => pkg.total >= asset.value * returnLow && pkg.total <= asset.value * returnHigh)
+                    .filter(pkg => pkg.market >= assetMkt * returnLow && pkg.market <= assetMkt * returnHigh)
                     .filter(pkg => mode !== 'picks' || pkg.picks.length)
                     .slice(0, 4)
                     .forEach(pkg => {
