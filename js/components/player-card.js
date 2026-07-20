@@ -456,42 +456,9 @@
         const depthChart = typeof p.depth_chart_order === 'number' && p.depth_chart_order >= 1
             ? (pos + p.depth_chart_order)
             : null;
-        // ── Player Brief Phase 2 — the journalism layer (WR.PlayerWire) ──
-        // On open, fetch the current Rotowire paragraph (ESPN athlete overview,
-        // 24h cached). Renders ABOVE the composer when coverage exists; any
-        // failure resolves null and the composer carries the card alone.
-        const [wireRead, setWireRead] = useState(null);
-        const [marketPulse, setMarketPulse] = useState(null);
-        useEffect(() => {
-            setWireRead(null);
-            setMarketPulse(null);
-            if (!pid || !(window.WR && window.WR.PlayerWire)) return undefined;
-            let alive = true;
-            window.WR.PlayerWire.fetchRead(pid, playersData).then(r => { if (alive && r && r.story) setWireRead(r); });
-            // Market pulse (Phase 3): FantasyCalc value + 30-day trend for the
-            // composer's market sentence. Same daily cached fetch as the crosswalk.
-            if (typeof window.WR.PlayerWire.marketFor === 'function') {
-                window.WR.PlayerWire.marketFor(pid).then(m => { if (alive && m) setMarketPulse(m); });
-            }
-            return () => { alive = false; };
-        }, [pid]);
-        // ── Player Brief (Phase 1 — the DHQ Composer) ──
-        // Universal written summary: deterministic, current-by-construction,
-        // renders for EVERY player. Later phases layer Rotowire/Alex on top.
-        const playerBrief = useMemo(() => {
-            try {
-                const PB = window.WR && window.WR.PlayerBrief;
-                if (!PB) return null;
-                const pr = PB.posRank(pid, playersData, window.App?.LI?.playerScores || {}, normPos);
-                const out = PB.compose({
-                    player: p, pos: nPos, dhq, meta, ppg,
-                    posRank: pr && pr.rank, posTotal: pr && pr.total,
-                    phaseLabel: peakLabel, peakYrs,
-                    market: marketPulse,
-                });
-                return out && out.text && out.text.length > 40 ? out.text : null;
-            } catch (_) { return null; }
-        }, [pid, dhq, ppg, peakLabel, peakYrs, marketPulse]);
+        // ── Player Brief — rendered via the shared WR.PlayerBriefBlock ──
+        // (composer + wire + market live in the block; Alex's Read is passed
+        // in from the card's scoutNews pipeline so nothing double-fetches).
         const dhqContext = meta.statusReason
             ? (meta.statusReason + (meta.roleLabel ? ' · ' + meta.roleLabel : ''))
             : [meta.roleLabel, meta.opportunityLabel].filter(Boolean).join(' · ');
@@ -585,39 +552,17 @@
                         React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, s.l)
                     ))
                 ),
-                // Player Brief — the universal written summary (every player, always).
-                playerBrief && React.createElement('div', {
+                // Player Brief — the universal written summary (every player,
+                // always), via the shared block: Alex's Read → The Wire → DHQ
+                // Read, with the composed-at stamp top-right.
+                window.WR?.PlayerBriefBlock && React.createElement(window.WR.PlayerBriefBlock, {
                     key: 'player-brief',
-                    style: {
-                        margin: '12px 20px 0',
-                        padding: '11px 13px',
-                        border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))',
-                        borderLeft: '2px solid var(--gold, #d4af37)',
-                        borderRadius: '7px',
-                        background: 'var(--ov-2, rgba(255,255,255,0.025))',
-                    }
-                },
-                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold, #d4af37)', marginBottom: '5px' } }, 'Player Brief'),
-                    // Alex's Read (Phase 3): the Pro AI news synthesis as the top
-                    // layer. Silent enhance — renders only when it lands; loading /
-                    // locked / off states add nothing here (Scouting tab keeps its
-                    // richer status UI).
-                    scoutNews && scoutNews.status === 'done' && scoutNews.text && React.createElement('div', { key: 'alex-read', style: { marginBottom: '9px' } },
-                        React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold, #d4af37)', opacity: 0.85, marginBottom: '3px' } }, "Alex's Read"),
-                        React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, scoutNews.text),
-                        React.createElement('div', { style: { borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.07))', marginTop: '9px' } }),
-                    ),
-                    // The Wire (Phase 2): the current professionally written read,
-                    // attributed + dated, above the DHQ composer paragraph.
-                    wireRead && React.createElement('div', { key: 'wire', style: { marginBottom: '9px' } },
-                        React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--silver, #9aa4b2)', opacity: 0.75, marginBottom: '3px' } },
-                            'The Wire · ' + wireRead.source + (wireRead.dateLabel ? ' · ' + wireRead.dateLabel : '')),
-                        React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, wireRead.story),
-                        React.createElement('div', { style: { borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.07))', marginTop: '9px' } }),
-                    ),
-                    (wireRead || (scoutNews && scoutNews.status === 'done' && scoutNews.text)) && React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--silver, #9aa4b2)', opacity: 0.75, marginBottom: '3px' } }, 'DHQ Read'),
-                    React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, playerBrief),
-                ),
+                    pid,
+                    playersData,
+                    ppg,
+                    alexText: (scoutNews && scoutNews.status === 'done' && scoutNews.text) || null,
+                    style: { margin: '12px 20px 0' },
+                }),
                 dhqContext && React.createElement('div', {
                     style: {
                         margin: '12px 20px 0',
