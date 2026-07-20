@@ -1199,6 +1199,17 @@ WRShared.preloadMany(WR_SHARED_FILES);
         .tc-trade-root > .wr-module-strip.is-compact { position: absolute; top: 0; right: 0; width: auto; margin: 0; z-index: 6; }
         .tc-trade-root .tc-adaptive-canvas.has-rail .tc-context-rail { margin-top: 42px; }
     }
+    /* Trade Center tabs: the active tab used a heavy solid-gold fill (black text)
+       that stood out from the plain Owner DNA / Trade Log tabs. Match all three as
+       one gold-text family — the active one is accented with a subtle gold-tinted
+       box + border instead of a filled block. Scoped to the tab strip, so the
+       finder intent chips (Best Moves, etc.) keep their filled active style. */
+    .tc-trade-root .wr-module-nav button.is-active {
+        background: rgba(212,175,55,0.15);
+        border-color: rgba(212,175,55,0.60);
+        color: var(--gold);
+        box-shadow: none;
+    }
     .tc-trade-root .wr-fade-in { animation: none; transform: none; }
     .tc-trade-root .wr-module-strip { background: rgba(255,255,255,0.038); border-color: rgba(212,175,55,0.22); }
     .tc-trade-root .wr-module-context strong { font-size: 1.05rem; }
