@@ -1189,26 +1189,19 @@ WRShared.preloadMany(WR_SHARED_FILES);
        root, so no other tab moves. position:relative anchors the floated tab
        strip on wide screens (see the ≥1281 rule below). */
     .tc-trade-root { position:relative; width:100%; max-width:100%; min-width:0; box-sizing:border-box; padding:0; margin-top:-14px; -webkit-font-smoothing: subpixel-antialiased; text-rendering: optimizeLegibility; }
-    /* Wide screens (rail visible): float the Trade Desk / Owner DNA / Trade Log
-       tabs into the top-right corner so the Trade Finder (left) and League Teams
-       (right) columns rise to the very top instead of starting a full row below
-       the tab strip. The tabs stay exactly where they were; the rail gets just
-       enough top room to clear the floated tabs. Narrow/portrait keeps the tabs
-       in their own row (no rail there to collide with). */
+    /* Trade Center section tabs (Trade Builder / Owner DNA / Trade Log).
+       They use the SAME .tc-dhq-modebar chip classes as the finder intent
+       buttons (bordered chips, solid gold when active), so the two groups can
+       never drift apart visually. Two homes, one visible at a time:
+         • .tc-tab-row — in-flow, right-aligned row. Shows on narrow layouts and
+           on the Owner DNA / Trade Log views; hidden on the wide desk (where
+           the rail owns the tabs) so the Trade Finder keeps the top row.
+         • .tc-rail-tabs — first item INSIDE the rail column, stacked above the
+           League Teams card as a real flex item — no floating, no overlap. */
+    .tc-tab-row { display: flex; justify-content: flex-end; margin: 0 0 8px; }
+    .tc-rail-tabs { display: flex; justify-content: flex-end; margin-bottom: 6px; flex: 0 0 auto; }
     @media (min-width: 1281px) {
-        .tc-trade-root > .wr-module-strip.is-compact { position: absolute; top: 0; right: 0; width: auto; margin: 0; z-index: 6; }
-        .tc-trade-root .tc-adaptive-canvas.has-rail .tc-context-rail { margin-top: 42px; }
-    }
-    /* Trade Center tabs: the active tab must look EXACTLY like the other two
-       (owner ruling) — no fill, no box, no accent. Neutralize every active-state
-       style so Trade Desk / Owner DNA / Trade Log are visually identical. Scoped
-       to the tab strip, so the finder intent chips (Best Moves, etc.) keep their
-       filled active style. */
-    .tc-trade-root .wr-module-nav button.is-active {
-        background: transparent;
-        border-color: transparent;
-        color: var(--text-faint);
-        box-shadow: none;
+        .tc-tab-row.rail-owns-tabs { display: none; }
     }
     .tc-trade-root .wr-fade-in { animation: none; transform: none; }
     .tc-trade-root .wr-module-strip { background: rgba(255,255,255,0.038); border-color: rgba(212,175,55,0.22); }

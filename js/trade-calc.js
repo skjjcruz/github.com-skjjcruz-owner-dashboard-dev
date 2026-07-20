@@ -3505,9 +3505,13 @@
         // The far-right rail is now the League Teams scout on its own — it fills the
         // full rail height (per owner request; the old Live Verdict + single-partner
         // Owner DNA cards were removed). Tapping a team still opens its full Owner DNA.
-        function renderContextRail() {
+        function renderContextRail(tabButtons) {
             return (
                 <aside className="tc-context-rail">
+                    {/* Section tabs live at the top of the rail on wide desk layouts —
+                        stacked ABOVE the League Teams card as a real flex item, so they
+                        can never float over or overlap it (owner ruling). */}
+                    {tabButtons ? <div className="tc-dhq-modebar tc-rail-tabs" role="group" aria-label="Trade Center sections">{tabButtons}</div> : null}
                     {renderLeagueTeamsCard()}
                 </aside>
             );
@@ -3522,10 +3526,19 @@
             const active = tcTab; // canonical: 'desk' | 'dna' | 'log'
             const _pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
             const surfaces = [
-                { key: 'desk', label: 'Trade Desk' },
+                { key: 'desk', label: 'Trade Builder' },
                 { key: 'dna', label: 'Owner DNA' },
                 { key: 'log', label: 'Trade Log' },
             ];
+            // One set of section-tab buttons, rendered in two homes: the in-flow
+            // row (narrow / DNA / Log) and inside the rail (wide desk). Chip
+            // classes give them the exact finder-chip look, gold when active.
+            const renderTcTabButtons = () => surfaces.map(s => (
+                <button key={s.key} type="button" className={active === s.key ? 'is-active' : ''} onClick={() => setTcTab(s.key)}>
+                    {s.label}
+                    {s.key === 'log' && savedDeals.length > 0 && <span style={{ fontWeight: 500, opacity: 0.8 }}>{' · ' + savedDeals.length}</span>}
+                </button>
+            ));
             let body;
             if (active === 'dna') {
                 body = _pro ? renderOwnerDna() : React.createElement(TcProTeaser, { label: 'Owner DNA', feature: 'owner-dna', sub: 'Profile every manager\'s trading psychology. Know who\'s a Fleecer, who\'s Desperate, and exactly how to approach each trade conversation.' });
@@ -3567,20 +3580,13 @@
                             .tc-trade-root .tc-rail-dna-link { min-height: 44px; }
                         }
                     `}</style>
-                    {/* Trade Center title removed (owner ruling) — the tab buttons stay
-                        put on the right, but the boxed header + label are gone so the
-                        workspace rises to the top and the dead space is reclaimed. */}
-                    <div className="wr-module-strip is-compact">
-                        <div className="wr-module-actions">
-                            <div className="wr-module-nav">
-                                {surfaces.map(s => (
-                                    <button key={s.key} className={active === s.key ? 'is-active' : ''} onClick={() => setTcTab(s.key)}>
-                                        {s.label}
-                                        {s.key === 'log' && savedDeals.length > 0 && <span style={{ color: 'var(--silver)', fontWeight: 500, opacity: 0.8 }}>{' · ' + savedDeals.length}</span>}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                    {/* Section tabs — styled EXACTLY like the finder chips (same
+                        .tc-dhq-modebar classes: bordered chips, active = solid gold).
+                        On wide desk layouts the rail owns the tabs (they render inside
+                        the rail column above League Teams — no floating/overlap); this
+                        in-flow row shows everywhere else (narrow, Owner DNA, Trade Log). */}
+                    <div className={'tc-tab-row' + (railOn ? ' rail-owns-tabs' : '')}>
+                        <div className="tc-dhq-modebar" role="group" aria-label="Trade Center sections">{renderTcTabButtons()}</div>
                     </div>
                     <div className={'tc-adaptive-canvas' + (railOn ? ' has-rail' : '')}>
                     <div className="tc-adaptive-main">
@@ -3594,11 +3600,10 @@
                             <button type="button" onClick={clearTradeContext} style={{ background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
                         </div>
                     )}
-                    {/* League Teams inline — narrow/portrait only (rail is hidden <1281px). */}
-                    {active === 'desk' && <div className="tc-lt-inline">{renderLeagueTeamsCard()}</div>}
-                    {body}
+                    {/* Trade Builder — pulled to the TOP of the page (owner ruling;
+                        it used to sit at the very bottom). Same collapsible strip. */}
                     {active === 'desk' && (
-                        <div style={{ marginTop: '12px', border: '1px solid rgba(53,208,214,0.28)', borderRadius: '8px', background: 'rgba(53,208,214,0.05)', overflow: 'hidden' }}>
+                        <div style={{ marginBottom: '12px', border: '1px solid rgba(53,208,214,0.28)', borderRadius: '8px', background: 'rgba(53,208,214,0.05)', overflow: 'hidden' }}>
                             <button type="button" onClick={() => setBuilderExpanded(v => !v)} title="Build or tweak a deal without leaving this view" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', textAlign: 'left', background: 'transparent', border: 'none', padding: '9px 13px', cursor: 'pointer' }}>
                                 <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#35d0d6' }}>{_verdict.hasTrade ? 'Live deal' : 'Trade builder'}</span>
                                 {_verdict.hasTrade ? (
@@ -3629,8 +3634,11 @@
                             )}
                         </div>
                     )}
+                    {/* League Teams inline — narrow/portrait only (rail is hidden <1281px). */}
+                    {active === 'desk' && <div className="tc-lt-inline">{renderLeagueTeamsCard()}</div>}
+                    {body}
                     </div>
-                    {railOn && renderContextRail()}
+                    {railOn && renderContextRail(renderTcTabButtons())}
                     </div>
                 </div>
             );
