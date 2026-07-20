@@ -152,6 +152,40 @@ test('engine status reason leads the verdict when present', () => {
     noLeaks(r.text, 'status paragraph clean');
 });
 
+// ── Canonical action (getPlayerAction) drives the verdict ───────────
+const STARTER = { player: { full_name: 'Any Starter', team: 'BAL', position: 'RB', age: 24, years_exp: 3, depth_chart_order: 1 }, pos: 'RB', dhq: 3000, ppg: 15, meta: { roleLabel: 'RB1' }, phaseLabel: 'Rising', peakYrs: 4 };
+
+test('a passed engine action overrides the heuristic verdict — no contradictions', () => {
+    const r = PB.compose({ ...STARTER, action: { action: 'SELL', label: 'Sell', reason: 'Value window closing' } });
+    match(r.text, /The DHQ call is sell/, 'sell family stated');
+    match(r.text, /value window closing/, 'engine reason folded in');
+    ok(!/buy before the production reprices him|developmental stash/.test(r.text), 'heuristic verdicts suppressed');
+});
+
+test('every action family maps to matching language', () => {
+    const fam = a => PB.compose({ ...STARTER, action: { action: a, label: a, reason: '' } }).text;
+    match(fam('CORE'), /build around him/, 'CORE');
+    match(fam('BUY'), /The DHQ call is buy/, 'BUY');
+    match(fam('SELL_HIGH'), /sell high — cash him out/, 'SELL_HIGH');
+    match(fam('STASH'), /stash — cheap to hold/, 'STASH');
+    match(fam('HOLD'), /The DHQ call is hold/, 'HOLD');
+});
+
+test('the "Not enough data" placeholder action is ignored (heuristics apply)', () => {
+    const r = PB.compose({ ...STARTER, action: { action: 'HOLD', label: 'Hold', reason: 'Not enough data' } });
+    ok(!/The DHQ call is/.test(r.text), 'placeholder ignored');
+    match(r.text, /already a starting piece/i, 'falls back to the phase heuristic');
+});
+
+test('kickers stay streamable even when an action is passed', () => {
+    const r = PB.compose({
+        player: { full_name: 'Some Kicker', team: 'HOU', position: 'K', age: 30, depth_chart_order: 1 },
+        pos: 'K', dhq: 200, ppg: 9, meta: {}, phaseLabel: 'Veteran', peakYrs: 0,
+        action: { action: 'HOLD', label: 'Hold', reason: 'whatever' },
+    });
+    match(r.text, /streamable piece/, 'kicker framing wins');
+});
+
 // ── Market pulse (Phase 3) ──────────────────────────────────────────
 test('a real 30-day market move is written as a percentage', () => {
     const base = { player: { full_name: 'Market Mover', team: 'CIN', position: 'WR', age: 24, years_exp: 2, depth_chart_order: 1 }, pos: 'WR', dhq: 5000, ppg: 14, meta: {}, phaseLabel: 'Rising', peakYrs: 5 };

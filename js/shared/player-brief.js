@@ -161,11 +161,29 @@
         }
 
         // ── S5 · Outlook / verdict ───────────────────────────────────
+        // When the caller passes the CANONICAL engine action (getPlayerAction —
+        // the single source of truth behind the Roster Call chip, the card's
+        // Action cell, and Compare), the closing sentence keys off it so the
+        // brief can never contradict the chip on the same screen. The phase
+        // heuristics below remain the fallback when no action is supplied.
+        var act = input.action && input.action.action && String(input.action.reason || '') !== 'Not enough data'
+            ? input.action : null;
         var s5;
         if (meta.statusReason) {
             s5 = 'The situation to know: ' + String(meta.statusReason).replace(/\.$/, '') + ' — price any move around that reality';
         } else if (isK) {
             s5 = 'As a kicker he’s a streamable piece, not a dynasty asset — plug him in when the matchup is right, but don’t spend trade capital here';
+        } else if (act) {
+            var fam = String(act.action).toUpperCase();
+            var actPhrase = fam === 'CORE' ? 'build around him — it takes an overpay, not an offer, to move a piece like this'
+                : fam === 'BUY' ? 'buy — move before the market reprices him'
+                : fam === 'SELL_HIGH' ? 'sell high — cash him out while the market still pays full price'
+                : fam === 'SELL' ? 'sell — move him while there’s still value to collect'
+                : fam === 'STASH' ? 'stash — cheap to hold, with room to pay off'
+                : 'hold';
+            var why = String(act.reason || '').trim().replace(/\.$/, '');
+            if (/^[A-Z][a-z]/.test(why)) why = why.charAt(0).toLowerCase() + why.slice(1);
+            s5 = 'The DHQ call is ' + actPhrase + (why ? ' (' + why + ')' : '');
         } else {
             var blockers = Array.isArray(meta.opportunityBlockers) ? meta.opportunityBlockers.filter(Boolean) : [];
             var role = meta.roleLabel ? String(meta.roleLabel) : '';
