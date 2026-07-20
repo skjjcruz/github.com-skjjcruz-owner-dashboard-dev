@@ -217,7 +217,7 @@
                 <div key={key} style={{ display: 'flex', gap: '6px', padding: '3px 0', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', fontSize: fs(0.66), fontFamily: fonts.ui, alignItems: 'center' }}>
                     <span style={{ fontSize: fs(0.54), padding: '1px 5px', borderRadius: 3, background: wrAlpha(typeCol, '18'), color: typeCol, fontWeight: 700 }}>{(type === 'free_agent' ? 'FA' : type).toUpperCase()}</span>
                     <span style={{ flex: 1, color: colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{desc}</span>
-                    {tx.created && <span style={{ fontSize: fs(0.54), color: colors.textFaint }}>{timeAgo ? timeAgo(tx.created) : ''}</span>}
+                    {(tx.status_updated || tx.created) && <span style={{ fontSize: fs(0.54), color: colors.textFaint }}>{timeAgo ? timeAgo(tx.status_updated || tx.created) : ''}</span>}
                 </div>
             );
         }

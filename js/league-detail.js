@@ -2313,7 +2313,12 @@
             Object.values(hydrated.transactions || {}).forEach(wk => {
                 allTxns = allTxns.concat(wk || []);
             });
-            allTxns.sort((a, b) => (b.created || 0) - (a.created || 0));
+            // Order by EFFECTIVE time (when it took effect), not `created` (when a
+            // waiver claim was first placed). A waiver claimed days ago but
+            // processed last night must surface as last night's news, not sort
+            // back to its claim date and get buried.
+            const txnEffectiveTs = t => (t.status_updated || t.created || 0);
+            allTxns.sort((a, b) => txnEffectiveTs(b) - txnEffectiveTs(a));
 
             // Merge DHQ historical trades (pre-analyzed with value data)
             // Deduplicate by timestamp so the provider's recent txns
@@ -2323,7 +2328,7 @@
                 const histTrades = window.App.LI.tradeHistory
                     .filter(t => !existingTradeTs.has(t.ts || 0))
                     .map(t => ({ ...t, type: 'trade', status: 'complete', created: t.ts || 0, _fromDHQ: true }));
-                allTxns = [...allTxns, ...histTrades].sort((a, b) => (b.created || 0) - (a.created || 0));
+                allTxns = [...allTxns, ...histTrades].sort((a, b) => txnEffectiveTs(b) - txnEffectiveTs(a));
             }
 
             // Populate window.S.transactions keyed by week for
