@@ -170,9 +170,15 @@
             var blockers = Array.isArray(meta.opportunityBlockers) ? meta.opportunityBlockers.filter(Boolean) : [];
             var role = meta.roleLabel ? String(meta.roleLabel) : '';
             var opp = meta.opportunityLabel ? String(meta.opportunityLabel) : '';
+            // A depth-chart starter (slot 1, or a role label ending in "1" like
+            // RB1/ROLB1) must never read as a "stash whose role hasn't come" —
+            // that contradicts the identity sentence. Young cheap starters get
+            // ascending-starter framing instead.
+            var isStarter = (slot != null && slot === 1) || /(^|[^0-9])1$/.test(role);
             if (phase === 'Post-Window') s5 = 'At this stage he’s a production-only piece — whatever he gives you this season is the value, so treat him as a win-now rental, not a hold';
             else if (phase === 'Veteran') s5 = 'His dynasty value is tied to the near term — a win-now contributor whose price will only drift down, so contenders should use him and rebuilders should shop him';
             else if (phase === 'Rising' && dhq && dhq >= 4000) s5 = 'He’s an ascending asset — the kind of player whose price climbs faster than his production, which makes the buy window now and the hold easy';
+            else if (phase === 'Rising' && isStarter) s5 = 'He’s already a starting piece with his age curve still climbing — young starters at his price tend to outrun their tag, so treat him as a buy before the production reprices him';
             else if (phase === 'Rising') s5 = 'He profiles as a developmental stash — cheap to hold, with the age runway to pay off if the role comes';
             else if (dhq && dhq >= 7000) s5 = 'He’s a core piece — the roster builds around players like this, and it takes an overpay, not an offer, to move him';
             else if (dhq && dhq >= 3000) s5 = 'He’s a solid contributor with real trade utility — strong enough to start, liquid enough to package when a consolidation move appears';
