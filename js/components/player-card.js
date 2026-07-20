@@ -444,6 +444,18 @@
         const depthChart = typeof p.depth_chart_order === 'number' && p.depth_chart_order >= 1
             ? (pos + p.depth_chart_order)
             : null;
+        // ── Player Brief Phase 2 — the journalism layer (WR.PlayerWire) ──
+        // On open, fetch the current Rotowire paragraph (ESPN athlete overview,
+        // 24h cached). Renders ABOVE the composer when coverage exists; any
+        // failure resolves null and the composer carries the card alone.
+        const [wireRead, setWireRead] = useState(null);
+        useEffect(() => {
+            setWireRead(null);
+            if (!pid || !(window.WR && window.WR.PlayerWire)) return undefined;
+            let alive = true;
+            window.WR.PlayerWire.fetchRead(pid, playersData).then(r => { if (alive && r && r.story) setWireRead(r); });
+            return () => { alive = false; };
+        }, [pid]);
         // ── Player Brief (Phase 1 — the DHQ Composer) ──
         // Universal written summary: deterministic, current-by-construction,
         // renders for EVERY player. Later phases layer Rotowire/Alex on top.
@@ -566,6 +578,15 @@
                     }
                 },
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold, #d4af37)', marginBottom: '5px' } }, 'Player Brief'),
+                    // The Wire (Phase 2): the current professionally written read,
+                    // attributed + dated, above the DHQ composer paragraph.
+                    wireRead && React.createElement('div', { key: 'wire', style: { marginBottom: '9px' } },
+                        React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--silver, #9aa4b2)', opacity: 0.75, marginBottom: '3px' } },
+                            'The Wire · ' + wireRead.source + (wireRead.dateLabel ? ' · ' + wireRead.dateLabel : '')),
+                        React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, wireRead.story),
+                        React.createElement('div', { style: { borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.07))', marginTop: '9px' } }),
+                    ),
+                    wireRead && React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--silver, #9aa4b2)', opacity: 0.75, marginBottom: '3px' } }, 'DHQ Read'),
                     React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, playerBrief),
                 ),
                 dhqContext && React.createElement('div', {
