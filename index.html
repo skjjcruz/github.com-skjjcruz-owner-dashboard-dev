@@ -1453,10 +1453,11 @@ WRShared.preloadMany(WR_SHARED_FILES);
        whole right column, so every swipe there scrolls the rail — the page
        never moves and the Finder Rows can't be scrolled away. On coarse
        pointers the rail flows with the page (no sticky, no inner scroll) and
-       the League Teams card keeps its own bounded list like the inline card. */
+       the League Teams list is UNCAPPED (owner ruling: the column extends
+       down the page showing every rival; the base ≥1281 rule already sets
+       .tc-lt-scroll to natural height). Every swipe scrolls the page. */
     @media(min-width:1281px) and (pointer:coarse){
         .tc-adaptive-canvas.has-rail .tc-context-rail { position: static; max-height: none; overflow-y: visible; }
-        .tc-context-rail .tc-lt-panel .tc-lt-scroll { max-height: 58vh; overflow-y: auto; }
         .tc-context-rail .tc-lt-panel .tc-dhq-panel-head { position: static; }
     }
 
