@@ -317,7 +317,6 @@
             const scoring = scoringSettings
                 || ((S.leagues && S.leagues.find(l => l.league_id === S.currentLeagueId)) || {}).scoring_settings
                 || ((S.leagues && S.leagues[0]) || {}).scoring_settings || {};
-            const player = (playersData && playersData[pid]) || {};
             // Warm the matchup engines so opponent + weather fill in when ready.
             if (A.SOS && A.SOS.initialize && !A.SOS.ready) A.SOS.initialize(season, playersData, () => { if (alive) setScoutTick(t => t + 1); });
             if (A.NflContext && A.NflContext.loadCurrent) A.NflContext.loadCurrent(season).then(() => { if (alive) setScoutTick(t => t + 1); }).catch(() => {});
@@ -325,38 +324,51 @@
             if (A.GameLog && A.GameLog.buildPlayerLog) {
                 A.GameLog.buildPlayerLog(pid, season, { playersData, scoring }).then(r => { if (alive) setGameLog(r || []); }).catch(() => { if (alive) setGameLog([]); });
             } else if (alive) setGameLog([]);
-            // Matchup-aware news (graceful — CTA if AI unavailable). Loads once per open.
-            if (scoutNews == null) {
-                // Trigger gate is the guarantee: a free BYOK user (S.apiKey set)
-                // routes dhqAI→provider and never touches the OD.callAI tripwire,
-                // so the auto-fire itself must be Pro-gated here.
-                if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
-                    setScoutNews({ status: 'locked' });
-                } else {
-                    const AV = window.AlexVoice;
-                    const hasAI = (AV && AV.hasAI && AV.hasAI()) || (window.OD && typeof window.OD.callAI === 'function');
-                    if (!hasAI) setScoutNews({ status: 'off' });
-                    else {
-                        setScoutNews({ status: 'loading' });
-                        const week = (A.WeeklyProj && A.WeeklyProj.currentWeek && A.WeeklyProj.currentWeek()) || 1;
-                        const ctx = { pid, name: player.full_name || pid, team: player.team, pos: (A.normPos && A.normPos(player.position)) || player.position, age: player.age, season, week };
-                        // Prefer shared fetchDynastyRead: routes through OD.callAI
-                        // (shared weekly Supabase cache) with BYOK fallback +
-                        // format-aware client cache (dhq-shared/dhq-ai.js).
-                        const run = (typeof window.fetchDynastyRead === 'function')
-                            ? window.fetchDynastyRead(ctx, { fallback: '' })
-                            : (window.OD && typeof window.OD.callAI === 'function')
-                                ? window.OD.callAI({ type: 'dynasty_read', context: JSON.stringify(ctx) }).then(res => (res && (res.text || res.analysis || res.response)) || (typeof res === 'string' ? res : ''))
-                                : window.dhqAI('dynasty_read', '', JSON.stringify(ctx));
-                        Promise.resolve(run).then(txt => {
-                            const clean = window.AlexVoice ? window.AlexVoice.sanitize(String(txt || '')) : String(txt || '').trim();
-                            if (alive) setScoutNews(clean ? { status: 'done', text: clean } : { status: 'error' });
-                        }).catch(() => { if (alive) setScoutNews({ status: 'error' }); });
-                    }
+            return () => { alive = false; };
+        }, [tab, pid, scoutTick]);
+        // Alex's Read (dynasty_read) — Phase 3 moved this from scouting-tab-only
+        // to card open, so the Player Brief carries it as the Pro top layer.
+        // Same guard chain as before (Pro gate → AI available → shared weekly
+        // server cache via fetchDynastyRead); ScoutingTab keeps rendering the
+        // same scoutNews state it always did.
+        useEffect(() => {
+            if (!pid) return;
+            let alive = true;
+            const A = window.App || {};
+            const S = window.S || {};
+            const season = (S.nflState && S.nflState.season) || S.season || (new Date().getFullYear());
+            const player = (playersData && playersData[pid]) || {};
+            // Trigger gate is the guarantee: a free BYOK user (S.apiKey set)
+            // routes dhqAI→provider and never touches the OD.callAI tripwire,
+            // so the auto-fire itself must be Pro-gated here. Refetches per pid
+            // (the host swaps pid in place); the format-aware client cache +
+            // shared weekly server cache make repeat opens free.
+            if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+                setScoutNews({ status: 'locked' });
+            } else {
+                const AV = window.AlexVoice;
+                const hasAI = (AV && AV.hasAI && AV.hasAI()) || (window.OD && typeof window.OD.callAI === 'function');
+                if (!hasAI) setScoutNews({ status: 'off' });
+                else {
+                    setScoutNews({ status: 'loading' });
+                    const week = (A.WeeklyProj && A.WeeklyProj.currentWeek && A.WeeklyProj.currentWeek()) || 1;
+                    const ctx = { pid, name: player.full_name || pid, team: player.team, pos: (A.normPos && A.normPos(player.position)) || player.position, age: player.age, season, week };
+                    // Prefer shared fetchDynastyRead: routes through OD.callAI
+                    // (shared weekly Supabase cache) with BYOK fallback +
+                    // format-aware client cache (dhq-shared/dhq-ai.js).
+                    const run = (typeof window.fetchDynastyRead === 'function')
+                        ? window.fetchDynastyRead(ctx, { fallback: '' })
+                        : (window.OD && typeof window.OD.callAI === 'function')
+                            ? window.OD.callAI({ type: 'dynasty_read', context: JSON.stringify(ctx) }).then(res => (res && (res.text || res.analysis || res.response)) || (typeof res === 'string' ? res : ''))
+                            : window.dhqAI('dynasty_read', '', JSON.stringify(ctx));
+                    Promise.resolve(run).then(txt => {
+                        const clean = window.AlexVoice ? window.AlexVoice.sanitize(String(txt || '')) : String(txt || '').trim();
+                        if (alive) setScoutNews(clean ? { status: 'done', text: clean } : { status: 'error' });
+                    }).catch(() => { if (alive) setScoutNews({ status: 'error' }); });
                 }
             }
             return () => { alive = false; };
-        }, [tab, pid, scoutTick]);
+        }, [pid]);
 
         if (!p) return null;
 
@@ -449,11 +461,18 @@
         // 24h cached). Renders ABOVE the composer when coverage exists; any
         // failure resolves null and the composer carries the card alone.
         const [wireRead, setWireRead] = useState(null);
+        const [marketPulse, setMarketPulse] = useState(null);
         useEffect(() => {
             setWireRead(null);
+            setMarketPulse(null);
             if (!pid || !(window.WR && window.WR.PlayerWire)) return undefined;
             let alive = true;
             window.WR.PlayerWire.fetchRead(pid, playersData).then(r => { if (alive && r && r.story) setWireRead(r); });
+            // Market pulse (Phase 3): FantasyCalc value + 30-day trend for the
+            // composer's market sentence. Same daily cached fetch as the crosswalk.
+            if (typeof window.WR.PlayerWire.marketFor === 'function') {
+                window.WR.PlayerWire.marketFor(pid).then(m => { if (alive && m) setMarketPulse(m); });
+            }
             return () => { alive = false; };
         }, [pid]);
         // ── Player Brief (Phase 1 — the DHQ Composer) ──
@@ -468,10 +487,11 @@
                     player: p, pos: nPos, dhq, meta, ppg,
                     posRank: pr && pr.rank, posTotal: pr && pr.total,
                     phaseLabel: peakLabel, peakYrs,
+                    market: marketPulse,
                 });
                 return out && out.text && out.text.length > 40 ? out.text : null;
             } catch (_) { return null; }
-        }, [pid, dhq, ppg, peakLabel, peakYrs]);
+        }, [pid, dhq, ppg, peakLabel, peakYrs, marketPulse]);
         const dhqContext = meta.statusReason
             ? (meta.statusReason + (meta.roleLabel ? ' · ' + meta.roleLabel : ''))
             : [meta.roleLabel, meta.opportunityLabel].filter(Boolean).join(' · ');
@@ -578,6 +598,15 @@
                     }
                 },
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold, #d4af37)', marginBottom: '5px' } }, 'Player Brief'),
+                    // Alex's Read (Phase 3): the Pro AI news synthesis as the top
+                    // layer. Silent enhance — renders only when it lands; loading /
+                    // locked / off states add nothing here (Scouting tab keeps its
+                    // richer status UI).
+                    scoutNews && scoutNews.status === 'done' && scoutNews.text && React.createElement('div', { key: 'alex-read', style: { marginBottom: '9px' } },
+                        React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold, #d4af37)', opacity: 0.85, marginBottom: '3px' } }, "Alex's Read"),
+                        React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, scoutNews.text),
+                        React.createElement('div', { style: { borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.07))', marginTop: '9px' } }),
+                    ),
                     // The Wire (Phase 2): the current professionally written read,
                     // attributed + dated, above the DHQ composer paragraph.
                     wireRead && React.createElement('div', { key: 'wire', style: { marginBottom: '9px' } },
@@ -586,7 +615,7 @@
                         React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, wireRead.story),
                         React.createElement('div', { style: { borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.07))', marginTop: '9px' } }),
                     ),
-                    wireRead && React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--silver, #9aa4b2)', opacity: 0.75, marginBottom: '3px' } }, 'DHQ Read'),
+                    (wireRead || (scoutNews && scoutNews.status === 'done' && scoutNews.text)) && React.createElement('div', { style: { fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--silver, #9aa4b2)', opacity: 0.75, marginBottom: '3px' } }, 'DHQ Read'),
                     React.createElement('div', { style: { fontSize: 'var(--text-body, 0.95rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.5 } }, playerBrief),
                 ),
                 dhqContext && React.createElement('div', {

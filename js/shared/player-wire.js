@@ -28,10 +28,10 @@
     if (typeof window !== 'undefined') window.WR = window.WR || {};
 
     var WIRE_KEY = 'dhq_wire_v1:';            // + espnId → { ts, headline, story, published } | { ts, empty:true }
-    var XWALK_STORE = 'dhq_wire_crosswalk_v1'; // { ts, map: { sleeperId: espnId } }
+    var XWALK_STORE = 'dhq_wire_crosswalk_v1'; // { ts, map: { sleeperId: espnId }, mkt: { sleeperId: {v,t,or,pr} } }
     var WIRE_TTL = 24 * 60 * 60 * 1000;       // blurbs refresh on news cadence
     var EMPTY_TTL = 6 * 60 * 60 * 1000;       // uncovered players: retry a few times a day
-    var XWALK_TTL = 7 * 24 * 60 * 60 * 1000;  // id mapping is near-static
+    var XWALK_TTL = 24 * 60 * 60 * 1000;      // carries market values too (Phase 3) — daily refresh
     var MAX_STORY = 1400;                     // hard cap so a card never gets an essay
 
     var OVERVIEW_URL = function (espnId) {
@@ -82,26 +82,50 @@
         };
     }
 
-    // ── espnId resolution: Sleeper record → FantasyCalc crosswalk ────
+    // ── espnId resolution + market data: one FantasyCalc fetch/day ───
+    // The same rows carry both the sleeperId→espnId mapping (for the wire)
+    // and the market read (value, 30-day trend, ranks) the composer's
+    // market sentence uses. Resolves { map, mkt }.
     var _xwalkPromise = null;
-    function loadCrosswalk() {
+    function loadCrosswalkFull() {
         var cached = env.store.get(XWALK_STORE);
         if (cached && cached.ts && (env.now() - cached.ts) < XWALK_TTL && cached.map) {
-            return Promise.resolve(cached.map);
+            return Promise.resolve({ map: cached.map, mkt: cached.mkt || {} });
         }
         if (_xwalkPromise) return _xwalkPromise;
         _xwalkPromise = env.fetchJson(XWALK_URL).then(function (rows) {
             _xwalkPromise = null;
-            if (!Array.isArray(rows) || !rows.length) return (cached && cached.map) || {};
-            var map = {};
+            if (!Array.isArray(rows) || !rows.length) {
+                return { map: (cached && cached.map) || {}, mkt: (cached && cached.mkt) || {} };
+            }
+            var map = {}, mkt = {};
             rows.forEach(function (row) {
                 var pl = row && row.player;
-                if (pl && pl.sleeperId && pl.espnId) map[String(pl.sleeperId)] = String(pl.espnId);
+                if (!pl || !pl.sleeperId) return;
+                var sid = String(pl.sleeperId);
+                if (pl.espnId) map[sid] = String(pl.espnId);
+                mkt[sid] = {
+                    v: row.value || 0,
+                    t: row.trend30Day || 0,
+                    or: row.overallRank || 0,
+                    pr: row.positionRank || 0,
+                };
             });
-            env.store.set(XWALK_STORE, { ts: env.now(), map: map });
-            return map;
+            env.store.set(XWALK_STORE, { ts: env.now(), map: map, mkt: mkt });
+            return { map: map, mkt: mkt };
         });
         return _xwalkPromise;
+    }
+    function loadCrosswalk() { return loadCrosswalkFull().then(function (r) { return r.map; }); }
+
+    // marketFor(pid) → { value, trend30Day, overallRank, positionRank } | null
+    function marketFor(pid) {
+        if (!pid) return Promise.resolve(null);
+        return loadCrosswalkFull().then(function (r) {
+            var m = r.mkt && r.mkt[String(pid)];
+            if (!m || !(m.v > 0)) return null;
+            return { value: m.v, trend30Day: m.t || 0, overallRank: m.or || 0, positionRank: m.pr || 0 };
+        }).catch(function () { return null; });
     }
 
     function resolveEspnId(pid, playersData) {
@@ -145,6 +169,7 @@
         extract: extract,
         dateLabel: dateLabel,
         loadCrosswalk: loadCrosswalk,
+        marketFor: marketFor,
         _env: env,          // injectable for the contract suite
     };
     if (typeof window !== 'undefined') window.WR.PlayerWire = api;
