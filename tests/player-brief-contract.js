@@ -127,6 +127,24 @@ test('engine status reason leads the verdict when present', () => {
     noLeaks(r.text, 'status paragraph clean');
 });
 
+// ── Market pulse (Phase 3) ──────────────────────────────────────────
+test('a real 30-day market move is written as a percentage', () => {
+    const base = { player: { full_name: 'Market Mover', team: 'CIN', position: 'WR', age: 24, years_exp: 2, depth_chart_order: 1 }, pos: 'WR', dhq: 5000, ppg: 14, meta: {}, phaseLabel: 'Rising', peakYrs: 5 };
+    const up = PB.compose({ ...base, market: { value: 8000, trend30Day: 400 } });
+    match(up.text, /up about 5% over the last 30 days/, 'upward move → +5%');
+    const down = PB.compose({ ...base, market: { value: 8000, trend30Day: -960 } });
+    match(down.text, /down about 12% over the last 30 days/, 'downward move → −12%');
+    noLeaks(up.text, 'market paragraph clean');
+});
+
+test('a flat market reads as holding steady; absent market adds nothing', () => {
+    const base = { player: { full_name: 'Steady Eddie', team: 'GB', position: 'TE', age: 25, years_exp: 3, depth_chart_order: 1 }, pos: 'TE', dhq: 3000, ppg: 9, meta: {}, phaseLabel: 'Prime', peakYrs: 3 };
+    const flat = PB.compose({ ...base, market: { value: 5000, trend30Day: 10 } });
+    match(flat.text, /holding steady over the last 30 days/, 'sub-1% move → steady');
+    const none = PB.compose(base);
+    ok(!/30 days/.test(none.text), 'no market data → no market sentence');
+});
+
 test('deterministic: same input, same paragraph', () => {
     const input = { player: { full_name: 'Same Guy', team: 'MIA', position: 'TE', age: 24, years_exp: 2, depth_chart_order: 1 }, pos: 'TE', dhq: 3000, ppg: 10, meta: {}, phaseLabel: 'Rising', peakYrs: 4 };
     ok(PB.compose(input).text === PB.compose(input).text, 'byte-identical across calls');

@@ -147,6 +147,19 @@
             sentences.push('The DHQ engine carries no market value for him right now, which itself is the signal — he’s off the trade radar until production or opportunity says otherwise.');
         }
 
+        // ── S4b · Market pulse (Phase 3, FantasyCalc — only when provided) ──
+        // input.market = { value, trend30Day } from the daily FantasyCalc pull.
+        var mkt = input.market;
+        var mv = mkt && num(mkt.value), mt = mkt && num(mkt.trend30Day);
+        if (mv && mv > 0 && mt != null) {
+            var pct = (mt / mv) * 100;
+            if (Math.abs(pct) >= 1) {
+                sentences.push('The dynasty market agrees it’s moving: his FantasyCalc price is ' + (pct > 0 ? 'up' : 'down') + ' about ' + Math.abs(Math.round(pct)) + '% over the last 30 days.');
+            } else {
+                sentences.push('The dynasty market has his price holding steady over the last 30 days.');
+            }
+        }
+
         // ── S5 · Outlook / verdict ───────────────────────────────────
         var s5;
         if (meta.statusReason) {

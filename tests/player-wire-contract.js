@@ -131,6 +131,24 @@ await test('network failure → null and NOT negative-cached (next open retries)
     ok(calls.length === before + 1, 'immediately retried on next open');
 });
 
+await test('marketFor returns FantasyCalc value + trend from the same daily fetch', async () => {
+    const { PW, calls, handlers } = load();
+    handlers.push({ match: 'fantasycalc.com', reply: () => ([
+        { player: { sleeperId: '9493', espnId: '4426515' }, value: 8631, trend30Day: 6, overallRank: 7, positionRank: 3 },
+        { player: { sleeperId: '111' }, value: 0, trend30Day: 0 },
+    ]) });
+    const m = await PW.marketFor('9493');
+    ok(m && m.value === 8631 && m.trend30Day === 6 && m.positionRank === 3, 'market fields — got ' + JSON.stringify(m));
+    ok(await PW.marketFor('111') === null, 'zero-value row → null');
+    ok(await PW.marketFor('nobody') === null, 'unknown pid → null');
+    ok(calls.filter(u => u.includes('fantasycalc')).length === 1, 'one shared fetch for crosswalk + market');
+});
+
+await test('marketFor is fail-safe on network failure', async () => {
+    const { PW } = load();   // no fantasycalc handler → fetchJson null
+    ok(await PW.marketFor('9493') === null, 'failure → null, no throw');
+});
+
 await test('dateLabel is defensive', () => {
     const { PW } = load();
     ok(PW.dateLabel('Fri Jul 17 08:16:46 PDT 2026') === 'Jul 17', 'ESPN format');
