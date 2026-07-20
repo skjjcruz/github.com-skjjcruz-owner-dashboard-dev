@@ -3533,8 +3533,18 @@
             // One set of section-tab buttons, rendered in two homes: the in-flow
             // row (narrow / DNA / Log) and inside the rail (wide desk). Chip
             // classes give them the exact finder-chip look, gold when active.
+            // Owner ruling: the TRADE BUILDER chip IS the builder switch — it
+            // opens/closes the builder panel (gold while open) instead of the
+            // retired always-on strip; the finder is the desk's default view.
             const renderTcTabButtons = () => surfaces.map(s => (
-                <button key={s.key} type="button" className={active === s.key ? 'is-active' : ''} onClick={() => setTcTab(s.key)}>
+                <button key={s.key} type="button"
+                    className={(s.key === 'desk' ? active === 'desk' && builderExpanded : active === s.key) ? 'is-active' : ''}
+                    onClick={() => {
+                        if (s.key === 'desk') {
+                            if (active === 'desk') setBuilderExpanded(v => !v);
+                            else { setTcTab('desk'); setBuilderExpanded(true); }
+                        } else setTcTab(s.key);
+                    }}>
                     {s.label}
                     {s.key === 'log' && savedDeals.length > 0 && <span style={{ fontWeight: 500, opacity: 0.8 }}>{' · ' + savedDeals.length}</span>}
                 </button>
@@ -3600,39 +3610,34 @@
                             <button type="button" onClick={clearTradeContext} style={{ background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
                         </div>
                     )}
-                    {/* Trade Builder — pulled to the TOP of the page (owner ruling;
-                        it used to sit at the very bottom). Same collapsible strip. */}
-                    {active === 'desk' && (
-                        <div style={{ marginBottom: '12px', border: '1px solid rgba(53,208,214,0.28)', borderRadius: '8px', background: 'rgba(53,208,214,0.05)', overflow: 'hidden' }}>
-                            <button type="button" onClick={() => setBuilderExpanded(v => !v)} title="Build or tweak a deal without leaving this view" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', textAlign: 'left', background: 'transparent', border: 'none', padding: '9px 13px', cursor: 'pointer' }}>
-                                <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#35d0d6' }}>{_verdict.hasTrade ? 'Live deal' : 'Trade builder'}</span>
-                                {_verdict.hasTrade ? (
-                                    <>
-                                        <strong style={{ fontFamily: 'var(--font-title)', fontSize: '0.95rem', color: _verdict.verdictColor }}>{_verdict.verdictText} {_verdict.diffDisplay}</strong>
-                                        <span style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>gave {_verdict.totalA.toLocaleString()} / got {_verdict.totalB.toLocaleString()}</span>
-                                        {_pro && <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: _verdict.likelihoodColor }}>{_verdict.likelihood}% accept</span>}
-                                    </>
-                                ) : (
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--silver)' }}>Build or tweak a trade without leaving this view.</span>
-                                )}
-                                <span style={{ marginLeft: _verdict.hasTrade && _pro ? '0' : 'auto', fontSize: '0.74rem', color: 'var(--gold)', fontWeight: 700 }}>{builderExpanded ? 'Collapse ▴' : (_verdict.hasTrade ? 'Edit ▾' : 'Open ▾')}</span>
-                            </button>
-                            {builderExpanded && (
-                                <div style={{ borderTop: '1px solid rgba(53,208,214,0.18)', padding: '12px', background: 'rgba(0,0,0,0.16)' }}>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '10px', lineHeight: 1.5 }}>
-                                        Values sourced from <strong style={{ color: 'var(--gold)' }}>{skinVocabulary.valueShortLabel || 'DHQ'} Engine</strong> ({valueSourceLabel}).
-                                    </div>
-                                    {/* .tc-builder-sides: phone tier (index.html ≤767 CSS) stacks the
-                                        two sides vertically (send above, get below) — the hard 1fr 1fr
-                                        yields two ~165px columns at 375px, unusable for the owner
-                                        select + roster picker. ≥768 keeps side-by-side. */}
-                                    <div className="tc-builder-sides" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'start' }}>
-                                        {TcTradeSide({ side: 'A', color: 'var(--k-5dade2, #5dade2)', label: 'YOU SEND', ..._tsDeps })}
-                                        {TcTradeSide({ side: 'B', color: 'var(--k-e74c3c, #e74c3c)', label: 'YOU GET', ..._tsDeps })}
-                                    </div>
+                    {/* Trade Builder — owner ruling: the always-on blue strip is gone
+                        and the Trade Finder owns the top of the desk. The builder now
+                        renders ONLY while open, toggled by the TRADE BUILDER chip
+                        (and by Load in Builder on a finder row), as a standard gold
+                        panel above the finder so it appears where you just tapped. */}
+                    {active === 'desk' && builderExpanded && (
+                        <section className="tc-dhq-panel" style={{ marginBottom: '12px' }}>
+                            <div className="tc-dhq-panel-head">
+                                <span>Trade Builder</span>
+                                <em>{_verdict.hasTrade
+                                    ? `${_verdict.verdictText} ${_verdict.diffDisplay} · gave ${_verdict.totalA.toLocaleString()} / got ${_verdict.totalB.toLocaleString()}${_pro ? ` · ${_verdict.likelihood}% accept` : ''}`
+                                    : 'Build or tweak a trade without leaving this view.'}</em>
+                                <div className="tc-dhq-actions" style={{ flex: '0 0 auto' }}>
+                                    <button type="button" onClick={() => setBuilderExpanded(false)}>Close ▴</button>
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '10px', lineHeight: 1.5 }}>
+                                Values sourced from <strong style={{ color: 'var(--gold)' }}>{skinVocabulary.valueShortLabel || 'DHQ'} Engine</strong> ({valueSourceLabel}).
+                            </div>
+                            {/* .tc-builder-sides: phone tier (index.html ≤767 CSS) stacks the
+                                two sides vertically (send above, get below) — the hard 1fr 1fr
+                                yields two ~165px columns at 375px, unusable for the owner
+                                select + roster picker. ≥768 keeps side-by-side. */}
+                            <div className="tc-builder-sides" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'start' }}>
+                                {TcTradeSide({ side: 'A', color: 'var(--k-5dade2, #5dade2)', label: 'YOU SEND', ..._tsDeps })}
+                                {TcTradeSide({ side: 'B', color: 'var(--k-e74c3c, #e74c3c)', label: 'YOU GET', ..._tsDeps })}
+                            </div>
+                        </section>
                     )}
                     {/* League Teams inline — narrow/portrait only (rail is hidden <1281px). */}
                     {active === 'desk' && <div className="tc-lt-inline">{renderLeagueTeamsCard()}</div>}
