@@ -1449,17 +1449,11 @@ WRShared.preloadMany(WR_SHARED_FILES);
         .tc-adaptive-canvas.has-rail .tc-dhq-dossier { display: none; }
         .tc-adaptive-canvas.has-rail .tc-rail-wide-hide { display: none; }
     }
-    /* Touch (iPad rail layout): a sticky, internally-scrolling rail spans the
-       whole right column, so every swipe there scrolls the rail — the page
-       never moves and the Finder Rows can't be scrolled away. On coarse
-       pointers the rail flows with the page (no sticky, no inner scroll) and
-       the League Teams list is UNCAPPED (owner ruling: the column extends
-       down the page showing every rival; the base ≥1281 rule already sets
-       .tc-lt-scroll to natural height). Every swipe scrolls the page. */
-    @media(min-width:1281px) and (pointer:coarse){
-        .tc-adaptive-canvas.has-rail .tc-context-rail { position: static; max-height: none; overflow-y: visible; }
-        .tc-context-rail .tc-lt-panel .tc-dhq-panel-head { position: static; }
-    }
+    /* Touch (iPad rail layout): owner ruling — the League Teams column is
+       pinned and the teams scroll INSIDE it (same sticky, internally
+       scrolling rail as desktop; no coarse-pointer override). Swipes over
+       the main column scroll the page; swipes over the rail scroll the
+       team list. */
 
     /* DNA Grid */
     .tc-dna-grid { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
