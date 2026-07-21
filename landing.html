@@ -30,10 +30,31 @@
       }
       try {
         var q = new URLSearchParams(window.location.search);
-        // FIREWALL (owner ruling 2026-07-21): the marketing site is a pure
-        // brochure and never hands sessions to this origin. The old
-        // marketing session handoff — the July 9-11 session-poisoning
-        // vector — is gone; sign-in happens entirely on this origin.
+        // Session handoff from the marketing site (dhqfootball.com): it signs the
+        // user in on its own origin, then sends them here with the app session in
+        // the URL fragment (never sent to the server, same trick as OAuth).
+        // Ingest it before the session checks below so the user lands signed in.
+        var hs = (window.location.hash || '').match(/[#&]dhq_session=([^&]+)/);
+        var handedIsNew = false;
+        if (hs) {
+          try {
+            var b64 = hs[1].replace(/-/g, '+').replace(/_/g, '/');
+            while (b64.length % 4) b64 += '=';
+            var handed = JSON.parse(decodeURIComponent(escape(window.atob(b64))));
+            // Only ingest complete sessions. A stale cached copy of the
+            // marketing page can still hand off records without user.id (the
+            // Jul 9–11 sign-in bug shape), which the shared client resolves
+            // to the free tier — storing one would re-poison this origin.
+            if (handed && handed.token && handed.user && handed.user.id) {
+              // isNew is a one-shot routing hint, not session state — consume
+              // it here so later visits don't re-trigger onboarding.
+              handedIsNew = handed.isNew === true;
+              delete handed.isNew;
+              localStorage.setItem('fw_session_v1', JSON.stringify(handed));
+            }
+          } catch (e) {}
+          try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+        }
         // Editor preview, explicit sign-out, and ?home (the league hub's
         // brand icon — a deliberate visit to this page) stay on this page.
         // Without the ?home escape this head-level check bounces a signed-in
@@ -65,6 +86,26 @@
         var onboarded = (profile && (profile.onboardingComplete === true || profile.sleeperUsername))
           || (legacy && legacy.username)
           || localStorage.getItem('mfl_league_id');
+        // Brand-new accounts ALWAYS start at the connect-your-leagues page —
+        // even on a device where a previous account already finished
+        // onboarding. That progress is stored per DEVICE, so without this
+        // reset a fresh account inherits the old session's linked leagues
+        // and jumps straight to the league page.
+        if (handedIsNew) {
+          try {
+            var np = JSON.parse(localStorage.getItem('od_profile_v1') || 'null') || {};
+            delete np.sleeperUsername; delete np.sleeperUserId;
+            np.onboardingComplete = false;
+            localStorage.setItem('od_profile_v1', JSON.stringify(np));
+          } catch (e) {}
+          try { localStorage.removeItem('od_auth_v1'); } catch (e) {}
+          try { localStorage.removeItem('od_locked_username_v2'); } catch (e) {}
+          try { localStorage.removeItem('dynastyhq_username'); } catch (e) {}
+          try { localStorage.removeItem('mfl_league_id'); } catch (e) {}
+          try { localStorage.removeItem('mfl_year'); } catch (e) {}
+          try { localStorage.removeItem('mfl_franchise_id'); } catch (e) {}
+          window.location.replace('connect-sleeper.html'); return;
+        }
         if (!onboarded) { window.location.replace('connect-sleeper.html'); return; }
         var pref = localStorage.getItem('fw_preferred_view');
         window.location.replace(pref === 'scout' ? 'https://skjjcruz.github.io/ReconAI-sandbox-dev/' : 'index.html');
