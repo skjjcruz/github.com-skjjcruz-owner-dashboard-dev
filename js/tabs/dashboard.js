@@ -543,12 +543,17 @@ function DashboardPanel({
         if (WrSt.get(MIGRATED_KEY, false)) return;
         const old = selectedWidgets || [];
         if (!old.length) { WrSt.set(MIGRATED_KEY, true); return; }
+        // A key is only legacy if it is NOT a current module: 'transaction-ticker'
+        // and 'league-standings' returned to WIDGET_MODULES after the v2 map was
+        // written (and now seed the default board), so mapping every occurrence
+        // would clobber a fresh user's defaults into league-landscape.
+        const isLegacy = (k) => !WIDGET_MODULES[k] && !!LEGACY_MODULE_MAP[k];
         // Check if ANY old key needs mapping
-        const needsMigration = old.some(w => LEGACY_MODULE_MAP[w.key]);
+        const needsMigration = old.some(w => isLegacy(w.key));
         if (!needsMigration) { WrSt.set(MIGRATED_KEY, true); return; }
         const seen = new Set();
         const migrated = old.map(w => {
-            const newKey = LEGACY_MODULE_MAP[w.key] || w.key;
+            const newKey = isLegacy(w.key) ? LEGACY_MODULE_MAP[w.key] : w.key;
             if (!WIDGET_MODULES[newKey]) return null; // orphaned module
             if (seen.has(newKey)) return null;         // dedup (e.g., roster + competitive both → roster-pulse)
             seen.add(newKey);
