@@ -39,11 +39,7 @@
         // Without the ?home escape this head-level check bounces a signed-in
         // visitor back into the app before the body's STAY_HOME-aware
         // handlers ever run, making the hub logo appear to do nothing.
-        // A marketing sign-in hint (?start/?mode) means the visitor tapped a
-        // sign-in button — ALWAYS show the account screen (never teleport a
-        // signed-in visitor into their league; the body shows an
-        // "already signed in" choice instead).
-        if (q.has('landingPreview') || q.has('signout') || q.has('home') || q.has('start') || q.has('mode')) { reveal(); return; }
+        if (q.has('landingPreview') || q.has('signout') || q.has('home')) { reveal(); return; }
         // OAuth return: Supabase brings us back here with the session in the URL
         // (hash #access_token=… for implicit, ?code=… for PKCE) BEFORE the page's
         // callback handler has stored it. Show a neutral splash, not the marketing
@@ -372,8 +368,8 @@
         <span class="nav-title">DYNASTY&nbsp;HQ</span>
       </div>
       <div class="nav-links">
-        <button class="nav-btn" id="navSignin" onclick="openAuthModal('signin')">Log in</button>
-        <button class="nav-btn nav-btn-primary" onclick="openAuthModal('signup')">Get started</button>
+        <button class="nav-btn" id="navSignin" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'})">Sign in</button>
+        <button class="nav-btn nav-btn-primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Get started</button>
       </div>
     </div>
   </nav>
@@ -405,7 +401,7 @@
         <h1>Generic advice: stop here.<br><span class="mk">This is your world.</span></h1>
         <p class="hero-sub">Every other tool ranks players for a league that isn't yours. Dynasty HQ rebuilds every value, trade, and draft call around <b>your exact scoring and roster</b> — and reads <b>how each rival actually operates.</b></p>
         <div class="hero-actions">
-          <button class="hero-cta" onclick="openAuthModal('signup')">Start free with Sleeper</button>
+          <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free with Sleeper</button>
           <button class="hero-secondary" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">See plans</button>
         </div>
         <p class="hero-free">Free on all your Sleeper leagues · no credit card</p>
@@ -581,7 +577,7 @@
           <li>Team diagnosis</li>
           <li>1 AI query per day</li>
         </ul>
-        <button class="price-btn" onclick="openAuthModal('signup')">Get started</button>
+        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Get started</button>
       </div>
       <div class="price-card pop">
         <div class="price-badge">Most Popular</div>
@@ -597,7 +593,7 @@
           <li>Draft command + pick values</li>
           <li>Scout + War Room access</li>
         </ul>
-        <button class="price-btn accent" onclick="openAuthModal('signup')">Start free trial</button>
+        <button class="price-btn accent" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free trial</button>
       </div>
       <div class="price-card">
         <div class="price-badge">Best Value</div>
@@ -610,7 +606,7 @@
           <li>Save ~17% vs monthly</li>
           <li>Priority feature access</li>
         </ul>
-        <button class="price-btn" onclick="openAuthModal('signup')">Start free trial</button>
+        <button class="price-btn" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free trial</button>
       </div>
     </div>
   </section>
@@ -629,22 +625,11 @@
     </div>
   </section>
 
-  <!-- Join — Sleeper-style: the page carries two buttons; the card is a modal -->
-  <section class="auth-cta" id="join">
-    <img src="icon-192.png" alt="Dynasty HQ" style="display:block;width:56px;height:56px;border-radius:14px;margin:0 auto 16px;box-shadow:0 4px 20px rgba(212,175,55,.2)">
-    <h2 class="auth-title" style="margin-bottom:18px">Your league is waiting.</h2>
-    <button class="cta-primary" onclick="openAuthModal('signup')">Sign up →</button>
-    <button class="cta-ghost" onclick="openAuthModal('signin')">Log in →</button>
-  </section>
-
-  <!-- Auth modal (Sleeper-style card over the dimmed page). The SAME files
-       ship in the App Store build, so browser and iOS sign-in are identical. -->
-  <div class="dhq-modal-backdrop" id="authModal" hidden>
+  <!-- Join -->
   <section class="auth" id="auth">
-    <button class="dhq-modal-x" onclick="closeAuthModal()" aria-label="Close">×</button>
+    <img src="icon-192.png" alt="Dynasty HQ" style="display:block;width:56px;height:56px;border-radius:14px;margin:0 auto 16px;box-shadow:0 4px 20px rgba(212,175,55,.2)">
     <h2 class="auth-title" id="authTitle">Create your account</h2>
-    <p style="text-align:center;margin:-10px 0 14px"><button class="auth-linkbtn" id="toggleMode" onclick="toggleAuthMode()">Already have an account? Sign in</button></p>
-    <p id="authSub" style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-6px 0 20px">Step 1 of 2 — create your account with Google or email. Next, you'll connect your leagues.</p>
+    <p id="authSub" style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 22px">Step 1 of 2 — create your account with Google or email. Next, you'll connect your leagues.</p>
 
     <div class="alert" id="alertJoin"></div>
 
@@ -671,23 +656,10 @@
       <span id="sleeperHint">Step 1 of 2 — next you'll connect your leagues (Sleeper or MFL).</span>
     </p>
     <div style="text-align:center;margin-top:14px;font-size:13px">
+      <button class="auth-linkbtn" id="toggleMode" onclick="toggleAuthMode()">Already have an account? Sign in</button>
       <button class="auth-linkbtn" id="forgotBtn" onclick="handleForgot()" style="display:none">Forgot password?</button>
     </div>
   </section>
-
-  <!-- Welcome back — the Sleeper moment: greet + list YOUR leagues -->
-  <section class="auth" id="welcomeCard" hidden>
-    <button class="dhq-modal-x" onclick="closeAuthModal()" aria-label="Close">×</button>
-    <h2 class="auth-title">Welcome back!</h2>
-    <p id="wlcSub" style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 20px">You have successfully signed in.</p>
-    <div id="wlcLeaguesWrap" hidden>
-      <div style="font-weight:700;font-size:15px;margin:0 0 10px;color:var(--white,#e8ebef)">Your Fantasy Leagues</div>
-      <div id="wlcLeagues"></div>
-    </div>
-    <a class="cta-ghost" style="display:flex;align-items:center;justify-content:center;margin:14px 0 10px;text-decoration:none" href="connect-sleeper.html">Connect a league</a>
-    <button class="cta-primary" id="wlcContinue" onclick="window.location.href = nextAfterAuth()">Continue to app</button>
-  </section>
-  </div><!-- /authModal -->
 
   <style>
     .auth-google{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f2328;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:6px}
@@ -698,25 +670,6 @@
     .auth-or::before,.auth-or::after{content:'';flex:1;height:1px;background:var(--border)}
     .auth-linkbtn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit}
     .auth-linkbtn:hover{color:var(--accent)}
-    /* Sleeper-style modal shell */
-    .dhq-modal-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:flex-start;justify-content:center;padding:5vh 18px 18px;background:rgba(4,7,14,.74);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);overflow-y:auto}
-    .dhq-modal-backdrop[hidden]{display:none}
-    .dhq-modal-backdrop .auth{position:relative;margin:auto 0;width:100%;max-width:432px;background:#0b1018;border:1px solid var(--border);border-radius:16px;padding:30px 26px 26px;box-shadow:0 24px 80px rgba(0,0,0,.65)}
-    .dhq-modal-x{position:absolute;top:8px;right:10px;width:40px;height:40px;background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
-    .dhq-modal-x:hover{color:var(--accent)}
-    .auth-cta{max-width:432px;margin:0 auto;padding:40px 22px;text-align:center}
-    .cta-primary{display:block;width:100%;min-height:50px;border-radius:10px;border:none;background:var(--accent);color:#0a0a0a;font-size:16px;font-weight:800;cursor:pointer;margin-bottom:10px;font-family:inherit}
-    .cta-primary:hover{filter:brightness(1.08)}
-    .cta-ghost{display:block;width:100%;min-height:50px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--white,#e8ebef);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}
-    .cta-ghost:hover{border-color:var(--accent)}
-    /* Welcome-back league rows */
-    .wlc-league{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;color:inherit;text-decoration:none;cursor:pointer;font-family:inherit;text-align:left}
-    .wlc-league:hover{border-color:var(--accent)}
-    .wlc-badge{width:38px;height:38px;border-radius:10px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:rgba(212,175,55,.14);color:var(--accent);font-weight:800;font-size:15px;overflow:hidden}
-    .wlc-badge img{width:100%;height:100%;object-fit:cover}
-    .wlc-name{font-weight:700;font-size:14px;color:var(--white,#e8ebef);line-height:1.3}
-    .wlc-meta{font-size:12px;color:var(--muted)}
-    .wlc-chev{margin-left:auto;color:var(--muted);font-size:16px}
   </style>
 
   <footer class="footer">&copy; 2026 Dynasty HQ &middot; All rights reserved</footer>
@@ -863,77 +816,6 @@
       return CONNECT_URL;
     }
 
-    // ── Sleeper-style modal controls ─────────────────────────────
-    function openAuthModal(mode) {
-      const bd = document.getElementById('authModal');
-      document.getElementById('welcomeCard').hidden = true;
-      document.getElementById('auth').hidden = false;
-      bd.hidden = false;
-      if (mode && mode !== authMode) toggleAuthMode();
-    }
-    function closeAuthModal() {
-      document.getElementById('authModal').hidden = true;
-    }
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAuthModal(); });
-    document.getElementById('authModal').addEventListener('click', (e) => {
-      if (e.target === document.getElementById('authModal')) closeAuthModal();
-    });
-
-    // ── The Sleeper moment: greet by name + list YOUR leagues ────────
-    async function showWelcomeCard() {
-      const bd = document.getElementById('authModal');
-      document.getElementById('auth').hidden = true;
-      document.getElementById('welcomeCard').hidden = false;
-      bd.hidden = false;
-      try {
-        const sess = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-        const u = (sess && sess.user) || {};
-        const name = u.displayName || u.display_name || u.username || (u.email ? u.email.split('@')[0] : '') || '';
-        document.getElementById('wlcSub').textContent =
-          'You have successfully signed in.' + (name ? ' Welcome back, ' + name + '!' : '');
-      } catch {}
-      // League list: read the device's connected Sleeper account and pull the
-      // same leagues the app shows. Best-effort — the buttons stand alone.
-      try {
-        const prof = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null') || {};
-        const sleeperUser = prof.sleeperUsername || localStorage.getItem('dynastyhq_username');
-        if (!sleeperUser) return;
-        const season = new Date().getFullYear();
-        const ur = await fetch('https://api.sleeper.app/v1/user/' + encodeURIComponent(sleeperUser));
-        const uj = await ur.json();
-        if (!uj || !uj.user_id) return;
-        const lr = await fetch('https://api.sleeper.app/v1/user/' + uj.user_id + '/leagues/nfl/' + season);
-        const leagues = await lr.json();
-        if (!Array.isArray(leagues) || !leagues.length) return;
-        const wrap = document.getElementById('wlcLeaguesWrap');
-        const list = document.getElementById('wlcLeagues');
-        list.innerHTML = '';
-        leagues.slice(0, 6).forEach((lg) => {
-          const row = document.createElement('button');
-          row.className = 'wlc-league';
-          row.onclick = () => { window.location.href = 'index.html#league=' + lg.league_id + '&tab=dashboard'; };
-          const status = lg.status === 'pre_draft' ? 'Pre-Draft' : lg.status === 'in_season' ? 'Active' : lg.status === 'complete' ? 'Complete' : 'Active';
-          const badge = document.createElement('span');
-          badge.className = 'wlc-badge';
-          if (lg.avatar) {
-            const img = document.createElement('img');
-            img.src = 'https://sleepercdn.com/avatars/thumbs/' + lg.avatar;
-            img.alt = '';
-            badge.appendChild(img);
-          } else { badge.textContent = '🏈'; }
-          const txt = document.createElement('span');
-          const nm = document.createElement('span'); nm.className = 'wlc-name'; nm.textContent = lg.name || 'League';
-          const mt = document.createElement('span'); mt.className = 'wlc-meta'; mt.textContent = (lg.total_rosters || '?') + ' teams · ' + status;
-          txt.style.display = 'flex'; txt.style.flexDirection = 'column'; txt.style.gap = '2px'; txt.style.minWidth = '0';
-          txt.appendChild(nm); txt.appendChild(mt);
-          const ch = document.createElement('span'); ch.className = 'wlc-chev'; ch.textContent = '›';
-          row.appendChild(badge); row.appendChild(txt); row.appendChild(ch);
-          list.appendChild(row);
-        });
-        wrap.hidden = false;
-      } catch { /* league list is a bonus — never block the card */ }
-    }
-
     function toggleAuthMode() {
       authMode = authMode === 'signup' ? 'signin' : 'signup';
       const signup = authMode === 'signup';
@@ -979,10 +861,7 @@
         showAlert('success', signup ? 'Account ready \u2014 connect your leagues\u2026' : 'Welcome back\u2026');
         // New accounts go straight to the connect-your-leagues page;
         // returning sign-ins resume wherever they left off.
-        setTimeout(() => {
-          const dest = signup ? CONNECT_URL : null;
-          if (dest) { window.location.href = dest; } else { showWelcomeCard(); }
-        }, 600);
+        setTimeout(() => { window.location.href = signup ? CONNECT_URL : nextAfterAuth(); }, 600);
       } catch (err) {
         trackLandingEvent(signup ? 'signup_failed' : 'signin_failed', { reason: 'network' });
         showAlert('error', 'Network error: ' + (err?.message || String(err)));
@@ -1102,8 +981,7 @@
           resetDeviceOnboardingForNewAccount();
           window.location.href = CONNECT_URL;
         } else {
-          dropOAuthOverlay();
-          showWelcomeCard();
+          window.location.href = nextAfterAuth();
         }
       } catch (e) { dropOAuthOverlay(); console.warn('[WR] OAuth callback error:', e); }
     })();
@@ -1149,67 +1027,17 @@
       try { history.replaceState(null, '', window.location.pathname); } catch {}
     })();
 
-    // Provider hint from the marketing brochure (?start=google|apple|email,
-    // ?mode=signin). FIREWALL-safe: the link carries only which button the
-    // visitor tapped — the entire auth flow runs on THIS origin. Skipped on
-    // OAuth returns/errors so a provider round-trip never re-triggers itself.
-    (function providerHint() {
-      try {
-        const q = new URLSearchParams(window.location.search);
-        const start = (q.get('start') || '').toLowerCase();
-        const mode = (q.get('mode') || '').toLowerCase();
-        if (!start && !mode) return;
-        // Tell the body's session check a sign-in button was tapped — the
-        // visitor gets the account screen, never an auto-bounce (URL hints
-        // are consumed below, so a flag carries the intent forward).
-        window.__SIGNIN_INTENT = true;
-        const hash = window.location.hash || '';
-        if (hash.indexOf('access_token=') !== -1 || /[?&]code=/.test(window.location.search)
-            || hash.indexOf('error=') !== -1 || q.has('error')) return;
-        // consume the hints so refresh/back never re-fires an OAuth redirect
-        q.delete('start'); q.delete('mode');
-        const rest = q.toString();
-        try { history.replaceState(null, '', window.location.pathname + (rest ? '?' + rest : '') + hash); } catch {}
-        // Already signed in on this device? The Sleeper moment: greet them
-        // and list their leagues (no teleport, no silent OAuth re-run).
-        var _signedIn = false;
-        try {
-          var _sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
-          _signedIn = !!(_sess && _sess.token && _sess.user && _sess.user.id);
-        } catch (e) {}
-        if (_signedIn) { showWelcomeCard(); return; }
-        // Signed out: open the modal in the requested mode.
-        openAuthModal(mode === 'signin' ? 'signin' : 'signup');
-        // The landing content system hydrates copy async after DOMContentLoaded
-        // and would overwrite the sign-in wording — re-assert once it settles.
-        // (State is already 'signin' either way; this is cosmetic copy only.)
-        if (mode === 'signin') {
-          window.addEventListener('load', function () {
-            setTimeout(function () {
-              try { if (authMode === 'signin') { authMode = 'signup'; toggleAuthMode(); } } catch (e) {}
-            }, 600);
-          });
-        }
-        if (start === 'google') { handleGoogle(); }
-        else if (start === 'apple') { handleApple(); }
-        else if (start === 'email') {
-          const el = document.getElementById('acctEmail');
-          if (el) setTimeout(function () { el.focus(); }, 250);
-        }
-      } catch (e) { /* hint is best-effort — the page stands on its own */ }
-    })();
-
     (function checkSession() {
       try {
         // STAY_HOME (?home): the league hub's brand icon lands here on
         // purpose — a signed-in visitor must be able to look at this page
         // without being bounced straight back into the app. Their way back
         // in is the nav button, which flips from "Sign in" to "Open app".
-        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT || STAY_HOME || window.__SIGNIN_INTENT) {
+        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT || STAY_HOME) {
           try {
             const staySession = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
             const navBtn = document.getElementById('navSignin');
-            if ((STAY_HOME || window.__SIGNIN_INTENT) && staySession?.token && navBtn) {
+            if (STAY_HOME && staySession?.token && navBtn) {
               navBtn.textContent = 'Open app';
               navBtn.onclick = () => { window.location.href = nextAfterAuth(); };
             }
