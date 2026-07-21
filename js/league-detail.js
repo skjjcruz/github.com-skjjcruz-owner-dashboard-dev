@@ -1112,20 +1112,28 @@
             'league-standings':   { label: 'League Standings',   icon: '', category: 'League', sizes: ['md', 'lg'], tip: 'Current league standings with W-L records and DHQ totals' },
         };
         // Curiosity-first default dashboard (new leagues only — existing users keep
-        // their saved layout). One large "wow" anchor + two tension numbers + a
-        // visual + a live feed, spanning AI / roster / league / market so the board
-        // telegraphs the system's breadth and invites a click on first load:
-        //   1. Intel Brief (large)   — Alex's narrative + action CTAs
-        //   2. Health Score (small)  — a lone 0–100 that begs "why?"
-        //   3. Power Rankings (small)— "where do I stand?" competitive tension
-        //   4. Elite Players (medium)— your cornerstones (visual)
-        //   5. Market Radar (medium) — a moving feed of trade/waiver opportunities
+        // their saved layout). The owner's own board (Jul 21 2026 screenshots)
+        // is the featured first-load view — command brief + roster vitals down
+        // the main column, live league feeds down the skinny side column:
+        //   1. Intel Brief (tall)        — Alex's living brief + kickoff countdown
+        //   2. Transaction Ticker (slim) — live adds/drops/trades side feed
+        //   3. Power Rankings (narrow)   — full 16-team board, side column
+        //   4. Roster Pulse (tall)       — health, elites, window, action plan
+        //   5. Lineup Check (lg)         — points left on the bench this week
+        //   6. League Calendar (lg)      — waivers → draft → playoffs agenda
+        //   7. League Standings (narrow) — every team's record, side column
+        //   8. Market Radar (sm)         — trade-target count card
+        //   9. Cut Candidates (sm)       — drop-flag count card
         const DEFAULT_WIDGETS = [
             { id: 'dw0', key: 'intel-brief',    size: 'tall' },
-            { id: 'dw1', key: 'roster-pulse',   size: 'sm', primaryMetric: 'health-score' },
-            { id: 'dw2', key: 'power-rankings', size: 'sm' },
-            { id: 'dw3', key: 'roster-pulse',   size: 'md', primaryMetric: 'elite-count' },
-            { id: 'dw4', key: 'market-radar',   size: 'md' },
+            { id: 'dw1', key: 'transaction-ticker', size: 'slim' },
+            { id: 'dw2', key: 'power-rankings', size: 'narrow' },
+            { id: 'dw3', key: 'roster-pulse',   size: 'tall', primaryMetric: 'health-score' },
+            { id: 'dw4', key: 'lineup-check',   size: 'lg' },
+            { id: 'dw5', key: 'league-calendar', size: 'lg' },
+            { id: 'dw6', key: 'league-standings', size: 'narrow' },
+            { id: 'dw7', key: 'market-radar',   size: 'sm' },
+            { id: 'dw8', key: 'cut-candidates', size: 'sm' },
         ];
         // Migrate legacy formats to current widget object format
         function migrateKpisToWidgets(stored) {

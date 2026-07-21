@@ -560,6 +560,25 @@ test('Field Notes stays a compact decision-log utility off the default board', (
   sourceHas(flashBriefSrc, 'OPEN GM OFFICE', 'empty Field Notes should offer an action');
 });
 
+test("default board is the owner's featured layout (Jul 21 2026)", () => {
+  // The first-load board mirrors the owner's own Home setup: brief + vitals
+  // down the main column, live league feeds down the skinny side column.
+  const wants = [
+    ["key: 'transaction-ticker', size: 'slim'", 'ticker (slim) beside the brief'],
+    ["key: 'power-rankings', size: 'narrow'", 'full power rankings side column'],
+    ["key: 'roster-pulse',   size: 'tall'", 'roster pulse vitals'],
+    ["key: 'lineup-check',   size: 'lg'", 'lineup check'],
+    ["key: 'league-calendar', size: 'lg'", 'league calendar'],
+    ["key: 'league-standings', size: 'narrow'", 'league standings side column'],
+    ["key: 'market-radar',   size: 'sm'", 'trade targets count card'],
+    ["key: 'cut-candidates', size: 'sm'", 'cut candidates count card'],
+  ];
+  wants.forEach(([frag, why]) => sourceHas(leagueDetailSrc, frag, 'default board must include ' + why));
+  // The v2 legacy map must never rewrite CURRENT module keys, or a fresh
+  // user's default ticker/standings would migrate into league-landscape.
+  sourceHas(dashboardSrc, '!WIDGET_MODULES[k] && !!LEGACY_MODULE_MAP[k]', 'legacy migration must skip keys that are current modules');
+});
+
 group('league-scoped history');
 
 test('history globals are replaced per active league instead of merged across leagues', () => {
