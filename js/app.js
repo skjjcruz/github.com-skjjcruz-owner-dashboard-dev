@@ -1281,23 +1281,20 @@
                     </svg>
                 </header>
 
-                {/* ── Session Strip (only in connect/add-league view; picker shows LAST inline) ── */}
-                {resumeLeague && ((!hubSyncing && !hasLeagues) || showConnect) && (
-                    <div className="session-strip">
-                        <span className="session-strip-label">Last Session:</span>
-                        <span className="session-strip-league">{lastLeagueName}</span>
-                        <button className="session-strip-btn primary" onClick={() => handleSelectLeague(resumeLeague)}>Resume</button>
-                    </div>
-                )}
+                {/* Session/resume affordance now lives inside the Add-a-league modal;
+                    the picker surfaces the last league inline via its LAST badge. */}
 
-                {/* ── Franchise picker — default landing for a connected user ── */}
-                {hasLeagues && !showConnect && (
+                {/* ── Franchise picker — the default landing for every visitor.
+                     Shows once we're past the initial no-cache sync, and stays
+                     mounted behind the Add-a-league modal so connecting never
+                     blanks it out. ── */}
+                {(hasLeagues || !hubSyncing) && (
                     <FranchisePicker leagues={allLeagues} onSelect={handleSelectLeague} />
                 )}
 
                 {/* ── Hub skeleton — holds the surface while the first league streams in
                      so the old connect grid never flashes underneath the picker ── */}
-                {hubSyncing && !hasLeagues && !showConnect && (
+                {hubSyncing && !hasLeagues && (
                     <div className="hub-franchise-picker" style={{ padding: '4px 12px 14px' }}>
                         <style>{'@keyframes wr-hub-shimmer{0%,100%{opacity:.3}50%{opacity:.75}}'}</style>
                         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.7, margin: '2px 0 10px' }}>Syncing franchises…</div>
@@ -1320,13 +1317,27 @@
                     </div>
                 )}
 
-                {/* ── Connect / add-league view (platform cards) ── */}
-                {((!hubSyncing && !hasLeagues) || showConnect) && (<>
-                {showConnect && hasLeagues && (
-                    <button onClick={() => setShowConnect(false)} className="hub-cta ghost" style={{ margin: '0 12px 10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>‹ Back to franchises</button>
-                )}
-                {/* ── 4 Platform Cards ── */}
-                <div className="hub-platform-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', padding: '0 12px' }}>
+                {/* ── Add-a-league / connect — pops up over the franchise picker.
+                     This is the only entry to the platform connectors now; the
+                     picker itself is always the default surface underneath. ── */}
+                {showConnect && (
+                <div onClick={() => setShowConnect(false)}
+                    style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(4,4,7,0.74)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: 'calc(52px + var(--wr-dev-banner-height, 0px)) 12px 40px' }}>
+                <div onClick={e => e.stopPropagation()}
+                    style={{ width: '100%', maxWidth: '760px', background: 'var(--page-bg, #08080B)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '16px', padding: '16px', boxShadow: '0 24px 70px rgba(0,0,0,0.6)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                        <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1.05rem', letterSpacing: '.08em', color: 'var(--gold)' }}>ADD A LEAGUE</span>
+                        <button onClick={() => setShowConnect(false)} className="hub-cta ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', width: 'auto', flex: '0 0 auto' }}>✕ Close</button>
+                    </div>
+                    {resumeLeague && (
+                        <div className="session-strip" style={{ marginBottom: '12px' }}>
+                            <span className="session-strip-label">Last Session:</span>
+                            <span className="session-strip-league">{lastLeagueName}</span>
+                            <button className="session-strip-btn primary" onClick={() => handleSelectLeague(resumeLeague)}>Resume</button>
+                        </div>
+                    )}
+                {/* ── Platform Cards ── */}
+                <div className="hub-platform-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
 
                     {/* ──── SLEEPER ──── */}
                     <div className="product-card" style={{ borderColor: 'rgba(26,153,170,0.3)', background: 'linear-gradient(135deg, rgba(26,153,170,0.04), transparent)' }}>
@@ -1436,7 +1447,9 @@
                     {/* ──── YAHOO ──── HIDDEN — infrastructure preserved, UI removed */}
 
                 </div>
-                </>)}
+                </div>
+                </div>
+                )}
 
                 {showSettings && (
                     <SettingsModal

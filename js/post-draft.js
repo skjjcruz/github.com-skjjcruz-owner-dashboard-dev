@@ -214,6 +214,9 @@
     if (recap.variant === 'rookie' && recap.leagueId) {
       const seed = (recap.postDraftMoves && recap.postDraftMoves.waiverTargets) || [];
       const league = (typeof window.App.isDynastyLeague === 'function' && window.currentLeague) ? window.currentLeague : null;
+      // Live path fires at actual completion, so computeWindowEnd's waiver-cadence
+      // default (≤7d) is inherently inside the 21-day completion cap the late-flip
+      // path enforces (free-agency.js observeUdfaCrazeFlip, owner ask 2026-07-12).
       try { openCraze(recap.leagueId, { seed, season: recap.season, league }); } catch (e) {}
     }
   }

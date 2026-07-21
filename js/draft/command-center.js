@@ -565,9 +565,12 @@
                     // Honor forced mode (e.g., live-sync from the Follow Live Draft tab)
                     mode: forcedMode || 'solo',
                 });
+                // Only REAL drafts feed the model (owner ask 2026-07-12): the
+                // latest live-sync recap seeds tuning; mock recaps never do.
                 const learning = !forcedMode && stateFns.buildRecapLearningDefaults
                     ? stateFns.buildRecapLearningDefaults(initial.leagueId, {
-                        variant: initial.variant,
+                        modes: ['live-sync'],
+                        limit: 1,
                         baseTuning: initial.draftTuning,
                     })
                     : null;
@@ -655,6 +658,7 @@
             }, 500);
             return () => clearTimeout(saveTimerRef.current);
         }, [state]);
+
 
         // Broadcast live-draft picks so a player taken in the live draft shows
         // struck-through on the Draft tab's User Board too (the live board already
@@ -1408,9 +1412,11 @@
                 : null;
             const activeState = overridePatch ? { ...state, ...overridePatch } : state;
             const leagueId = currentLeague?.league_id || currentLeague?.id || '';
-            const recapLearning = stateFns.buildRecapLearningDefaults
+            // Real-draft learning only, and only while the studio toggle is ON.
+            const recapLearning = !activeState.realLearningOff && stateFns.buildRecapLearningDefaults
                 ? stateFns.buildRecapLearningDefaults(leagueId, {
-                    variant: activeState.variant,
+                    modes: ['live-sync'],
+                    limit: 1,
                     baseTuning: activeState.draftTuning,
                 })
                 : null;
@@ -1855,6 +1861,29 @@
         // ── Render ───────────────────────────────────────────────────
         // Mobile redirect
         if (viewport === 'mobile') {
+            // Phone gets the REAL mock setup (owner ask — mobile must be able to
+            // mock draft): SetupScreen's CSS already stacks 1-col at small widths,
+            // so pool type / rounds / league size / slot / order / CPU speed and
+            // the strategy studio all work on a phone. Live-sync keeps the feed —
+            // its setup phase is transient (the auto-start effect opens the room).
+            if (state.phase === 'setup' && forcedMode !== 'live-sync') {
+                return (
+                    <SetupScreen
+                        state={state}
+                        dispatch={dispatch}
+                        draftMeta={draftMeta}
+                        playersData={playersData}
+                        currentLeague={currentLeague}
+                        myRoster={myRoster}
+                        csvReady={csvReady}
+                        showResume={showResume}
+                        onStartDraft={onStartDraft}
+                        onResumeYes={onResumeYes}
+                        onResumeNo={onResumeNo}
+                        forcedMode={forcedMode}
+                    />
+                );
+            }
             return <MobileFeed state={state} dispatch={dispatch} onStart={onStartDraft} isUserTurn={isUserTurn} currentSlot={currentSlot} onPropose={onPropose} />;
         }
 
@@ -1899,7 +1928,7 @@
 
     // ── Setup screen ─────────────────────────────────────────────────
     function SetupScreen({ state, dispatch, draftMeta, playersData, currentLeague, myRoster, csvReady, showResume, onStartDraft, onResumeYes, onResumeNo, forcedMode }) {
-        const [showOther, setShowOther] = React.useState(false);
+        const [showPoolOther, setShowPoolOther] = React.useState(false); // custom pool + advanced mock options hide behind "Other" (league settings are the default)
         const selStyle = {
             width: '100%',
             padding: '8px 10px',
@@ -2005,6 +2034,15 @@
             && (!upcoming.type || String(state.draftType) === String(upcoming.type))
             && (!upcoming.variant || String(state.variant) === String(upcoming.variant))
             && (!draftMeta.mySlot || Number(state.userSlot) === Number(draftMeta.mySlot));
+        // League settings are the DEFAULT mock source (owner ask): sync the setup
+        // to the upcoming draft once, as soon as it resolves. Ref-guarded so a
+        // user who switches to "Other" is never re-synced.
+        const appliedUpcomingRef = React.useRef(false);
+        React.useEffect(() => {
+            if (appliedUpcomingRef.current || !upcoming) return;
+            appliedUpcomingRef.current = true;
+            if (!matchesUpcoming) applyUpcomingDraft();
+        });
         const upcomingStart = upcoming?.startTime
             ? new Date(upcoming.startTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
             : (upcoming?.status === 'drafting' ? 'in progress' : 'not scheduled');
@@ -2097,36 +2135,31 @@
                         {state.mode === 'ghost' && <GhostDraftPicker state={state} update={update} leagueId={state.leagueId} />}
 
                         <div className="draft-setup-grid draft-setup-grid-pro">
-                        <section className={'draft-setup-panel draft-setup-league-card' + (matchesUpcoming ? ' is-synced' : '')}>
-                            <div className="draft-league-primary">
-                                <div className="draft-league-copy">
-                                    <span>League Upcoming Draft</span>
-                                    <strong>{upcoming ? `${upcoming.rounds || '?'} rounds x ${upcoming.teams || '?'} teams` : 'No scheduled draft detected'}</strong>
-                                    <em>{upcoming ? `${upcoming.type || 'snake'} - ${upcomingStatus} - ${upcomingStart}` : 'Custom mock settings are available below.'}</em>
-                                </div>
-                                <div className="draft-league-actions">
-                                    <button type="button" onClick={applyUpcomingDraft} disabled={!upcoming}>
-                                        {matchesUpcoming ? 'USING LEAGUE SETTINGS' : 'USE LEAGUE SETTINGS'}
-                                    </button>
-                                    <button type="button" className="is-primary" onClick={startUpcomingDraft} disabled={!upcoming || (state.variant === 'rookie' && !csvReady)}>
-                                        MOCK UPCOMING DRAFT
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="draft-league-metrics">
-                                <div><span>Rounds</span><strong>{upcoming?.rounds || state.rounds || '--'}</strong><em>1-100 supported</em></div>
-                                <div><span>Teams</span><strong>{upcoming?.teams || state.leagueSize || '--'}</strong><em>league size</em></div>
-                                <div><span>Your slot</span><strong>{draftMeta.mySlot || state.userSlot || '--'}</strong><em>{slotOwner}</em></div>
-                                <div><span>Format</span><strong>{upcoming?.type || state.draftType}</strong><em>{variantLabels[state.variant] || state.variant.replace('_', ' ')}</em></div>
-                            </div>
-                        </section>
+                        {/* The old "League Upcoming Draft" hero card was removed (owner
+                            ask) — league settings are now the DEFAULT Draft Source inside
+                            Draft Setup below, auto-applied when the upcoming draft resolves. */}
 
                     <section className="draft-setup-panel draft-setup-config-card">
                         <div className="draft-hq-panel-head">
                             <span>Draft Setup</span>
                             <em>{setupSummary}</em>
                         </div>
-                        <div className="draft-setup-label">Pool Type</div>
+                        {/* Draft Source (owner ask): league settings are the default;
+                            the custom pool choices hide behind "Other". */}
+                        <div className="draft-setup-label">Draft Source</div>
+                        <div className="draft-setup-choice">
+                            <button type="button" className={!showPoolOther && matchesUpcoming ? 'is-active' : ''} disabled={!upcoming}
+                                onClick={() => { setShowPoolOther(false); applyUpcomingDraft(); }}>
+                                League settings
+                                <span>{upcoming ? `${upcoming.rounds || '?'} rds x ${upcoming.teams || '?'} - ${upcoming.type || 'snake'} - ${variantLabels[upcoming.variant] || upcoming.variant || 'rookie pool'}` : 'no scheduled draft found'}</span>
+                            </button>
+                            <button type="button" className={showPoolOther || !upcoming || !matchesUpcoming ? 'is-active' : ''} onClick={() => setShowPoolOther(v => !v)}>
+                                Other
+                                <span>custom pool + structure</span>
+                            </button>
+                        </div>
+                        {(showPoolOther || !upcoming) && (<>
+                        <div className="draft-setup-label" style={{ marginTop: 10 }}>Pool Type</div>
                         <div className="draft-setup-choice draft-setup-choice-pro">
                             {poolChoices.map(choice => (
                                 <button key={choice.id} type="button" className={state.variant === choice.id ? 'is-active' : ''} onClick={() => update({ variant: choice.id })}>
@@ -2135,6 +2168,14 @@
                                 </button>
                             ))}
                         </div>
+                        {/* Advanced mock options ride under "Other" too (owner ask):
+                            manual room, scenarios, ghost replay, templates. */}
+                        <div className="draft-setup-label" style={{ marginTop: 10 }}>Advanced Mock Options</div>
+                        <div className="draft-setup-other">
+                            <ModeSelector state={state} update={update} />
+                            <TemplateLoader state={state} dispatch={dispatch} />
+                        </div>
+                        </>)}
 
                         <div className="draft-setup-field-grid">
                             {structureFields.map(field => (
@@ -2181,30 +2222,16 @@
                             </div>
                         )}
 
-                        <div className="draft-setup-secondary">
-                            <button type="button" onClick={() => setShowOther(v => !v)}>
-                                <span>{showOther ? 'Hide advanced mock options' : 'Advanced mock options'}</span>
-                                <span>{state.mode === 'manual' ? 'Manual room active' : state.mode === 'scenario' ? 'Scenario active' : state.mode === 'ghost' ? 'Ghost active' : 'Manual - Scenarios - Ghost replay - Templates'}</span>
-                            </button>
-                            {showOther && (
-                                <div className="draft-setup-other">
-                                    <ModeSelector state={state} update={update} />
-                                    <TemplateLoader state={state} dispatch={dispatch} />
-                                </div>
-                            )}
-                        </div>
+                        {/* Advanced mock options moved under the Draft Source "Other"
+                            reveal above — no separate toggle row anymore. */}
                     </section>
 
                     <section className="draft-setup-panel is-start draft-setup-launch-card">
+                        {/* Pick Path Preview removed on all form factors (owner ask) —
+                            this panel is now just the launch button + room summary. */}
                         <div className="draft-hq-panel-head">
-                            <span>Pick Path Preview</span>
+                            <span>Launch</span>
                             <em>{paceLabel}</em>
-                        </div>
-                        <div className="draft-setup-kpis">
-                            <div><span>Your slot</span><strong>{state.userSlot} of {state.leagueSize}</strong><em>{slotOwner}</em></div>
-                            <div><span>Total picks</span><strong>{totalPicks}</strong><em>{state.rounds} rounds</em></div>
-                            <div><span>Pool</span><strong>{poolCount || '--'}</strong><em>{state.variant === 'rookie' ? 'prospects' : 'players'}</em></div>
-                            <div><span>Format</span><strong>{state.draftType}</strong><em>{variantLabels[state.variant] || state.variant.replace('_', ' ')}</em></div>
                         </div>
                         <button
                             type="button"
@@ -2219,79 +2246,42 @@
 	                        >
 	                            {state.variant === 'rookie' && !csvReady ? 'LOADING PROSPECTS...' : 'START MOCK DRAFT'}
 	                        </button>
-                        <div className="draft-setup-label" style={{ marginBottom: 6 }}>Your first picks</div>
-                        <div className="draft-setup-timeline">
-                            {pickPreviewRows.map((p, i) => (
-	                                <div key={p.round + '-' + p.slot + '-' + i}>
-	                                    <strong>{p.round}.{String(pickInRoundOf(p, state.leagueSize) || p.slot).padStart(2, '0')}</strong>
-	                                    <span>Overall {p.overall} - {p.ownerName || slotOwner}</span>
-	                                    <em>{fmtDhqValue(p.value)}{p.traded ? ' - acquired' : ''}</em>
-	                                </div>
-	                            ))}
-                        </div>
                         <div className="draft-setup-note" style={{ marginTop: 10 }}>
                             {setupSummary}. Owner DNA, needs, draft history, and your saved Big Board order will drive the room.
                         </div>
                     </section>
                         </div>
+                        {/* Learning archive merged into the studio (owner ask): one
+                            card, with a real-draft-learning toggle instead of the old
+                            "recaps feeding mock defaults" panel. */}
                         {state.mode !== 'manual' && (
                             <section className="draft-setup-panel draft-setup-strategy-card">
                                 <DraftStrategyStudio state={state} update={update} />
+                                <RealDraftLearning state={state} update={update} />
                             </section>
                         )}
-                        <DraftLearningPanel
-                            state={state}
-                            update={update}
-                        />
                     </>
                 )}
             </div>
         );
     }
 
-    function DraftLearningPanel({ state, update }) {
+    // ── Real-draft learning (merged into the Strategy Studio card) ────
+    // Replaces the Draft Learning Archive panel: mock recaps NEVER feed the
+    // model anymore — one toggle applies the LATEST REAL draft's learnings
+    // (live-sync recap) to the studio tuning; off returns manual control.
+    function RealDraftLearning({ state, update }) {
         const helpers = window.DraftCC?.state || {};
-        const [refresh, setRefresh] = React.useState(0);
-        if (!helpers.listDraftRecaps || !helpers.buildRecapLearningDefaults) return null;
-        const recaps = helpers.listDraftRecaps(state.leagueId).slice(0, 5);
+        if (!helpers.buildRecapLearningDefaults || !helpers.listDraftRecaps) return null;
         const learning = helpers.buildRecapLearningDefaults(state.leagueId, {
-            variant: state.variant,
+            modes: ['live-sync'],
+            limit: 1,
             baseTuning: state.draftTuning,
         });
-        if (!recaps.length && !learning?.sampleSize) return null;
-
-        const fmt = n => Number(n || 0).toLocaleString();
-        const when = ts => {
-            if (!ts) return 'saved recap';
-            try {
-                return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-            } catch (_) {
-                return 'saved recap';
-            }
-        };
-        const applyLearning = () => {
-            if (!learning?.sampleSize || !learning.suggestedTuning) return;
-            update({ draftTuning: learning.suggestedTuning, recapLearning: learning });
-        };
-        const exportRecap = (recap) => {
-            if (!recap) return;
-            const text = helpers.formatDraftShareReport
-                ? helpers.formatDraftShareReport(recap)
-                : helpers.formatDraftRecapText?.(recap);
-            if (!text) return;
-            const blob = new Blob([text], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'war-room-draft-recap-' + (recap.savedAt || Date.now()) + '.md';
-            a.click();
-            URL.revokeObjectURL(url);
-        };
-        const deleteRecap = (id) => {
-            if (!id || !helpers.deleteDraftRecap) return;
-            helpers.deleteDraftRecap(state.leagueId, id);
-            setRefresh(v => v + 1);
-        };
+        const hasReal = !!learning?.sampleSize;
+        const on = hasReal && !state.realLearningOff;
+        const latestReal = hasReal ? (helpers.listDraftRecaps(state.leagueId) || []).find(r => r.mode === 'live-sync') : null;
+        const when = ts => { try { return ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''; } catch (_) { return ''; } };
         const tuningLabels = [
             ['ownerDna', 'Owner DNA'],
             ['classValue', 'Class Value'],
@@ -2299,58 +2289,41 @@
             ['tradeActivity', 'Trades'],
             ['variance', 'Variance'],
         ];
-
+        const toggle = () => {
+            if (!hasReal) return;
+            if (on) {
+                update({ realLearningOff: true, recapLearning: null });
+            } else {
+                update({ realLearningOff: false, recapLearning: learning, draftTuning: learning.suggestedTuning });
+            }
+        };
         return (
-            <section className="draft-setup-panel" style={{ marginTop: 14, marginBottom: 14 }}>
-                <div className="draft-hq-panel-head">
-                    <span>Draft Learning Archive</span>
-                    <em>{learning?.sampleSize || 0} recap{learning?.sampleSize === 1 ? '' : 's'} feeding mock defaults</em>
-                </div>
-                {learning?.sampleSize > 0 && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(260px,0.8fr)', gap: 12, alignItems: 'start', marginBottom: 12 }}>
-                        <div>
-                            <div style={{ color: 'var(--white)', fontWeight: 800, fontSize: '0.78rem', marginBottom: 4 }}>
-                                Recap learning is active for {state.variant.replace('_', ' ')} mocks.
-                            </div>
-                        </div>
-                        <div style={{ display: 'grid', gap: 6 }}>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                                {tuningLabels.map(([key, label]) => (
-                                    <span key={key} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 4, padding: '3px 5px', background: 'var(--ov-2, rgba(255,255,255,0.025))' }}>
-                                        {label} {learning.suggestedTuning?.[key] ?? '--'}
-                                    </span>
-                                ))}
-                            </div>
-                            <button type="button" onClick={applyLearning} style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', fontFamily: FONT_UI, fontWeight: 800, cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)' }}>
-                                APPLY LEARNED DEFAULTS
-                            </button>
-                        </div>
+            <div style={{ marginTop: 12 }}>
+                <div className="draft-setup-label">Draft Learning</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 12px', marginTop: 6, border: '1px solid ' + (on ? 'var(--acc-line2, rgba(212,175,55,0.32))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: on ? 'var(--acc-fill1, rgba(212,175,55,0.05))' : 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: 8 }}>
+                    <button type="button" onClick={toggle} disabled={!hasReal} aria-pressed={on}
+                        style={{ minHeight: 44, padding: '8px 14px', borderRadius: 999, border: '1px solid ' + (on ? 'var(--acc-line4, rgba(212,175,55,0.55))' : 'var(--ov-6, rgba(255,255,255,0.14))'), background: on ? 'var(--acc-fill2, rgba(212,175,55,0.14))' : 'transparent', color: on ? 'var(--gold)' : 'var(--silver)', fontFamily: FONT_UI, fontWeight: 900, fontSize: 'var(--text-micro, 0.6875rem)', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: hasReal ? 'pointer' : 'not-allowed', opacity: hasReal ? 1 : 0.55 }}>
+                        {on ? 'Real-draft learning: ON' : 'Real-draft learning: OFF'}
+                    </button>
+                    <div style={{ flex: '1 1 220px', minWidth: 0, color: 'var(--silver)', fontSize: 'var(--text-micro, 0.6875rem)', lineHeight: 1.45 }}>
+                        {hasReal
+                            ? <>Latest real draft{latestReal ? ' (' + (ccIsPro() && latestReal.grade?.letter ? 'grade ' + latestReal.grade.letter + ' - ' : '') + when(latestReal.savedAt) + ')' : ''} {on ? 'is adjusting' : 'can adjust'} the model. Mock results never feed it.</>
+                            : 'No real draft on record yet - finish a live draft and its learnings can drive the model.'}
                     </div>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
-                    {recaps.map(recap => (
-                        <div key={(recap.id || recap.savedAt) + '-' + refresh} style={{ padding: '10px 11px', borderRadius: 8, border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.025))' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                                <strong style={{ color: 'var(--gold)', fontFamily: FONT_DISPL, fontSize: '1.08rem', lineHeight: 1 }}>{ccIsPro() ? (recap.grade?.letter || '?') : '🔒'}</strong>
-                                <div style={{ minWidth: 0 }}>
-                                    <div style={{ color: 'var(--white)', fontWeight: 800, fontSize: '0.72rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{recap.variant || 'draft'} recap</div>
-                                    <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)' }}>{when(recap.savedAt)}</div>
-                                </div>
-                            </div>
-                            <div style={{ color: 'var(--silver)', fontSize: 'var(--text-micro, 0.6875rem)', lineHeight: 1.45, minHeight: 36 }}>
-                                #{recap.rank || '-'} league rank - {fmt(recap.totalDHQ)} DHQ - {recap.actionPlan?.length || 0} actions
-                            </div>
-                            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                                {/* share text embeds the grade + value calls → Pro */}
-                                {ccIsPro() && <button type="button" onClick={() => exportRecap(recap)} style={{ flex: 1, padding: '5px 7px', borderRadius: 5, border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontFamily: FONT_UI, fontWeight: 800, cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)' }}>EXPORT</button>}
-                                <button type="button" onClick={() => deleteRecap(recap.id)} style={{ padding: '5px 7px', borderRadius: 5, border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'transparent', color: 'var(--silver)', fontFamily: FONT_UI, fontWeight: 700, cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)' }}>DELETE</button>
-                            </div>
+                    {hasReal && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, width: '100%' }}>
+                            {tuningLabels.map(([key, label]) => (
+                                <span key={key} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: on ? 'var(--gold)' : 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 4, padding: '3px 6px', background: 'var(--ov-2, rgba(255,255,255,0.025))', opacity: on ? 1 : 0.6 }}>
+                                    {label} {learning.suggestedTuning?.[key] ?? '--'}
+                                </span>
+                            ))}
                         </div>
-                    ))}
+                    )}
                 </div>
-            </section>
+            </div>
         );
     }
+
 
     function AnalystMockPanel({ state, dispatch, draftMeta, playersData, currentLeague, myRoster }) {
         const engine = window.DraftCC?.analystMock;
@@ -4095,7 +4068,12 @@
             (state.draftContext?.leagueFormat?.activeRosterSlots || state.draftContext?.leagueFormat?.rosterSlots || []).forEach(addPos);
             if (isRedraftBoard && !set.has('DEF')) set.add('DEF');
             const order = { QB: 1, RB: 2, WR: 3, TE: 4, K: 5, DEF: 6, DL: 7, LB: 8, DB: 9 };
-            return Array.from(set).sort((a, b) => (order[a] || 99) - (order[b] || 99));
+            const base = Array.from(set).sort((a, b) => (order[a] || 99) - (order[b] || 99));
+            // League-derived flex groups (FLEX/SFLEX/IDP FLEX…) as extra chips
+            // when their positions exist on this board (owner ask 2026-07-12).
+            const groups = (window.App?.getLeagueFlexGroups?.() || [])
+                .filter(g => (window.App?.FLEX_GROUP_POSITIONS?.[g] || []).some(pos => set.has(pos)));
+            return [...base, ...groups];
         }, [state.pool, state.draftContext?.leagueFormat, isRedraftBoard]);
         const lanePool = React.useMemo(() => {
             const pool = state.pool || [];
@@ -4123,7 +4101,8 @@
             const q = search.trim().toLowerCase();
             return lanePool.filter(p => {
                 const rowPos = normPos(p.pos || p.position) || p.pos || p.position || '';
-                if (posFilter && rowPos !== posFilter) return false;
+                // Group-aware: posFilter may be a flex-group key (FLEX/SFLEX/…)
+                if (posFilter && !(window.App?.posMatchesFilter ? window.App.posMatchesFilter(rowPos, posFilter) : rowPos === posFilter)) return false;
                 if (!q) return true;
                 const hay = [p.name, p.pos, mockPlayerTeam(p), mockPlayerSchool(p)].join(' ').toLowerCase();
                 return hay.includes(q);
@@ -4573,6 +4552,391 @@
     }
 
     // ── Drafting / complete grid ─────────────────────────────────────
+    // ── DraftRecapReport — the post-draft report card ────────────────────
+    // The full recap (grade hero, strategic readout, positional breakdown,
+    // your draft class, around the league, team standings) rendered from a
+    // RECAP OBJECT alone — works as the live post-draft modal body (the grid
+    // passes the freshly built recap + live handlers) AND inline on the Draft
+    // War Room from an archived recap (listDraftRecaps), no live state needed.
+    // Exposed as window.DraftCC.DraftRecapReport.
+    function DraftRecapReport({ recap, grade: gradeProp, myPicks: myPicksProp, userRosterId, inline, onPinTeam, onSaveRecap, onPrimary, primaryLabel }) {
+        const stateHelpers = window.DraftCC?.state || {};
+        const grade = gradeProp || recap?.grade || { letter: '', totalDHQ: Number(recap?.totalDHQ) || 0 };
+        const myPicks = myPicksProp || recap?.picks || [];
+        const PAD = inline ? '16px 14px' : '22px 32px';
+                    // Build per-position summary from myPicks
+                    const posSummary = {};
+                    (myPicks || []).forEach(pk => {
+                        const normalized = stateHelpers.normalizePickRecord ? stateHelpers.normalizePickRecord(pk) : pk;
+                        const pos = (normalized?.pos || pk.player?.position || pk.pos || '').toUpperCase();
+                        if (!pos) return;
+                        if (!posSummary[pos]) posSummary[pos] = { count: 0, dhq: 0, players: [] };
+                        posSummary[pos].count += 1;
+                        posSummary[pos].dhq += (normalized?.dhq || pk.player?.dhq || pk.dhq || 0);
+                        posSummary[pos].players.push(normalized?.name || pk.player?.full_name || pk.player?.name || pk.name || pk.pid);
+                    });
+                    const POS_ORDER = ['QB','RB','WR','TE','K','DEF','DL','LB','DB'];
+                    const orderedPositions = POS_ORDER.filter(p => posSummary[p]).concat(Object.keys(posSummary).filter(p => !POS_ORDER.includes(p)));
+
+                    // Free recap keeps the raw haul (DHQ totals, rank, pick list,
+                    // positional counts, trade volume); the A–F grade, efficiency
+                    // read, best/reach/worst calls, storylines, and team grades/
+                    // tiers are Pro. Neutral color for free so the border/hero
+                    // tint doesn't leak the grade.
+                    const recapPro = ccIsPro();
+                    const gradeColor = !recapPro ? 'var(--silver)' : grade.letter.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' : grade.letter.startsWith('B') ? 'var(--k-d4af37, #d4af37)' : grade.letter.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+                    const teamRecaps = recap?.teamRecaps || [];
+                    const leagueStorylines = recap?.leagueStorylines || [];
+                    // Post-draft power/tier per team: existing roster health (assessTeam)
+                    // blended with this draft's haul. Degrades gracefully if assessment
+                    // globals aren't loaded (badge simply omitted).
+                    const teamPower = (() => {
+                        let assessments = [];
+                        try { assessments = (typeof window.assessAllTeamsFromGlobal === 'function' ? window.assessAllTeamsFromGlobal() : []) || []; } catch (_) {}
+                        const byRid = {};
+                        assessments.forEach(a => { if (a && a.rosterId != null) byRid[String(a.rosterId)] = a; });
+                        const maxHaul = Math.max(1, ...teamRecaps.map(t => t.totalDHQ || 0));
+                        const out = {};
+                        teamRecaps.forEach(t => {
+                            const a = byRid[String(t.rosterId)] || {};
+                            const health = Number(a.healthScore) || 0;
+                            const haulPct = Math.round(((t.totalDHQ || 0) / maxHaul) * 100);
+                            out[String(t.rosterId)] = { power: Math.round(health * 0.6 + haulPct * 0.4), tier: a.tier || null, tierColor: a.tierColor || null };
+                        });
+                        return out;
+                    })();
+                    const tradeImpact = recap?.tradeImpact || { count: 0, summary: 'No accepted draft trades on record.' };
+                    const bestPick = recap?.bestPick || null;
+                    const biggestReach = recap?.biggestReach || null;
+                    const worstPick = recap?.worstPick || null;
+                    const bestAlternative = recap?.bestAlternative || null;
+                    const leagueExtremes = recap?.leagueExtremes || {};
+                    const tradeVolume = recap?.tradeVolume || { total: 0, byRound: {} };
+                    // Per-type efficiency (value vs expected pick).
+                    const efficiency = recap?.efficiency ?? null;
+                    const effPct = efficiency != null ? Math.round(efficiency * 100) : null;
+                    const gradeBasis = recap?.gradeBasis || 'vs expected pick value';
+                    const effColor = effPct == null ? 'var(--silver)' : effPct >= 100 ? 'var(--k-2ecc71, #2ecc71)' : effPct >= 85 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+                    const recapPositions = recap?.positionSummary?.length
+                        ? recap.positionSummary
+                        : orderedPositions.map(pos => ({ pos, ...posSummary[pos] }));
+                    const fmtDhq = value => {
+                        const n = Number(value || 0);
+                        return n ? n.toLocaleString() : '—';
+                    };
+                    const openRecapPlayer = pid => {
+                        if (!pid) return;
+                        if (typeof window.openPlayerModal === 'function') {
+                            try { window.openPlayerModal(pid); return; } catch (_) {}
+                        }
+                        if (window.WR?.openPlayerCard) {
+                            try { window.WR.openPlayerCard(pid); } catch (_) {}
+                        }
+                    };
+                    const insightCard = (label, value, detail, color, onClick) => (
+                        <button
+                            type="button"
+                            onClick={onClick}
+                            disabled={!onClick}
+                            style={{
+                                textAlign: 'left',
+                                padding: '12px 14px',
+                                background: 'var(--ov-2, rgba(255,255,255,0.03))',
+                                border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
+                                borderLeft: '3px solid ' + (color || 'var(--acc-line4, rgba(212,175,55,0.55))'),
+                                borderRadius: '8px',
+                                cursor: onClick ? 'pointer' : 'default',
+                                fontFamily: FONT_UI,
+                                minHeight: '92px',
+                            }}
+                        >
+                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.68, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{label}</div>
+                            <div style={{ color: color || 'var(--white)', fontWeight: 800, fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value || '—'}</div>
+                            <div style={{ color: 'var(--silver)', opacity: 0.74, fontSize: 'var(--text-micro, 0.6875rem)', lineHeight: 1.45, marginTop: '4px' }}>{detail || 'No signal yet.'}</div>
+                        </button>
+                    );
+
+                    // League-wide percentile — how our total DHQ ranks
+                    const allDraftTotals = recap?.leagueTotals || {};
+                    const totals = Object.values(allDraftTotals).sort((a, b) => b - a);
+                    const myRank = recap?.rank || (totals.indexOf(grade.totalDHQ) + 1);
+                    const myPct = recap?.percentile ?? (totals.length ? Math.round(((totals.length - myRank) / Math.max(1, totals.length - 1)) * 100) : 0);
+
+        return (
+                            <div style={{
+                                width: '100%', maxWidth: '1080px',
+                                ...(inline ? {} : { maxHeight: '92vh', overflowY: 'auto', overscrollBehavior: 'contain', boxShadow: '0 32px 96px rgba(0,0,0,0.8)' }),
+                                background: 'var(--k-0a0b0d, #0a0b0d)', border: (inline ? '1px' : '2px') + ' solid ' + wrAlpha(gradeColor, '55'),
+                                borderRadius: '16px',
+                            }}>
+                                {/* Hero */}
+                                <div style={{ padding: inline ? '20px 14px' : '28px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'linear-gradient(135deg, ' + gradeColor + '15, transparent 70%)' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }}>Draft Complete — Recap</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                                        <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                                            <div style={{ fontFamily: FONT_DISPL, fontSize: '5.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1 }}>{recapPro ? (grade.letter || '—') : '🔒'}</div>
+                                            <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>{recapPro ? 'Overall Grade' : 'Grade — Scout Pro'}</div>
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.45 }}>Grade weighs board value, roster fit, and value vs your expected slots.</div>
+                                            <div style={{ fontSize: '0.96rem', color: 'var(--white)', marginTop: '8px', lineHeight: 1.5 }}>
+                                                Total DHQ: <strong style={{ color: gradeColor }}>{grade.totalDHQ.toLocaleString()}</strong> across {myPicks.length} pick{myPicks.length === 1 ? '' : 's'}
+                                            </div>
+                                            {totals.length >= 3 && (
+                                                <div style={{ fontSize: '0.82rem', color: 'var(--silver)', marginTop: '4px' }}>
+                                                    You finished <strong style={{ color: myRank <= 3 ? 'var(--k-2ecc71, #2ecc71)' : myRank <= totals.length / 2 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' }}>#{myRank}</strong> of {totals.length} teams by draft DHQ ({myPct}th percentile)
+                                                </div>
+                                            )}
+                                        </div>
+                                        {recapPro && effPct != null && (
+                                            <div style={{ textAlign: 'center', flexShrink: 0, padding: '12px 18px', borderRadius: '12px', background: wrAlpha(effColor, '12'), border: '1px solid ' + wrAlpha(effColor, '40'), minWidth: '128px' }}>
+                                                <div style={{ fontFamily: FONT_DISPL, fontSize: '2.6rem', fontWeight: 700, color: effColor, lineHeight: 1 }}>{effPct}%</div>
+                                                <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '4px' }}>{gradeBasis === 'vs $ spent' ? <>of expected value<br/>for your spend</> : <>of expected DHQ<br/>for your slots</>}</div>
+                                                <div style={{ fontSize: '0.6rem', color: effColor, opacity: 0.9, marginTop: '4px', fontWeight: 700 }}>{effPct >= 100 ? 'NAILED YOUR SLOTS' : effPct >= 85 ? 'SOLID FOR YOUR SLOTS' : 'LEFT VALUE ON BOARD'}</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* P4 strategic readout */}
+                                <div style={{ padding: PAD, borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Strategic Readout</div>
+                                    {/* best/reach/worst/alternative calls are grade reads → Pro */}
+                                    {!recapPro ? (
+                                        window.WrGatedMoreRow
+                                            ? React.createElement(window.WrGatedMoreRow, { title: 'Best pick, biggest reach, worst pick', sub: 'The value calls behind your grade are Scout Pro.', feature: 'draft_recap_reads' })
+                                            : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Strategic Readout', 'draft_recap_reads', 'Post-draft value calls are Scout Pro.') : '' }} />
+                                    ) : (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
+                                        {insightCard(
+                                            'Best Pick',
+                                            bestPick ? `${bestPick.name} #${bestPick.overall}` : 'No pick',
+                                            bestPick ? `${bestPick.pos || '?'} · ${fmtDhq(bestPick.dhq)} DHQ${bestPick.valueDelta > 0 ? ' · +' + bestPick.valueDelta + ' value slots' : ''}` : 'Make a pick to generate a value read.',
+                                            'var(--k-2ecc71, #2ecc71)',
+                                            bestPick?.pid ? () => openRecapPlayer(bestPick.pid) : null
+                                        )}
+                                        {insightCard(
+                                            'Biggest Reach',
+                                            biggestReach ? `${biggestReach.name} #${biggestReach.overall}` : 'None flagged',
+                                            biggestReach ? `${Math.abs(biggestReach.valueDelta || 0)} slots ahead of board. Check if your note justified the bet.` : 'No user pick was far enough off board to flag.',
+                                            biggestReach ? 'var(--k-f0a500, #f0a500)' : 'var(--silver)',
+                                            biggestReach?.pid ? () => openRecapPlayer(biggestReach.pid) : null
+                                        )}
+                                        {insightCard(
+                                            'Worst Pick',
+                                            worstPick ? `${worstPick.name} #${worstPick.overall}` : 'No picks',
+                                            worstPick ? `${worstPick.pos || '?'} · ${fmtDhq(worstPick.dhq)} DHQ${worstPick.efficiency != null ? ' · ' + Math.round(worstPick.efficiency * 100) + '% of expected' : ''}` : 'Make a pick to surface your lowest-value selection.',
+                                            worstPick ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)',
+                                            worstPick?.pid ? () => openRecapPlayer(worstPick.pid) : null
+                                        )}
+                                        {insightCard(
+                                            'Best Alternative',
+                                            bestAlternative?.alternative ? bestAlternative.alternative.name : 'No better DHQ miss',
+                                            bestAlternative?.message || 'Your selections did not leave a higher-DHQ player behind at the same slot.',
+                                            bestAlternative?.alternative ? 'var(--k-3498db, #3498db)' : 'var(--silver)',
+                                            bestAlternative?.alternative?.pid ? () => openRecapPlayer(bestAlternative.alternative.pid) : null
+                                        )}
+                                        {insightCard(
+                                            'Trade Impact',
+                                            tradeImpact.count ? `${tradeImpact.netDHQ >= 0 ? '+' : ''}${fmtDhq(tradeImpact.netDHQ)} DHQ` : 'No trades',
+                                            tradeImpact.summary,
+                                            tradeImpact.netDHQ >= 0 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-e74c3c, #e74c3c)',
+                                            null
+                                        )}
+                                    </div>
+                                    )}
+                                </div>
+
+                                {/* Per-position breakdown */}
+                                <div style={{ padding: PAD, borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Positional Breakdown</div>
+                                    {recapPositions.length ? (
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+                                            {recapPositions.map(s => {
+                                                const pos = s.pos;
+                                                const posCol = (window.App?.POS_COLORS || {})[pos] || 'var(--silver)';
+                                                return <div key={pos} style={{ padding: '10px 12px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px', borderLeft: '3px solid ' + posCol }}>
+                                                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: posCol, letterSpacing: '0.04em' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</div>
+                                                    <div style={{ fontFamily: FONT_DISPL, fontSize: '1.2rem', fontWeight: 700, color: 'var(--white)', marginTop: '2px' }}>{s.count}</div>
+                                                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7 }}>{s.dhq.toLocaleString()} DHQ</div>
+                                                </div>;
+                                            })}
+                                        </div>
+                                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No picks on record.</div>}
+                                </div>
+
+                                {/* Pick-by-pick roster list */}
+                                <div style={{ padding: PAD, borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Your Draft Class</div>
+                                    {(myPicks || []).length ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            {myPicks.map((pk, i) => {
+                                                const normalized = stateHelpers.normalizePickRecord ? stateHelpers.normalizePickRecord(pk) : pk;
+                                                const p = pk.player || {};
+                                                const pos = (normalized?.pos || p.position || pk.pos || '').toUpperCase();
+                                                const posCol = (window.App?.POS_COLORS || {})[pos] || 'var(--silver)';
+                                                const dhq = normalized?.dhq || p.dhq || pk.dhq || 0;
+                                                const dhqCol = dhq >= 7000 ? 'var(--k-2ecc71, #2ecc71)' : dhq >= 4000 ? 'var(--k-3498db, #3498db)' : 'var(--silver)';
+                                                return <div
+                                                    key={i}
+                                                    onClick={() => openRecapPlayer(normalized?.pid || pk.pid)}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', borderRadius: '6px', background: 'var(--ov-1, rgba(255,255,255,0.02))', cursor: (normalized?.pid || pk.pid) ? 'pointer' : 'default' }}
+                                                >
+                                                    <span style={{ fontFamily: FONT_DISPL, fontSize: '0.72rem', color: 'var(--gold)', width: '48px' }}>
+                                                        {pk.round && pk.pickInRound ? (pk.round + '.' + String(pk.pickInRound).padStart(2, '0')) : ('#' + (i + 1))}
+                                                    </span>
+                                                    <img src={'https://sleepercdn.com/content/nfl/players/thumb/' + pk.pid + '.jpg'} alt="" onError={e => e.target.style.display = 'none'} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                    <span style={{ flex: 1, fontSize: '0.84rem', color: 'var(--white)', fontWeight: 600 }}>{normalized?.name || p.full_name || p.name || pk.name || pk.pid}</span>
+                                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: posCol, padding: '1px 6px', background: 'rgba(0,0,0,0.4)', borderRadius: '3px' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</span>
+                                                    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: '0.82rem', color: dhqCol, minWidth: '56px', textAlign: 'right' }}>{dhq > 0 ? dhq.toLocaleString() : '—'}</span>
+                                                </div>;
+                                            })}
+                                        </div>
+                                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No picks made.</div>}
+                                </div>
+
+                                {/* Around the league — extremes + draft-day trade volume */}
+                                <div style={{ padding: PAD, borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Around the League</div>
+                                    {/* league best/reach/worst calls → Pro; raw trade volume below stays */}
+                                    {recapPro && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
+                                        {insightCard(
+                                            'League Best Pick',
+                                            leagueExtremes.bestPick ? `${leagueExtremes.bestPick.name} #${leagueExtremes.bestPick.overall}` : '—',
+                                            leagueExtremes.bestPick ? `${leagueExtremes.bestPick.teamName} · ${fmtDhq(leagueExtremes.bestPick.dhq)} DHQ` : 'No picks recorded.',
+                                            'var(--k-2ecc71, #2ecc71)',
+                                            leagueExtremes.bestPick?.pid ? () => openRecapPlayer(leagueExtremes.bestPick.pid) : null
+                                        )}
+                                        {(() => {
+                                            // Only a negative delta is a genuine reach — guards
+                                            // recaps saved before the aggregation-side filter.
+                                            const reach = leagueExtremes.biggestReach && (leagueExtremes.biggestReach.valueDelta || 0) < 0
+                                                ? leagueExtremes.biggestReach
+                                                : null;
+                                            return insightCard(
+                                                'League Biggest Reach',
+                                                reach ? `${reach.name} #${reach.overall}` : '—',
+                                                reach ? `${reach.teamName} · ${Math.abs(reach.valueDelta || 0)} slots ahead of board` : 'None flagged.',
+                                                'var(--k-f0a500, #f0a500)',
+                                                reach?.pid ? () => openRecapPlayer(reach.pid) : null
+                                            );
+                                        })()}
+                                        {insightCard(
+                                            'League Worst Pick',
+                                            leagueExtremes.worstPick ? `${leagueExtremes.worstPick.name} #${leagueExtremes.worstPick.overall}` : '—',
+                                            leagueExtremes.worstPick ? `${leagueExtremes.worstPick.teamName} · ${fmtDhq(leagueExtremes.worstPick.dhq)} DHQ` : 'No picks recorded.',
+                                            'var(--k-e74c3c, #e74c3c)',
+                                            leagueExtremes.worstPick?.pid ? () => openRecapPlayer(leagueExtremes.worstPick.pid) : null
+                                        )}
+                                    </div>
+                                    )}
+                                    <div style={{ marginTop: '14px' }}>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Draft-Day Trades — {tradeVolume.total} total</div>
+                                        {tradeVolume.total > 0 ? (
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                {Object.keys(tradeVolume.byRound).sort((a, b) => Number(a) - Number(b)).map(r => (
+                                                    <span key={r} style={{ padding: '5px 10px', borderRadius: '6px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)' }}>{Number(r) > 0 ? 'R' + r : 'Other'}: <strong style={{ color: 'var(--white)' }}>{tradeVolume.byRound[r]}</strong></span>
+                                                ))}
+                                            </div>
+                                        ) : <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.6 }}>No pick trades during this draft.</div>}
+                                    </div>
+                                </div>
+
+                                {/* League-wide recap — where teams stand after the draft */}
+                                <div style={{ padding: PAD, borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Where Teams Stand After the Draft</div>
+                                    {/* narrative storylines are reads → Pro */}
+                                    {recapPro && leagueStorylines.length > 0 && (
+                                        <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
+                                            {leagueStorylines.slice(0, 4).map((line, i) => (
+                                                <div key={i} style={{ fontSize: '0.76rem', color: 'var(--silver)', lineHeight: 1.45, padding: '7px 10px', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: '6px' }}>{line}</div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {teamRecaps.length ? (
+                                        <div style={{ display: 'grid', gap: '6px' }}>
+                                            {teamRecaps.slice(0, 12).map(team => {
+                                                const isUser = String(team.rosterId) === String(userRosterId);
+                                                const topPlayer = team.topPick || team.picks?.[0];
+                                                const gradeCol = team.grade?.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' : team.grade?.startsWith('B') ? 'var(--gold)' : team.grade?.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+                                                return (
+                                                    <div key={team.rosterId || team.teamName} style={{
+                                                        display: 'grid',
+                                                        gridTemplateColumns: '36px minmax(0,1.35fr) 56px 86px minmax(0,1fr) 84px',
+                                                        gap: '10px',
+                                                        alignItems: 'center',
+                                                        padding: '8px 10px',
+                                                        borderRadius: '7px',
+                                                        border: '1px solid ' + (isUser ? 'var(--acc-line2, rgba(212,175,55,0.28))' : 'var(--ov-4, rgba(255,255,255,0.06))'),
+                                                        background: isUser ? 'var(--acc-fill1, rgba(212,175,55,0.07))' : 'var(--ov-1, rgba(255,255,255,0.022))',
+                                                    }}>
+                                                        <div style={{ color: isUser ? 'var(--gold)' : 'var(--silver)', fontFamily: FONT_MONO, fontSize: '0.72rem', fontWeight: 800 }}>#{team.rank}</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { if (onPinTeam) onPinTeam(team.rosterId); }}
+                                                            style={{ minWidth: 0, padding: 0, border: 'none', background: 'transparent', color: 'var(--white)', textAlign: 'left', cursor: onPinTeam ? 'pointer' : 'default', fontFamily: FONT_UI }}
+                                                            title={onPinTeam ? 'Pin this team in opponent intel' : undefined}
+                                                        >
+                                                            <div style={{ fontWeight: 800, fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                {team.teamName}
+                                                                {/* competitive-tier badge is an assessment read → Pro (Open Q7 ruling) */}
+                                                                {recapPro && teamPower[String(team.rosterId)]?.tier && <span style={{ marginLeft: '6px', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: teamPower[String(team.rosterId)].tierColor || 'var(--silver)' }}>{teamPower[String(team.rosterId)].tier}</span>}
+                                                            </div>
+                                                            <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{team.buildLabel}</div>
+                                                        </button>
+                                                        <div style={{ color: recapPro ? gradeCol : 'var(--silver)', fontFamily: FONT_DISPL, fontSize: '1rem', fontWeight: 900 }}>{recapPro ? team.grade : '🔒'}</div>
+                                                        <div style={{ color: 'var(--silver)', fontSize: '0.7rem', fontFamily: FONT_MONO, textAlign: 'right' }}>{fmtDhq(team.totalDHQ)} DHQ</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => topPlayer?.pid && openRecapPlayer(topPlayer.pid)}
+                                                            disabled={!topPlayer?.pid}
+                                                            style={{ minWidth: 0, padding: 0, border: 'none', background: 'transparent', color: topPlayer?.pid ? 'var(--gold)' : 'var(--silver)', textAlign: 'left', cursor: topPlayer?.pid ? 'pointer' : 'default', fontFamily: FONT_UI, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                        >
+                                                            {topPlayer ? topPlayer.name : 'No top pick'}
+                                                        </button>
+                                                        <div style={{ color: 'var(--silver)', opacity: 0.72, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>
+                                                            {team.steals?.length || 0} steal{team.steals?.length === 1 ? '' : 's'} · {team.reaches?.length || 0} reach{team.reaches?.length === 1 ? '' : 'es'}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No league picks available for recap.</div>}
+                                </div>
+
+                                {/* Actions */}
+                                <div style={{ padding: inline ? '14px 14px 18px' : '18px 32px 24px', display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                    {onSaveRecap && <button onClick={onSaveRecap} style={{ padding: '10px 22px', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>SAVE RECAP</button>}
+                                    {/* share/export text embeds the A–F grade + value calls → Pro
+                                        (clean absence; save-to-archive above stays free) */}
+                                    {recapPro && <button onClick={() => {
+                                        try {
+                                            const text = stateHelpers.formatDraftShareReport
+                                                ? stateHelpers.formatDraftShareReport(recap)
+                                                : stateHelpers.formatDraftRecapText?.(recap);
+                                            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => alert('Share report copied.'));
+                                            else alert('Clipboard unavailable in this browser.');
+                                        } catch (e) { alert('Copy failed: ' + e.message); }
+                                    }} style={{ padding: '10px 22px', background: 'var(--ov-3, rgba(255,255,255,0.035))', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.14))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>COPY REPORT</button>}
+                                    {recapPro && <button onClick={() => {
+                                        try {
+                                            const text = stateHelpers.formatDraftShareReport
+                                                ? stateHelpers.formatDraftShareReport(recap)
+                                                : stateHelpers.formatDraftRecapText
+                                                    ? stateHelpers.formatDraftRecapText(recap)
+                                                    : 'Draft Recap - ' + grade.letter;
+                                            const blob = new Blob([text], { type: 'text/markdown' });
+                                            const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'draft-recap-' + Date.now() + '.md'; a.click(); URL.revokeObjectURL(url);
+                                        } catch (e) { alert('Export failed: ' + e.message); }
+                                    }} style={{ padding: '10px 22px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.15))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>EXPORT REPORT</button>}
+                                    {onPrimary && <button onClick={onPrimary} style={{ padding: '10px 22px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>{primaryLabel || 'DONE'}</button>}
+                                </div>
+                            </div>
+        );
+    }
+
+
     function CommandCenterGrid({ state, dispatch, isUserTurn, currentSlot, onExit, viewport, onPropose, forcedMode, recapDismissed, onShowRecap, nextUpDraft, onOpenNextDraft }) {
         const L = DRAFT_CC_LAYOUT;
         // Filter by rosterId so post-trade ownership is respected. Memoized: gradeDraft
@@ -4641,6 +5005,27 @@
             textTransform: 'capitalize',
         });
 
+        // Room Feed ⇄ Ask Alex seg for the stream cell (owner ask 2026-07-13:
+        // phone crossover) — speedBtn's pill look at a compact height.
+        const streamTabBtn = on => ({
+            flex: 1,
+            padding: '4px 10px',
+            minHeight: '30px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 'var(--text-micro, 0.6875rem)',
+            fontFamily: FONT_UI,
+            fontWeight: 700,
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+            background: on ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
+            color: on ? 'var(--gold)' : 'var(--silver)',
+            border: '1px solid ' + (on ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+            borderRadius: 'var(--card-radius-sm)',
+            cursor: 'pointer',
+        });
+
         const liveTradeWindow = React.useMemo(() => {
             if (!ccIsPro()) return null; // sell-the-pick windows are likelihood reads → Pro
             if (state.mode !== 'live-sync' || state.phase !== 'drafting') return null;
@@ -4683,6 +5068,10 @@
         // Live league-wide A–F draft grades (overlay, toggled from the header).
         const [showLeagueGrades, setShowLeagueGrades] = React.useState(false);
         const LeagueGradesPanel = window.DraftCC.LeagueGradesPanel;
+        // Stream cell toggle (owner ask 2026-07-13: phone crossover): 'feed' =
+        // the phone Room Feed (default — Alex's takes are IN it), 'alex' = the
+        // classic Alex stream panel with the ask-Alex input.
+        const [streamTab, setStreamTab] = React.useState('feed');
         const learningSaveKeyRef = React.useRef('');
         React.useEffect(() => {
             const helpers = window.DraftCC?.state || {};
@@ -4799,25 +5188,13 @@
         const stageSummaryCards = baseStageSummaryCards;
 
         // Width-aware cockpit sizing. The global 'desktop' bucket only triggers at
-        // 1440, so most laptops (1280-1439) were stuck in the 2-col collapse. Track the
-        // live width: give the rich 3-col layout to anything >= 1200px, and below that a
-        // compact 2-col layout whose panel heights adapt to the viewport (not fixed px).
-        // Same in-app-browser guard as my-team.js: a stale desktop-width
-        // innerWidth reading on phones must not pick the 2/3-col layouts.
-        // screen.width ≤ 500 limits the cap to phones; tablet/desktop untouched.
-        const capToPhoneScreen = (width) => {
-            const sw = (typeof window !== 'undefined' && window.screen && window.screen.width) || 0;
-            return sw > 0 && sw <= 500 ? Math.min(width, sw) : width;
-        };
-        const [winW, setWinW] = React.useState(() => (typeof window !== 'undefined' ? capToPhoneScreen(window.innerWidth) : 1440));
-        React.useEffect(() => {
-            const onResize = () => setWinW(capToPhoneScreen(window.innerWidth));
-            window.addEventListener('resize', onResize);
-            window.addEventListener('orientationchange', onResize);
-            const settle = setTimeout(onResize, 350); // re-measure after in-app browser viewport settles
-            return () => { window.removeEventListener('resize', onResize); window.removeEventListener('orientationchange', onResize); clearTimeout(settle); };
-        }, []);
-        const isCompact = winW < 1200;
+        // 1440, so most laptops (1280-1439) were stuck in the 2-col collapse. Read the
+        // live width from the shared WR.useViewport store (js/shared/viewport.js — one
+        // debounced app-wide listener; replaces the old local winW resize state with
+        // identical <1200 threshold semantics): give the rich 3-col layout to anything
+        // >= 1200px, and below that a compact 2-col layout whose panel heights adapt
+        // to the viewport (not fixed px).
+        const isCompact = window.WR.useViewport().width < 1200;
         // Condensed "Split HUD" header replaces the strip + Alex Live Read + trade
         // window banner during a live draft only; other phases keep the full header.
         const isLiveDraftHud = state.mode === 'live-sync' && state.phase === 'drafting';
@@ -5321,8 +5698,24 @@
 	                    <div style={{ minHeight: isCompact ? 'clamp(240px, 26vh, 320px)' : '100%', minWidth: 0 }}>
 	                        <DraftPickListPanel state={state} currentSlot={currentSlot} onPropose={onPropose} />
                     </div>
-                    <div style={{ minHeight: isCompact ? 'clamp(240px, 26vh, 320px)' : '100%', minWidth: 0 }}>
-                        <AlexStreamPanel state={state} dispatch={dispatch} />
+                    <div style={{ minHeight: isCompact ? 'clamp(240px, 26vh, 320px)' : '100%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {/* Room Feed ⇄ Ask Alex (owner ask 2026-07-13: phone crossover):
+                            default = the phone room feed (Alex's commentary is IN it);
+                            Ask Alex keeps the stream panel + input exactly as before. */}
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                            {[['feed', 'Room Feed'], ['alex', 'Ask Alex']].map(([k, l]) => (
+                                <button key={k} type="button" onClick={() => setStreamTab(k)} style={streamTabBtn(streamTab === k)}>{l}</button>
+                            ))}
+                        </div>
+                        <div style={{ flex: 1, minHeight: 0 }}>
+                            {streamTab === 'feed'
+                                ? (
+                                    <div style={panelCard({ height: '100%', display: 'flex', flexDirection: 'column', padding: '10px 12px', fontFamily: FONT_UI, overflow: 'hidden' })}>
+                                        <DraftRoomFeed state={state} heightStyle={{ flex: 1, minHeight: 0 }} />
+                                    </div>
+                                )
+                                : <AlexStreamPanel state={state} dispatch={dispatch} />}
+                        </div>
                     </div>
                 </div>
 
@@ -5352,390 +5745,34 @@
                     const recap = stateHelpers.buildDraftRecap
                         ? stateHelpers.buildDraftRecap(state, { grade })
                         : null;
-                    // Build per-position summary from myPicks
-                    const posSummary = {};
-                    (myPicks || []).forEach(pk => {
-                        const normalized = stateHelpers.normalizePickRecord ? stateHelpers.normalizePickRecord(pk) : pk;
-                        const pos = (normalized?.pos || pk.player?.position || pk.pos || '').toUpperCase();
-                        if (!pos) return;
-                        if (!posSummary[pos]) posSummary[pos] = { count: 0, dhq: 0, players: [] };
-                        posSummary[pos].count += 1;
-                        posSummary[pos].dhq += (normalized?.dhq || pk.player?.dhq || pk.dhq || 0);
-                        posSummary[pos].players.push(normalized?.name || pk.player?.full_name || pk.player?.name || pk.name || pk.pid);
-                    });
-                    const POS_ORDER = ['QB','RB','WR','TE','K','DEF','DL','LB','DB'];
-                    const orderedPositions = POS_ORDER.filter(p => posSummary[p]).concat(Object.keys(posSummary).filter(p => !POS_ORDER.includes(p)));
-
-                    // Free recap keeps the raw haul (DHQ totals, rank, pick list,
-                    // positional counts, trade volume); the A–F grade, efficiency
-                    // read, best/reach/worst calls, storylines, and team grades/
-                    // tiers are Pro. Neutral color for free so the border/hero
-                    // tint doesn't leak the grade.
-                    const recapPro = ccIsPro();
-                    const gradeColor = !recapPro ? 'var(--silver)' : grade.letter.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' : grade.letter.startsWith('B') ? 'var(--k-d4af37, #d4af37)' : grade.letter.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
-                    const teamRecaps = recap?.teamRecaps || [];
-                    const leagueStorylines = recap?.leagueStorylines || [];
-                    // Post-draft power/tier per team: existing roster health (assessTeam)
-                    // blended with this draft's haul. Degrades gracefully if assessment
-                    // globals aren't loaded (badge simply omitted).
-                    const teamPower = (() => {
-                        let assessments = [];
-                        try { assessments = (typeof window.assessAllTeamsFromGlobal === 'function' ? window.assessAllTeamsFromGlobal() : []) || []; } catch (_) {}
-                        const byRid = {};
-                        assessments.forEach(a => { if (a && a.rosterId != null) byRid[String(a.rosterId)] = a; });
-                        const maxHaul = Math.max(1, ...teamRecaps.map(t => t.totalDHQ || 0));
-                        const out = {};
-                        teamRecaps.forEach(t => {
-                            const a = byRid[String(t.rosterId)] || {};
-                            const health = Number(a.healthScore) || 0;
-                            const haulPct = Math.round(((t.totalDHQ || 0) / maxHaul) * 100);
-                            out[String(t.rosterId)] = { power: Math.round(health * 0.6 + haulPct * 0.4), tier: a.tier || null, tierColor: a.tierColor || null };
-                        });
-                        return out;
-                    })();
-                    const tradeImpact = recap?.tradeImpact || { count: 0, summary: 'No accepted draft trades on record.' };
-                    const bestPick = recap?.bestPick || null;
-                    const biggestReach = recap?.biggestReach || null;
-                    const worstPick = recap?.worstPick || null;
-                    const bestAlternative = recap?.bestAlternative || null;
-                    const leagueExtremes = recap?.leagueExtremes || {};
-                    const tradeVolume = recap?.tradeVolume || { total: 0, byRound: {} };
-                    // Per-type efficiency (value vs expected pick).
-                    const efficiency = recap?.efficiency ?? null;
-                    const effPct = efficiency != null ? Math.round(efficiency * 100) : null;
-                    const gradeBasis = recap?.gradeBasis || 'vs expected pick value';
-                    const effColor = effPct == null ? 'var(--silver)' : effPct >= 100 ? 'var(--k-2ecc71, #2ecc71)' : effPct >= 85 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
-                    const recapPositions = recap?.positionSummary?.length
-                        ? recap.positionSummary
-                        : orderedPositions.map(pos => ({ pos, ...posSummary[pos] }));
-                    const fmtDhq = value => {
-                        const n = Number(value || 0);
-                        return n ? n.toLocaleString() : '—';
-                    };
-                    const openRecapPlayer = pid => {
-                        if (!pid) return;
-                        if (typeof window.openPlayerModal === 'function') {
-                            try { window.openPlayerModal(pid); return; } catch (_) {}
-                        }
-                        if (window.WR?.openPlayerCard) {
-                            try { window.WR.openPlayerCard(pid); } catch (_) {}
-                        }
-                    };
-                    const insightCard = (label, value, detail, color, onClick) => (
-                        <button
-                            type="button"
-                            onClick={onClick}
-                            disabled={!onClick}
-                            style={{
-                                textAlign: 'left',
-                                padding: '12px 14px',
-                                background: 'var(--ov-2, rgba(255,255,255,0.03))',
-                                border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
-                                borderLeft: '3px solid ' + (color || 'var(--acc-line4, rgba(212,175,55,0.55))'),
-                                borderRadius: '8px',
-                                cursor: onClick ? 'pointer' : 'default',
-                                fontFamily: FONT_UI,
-                                minHeight: '92px',
-                            }}
-                        >
-                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.68, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{label}</div>
-                            <div style={{ color: color || 'var(--white)', fontWeight: 800, fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value || '—'}</div>
-                            <div style={{ color: 'var(--silver)', opacity: 0.74, fontSize: 'var(--text-micro, 0.6875rem)', lineHeight: 1.45, marginTop: '4px' }}>{detail || 'No signal yet.'}</div>
-                        </button>
-                    );
-
-                    // League-wide percentile — how our total DHQ ranks
-                    const allDraftTotals = recap?.leagueTotals || (stateHelpers.leagueTotalsFromPicks ? stateHelpers.leagueTotalsFromPicks(state.picks || []) : {});
-                    const totals = Object.values(allDraftTotals).sort((a, b) => b - a);
-                    const myRank = recap?.rank || (totals.indexOf(grade.totalDHQ) + 1);
-                    const myPct = recap?.percentile ?? (totals.length ? Math.round(((totals.length - myRank) / Math.max(1, totals.length - 1)) * 100) : 0);
-
+                    // Overlay shell only — the report card itself is the shared
+                    // DraftRecapReport (also rendered inline on the Draft War Room
+                    // post-draft from the archived recap).
                     return (
                         <div style={{
                             position: 'fixed', inset: 0, background: 'var(--surf-solid, rgba(5,6,9,0.82))',
                             zIndex: 900, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             padding: 'var(--space-xl)', animation: 'wrFadeIn 0.2s ease'
                         }} onClick={e => { if (e.target === e.currentTarget) onExit && onExit(); }}>
-                            <div style={{
-                                width: '100%', maxWidth: '1080px', maxHeight: '92vh', overflowY: 'auto', overscrollBehavior: 'contain',
-                                background: 'var(--k-0a0b0d, #0a0b0d)', border: '2px solid ' + wrAlpha(gradeColor, '55'),
-                                borderRadius: '16px', boxShadow: '0 32px 96px rgba(0,0,0,0.8)',
-                            }}>
-                                {/* Hero */}
-                                <div style={{ padding: '28px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'linear-gradient(135deg, ' + gradeColor + '15, transparent 70%)' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }}>Draft Complete — Recap</div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-                                        <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                                            <div style={{ fontFamily: FONT_DISPL, fontSize: '5.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1 }}>{recapPro ? grade.letter : '🔒'}</div>
-                                            <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>{recapPro ? 'Overall Grade' : 'Grade — Scout Pro'}</div>
-                                        </div>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.45 }}>Grade weighs board value, roster fit, and value vs your expected slots.</div>
-                                            <div style={{ fontSize: '0.96rem', color: 'var(--white)', marginTop: '8px', lineHeight: 1.5 }}>
-                                                Total DHQ: <strong style={{ color: gradeColor }}>{grade.totalDHQ.toLocaleString()}</strong> across {myPicks.length} pick{myPicks.length === 1 ? '' : 's'}
-                                            </div>
-                                            {totals.length >= 3 && (
-                                                <div style={{ fontSize: '0.82rem', color: 'var(--silver)', marginTop: '4px' }}>
-                                                    You finished <strong style={{ color: myRank <= 3 ? 'var(--k-2ecc71, #2ecc71)' : myRank <= totals.length / 2 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' }}>#{myRank}</strong> of {totals.length} teams by draft DHQ ({myPct}th percentile)
-                                                </div>
-                                            )}
-                                        </div>
-                                        {recapPro && effPct != null && (
-                                            <div style={{ textAlign: 'center', flexShrink: 0, padding: '12px 18px', borderRadius: '12px', background: wrAlpha(effColor, '12'), border: '1px solid ' + wrAlpha(effColor, '40'), minWidth: '128px' }}>
-                                                <div style={{ fontFamily: FONT_DISPL, fontSize: '2.6rem', fontWeight: 700, color: effColor, lineHeight: 1 }}>{effPct}%</div>
-                                                <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '4px' }}>{gradeBasis === 'vs $ spent' ? <>of expected value<br/>for your spend</> : <>of expected DHQ<br/>for your slots</>}</div>
-                                                <div style={{ fontSize: '0.6rem', color: effColor, opacity: 0.9, marginTop: '4px', fontWeight: 700 }}>{effPct >= 100 ? 'NAILED YOUR SLOTS' : effPct >= 85 ? 'SOLID FOR YOUR SLOTS' : 'LEFT VALUE ON BOARD'}</div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* P4 strategic readout */}
-                                <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Strategic Readout</div>
-                                    {/* best/reach/worst/alternative calls are grade reads → Pro */}
-                                    {!recapPro ? (
-                                        window.WrGatedMoreRow
-                                            ? React.createElement(window.WrGatedMoreRow, { title: 'Best pick, biggest reach, worst pick', sub: 'The value calls behind your grade are Scout Pro.', feature: 'draft_recap_reads' })
-                                            : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Strategic Readout', 'draft_recap_reads', 'Post-draft value calls are Scout Pro.') : '' }} />
-                                    ) : (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
-                                        {insightCard(
-                                            'Best Pick',
-                                            bestPick ? `${bestPick.name} #${bestPick.overall}` : 'No pick',
-                                            bestPick ? `${bestPick.pos || '?'} · ${fmtDhq(bestPick.dhq)} DHQ${bestPick.valueDelta > 0 ? ' · +' + bestPick.valueDelta + ' value slots' : ''}` : 'Make a pick to generate a value read.',
-                                            'var(--k-2ecc71, #2ecc71)',
-                                            bestPick?.pid ? () => openRecapPlayer(bestPick.pid) : null
-                                        )}
-                                        {insightCard(
-                                            'Biggest Reach',
-                                            biggestReach ? `${biggestReach.name} #${biggestReach.overall}` : 'None flagged',
-                                            biggestReach ? `${Math.abs(biggestReach.valueDelta || 0)} slots ahead of board. Check if your note justified the bet.` : 'No user pick was far enough off board to flag.',
-                                            biggestReach ? 'var(--k-f0a500, #f0a500)' : 'var(--silver)',
-                                            biggestReach?.pid ? () => openRecapPlayer(biggestReach.pid) : null
-                                        )}
-                                        {insightCard(
-                                            'Worst Pick',
-                                            worstPick ? `${worstPick.name} #${worstPick.overall}` : 'No picks',
-                                            worstPick ? `${worstPick.pos || '?'} · ${fmtDhq(worstPick.dhq)} DHQ${worstPick.efficiency != null ? ' · ' + Math.round(worstPick.efficiency * 100) + '% of expected' : ''}` : 'Make a pick to surface your lowest-value selection.',
-                                            worstPick ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)',
-                                            worstPick?.pid ? () => openRecapPlayer(worstPick.pid) : null
-                                        )}
-                                        {insightCard(
-                                            'Best Alternative',
-                                            bestAlternative?.alternative ? bestAlternative.alternative.name : 'No better DHQ miss',
-                                            bestAlternative?.message || 'Your selections did not leave a higher-DHQ player behind at the same slot.',
-                                            bestAlternative?.alternative ? 'var(--k-3498db, #3498db)' : 'var(--silver)',
-                                            bestAlternative?.alternative?.pid ? () => openRecapPlayer(bestAlternative.alternative.pid) : null
-                                        )}
-                                        {insightCard(
-                                            'Trade Impact',
-                                            tradeImpact.count ? `${tradeImpact.netDHQ >= 0 ? '+' : ''}${fmtDhq(tradeImpact.netDHQ)} DHQ` : 'No trades',
-                                            tradeImpact.summary,
-                                            tradeImpact.netDHQ >= 0 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-e74c3c, #e74c3c)',
-                                            null
-                                        )}
-                                    </div>
-                                    )}
-                                </div>
-
-                                {/* Per-position breakdown */}
-                                <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Positional Breakdown</div>
-                                    {recapPositions.length ? (
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
-                                            {recapPositions.map(s => {
-                                                const pos = s.pos;
-                                                const posCol = (window.App?.POS_COLORS || {})[pos] || 'var(--silver)';
-                                                return <div key={pos} style={{ padding: '10px 12px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px', borderLeft: '3px solid ' + posCol }}>
-                                                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: posCol, letterSpacing: '0.04em' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</div>
-                                                    <div style={{ fontFamily: FONT_DISPL, fontSize: '1.2rem', fontWeight: 700, color: 'var(--white)', marginTop: '2px' }}>{s.count}</div>
-                                                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7 }}>{s.dhq.toLocaleString()} DHQ</div>
-                                                </div>;
-                                            })}
-                                        </div>
-                                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No picks on record.</div>}
-                                </div>
-
-                                {/* Pick-by-pick roster list */}
-                                <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Your Draft Class</div>
-                                    {(myPicks || []).length ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                            {myPicks.map((pk, i) => {
-                                                const normalized = stateHelpers.normalizePickRecord ? stateHelpers.normalizePickRecord(pk) : pk;
-                                                const p = pk.player || {};
-                                                const pos = (normalized?.pos || p.position || pk.pos || '').toUpperCase();
-                                                const posCol = (window.App?.POS_COLORS || {})[pos] || 'var(--silver)';
-                                                const dhq = normalized?.dhq || p.dhq || pk.dhq || 0;
-                                                const dhqCol = dhq >= 7000 ? 'var(--k-2ecc71, #2ecc71)' : dhq >= 4000 ? 'var(--k-3498db, #3498db)' : 'var(--silver)';
-                                                return <div
-                                                    key={i}
-                                                    onClick={() => openRecapPlayer(normalized?.pid || pk.pid)}
-                                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', borderRadius: '6px', background: 'var(--ov-1, rgba(255,255,255,0.02))', cursor: (normalized?.pid || pk.pid) ? 'pointer' : 'default' }}
-                                                >
-                                                    <span style={{ fontFamily: FONT_DISPL, fontSize: '0.72rem', color: 'var(--gold)', width: '48px' }}>
-                                                        {pk.round && pk.pickInRound ? (pk.round + '.' + String(pk.pickInRound).padStart(2, '0')) : ('#' + (i + 1))}
-                                                    </span>
-                                                    <img src={'https://sleepercdn.com/content/nfl/players/thumb/' + pk.pid + '.jpg'} alt="" onError={e => e.target.style.display = 'none'} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-                                                    <span style={{ flex: 1, fontSize: '0.84rem', color: 'var(--white)', fontWeight: 600 }}>{normalized?.name || p.full_name || p.name || pk.name || pk.pid}</span>
-                                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: posCol, padding: '1px 6px', background: 'rgba(0,0,0,0.4)', borderRadius: '3px' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</span>
-                                                    <span style={{ fontFamily: FONT_MONO, fontWeight: 700, fontSize: '0.82rem', color: dhqCol, minWidth: '56px', textAlign: 'right' }}>{dhq > 0 ? dhq.toLocaleString() : '—'}</span>
-                                                </div>;
-                                            })}
-                                        </div>
-                                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No picks made.</div>}
-                                </div>
-
-                                {/* Around the league — extremes + draft-day trade volume */}
-                                <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Around the League</div>
-                                    {/* league best/reach/worst calls → Pro; raw trade volume below stays */}
-                                    {recapPro && (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
-                                        {insightCard(
-                                            'League Best Pick',
-                                            leagueExtremes.bestPick ? `${leagueExtremes.bestPick.name} #${leagueExtremes.bestPick.overall}` : '—',
-                                            leagueExtremes.bestPick ? `${leagueExtremes.bestPick.teamName} · ${fmtDhq(leagueExtremes.bestPick.dhq)} DHQ` : 'No picks recorded.',
-                                            'var(--k-2ecc71, #2ecc71)',
-                                            leagueExtremes.bestPick?.pid ? () => openRecapPlayer(leagueExtremes.bestPick.pid) : null
-                                        )}
-                                        {(() => {
-                                            // Only a negative delta is a genuine reach — guards
-                                            // recaps saved before the aggregation-side filter.
-                                            const reach = leagueExtremes.biggestReach && (leagueExtremes.biggestReach.valueDelta || 0) < 0
-                                                ? leagueExtremes.biggestReach
-                                                : null;
-                                            return insightCard(
-                                                'League Biggest Reach',
-                                                reach ? `${reach.name} #${reach.overall}` : '—',
-                                                reach ? `${reach.teamName} · ${Math.abs(reach.valueDelta || 0)} slots ahead of board` : 'None flagged.',
-                                                'var(--k-f0a500, #f0a500)',
-                                                reach?.pid ? () => openRecapPlayer(reach.pid) : null
-                                            );
-                                        })()}
-                                        {insightCard(
-                                            'League Worst Pick',
-                                            leagueExtremes.worstPick ? `${leagueExtremes.worstPick.name} #${leagueExtremes.worstPick.overall}` : '—',
-                                            leagueExtremes.worstPick ? `${leagueExtremes.worstPick.teamName} · ${fmtDhq(leagueExtremes.worstPick.dhq)} DHQ` : 'No picks recorded.',
-                                            'var(--k-e74c3c, #e74c3c)',
-                                            leagueExtremes.worstPick?.pid ? () => openRecapPlayer(leagueExtremes.worstPick.pid) : null
-                                        )}
-                                    </div>
-                                    )}
-                                    <div style={{ marginTop: '14px' }}>
-                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Draft-Day Trades — {tradeVolume.total} total</div>
-                                        {tradeVolume.total > 0 ? (
-                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                {Object.keys(tradeVolume.byRound).sort((a, b) => Number(a) - Number(b)).map(r => (
-                                                    <span key={r} style={{ padding: '5px 10px', borderRadius: '6px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)' }}>{Number(r) > 0 ? 'R' + r : 'Other'}: <strong style={{ color: 'var(--white)' }}>{tradeVolume.byRound[r]}</strong></span>
-                                                ))}
-                                            </div>
-                                        ) : <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.6 }}>No pick trades during this draft.</div>}
-                                    </div>
-                                </div>
-
-                                {/* League-wide recap — where teams stand after the draft */}
-                                <div style={{ padding: '22px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Where Teams Stand After the Draft</div>
-                                    {/* narrative storylines are reads → Pro */}
-                                    {recapPro && leagueStorylines.length > 0 && (
-                                        <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
-                                            {leagueStorylines.slice(0, 4).map((line, i) => (
-                                                <div key={i} style={{ fontSize: '0.76rem', color: 'var(--silver)', lineHeight: 1.45, padding: '7px 10px', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: '6px' }}>{line}</div>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {teamRecaps.length ? (
-                                        <div style={{ display: 'grid', gap: '6px' }}>
-                                            {teamRecaps.slice(0, 12).map(team => {
-                                                const isUser = String(team.rosterId) === String(state.userRosterId);
-                                                const topPlayer = team.topPick || team.picks?.[0];
-                                                const gradeCol = team.grade?.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' : team.grade?.startsWith('B') ? 'var(--gold)' : team.grade?.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
-                                                return (
-                                                    <div key={team.rosterId || team.teamName} style={{
-                                                        display: 'grid',
-                                                        gridTemplateColumns: '36px minmax(0,1.35fr) 56px 86px minmax(0,1fr) 84px',
-                                                        gap: '10px',
-                                                        alignItems: 'center',
-                                                        padding: '8px 10px',
-                                                        borderRadius: '7px',
-                                                        border: '1px solid ' + (isUser ? 'var(--acc-line2, rgba(212,175,55,0.28))' : 'var(--ov-4, rgba(255,255,255,0.06))'),
-                                                        background: isUser ? 'var(--acc-fill1, rgba(212,175,55,0.07))' : 'var(--ov-1, rgba(255,255,255,0.022))',
-                                                    }}>
-                                                        <div style={{ color: isUser ? 'var(--gold)' : 'var(--silver)', fontFamily: FONT_MONO, fontSize: '0.72rem', fontWeight: 800 }}>#{team.rank}</div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                dispatch({ type: 'PIN_TEAM', rosterId: team.rosterId });
-                                                            }}
-                                                            style={{ minWidth: 0, padding: 0, border: 'none', background: 'transparent', color: 'var(--white)', textAlign: 'left', cursor: 'pointer', fontFamily: FONT_UI }}
-                                                            title="Pin this team in opponent intel"
-                                                        >
-                                                            <div style={{ fontWeight: 800, fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                {team.teamName}
-                                                                {/* competitive-tier badge is an assessment read → Pro (Open Q7 ruling) */}
-                                                                {recapPro && teamPower[String(team.rosterId)]?.tier && <span style={{ marginLeft: '6px', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: teamPower[String(team.rosterId)].tierColor || 'var(--silver)' }}>{teamPower[String(team.rosterId)].tier}</span>}
-                                                            </div>
-                                                            <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{team.buildLabel}</div>
-                                                        </button>
-                                                        <div style={{ color: recapPro ? gradeCol : 'var(--silver)', fontFamily: FONT_DISPL, fontSize: '1rem', fontWeight: 900 }}>{recapPro ? team.grade : '🔒'}</div>
-                                                        <div style={{ color: 'var(--silver)', fontSize: '0.7rem', fontFamily: FONT_MONO, textAlign: 'right' }}>{fmtDhq(team.totalDHQ)} DHQ</div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => topPlayer?.pid && openRecapPlayer(topPlayer.pid)}
-                                                            disabled={!topPlayer?.pid}
-                                                            style={{ minWidth: 0, padding: 0, border: 'none', background: 'transparent', color: topPlayer?.pid ? 'var(--gold)' : 'var(--silver)', textAlign: 'left', cursor: topPlayer?.pid ? 'pointer' : 'default', fontFamily: FONT_UI, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                                        >
-                                                            {topPlayer ? topPlayer.name : 'No top pick'}
-                                                        </button>
-                                                        <div style={{ color: 'var(--silver)', opacity: 0.72, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>
-                                                            {team.steals?.length || 0} steal{team.steals?.length === 1 ? '' : 's'} · {team.reaches?.length || 0} reach{team.reaches?.length === 1 ? '' : 'es'}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No league picks available for recap.</div>}
-                                </div>
-
-                                {/* Actions */}
-                                <div style={{ padding: '18px 32px 24px', display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    <button onClick={() => {
-                                        try {
-                                            const key = 'wr_draft_recap_' + Date.now();
-                                            const payload = stateHelpers.saveDraftRecap
-                                                ? stateHelpers.saveDraftRecap(state, { grade, key })
-                                                : recap;
-                                            if (!payload) localStorage.setItem(key, JSON.stringify(recap || {}));
-                                            alert('Draft recap saved to archive (' + key + ')');
-                                        } catch (e) { alert('Save failed: ' + e.message); }
-                                    }} style={{ padding: '10px 22px', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>SAVE RECAP</button>
-                                    {/* share/export text embeds the A–F grade + value calls → Pro
-                                        (clean absence; save-to-archive above stays free) */}
-                                    {recapPro && <button onClick={() => {
-                                        try {
-                                            const text = stateHelpers.formatDraftShareReport
-                                                ? stateHelpers.formatDraftShareReport(recap || stateHelpers.buildDraftRecap(state, { grade }))
-                                                : stateHelpers.formatDraftRecapText?.(recap || stateHelpers.buildDraftRecap(state, { grade }));
-                                            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => alert('Share report copied.'));
-                                            else alert('Clipboard unavailable in this browser.');
-                                        } catch (e) { alert('Copy failed: ' + e.message); }
-                                    }} style={{ padding: '10px 22px', background: 'var(--ov-3, rgba(255,255,255,0.035))', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.14))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>COPY REPORT</button>}
-                                    {recapPro && <button onClick={() => {
-                                        try {
-                                            const text = stateHelpers.formatDraftShareReport
-                                                ? stateHelpers.formatDraftShareReport(recap || stateHelpers.buildDraftRecap(state, { grade }))
-                                                : stateHelpers.formatDraftRecapText
-                                                    ? stateHelpers.formatDraftRecapText(recap || stateHelpers.buildDraftRecap(state, { grade }))
-                                                    : 'Draft Recap - ' + grade.letter;
-                                            const blob = new Blob([text], { type: 'text/markdown' });
-                                            const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'draft-recap-' + Date.now() + '.md'; a.click(); URL.revokeObjectURL(url);
-                                        } catch (e) { alert('Export failed: ' + e.message); }
-                                    }} style={{ padding: '10px 22px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.15))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>EXPORT REPORT</button>}
-                                    <button onClick={onExit} style={{ padding: '10px 22px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>{forcedMode === 'live-sync' ? 'VIEW DRAFT BOARD →' : 'DRAFT AGAIN'}</button>
-                                </div>
-                            </div>
+                            <DraftRecapReport
+                                recap={recap}
+                                grade={grade}
+                                myPicks={myPicks}
+                                userRosterId={state.userRosterId}
+                                onPinTeam={rid => dispatch({ type: 'PIN_TEAM', rosterId: rid })}
+                                onSaveRecap={() => {
+                                    try {
+                                        const key = 'wr_draft_recap_' + Date.now();
+                                        const payload = stateHelpers.saveDraftRecap
+                                            ? stateHelpers.saveDraftRecap(state, { grade, key })
+                                            : recap;
+                                        if (!payload) localStorage.setItem(key, JSON.stringify(recap || {}));
+                                        alert('Draft recap saved to archive (' + key + ')');
+                                    } catch (e) { alert('Save failed: ' + e.message); }
+                                }}
+                                primaryLabel={forcedMode === 'live-sync' ? 'VIEW DRAFT BOARD →' : 'DRAFT AGAIN'}
+                                onPrimary={onExit}
+                            />
                         </div>
                     );
                 })()}
@@ -6489,16 +6526,20 @@
             );
         }
 
-        // ── Mobile: sticky on-the-clock bar for the phone feed ──────────
-        // Who's up, pick meta (R#.## · #overall), and how far away the user's
-        // next pick is. Sticks against the page scroll; top offset = --sat so
-        // it clears the notch in the installed PWA (0px in a Safari tab). z 60
+        // ── Mobile: sticky on-the-clock status card for the phone feed ──
+        // (iPhone program Phase 3 re-composition of the old one-line bar.)
+        // Who's up, pick meta (R#.## · #overall), how far away the user's next
+        // pick is, and a big mono clock read from EXISTING clock state — the
+        // mock speed→timer mapping (MockDraftCockpit's timerLabel) or the live
+        // made/total mirror. Red-accent treatment when the user is on the
+        // clock. Sticks against the page scroll; top offset = --sat so it
+        // clears the notch in the installed PWA (0px in a Safari tab). z 60
         // paints it over the league shell's sticky time bar (z 50) while both
         // are stuck; the fixed layer (hamburger 201, phone dock 100) stays above.
         // Left padding reserves the phone hamburger's 42px corner, matching the
         // .wr-league-header-row convention. Single-line ellipsis so 375px never
         // wraps or overflows (MobileFeed only mounts at <768).
-        function MobileClockBar({ state, currentSlot, isUserTurn }) {
+        function MobileClockBar({ state, currentSlot, isUserTurn, intel }) {
             const personas = state.personas || {};
             const userRosterId = String(state.userRosterId || '');
             const order = state.pickOrder || [];
@@ -6523,56 +6564,255 @@
                         : 'On the clock';
             const statusColor = done ? 'var(--silver)'
                 : state.activeOffer ? 'var(--k-f0a500, #f0a500)'
-                    : 'var(--gold)';
+                    : userUp ? 'var(--bad, #e5534b)'
+                        : 'var(--gold)';
             const rightLabel = done ? (made + ' picks')
                 : userUp ? 'YOU'
                     : away != null ? 'You in ' + away
                         : (made + '/' + (total || '--'));
+            // Existing clock state only: mock speed → pick-timer label (same
+            // mapping as MockDraftCockpit), live-sync → made/total mirror.
+            const clockText = done ? 'FINAL'
+                : state.activeOffer ? '⏸'
+                    : state.mode === 'live-sync' ? (made + '/' + (total || '—'))
+                        : state.speed === 'paused' ? '⏸'
+                            : state.speed === 'fast' ? '0:35'
+                                : state.speed === 'slow' ? '4:00' : '2:15';
             return (
                 <div style={{
                     position: 'sticky', top: 'var(--sat, 0px)', zIndex: 60,
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    minHeight: 44, padding: '6px 10px 6px 52px', marginBottom: 8,
-                    background: 'var(--black, #0a0a0a)',
-                    border: '1px solid ' + (userUp ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--acc-fill3, rgba(212,175,55,0.16))'),
-                    borderRadius: 4,
-                    boxShadow: '0 6px 14px rgba(0,0,0,0.45)',
+                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    minHeight: 52, padding: '7px 12px 7px 52px', marginBottom: 8,
+                    // Your turn is unmistakable: the whole card tints red, not just the border.
+                    background: userUp
+                        ? 'linear-gradient(90deg, rgba(231,76,60,0.18), rgba(231,76,60,0.05) 55%, var(--black, #0a0a0a))'
+                        : 'var(--black, #0a0a0a)',
+                    border: userUp ? '2px solid rgba(231,76,60,0.65)' : '1px solid var(--acc-fill3, rgba(212,175,55,0.16))',
+                    borderRadius: 6,
+                    boxShadow: userUp ? '0 6px 18px rgba(231,76,60,0.22), 0 6px 14px rgba(0,0,0,0.45)' : '0 6px 14px rgba(0,0,0,0.45)',
                 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, color: statusColor, fontFamily: FONT_UI, textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {statusLabel}
                         </div>
-                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--white)', fontFamily: FONT_UI, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--white)', fontFamily: FONT_UI, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {done ? 'Board is final' : teamName}
                         </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                            {!done && slot && (
+                                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.85, whiteSpace: 'nowrap' }}>
+                                    {mockPickLabel(slot, state.leagueSize)} · #{slot.overall || '--'}
+                                </span>
+                            )}
+                            <span style={{
+                                fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800,
+                                padding: '1px 6px', borderRadius: 3, whiteSpace: 'nowrap',
+                                border: '1px solid ' + (userUp ? 'rgba(231,76,60,0.5)' : 'var(--ov-5, rgba(255,255,255,0.1))'),
+                                color: userUp ? 'var(--bad, #e5534b)' : 'var(--silver)',
+                                background: userUp ? 'rgba(231,76,60,0.12)' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                            }}>
+                                {rightLabel}
+                            </span>
+                        </div>
                     </div>
-                    {!done && slot && (
-                        <span style={{ flexShrink: 0, fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.85, whiteSpace: 'nowrap' }}>
-                            {mockPickLabel(slot, state.leagueSize)} · #{slot.overall || '--'}
-                        </span>
+                    <div style={{ flexShrink: 0, fontFamily: FONT_MONO, fontSize: '1.45rem', fontWeight: 700, lineHeight: 1, color: userUp ? 'var(--bad, #e5534b)' : done ? 'var(--silver)' : 'var(--gold)', fontVariantNumeric: 'tabular-nums' }}>
+                        {clockText}
+                    </div>
+                    {/* DraftCast intel row (owner ask): basic on-clock opponent read,
+                        tap → full Opponent Intel sheet. */}
+                    {intel && (
+                        <button type="button" onClick={intel.onTap}
+                            style={{ flex: '1 1 100%', display: 'flex', alignItems: 'center', gap: 6, margin: '0 -6px -2px', padding: '6px 6px 4px', minHeight: 34, border: 'none', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'transparent', color: intel.tag === 'PICK' ? 'var(--white)' : 'var(--silver)', fontFamily: FONT_UI, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: intel.tag === 'PICK' ? 700 : 400, cursor: 'pointer', textAlign: 'left' }}>
+                            <span style={{ color: intel.accent || 'var(--gold)', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', flexShrink: 0 }}>{intel.tag || 'Intel'}</span>
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{intel.text}</span>
+                            <span aria-hidden="true" style={{ color: intel.accent || 'var(--gold)', flexShrink: 0 }}>›</span>
+                        </button>
                     )}
-                    <span style={{
-                        flexShrink: 0, fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800,
-                        padding: '3px 7px', borderRadius: 3, whiteSpace: 'nowrap',
-                        border: '1px solid ' + (userUp ? 'var(--acc-line3, rgba(212,175,55,0.45))' : 'var(--ov-5, rgba(255,255,255,0.1))'),
-                        color: userUp ? 'var(--gold)' : 'var(--silver)',
-                        background: userUp ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'var(--ov-2, rgba(255,255,255,0.03))',
-                    }}>
-                        {rightLabel}
-                    </span>
                 </div>
             );
         }
 
-        // ── Mobile: draft feed (Big Board / Alex / pick log) ─────────────
+    // ── Room Feed (shared, owner ask 2026-07-13: phone crossover) ──────
+    // The phone live-room's Twitter-style feed hoisted out of MobileFeed so
+    // the desktop stream cell renders it too: persona-attributed posts
+    // (Alex Ingram / League Wire / Board Watch / You) interwoven with rich
+    // pick cards (photo · NFL team · college · DHQ · folded REACH/STEAL).
+    // Renders ONLY the scrollable feed column — no DraftCast bar, no tabs;
+    // callers size the scroll container via heightStyle. All state-derived
+    // pieces (reach folds, team names, the pick/stream interleave) recompute
+    // per render exactly as the old MobileFeed inline copies did.
+    const ALEXC = 'var(--k-9b8afb, #9b8afb)'; // Alex accent (was MobileFeed-local)
+    function DraftRoomFeed({ state, maxRows = 140, heightStyle, emptyText }) {
+        const posColors = window.App?.POS_COLORS || {
+            QB: 'var(--k-ff6b6b, #ff6b6b)', RB: 'var(--k-4ecdc4, #4ecdc4)', WR: 'var(--k-45b7d1, #45b7d1)', TE: 'var(--k-f7dc6f, #f7dc6f)',
+            DL: 'var(--k-e67e22, #e67e22)', LB: 'var(--k-f0a500, #f0a500)', DB: 'var(--k-5dade2, #5dade2)', K: 'var(--k-bb8fce, #bb8fce)',
+        };
+        const fmtK = n => { const v = Number(n) || 0; return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(Math.round(v)); };
+        const personas = state.personas || {};
+        const teamNameOf = pk => {
+            const rid = String(pk.rosterId || '');
+            if (personas[rid]?.teamName) return personas[rid].teamName;
+            if (pk.isUser || rid === String(state.userRosterId || '')) return 'Your Team';
+            return pk.slot ? 'Team ' + pk.slot : 'Draft Room';
+        };
+        // Reach/steal reads fold INTO their pick's card (owner ask) — collect
+        // them first and drop them from the standalone feed.
+        const reachByOverall = new Map();
+        const foldedIds = new Set();
+        ((state.alex && state.alex.stream) || []).forEach(ev => {
+            const t = String(ev.title || '');
+            if (ev.relatedPickNo && /^(REACH|STEAL)\s*·/i.test(t)) {
+                reachByOverall.set(Number(ev.relatedPickNo), { steal: /^STEAL/i.test(t), text: ev.text || t });
+                foldedIds.add(ev.id);
+            }
+            // The bare per-pick announcement line ("R2.06 · Name") duplicates the
+            // team's pick card on phone — drop it (owner ask). The "Alex read · …"
+            // commentary variant stays: that's Alex actually reacting to the pick.
+            if (/^R\d+\.\d+\s*·/.test(t)) foldedIds.add(ev.id);
+        });
+        const feedRows = (() => {
+            const picks = state.picks || [];
+            const events = ((state.alex && state.alex.stream) || []).filter(ev => !foldedIds.has(ev.id));
+            const used = new Set();
+            const items = [];
+            picks.forEach(pk => {
+                items.push({ kind: 'pick', ts: pk.ts || 0, pk });
+                events.forEach(ev => {
+                    if (ev.relatedPickNo && Number(ev.relatedPickNo) === Number(pk.overall) && !used.has(ev.id)) {
+                        used.add(ev.id);
+                        items.push({ kind: 'alex', ts: (pk.ts || 0) + 1, ev });
+                    }
+                });
+            });
+            events.forEach(ev => { if (!used.has(ev.id)) items.push({ kind: 'alex', ts: ev.ts || 0, ev }); });
+            items.sort((a, b) => a.ts - b.ts);
+            return items.reverse().slice(0, maxRows); // newest first
+        })();
+        // Twitter-style posters (owner ask): every feed entry is a post from a
+        // room voice — the drafting TEAM posts its pick, Alex reacts, the League
+        // Wire calls trades/room moves, Board Watch calls runs and tier breaks.
+        const FEED_VOICES = {
+            alex: { name: 'Alex Ingram', tag: 'AI GM', avatar: 'AI', color: ALEXC, bg: 'rgba(155,138,251,0.16)' },
+            wire: { name: 'League Wire', tag: 'trade desk', avatar: '⇄', color: 'var(--k-5dade2, #5dade2)', bg: 'rgba(93,173,226,0.14)' },
+            board: { name: 'Board Watch', tag: 'room trends', avatar: '▲', color: 'var(--k-f0a500, #f0a500)', bg: 'rgba(240,165,0,0.14)' },
+            you: { name: 'You', tag: 'room mic', avatar: 'Q', color: 'var(--gold)', bg: 'rgba(212,175,55,0.14)' },
+        };
+        const voiceOf = ev => {
+            const t = String(ev.title || '').toUpperCase();
+            if (ev.type === 'user') return FEED_VOICES.you;
+            if (/^TRADE\b|^ROOM EVOLUTION|TRADE OFFER|COUNTER|ACCEPTED|DECLINED/.test(t)) return FEED_VOICES.wire;
+            if (/^ROOM RUN|^TIER BREAK|POSITION RUN/.test(t)) return FEED_VOICES.board;
+            return FEED_VOICES.alex;
+        };
+        const agoOf = ts => {
+            if (!ts) return '';
+            const s = Math.max(0, (Date.now() - ts) / 1000);
+            if (s < 45) return 'now';
+            if (s < 3600) return Math.floor(s / 60) + 'm';
+            if (s < 86400) return Math.floor(s / 3600) + 'h';
+            return Math.floor(s / 86400) + 'd';
+        };
+        const avatarEl = (label, color, bg) => (
+            <span style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: bg, color, fontFamily: FONT_MONO, fontSize: '0.62rem', fontWeight: 900, border: '1px solid ' + color }}>{label}</span>
+        );
+        const initialsOf = s => String(s || '?').trim().split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+        const pickRowEl = pk => {
+            const rs = reachByOverall.get(Number(pk.overall)) || null;
+            const team = teamNameOf(pk);
+            const nflTeam = pk.csv?.nflTeam || window.S?.players?.[pk.pid]?.team || '';
+            const college = pk.college || pk.csv?.college || '';
+            const bits = [nflTeam, college].filter(Boolean).join(' · ');
+            const photo = pk.pid && !String(pk.pid).startsWith('csv_')
+                ? 'https://sleepercdn.com/content/nfl/players/thumb/' + pk.pid + '.jpg'
+                : (pk.photoUrl || '');
+            return (
+                <div key={pk.id || ('pk-' + pk.overall)} onClick={() => pk.pid && mockOpenPlayer(pk)} role="button" tabIndex={0}
+                    style={{ padding: '9px 11px', borderRadius: 10, cursor: pk.pid ? 'pointer' : 'default', background: pk.isUser ? 'var(--acc-fill1, rgba(212,175,55,0.07))' : 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (pk.isUser ? 'var(--acc-line2, rgba(212,175,55,0.32))' : 'var(--ov-4, rgba(255,255,255,0.05))') }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                        {avatarEl(initialsOf(team), pk.isUser ? 'var(--gold)' : 'var(--silver)', pk.isUser ? 'rgba(212,175,55,0.14)' : 'var(--ov-3, rgba(255,255,255,0.05))')}
+                        <span style={{ color: 'var(--white)', fontWeight: 800, fontSize: '0.76rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{team}</span>
+                        <span style={{ color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, flexShrink: 0, marginLeft: 'auto' }}>{'R' + (pk.round || '?') + '.' + String(pk.pickInRound || pk.slot || 0).padStart(2, '0')}{pk.ts ? ' · ' + agoOf(pk.ts) : ''}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 7 }}>
+                        <img src={photo} alt="" onError={e => { e.currentTarget.style.visibility = 'hidden'; }} style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', background: 'var(--ov-3, rgba(255,255,255,0.05))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                <span style={{ color: 'var(--white)', fontWeight: 800, fontSize: '0.84rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pk.name}</span>
+                                <span style={{ flexShrink: 0, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: posColors[pk.pos] || 'var(--silver)', padding: '1px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.4)' }}>{pk.pos || '—'}</span>
+                            </div>
+                            <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{bits || '—'}</div>
+                        </div>
+                        <span style={{ fontFamily: FONT_MONO, fontSize: '0.78rem', fontWeight: 700, color: 'var(--silver)', flexShrink: 0 }}>{fmtK(pk.dhq)}</span>
+                    </div>
+                    {rs && (
+                        <div style={{ marginTop: 7, padding: '5px 8px', borderRadius: 6, fontSize: 'var(--text-micro, 0.6875rem)', lineHeight: 1.4, color: rs.steal ? 'var(--k-2ecc71, #2ecc71)' : 'var(--bad, #e5534b)', background: rs.steal ? 'rgba(46,204,113,0.08)' : 'rgba(231,76,60,0.08)', border: '1px solid ' + (rs.steal ? 'rgba(46,204,113,0.25)' : 'rgba(231,76,60,0.25)') }}>
+                            {(rs.steal ? '↓ STEAL — ' : '↑ REACH — ') + rs.text}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+        const alexRowEl = ev => {
+            const voice = voiceOf(ev);
+            return (
+                <div key={ev.id} style={{ padding: '8px 11px', borderRadius: 10, background: 'var(--ov-1, rgba(255,255,255,0.018))', border: '1px solid var(--ov-4, rgba(255,255,255,0.045))' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                        {avatarEl(voice.avatar, voice.color, voice.bg)}
+                        <span style={{ color: voice.color, fontWeight: 900, fontSize: '0.74rem', flexShrink: 0 }}>{voice.name}</span>
+                        <span style={{ color: 'var(--silver)', opacity: 0.5, fontSize: 'var(--text-micro, 0.6875rem)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{voice.tag}</span>
+                        <span style={{ color: 'var(--silver)', opacity: 0.5, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, flexShrink: 0, marginLeft: 'auto' }}>{agoOf(ev.ts)}</span>
+                    </div>
+                    {ev.title && <div style={{ marginTop: 5, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, color: ev.color || voice.color, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{(ev.badge ? ev.badge + ' ' : '') + ev.title}</div>}
+                    {ev.text && <div style={{ marginTop: 2, color: 'var(--silver)', fontSize: '0.76rem', lineHeight: 1.45 }}>{ev.text}</div>}
+                </div>
+            );
+        };
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', paddingRight: 2, ...(heightStyle || {}) }}>
+                {feedRows.length
+                    ? feedRows.map(row => (row.kind === 'pick' ? pickRowEl(row.pk) : alexRowEl(row.ev)))
+                    : <div style={{ padding: 14, border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 9, color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>{emptyText || "The feed starts when the first pick lands — picks and Alex's reads land here in order."}</div>}
+            </div>
+        );
+    }
+
+        // ── Mobile live room (owner redesign, 2026-07-12): a permanent DraftCast
+        // bar (clock + on-clock opponent intel row → intel sheet) over three
+        // swipeable tabs — FEED (pick log with Alex's stream interwoven) /
+        // BOARD (Alex's pick card + BigBoardPanel, the pick path) / ROSTER.
+        // Panes scroll in place; Ask Alex + Analytics open as WR.Sheets from
+        // the chip row; a live trade offer mounts the same TradeModal popup
+        // desktop uses. Falls back to the stacked feed if the kit isn't loaded.
         function MobileFeed({ state, dispatch, onStart, isUserTurn, currentSlot, onPropose }) {
         const BigBoardPanel = window.DraftCC.BigBoardPanel;
         const AlexStreamPanel = window.DraftCC.AlexStreamPanel;
         const AskAnswerWindow = window.DraftCC.AskAnswerWindow;
-        const AlexCall = window.DraftCC.AlexCall;
         const AlexEdgeGlow = window.DraftCC.AlexEdgeGlow;
+        const OpponentIntelPanel = window.DraftCC.OpponentIntelPanel;
+        const LiveAnalyticsPanel = window.DraftCC.LiveAnalyticsPanel;
+        const Sheet = window.WR && window.WR.Sheet;
+        // Which demoted side panel is open: 'alex'|'intel'|'analytics'.
+        // Hooks sit above every early return so hook order never varies.
+        const [phPanel, setPhPanel] = React.useState(null);
+        // Live-room redesign (owner ask): the room is a swipeable 3-tab surface —
+        // FEED (pick log with Alex's stream interwoven) / BOARD / ROSTER — under a
+        // permanent DraftCast bar that carries on-clock opponent intel.
+        const [phTab, setPhTab] = React.useState('feed');
+        const swipeRef = React.useRef(null);
+        // Trade offers pause the room — on phone the offer opens as the SAME
+        // TradeModal popup desktop uses (owner ask: "it should just open as a
+        // pop up"). Same Pro boundary: free auto-declines so the room resumes.
+        const TradeModal = window.DraftCC.TradeModal;
+        const tradeIsPro = ccIsPro();
+        React.useEffect(() => {
+            if (state.activeOffer && !tradeIsPro) dispatch({ type: 'DECLINE_TRADE' });
+        }, [state.activeOffer, tradeIsPro, dispatch]);
+        const _kitOk = !!Sheet; // ActionBar no longer used by the live room
 
         if (state.phase === 'setup') {
+            // Only the live-sync path still lands here on phone (mock/scenario/
+            // ghost setup now routes to the full SetupScreen upstream) — and
+            // live-sync auto-starts, so this is a transient fallback screen.
             return (
                 <div className="draft-cc-scope" style={{ padding: '16px', fontFamily: FONT_UI, textAlign: 'center' }}>
                     <div style={{
@@ -6586,8 +6826,7 @@
                         lineHeight: 1.5,
                     }}>
                         📱 Phone runs the draft feed — Big Board, Alex's reads, and the
-                        pick log. You can draft from here; the full 6-panel cockpit
-                        lives on desktop.
+                        pick log, synced to your league's live draft.
                     </div>
                     <button onClick={onStart} style={{
                         width: '100%',
@@ -6602,30 +6841,177 @@
                         cursor: 'pointer',
                         letterSpacing: '0.06em',
                     }}>
-                        START MOCK DRAFT
+                        OPEN DRAFT ROOM
                     </button>
                 </div>
             );
         }
 
+        if (!_kitOk) {
+            // Pre-Phase-3 fallback stack (phone kit not loaded).
+            return (
+                <div style={{ fontFamily: FONT_UI, padding: '4px 0' }}>
+                    {/* Bottom clearance for the phone bottom dock comes from the league
+                        shell: .app-container[data-league-skin-type] pads by
+                        calc(60px + var(--wr-bottom-inset)) at ≤767 (index.html phone
+                        tier) — do not double-pad here. */}
+                    <MobileClockBar state={state} currentSlot={currentSlot} isUserTurn={isUserTurn} />
+                    <div style={{ minHeight: 320, maxHeight: '56vh', marginBottom: 10 }}>
+                        <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} />
+                    </div>
+                    <div style={{ minHeight: 300, marginBottom: 10 }}>
+                        <AlexStreamPanel state={state} dispatch={dispatch} />
+                    </div>
+                    <div style={{ minHeight: 260, maxHeight: '44vh' }}>
+                        <DraftPickListPanel state={state} currentSlot={currentSlot} onPropose={onPropose} />
+                    </div>
+                    {AskAnswerWindow && <AskAnswerWindow state={state} />}
+                    {AlexEdgeGlow && <AlexEdgeGlow state={state} isUserTurn={isUserTurn} />}
+                </div>
+            );
+        }
+
+        const drafting = state.phase === 'drafting';
+        const pro = ccIsPro();
+        // (ActionBar removed per owner ask — drafting happens from the Big Board
+        // tab, whose rows carry the existing MAKE_PICK handlers.)
+        const bpa = (state.pool || [])[0] || null;
+        // Alex's pick card: the Alex Whisper line (latest stream take) over the
+        // board's top name. Same Pro boundary as the Decision Deck — free gets
+        // the exact desktop WrGatedMoreRow teaser and drafts from the raw board.
+        // (ALEXC hoisted to module scope with <DraftRoomFeed/> — owner ask
+        // 2026-07-13: phone crossover.)
+        const alexFeedItems = (state.alex && state.alex.stream) || [];
+        const alexThinking = !!(state.alex && state.alex.thinking);
+        const DECISION_BADGES = new Set(['✦', '⚖', '◇', 'A', '↑', '↓']);
+        const alexItem = alexThinking ? null
+            : (isUserTurn ? (alexFeedItems.find(e => DECISION_BADGES.has(e.badge)) || alexFeedItems[0]) : alexFeedItems[0]);
+        // ── Live-room composition (owner redesign) ──────────────────
+        // FEED: the pick log with Alex's stream interwoven — machinery hoisted
+        // to the shared <DraftRoomFeed/> so the desktop stream cell renders the
+        // same feed (owner ask 2026-07-13: phone crossover).
+        const personas = state.personas || {};
+        // DraftCast bottom row: on YOUR turn it becomes the pick CTA (→ Board
+        // tab); otherwise the on-clock team's predicted pick, tap → Opponent
+        // Intel. (Prediction is a Pro read; the sheet carries the free gate.)
+        const onClockPersona = currentSlot ? personas[String(currentSlot.rosterId || '')] : null;
+        const lp = pro ? onClockPersona?.predictions?.likelyPick : null;
+        const draftCastIntel = state.phase === 'complete' ? null : isUserTurn
+            ? { tag: 'PICK', accent: 'var(--bad, #e5534b)', text: "You're up — open the Big Board and make the call", onTap: () => setPhTab('board') }
+            : {
+                tag: 'Intel',
+                accent: 'var(--gold)',
+                text: lp?.name
+                    ? 'Likely: ' + lp.name + (lp.pos ? ' (' + lp.pos + ')' : '') + ' — tap for the full read'
+                    : onClockPersona
+                        ? 'Scout ' + (onClockPersona.teamName || 'the room') + ' — tap for the full read'
+                        : 'Opponent intel — tap to open',
+                onTap: () => setPhPanel('intel'),
+            };
+        // Swipe left/right between FEED / BOARD / ROSTER (native-feel, no deps).
+        const TAB_KEYS = ['feed', 'board', 'roster'];
+        const onTouchStart = e => { const t = e.touches && e.touches[0]; if (t) swipeRef.current = { x: t.clientX, y: t.clientY }; };
+        const onTouchEnd = e => {
+            const st = swipeRef.current; swipeRef.current = null;
+            const t = e.changedTouches && e.changedTouches[0];
+            if (!st || !t) return;
+            const dx = t.clientX - st.x, dy = t.clientY - st.y;
+            if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+            const i = TAB_KEYS.indexOf(phTab);
+            const ni = dx < 0 ? Math.min(TAB_KEYS.length - 1, i + 1) : Math.max(0, i - 1);
+            if (ni !== i) setPhTab(TAB_KEYS[ni]);
+        };
         return (
-            <div style={{ fontFamily: FONT_UI, padding: '4px 0' }}>
-                {/* Bottom clearance for the phone bottom dock comes from the league
-                    shell: .app-container[data-league-skin-type] pads by
-                    calc(60px + var(--wr-bottom-inset)) at ≤767 (index.html phone
-                    tier) — do not double-pad here. */}
-                <MobileClockBar state={state} currentSlot={currentSlot} isUserTurn={isUserTurn} />
-                <div style={{ minHeight: 320, maxHeight: '56vh', marginBottom: 10 }}>
-                    <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} />
+            <div style={{ fontFamily: FONT_UI, padding: '4px 0' }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+                {/* Bottom clearance for the phone dock comes from the league shell
+                    (.app-container[data-league-skin-type] pads by --wr-bottom-inset
+                    at ≤767). The ActionBar (and its 66px clearance) was removed. */}
+                <MobileClockBar state={state} currentSlot={currentSlot} isUserTurn={isUserTurn}
+                    intel={draftCastIntel} />
+                <div className="wr-seg" style={{ marginBottom: 10 }}>
+                    {[['feed', 'Draft Feed'], ['board', 'Big Board'], ['roster', 'My Roster']].map(([k, l]) => (
+                        <button key={k} type="button" className={phTab === k ? 'is-on' : ''} onClick={() => setPhTab(k)}>{l}</button>
+                    ))}
                 </div>
-                <div style={{ minHeight: 300, marginBottom: 10 }}>
-                    <AlexStreamPanel state={state} dispatch={dispatch} />
+                {/* Panes scroll IN PLACE (owner ask): fixed-height containers so the
+                    DraftCast bar, tabs, and bottom chips all stay on screen. */}
+                {phTab === 'feed' && (
+                    <DraftRoomFeed state={state} heightStyle={{ height: '56dvh', minHeight: 300 }}
+                        emptyText="The feed starts when the first pick lands — picks and Alex's reads land here in order. Swipe left for the Big Board." />
+                )}
+                {phTab === 'board' && (<div style={{ height: '56dvh', minHeight: 320, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', paddingRight: 2 }}>
+                    {drafting && (pro ? (
+                        <section style={{ marginBottom: 10, padding: '10px 12px', background: wrAlpha(ALEXC, '0a'), border: '1px solid ' + wrAlpha(ALEXC, '3d'), borderRadius: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                <span style={{ color: ALEXC, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.12em', flexShrink: 0 }}>Alex's pick</span>
+                                {bpa && (
+                                    <span style={{ color: 'var(--silver)', opacity: 0.72, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                                        {(bpa.pos || '—') + ' · ' + mockPlayerTeam(bpa) + ' · DHQ ' + mockFmt(bpa.dhq)}
+                                    </span>
+                                )}
+                            </div>
+                            {bpa && (
+                                <button type="button" onClick={() => mockOpenPlayer(bpa)} title="Open player card" style={{ display: 'block', minWidth: 0, maxWidth: '100%', padding: 0, margin: '3px 0 0', border: 'none', background: 'transparent', textAlign: 'left', cursor: 'pointer', color: 'var(--white)', fontFamily: FONT_DISPL, fontSize: '1.15rem', fontWeight: 800, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {bpa.name}
+                                </button>
+                            )}
+                            <div style={{ marginTop: 4, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.85, lineHeight: 1.4 }}>
+                                {alexThinking
+                                    ? 'Alex is reading the board…'
+                                    : alexItem
+                                        ? ((alexItem.title || '').replace(/^Alex\s*[·:—-]?\s*/i, '') + (alexItem.text ? ' — ' + alexItem.text : ''))
+                                        : 'Alex is watching the board…'}
+                            </div>
+                        </section>
+                    ) : (
+                        <section style={{ marginBottom: 10 }}>
+                            {window.WrGatedMoreRow
+                                ? React.createElement(window.WrGatedMoreRow, { title: 'Alex hands you the pick', sub: 'Recommended / safe / upside cards each turn are Scout Pro. Draft from the raw board.', feature: 'draft_decision_deck' })
+                                : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Alex Decision Deck', 'draft_decision_deck', 'Per-turn pick recommendations are Scout Pro.') : '' }} />}
+                        </section>
+                    ))}
+                    <div style={{ marginBottom: 10 }}>
+                        <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} />
+                    </div>
+                </div>)}
+                {phTab === 'roster' && (
+                    <div style={{ height: '56dvh', minHeight: 320, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', paddingRight: 2 }}>
+                        <MyDraftRosterPanel state={state} />
+                    </div>
+                )}
+                {/* Opp Intel opens from the DraftCast card's Intel row (owner ask) —
+                    only Ask Alex + Analytics live down here. */}
+                <div className="wr-seg" style={{ margin: '10px 0' }}>
+                    <button type="button" className={phPanel === 'alex' ? 'is-on' : ''} onClick={() => setPhPanel('alex')}>Ask Alex ▾</button>
+                    <button type="button" className={phPanel === 'analytics' ? 'is-on' : ''} onClick={() => setPhPanel('analytics')}>Analytics ▾</button>
                 </div>
-                <div style={{ minHeight: 260, maxHeight: '44vh' }}>
-                    <DraftPickListPanel state={state} currentSlot={currentSlot} onPropose={onPropose} />
-                </div>
+                <Sheet open={phPanel === 'alex'} onClose={() => setPhPanel(null)} title="Ask Alex" desktop={null}>
+                    <div style={{ padding: '4px 12px 10px', minHeight: 320, height: '68dvh' }}>
+                        {AlexStreamPanel ? <AlexStreamPanel state={state} dispatch={dispatch} /> : null}
+                    </div>
+                </Sheet>
+                <Sheet open={phPanel === 'intel'} onClose={() => setPhPanel(null)} title="Opponent Intel" desktop={null}>
+                    <div style={{ padding: '4px 12px 10px', height: '68dvh' }}>
+                        {OpponentIntelPanel ? <OpponentIntelPanel state={state} dispatch={dispatch} currentSlot={currentSlot} onPropose={onPropose} /> : null}
+                    </div>
+                </Sheet>
+                <Sheet open={phPanel === 'analytics'} onClose={() => setPhPanel(null)} title="Draft Analytics" desktop={null}>
+                    <div style={{ padding: '4px 12px 10px' }}>
+                        {/* Live grade/value analytics are interpretation reads → Pro
+                            (same A–F boundary as the desktop header grade chip). */}
+                        {pro
+                            ? (LiveAnalyticsPanel ? <LiveAnalyticsPanel state={state} /> : null)
+                            : (window.WrGatedMoreRow
+                                ? React.createElement(window.WrGatedMoreRow, { title: 'Live draft analytics', sub: 'Live grade, value-vs-board curve, and position flow are Scout Pro.', feature: 'draft_live_analytics' })
+                                : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Draft Analytics', 'draft_live_analytics', 'Live draft analytics are Scout Pro.') : '' }} />)}
+                    </div>
+                </Sheet>
+                {/* Trade offer → the same popup desktop uses (room stays paused
+                    behind it; Accept/Decline resume it). */}
+                {tradeIsPro && state.activeOffer && TradeModal && <TradeModal state={state} dispatch={dispatch} />}
                 {AskAnswerWindow && <AskAnswerWindow state={state} />}
-                {AlexCall && <AlexCall state={state} isUserTurn={isUserTurn} />}
+                {/* AlexCall overlay removed on phone (owner ask) — the red DraftCast
+                    takeover + edge glow already carry the your-turn signal. */}
                 {AlexEdgeGlow && <AlexEdgeGlow state={state} isUserTurn={isUserTurn} />}
             </div>
         );
@@ -6669,7 +7055,8 @@
                 style={{
                     position: 'fixed', inset: 0, background: 'var(--surf-solid, rgba(5,6,9,0.78))',
                     zIndex: 880, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: 'var(--space-xl)', animation: 'wrFadeIn 0.18s ease',
+                    // 24px alone is less than the ~47-59px notch inset — clear it.
+                    padding: 'var(--space-xl)', paddingTop: 'calc(var(--space-xl) + var(--sat, 0px))', animation: 'wrFadeIn 0.18s ease',
                 }}
                 onClick={e => { if (e.target === e.currentTarget) onClose && onClose(); }}
             >
@@ -6774,6 +7161,7 @@
     window.DraftCommandCenter = DraftCommandCenter;
     window.DraftCC = window.DraftCC || {};
     window.DraftCC.LeagueGradesPanel = LeagueGradesPanel;
+    window.DraftCC.DraftRecapReport = DraftRecapReport;
     window.DraftCC.featureFlag = {
         key: FEATURE_FLAG_KEY,
         isEnabled: isFeatureEnabled,
