@@ -63,3 +63,9 @@ verify_jwt = false
 
 [functions.set-password]
 verify_jwt = false
+
+[functions.report-bug]
+verify_jwt = false
+
+[functions.feature-requests]
+verify_jwt = false

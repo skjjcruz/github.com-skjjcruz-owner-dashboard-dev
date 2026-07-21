@@ -60,6 +60,8 @@ jobs:
               '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
               '20260615000000': 'supabase/migrations/20260615000000_mfl_connection.sql',
               '20260710000000': 'supabase/migrations/20260710000000_dhq_pro_billing.sql',
+              '20260711000000': 'supabase/migrations/20260711000000_bug_reports.sql',
+              '20260711010000': 'supabase/migrations/20260711010000_feature_requests.sql',
           }
 
           def run_query(query):
@@ -127,6 +129,8 @@ jobs:
               '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
               '20260615000000': 'supabase/migrations/20260615000000_mfl_connection.sql',
               '20260710000000': 'supabase/migrations/20260710000000_dhq_pro_billing.sql',
+              '20260711000000': 'supabase/migrations/20260711000000_bug_reports.sql',
+              '20260711010000': 'supabase/migrations/20260711010000_feature_requests.sql',
           }
 
           for path in expected.values():
