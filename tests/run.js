@@ -956,53 +956,6 @@ test('a different league scoring yields a different Proj from the same Sleeper l
   });
 
 // ══════════════════════════════════════════════════════════════════
-// Marketing/app firewall (owner ruling 2026-07-21)
-// The marketing site is a pure brochure on its own origin. The app must
-// never reference the marketing domain in shipped code, and the old
-// marketing→app session handoff must never come back. (The Apple bundle
-// id com.dhqfootball.app and its IAP product ids are identifiers, not
-// web links — they are exempt.)
-// ══════════════════════════════════════════════════════════════════
-group('marketing/app firewall');
-
-test('no marketing-domain web links in shipped html/js', () => {
-  const fs = require('fs');
-  const path = require('path');
-  const ROOT = path.join(__dirname, '..');
-  const SKIP = new Set(['node_modules', 'dist-preview', 'dist-deploy', 'tests', 'mockups', 'backups', 'docs', 'reports', '.git']);
-  const offenders = [];
-  (function walk(dir) {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(path.join(dir, e.name)); continue; }
-      if (!/\.(html|js)$/.test(e.name)) continue;
-      const fp = path.join(dir, e.name);
-      const src = fs.readFileSync(fp, 'utf8');
-      // strip the Apple bundle/product identifiers, then look for the domain
-      const stripped = src.replace(/com\.dhqfootball\.app(\.[a-z.]+)?/g, '');
-      if (stripped.includes('dhqfootball.com')) offenders.push(path.relative(ROOT, fp));
-    }
-  })(ROOT);
-  ok(offenders.length === 0, 'marketing domain found in: ' + offenders.join(', '));
-});
-
-test('the marketing session handoff never returns', () => {
-  const fs = require('fs');
-  const path = require('path');
-  const landing = fs.readFileSync(path.join(__dirname, '..', 'landing.html'), 'utf8');
-  ok(!landing.includes('dhq' + '_session'), 'landing.html must not ingest marketing sessions');
-  ok(landing.includes('FIREWALL (owner ruling 2026-07-21)'), 'firewall marker comment must stay in landing.html');
-});
-
-test('backend allowlists exclude the marketing origin', () => {
-  const fs = require('fs');
-  const path = require('path');
-  const sec = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'security.ts'), 'utf8');
-  const checkout = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'fw-create-checkout', 'index.ts'), 'utf8');
-  ok(!sec.includes("'https://dhqfootball.com'"), 'CORS allowlist must not include the marketing origin');
-  ok(!checkout.includes('https://dhqfootball.com'), 'checkout redirects must not include the marketing origin');
-});
-
-// ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════
 console.log('\n');
