@@ -1027,6 +1027,43 @@
       try { history.replaceState(null, '', window.location.pathname); } catch {}
     })();
 
+    // Provider hint from the marketing brochure (?start=google|apple|email,
+    // ?mode=signin). FIREWALL-safe: the link carries only which button the
+    // visitor tapped — the entire auth flow runs on THIS origin. Skipped on
+    // OAuth returns/errors so a provider round-trip never re-triggers itself.
+    (function providerHint() {
+      try {
+        const q = new URLSearchParams(window.location.search);
+        const start = (q.get('start') || '').toLowerCase();
+        const mode = (q.get('mode') || '').toLowerCase();
+        if (!start && !mode) return;
+        const hash = window.location.hash || '';
+        if (hash.indexOf('access_token=') !== -1 || /[?&]code=/.test(window.location.search)
+            || hash.indexOf('error=') !== -1 || q.has('error')) return;
+        // consume the hints so refresh/back never re-fires an OAuth redirect
+        q.delete('start'); q.delete('mode');
+        const rest = q.toString();
+        try { history.replaceState(null, '', window.location.pathname + (rest ? '?' + rest : '') + hash); } catch {}
+        if (mode === 'signin' && authMode === 'signup') toggleAuthMode();
+        // The landing content system hydrates copy async after DOMContentLoaded
+        // and would overwrite the sign-in wording — re-assert once it settles.
+        // (State is already 'signin' either way; this is cosmetic copy only.)
+        if (mode === 'signin') {
+          window.addEventListener('load', function () {
+            setTimeout(function () {
+              try { if (authMode === 'signin') { authMode = 'signup'; toggleAuthMode(); } } catch (e) {}
+            }, 600);
+          });
+        }
+        if (start === 'google') { handleGoogle(); }
+        else if (start === 'apple') { handleApple(); }
+        else if (start === 'email') {
+          const el = document.getElementById('acctEmail');
+          if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(function () { el.focus(); }, 350); }
+        }
+      } catch (e) { /* hint is best-effort — the page stands on its own */ }
+    })();
+
     (function checkSession() {
       try {
         // STAY_HOME (?home): the league hub's brand icon lands here on
