@@ -42,7 +42,7 @@
     const EMPIRE_ENABLED = PLATFORM_SANDBOX_ACCESS || !EMPIRE_SANDBOX_ONLY;
     window.App.EMPIRE_ENABLED = EMPIRE_ENABLED;
 
-    const WR_DISCORD_URL = ''; // owner: paste the Discord invite URL here — hub button + settings row stay hidden until set
+    const WR_DISCORD_URL = 'https://discord.gg/3VFRJbWVnH'; // Dynasty HQ Discord — same invite as the marketing page
     window.App.WR_DISCORD_URL = WR_DISCORD_URL;
     window.WR_DISCORD_URL = WR_DISCORD_URL;
 
