@@ -251,6 +251,17 @@ test('OpenAI adapter is behind the vendor router', () => {
   ok(source.includes("resolveConfiguredRoute(route, planLimits, false, failedProvider)"), 'provider outage should retry through router fallback');
 });
 
+test('billing exhaustion falls back instead of failing (2026-07-21 outage)', () => {
+  // "Your credit balance is too low to access the Anthropic API" took Alex
+  // down with no fallback: the classifier treated it as a hard error and the
+  // deep tier had no non-Anthropic model to retry on. Both stay fixed.
+  ok(/credit\|billing\|insufficient/.test(source), 'availability classifier must catch credit/billing exhaustion');
+  ok(/premium:\s*\{[^}]*gemini: AI_MODELS.GEMINI_BALANCED/.test(source), 'premium tier must carry a gemini fallback model');
+  ok(/deep:\s*\{[^}]*gemini: AI_MODELS.GEMINI_BALANCED/.test(source), 'deep tier must carry a gemini fallback model');
+  // Claude stays the preferred provider — the gemini entries are fallbacks only.
+  ok(/premium: 'anthropic',\s*\n\s*deep: 'anthropic'/.test(source), 'anthropic must remain the default premium/deep provider');
+});
+
 group('launch controls');
 
 test('server AI has a kill switch and global budget caps', () => {
