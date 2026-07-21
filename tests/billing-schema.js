@@ -231,11 +231,14 @@ test('checkout sells dhq monthly/annual with the App Store trial parity', () => 
     'dhq_${billingPeriod}',
     'trial_period_days: DHQ_TRIAL_DAYS',
     'billing_period: billingPeriod',
-    'https://dhqfootball.com',
     'https://skjjcruz.github.io',
   ], 'dhq checkout contract');
   ok(checkoutSource.includes("new Set([...defaults.split(','), ...configured])"),
     'APP_ALLOWED_ORIGINS must widen the checkout redirect allowlist, never replace it');
+  // FIREWALL (owner ruling 2026-07-21): the marketing brochure has no API
+  // access — its domain must never reappear in checkout redirects.
+  ok(!checkoutSource.includes('dhqfootball.com'),
+    'firewall: marketing domain must stay out of the checkout allowlist');
   ok(signupSource.includes("'dhq'"), 'signup should accept the dhq product slug');
 });
 
@@ -279,8 +282,9 @@ test('new accounts route to the connect-your-leagues page', () => {
     'utf8'
   );
   ok(oauthSync.includes('isNew,'), 'fw-oauth-sync must expose isNew so clients can route first sign-ins');
+  // (The marketing handoff's handedIsNew flag is gone by design — the
+  // firewall removed cross-origin session handoffs, owner ruling 2026-07-21.)
   hasEvery(landingSource, [
-    'handedIsNew',
     'signup ? CONNECT_URL',
     'appSession.isNew === true) {',
     'resetDeviceOnboardingForNewAccount',
