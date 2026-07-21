@@ -401,8 +401,9 @@
         // deterministic floor, then an effect may upgrade it via AI.
         var ref = React.useState(change.material ? change.line : null);
         var line = ref[0], setLine = ref[1];
-        // Trade news gets the 👀; roster diffs keep the ⟳ pulse glyph.
-        var icon = change.eyes ? '👀' : '⟳';
+        // Any material change — a trade OR a roster/rank/record diff — gets
+        // the 👀 (owner's brief spec 2026-07-21); the quiet line gets 📰.
+        var icon = change.material ? '👀' : '📰';
 
         var _tradeId = curr && curr._trade && curr._trade.id;
         React.useEffect(function () {
@@ -441,7 +442,7 @@
                     lineHeight: 1.4, color: 'var(--silver, #9aa4b2)',
                 },
             },
-                h('span', { 'aria-hidden': 'true', style: { color: 'var(--silver, #9aa4b2)', opacity: 0.7, flex: '0 0 auto' } }, '⟳'),
+                h('span', { 'aria-hidden': 'true', style: { opacity: 0.85, flex: '0 0 auto' } }, '📰'),
                 h('span', { style: { flex: 1 } }, 'No change in your roster strength over the last 24 hours.'),
             );
         }
@@ -458,7 +459,7 @@
                 lineHeight: 1.4, color: 'var(--white, #e8ebef)',
             },
         },
-            h('span', { 'aria-hidden': change.eyes ? undefined : 'true', role: change.eyes ? 'img' : undefined, 'aria-label': change.eyes ? 'Trade alert' : undefined, style: { color: 'var(--gold, #d4af37)', flex: '0 0 auto' } }, icon),
+            h('span', { role: 'img', 'aria-label': change.eyes ? 'Trade alert' : 'League update', style: { color: 'var(--gold, #d4af37)', flex: '0 0 auto' } }, icon),
             h('span', { style: { flex: 1 } }, line),
         );
     }
