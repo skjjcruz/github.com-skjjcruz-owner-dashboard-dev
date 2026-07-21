@@ -141,6 +141,27 @@ jobs:
           """)
           print(json.dumps(rows, indent=2, default=str))
 
+          print('=== AI call events, last 24h (fixed accounts) ===')
+          rows = q(f"""
+              select {who} as who, e.event_name, e.widget, e.event_ts,
+                     e.metadata->>'reason' as reason,
+                     e.metadata->>'provider' as provider,
+                     e.metadata->>'model' as model,
+                     e.metadata->>'plan' as plan,
+                     e.metadata->>'providerFallback' as provider_fallback,
+                     e.metadata->>'providerFallbackReason' as fallback_reason,
+                     e.metadata->>'outputTokens' as output_tokens,
+                     e.duration_ms
+              from public.analytics_events e
+              join public.app_users u on u.id = e.user_id
+              where u.email in ('steven.crusinberry@gmail.com', 'skjjcruz@netzero.com')
+                and e.module = 'ai'
+                and e.event_ts > now() - interval '24 hours'
+              order by e.event_ts desc
+              limit 60;
+          """)
+          print(json.dumps(rows, indent=2, default=str))
+
           print('=== admin roles (fixed accounts) ===')
           rows = q(f"""
               select {who} as who, r.role
