@@ -2422,10 +2422,17 @@ WRShared.preloadMany(WR_SHARED_FILES);
            D7 straggler list); glyph size unchanged, hit-padding only. */
         .fa-colpick-btn { min-width:44px !important; min-height:44px !important; }
 
-        /* Trade Desk builder strip: stack YOU SEND above YOU GET — the inline
-           1fr 1fr grid makes two ~165px columns at 375px (owner select +
-           roster picker unusable). ≥768 keeps side-by-side. */
-        .tc-builder-sides { grid-template-columns:1fr !important; }
+        /* Trade Desk builder: YOU SEND | YOU GET side-by-side on phone too
+           (owner ask 2026-07-12 — was stacked). minmax(0,1fr) keeps the two
+           narrow columns from blowing out; tighter gap buys row width. */
+        .tc-builder-sides { grid-template-columns:repeat(2, minmax(0,1fr)) !important; gap:8px !important; }
+        /* Side-by-side trade builder (owner ask): the pick rows' "via {owner}"
+           names had no ellipsis and forced the roster list wider than the
+           ~180px column, so it scrolled horizontally and dragged every row
+           left. Clip the list and ellipsize the pick name — the value on the
+           right stays visible instead of scrolling off. */
+        .tc-ta-roster-list-tall { overflow-x: hidden; }
+        .tc-ta-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         /* Trade Desk touch bump: intent/partner chips, deal-card actions,
            Why?/Browse toggles, show-more — all ~22-29px tall from the shared

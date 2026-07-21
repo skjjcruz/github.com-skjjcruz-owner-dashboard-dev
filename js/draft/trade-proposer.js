@@ -553,6 +553,9 @@
                 flexDirection: 'column',
                 fontFamily: FONT_UI,
                 animation: 'wrFadeIn 0.25s ease',
+                // Notch clearance: full-height fixed drawer — keep the title/✕
+                // out from under the status bar on installed-PWA phones.
+                paddingTop: 'var(--sat, 0px)',
             }}>
                 {/* Header */}
                 <div style={{
@@ -1497,7 +1500,7 @@
                 background: 'var(--black)', borderLeft: '2px solid var(--gold)',
                 boxShadow: '-12px 0 40px rgba(0,0,0,0.6)', zIndex: 600,
                 display: 'flex', flexDirection: 'column', fontFamily: FONT_UI,
-                animation: 'wrFadeIn 0.25s ease',
+                animation: 'wrFadeIn 0.25s ease', paddingTop: 'var(--sat, 0px)',
             }}>
                 <div style={{ padding: '14px 16px', borderBottom: 'var(--card-border)', display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                     <div style={{ flex: 1, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Propose Trade</div>

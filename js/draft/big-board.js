@@ -150,6 +150,9 @@
             try { window.App?.WrStorage?.set('wr_bb_hide_drafted', next); } catch (e) {}
             return next;
         });
+        // Phone (<768) controls sheet (P3 WR.FilterSheet) — hook lives up here
+        // with the rest of the state so hook order never varies by tier.
+        const [phFilterOpen, setPhFilterOpen] = React.useState(false);
 
         React.useEffect(() => {
             if (boardContext?.activeLane && boardContext.activeLane !== boardLane) {
@@ -316,7 +319,8 @@
         const available = React.useMemo(() => {
             const filtered = decoratedPool.filter(p => {
                 if (hideDrafted && p._drafted) return false;
-                if (posFilter && normEdPos(p.pos) !== posFilter) return false;
+                // Group-aware: posFilter may be a flex-group key (FLEX/SFLEX/…)
+                if (posFilter && !(window.App?.posMatchesFilter ? window.App.posMatchesFilter(normEdPos(p.pos), posFilter) : normEdPos(p.pos) === posFilter)) return false;
                 if (search) {
                     const q = search.toLowerCase();
                     const hay = [p.name, p.team, p.nflTeam, p.college, p.csv?.college].filter(Boolean).join(' ').toLowerCase();
@@ -338,11 +342,24 @@
             return sorted.slice(0, 100);
         }, [decoratedPool, posFilter, search, sortKey, sortDir, hideDrafted]);
 
+        // Ask Alex about the board: opens recon chat pre-loaded with the
+        // top of the active lane (crossover, owner ask 2026-07-13).
+        const askAlexBoard = () => {
+            const top = available.filter(p => !p._drafted).slice(0, 3).map(p => p.name + (p.pos ? ' (' + normEdPos(p.pos) + ')' : '')).join(', ');
+            const msg = "I'm in a live draft" + (top ? ' — top of my board right now is ' + top : '') + '. Who should I target with my next pick and why, and is there a value falling that I should pivot to instead?';
+            try { window.dispatchEvent(new CustomEvent('wr:ask-alex', { detail: { message: msg } })); } catch (e) { /* chat seam unavailable */ }
+        };
+
         const availablePositions = React.useMemo(() => {
             const set = new Set();
             (state.pool || []).slice(0, 120).forEach(p => { if (p.pos) set.add(normEdPos(p.pos)); });
             const priority = { QB: 1, RB: 2, WR: 3, TE: 4, DL: 5, LB: 6, DB: 7, K: 8 };
-            return Array.from(set).sort((a, b) => (priority[a] || 99) - (priority[b] || 99));
+            const base = Array.from(set).sort((a, b) => (priority[a] || 99) - (priority[b] || 99));
+            // League-derived flex groups (FLEX/SFLEX/IDP FLEX…) join the chip
+            // row when their positions exist in this pool (owner ask 2026-07-12).
+            const groups = (window.App?.getLeagueFlexGroups?.() || [])
+                .filter(g => (window.App?.FLEX_GROUP_POSITIONS?.[g] || []).some(pos => set.has(pos)));
+            return [...base, ...groups];
         }, [state.pool]);
 
         const persistBoardPatch = React.useCallback((patch) => {
@@ -541,12 +558,128 @@
                     ? 'Canonical DHQ value order.'
                     : '';
 
+        // ══ PHONE (<768) — cockpit board as WR.AssetRows (iPhone program
+        // Phase 3, the sanctioned live/mock re-composition). Early return: the
+        // desktop/tablet panel below never mounts on phone and stays
+        // byte-identical. Everything rides the SAME state and handlers —
+        // onLaneSelect / onSeedMyBoardFromAi / onDraft / onOpenModal, and the
+        // shipped my-lane touch reorder commit path onMovePlayer →
+        // saveManualOrder → persistBoardPatch (moves vs the VISIBLE neighbor).
+        const _phKit = !!(window.WR && window.WR.AssetRow && window.WR.FilterPill && window.WR.FilterSheet);
+        if (vp.isPhone && _phKit) {
+            const AssetRowC = window.WR.AssetRow, FilterPillC = window.WR.FilterPill, FilterSheetC = window.WR.FilterSheet;
+            const MICRO = 'var(--text-micro, 0.6875rem)';
+            const canPick = isUserTurn || state.overrideMode || state.mode === 'manual';
+            const draftLabel = state.mode === 'live-sync' && state.overrideMode ? 'APPLY' : state.mode === 'manual' ? 'PICK' : (state.overrideMode ? 'FORCE' : 'DRAFT');
+            const phChipBtn = (on, color) => ({ padding: '9px 12px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: '5px', fontFamily: FONT_UI, border: '1px solid ' + (on ? (color || 'var(--acc-line2, rgba(212,175,55,0.4))') : 'rgba(255,255,255,0.14)'), background: on ? 'rgba(212,175,55,0.12)' : 'transparent', color: on ? (color || 'var(--gold)') : 'var(--silver)' });
+            const phDraftBtn = (p) => (
+                <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); onDraft(p); }}
+                    title={state.overrideMode || state.mode === 'manual' ? 'Record the player for the team on the clock' : 'Make your pick'}
+                    style={{ minHeight: '44px', minWidth: '58px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 10px', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 800, letterSpacing: '0.05em', background: state.overrideMode ? 'var(--purple)' : 'var(--gold)', color: state.overrideMode ? 'var(--k-ffffff, #ffffff)' : 'var(--black)', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+                >{draftLabel}</button>
+            );
+            return (
+                <div style={{ fontFamily: FONT_UI }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px' }}>
+                        <div style={{ fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>Best Available</div>
+                        <button onClick={askAlexBoard} style={{ padding: '6px 10px', minHeight: '36px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '4px', cursor: 'pointer', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 700, letterSpacing: '0.05em', flexShrink: 0, whiteSpace: 'nowrap' }}>💬 ASK ALEX</button>
+                        <div style={{ fontSize: MICRO, color: 'var(--silver)', opacity: 0.65 }}>{state.pool.length} avail</div>
+                    </div>
+                    <div className="wr-seg" style={{ marginBottom: '7px' }}>
+                        {laneOptions.map(lane => (
+                            <button key={lane} type="button" className={activeLane === lane ? 'is-on' : ''} onClick={() => onLaneSelect(lane)}>{LANE_LABELS[lane].short}</button>
+                        ))}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '7px', minHeight: 18 }}>
+                        <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: MICRO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeLane === 'my' ? 'Tap ▲ / ▼ under a row to reorder your board' : laneCopy}</span>
+                        {pro && activeLane === 'my' && boardContext?.canSeedMyBoardFromAi && (
+                            <button onClick={onSeedMyBoardFromAi} style={{ padding: '6px 10px', minHeight: '36px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '4px', cursor: 'pointer', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 700, flexShrink: 0 }}>SEED</button>
+                        )}
+                    </div>
+                    <div className="wr-hscroll" style={{ display: 'flex', gap: '6px', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', marginBottom: '8px' }}>
+                        {React.createElement(FilterPillC, { label: 'Pos', value: posFilter || 'ALL', onClick: () => setPhFilterOpen(true) })}
+                        {React.createElement(FilterPillC, { label: 'Search', value: search ? '"' + search + '"' : null, onClick: () => setPhFilterOpen(true) })}
+                        {React.createElement(FilterPillC, { label: 'Hide drafted', value: hideDrafted ? 'ON' : null, onClick: toggleHideDrafted })}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {available.length === 0 && (
+                            <div style={{ padding: '12px', textAlign: 'center', color: 'var(--silver)', opacity: 0.4, fontSize: '0.72rem' }}>No players match filter</div>
+                        )}
+                        {available.map((p, idx) => {
+                            const b = p._board || {};
+                            const tag = TAG_META[b.tag];
+                            const rowRank = b.activeRank < 99999 ? b.activeRank : idx + 1;
+                            const nflTeam = nflTeamOf(p);
+                            const college = collegeOf(p);
+                            const showTouchMove = activeLane === 'my' && !p._drafted;
+                            const remaining = p._copies - p._copiesTaken;
+                            return (
+                                <div key={p.pid} style={p._drafted ? { opacity: 0.45 } : undefined}>
+                                    {React.createElement(AssetRowC, {
+                                        pos: normEdPos(p.pos),
+                                        name: p.name,
+                                        tag: ['#' + rowRank, nflTeam || college || null, b.tier ? 'T' + b.tier : null, p._copies > 1 && p._copiesTaken > 0 ? p._copiesTaken + '/' + p._copies + ' taken' : null].filter(Boolean).join(' · '),
+                                        slots: [{ label: 'DHQ', value: fmt(p.dhq) }],
+                                        verdict: (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                {tag && <span style={{ color: tag.color, fontSize: MICRO, fontWeight: 800, fontFamily: FONT_UI, border: '1px solid ' + wrAlpha(tag.color, '55'), background: wrAlpha(tag.color, '18'), borderRadius: '3px', padding: '2px 5px', whiteSpace: 'nowrap' }}>{tag.label}</span>}
+                                                {p._copies > 1 && p._copiesTaken > 0 && remaining > 0 && <span style={{ color: remaining === 1 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-2ecc71, #2ecc71)', fontSize: MICRO, fontWeight: 800, fontFamily: FONT_MONO, whiteSpace: 'nowrap' }}>{p._copiesTaken}/{p._copies}</span>}
+                                                {canPick && !p._drafted ? phDraftBtn(p) : null}
+                                            </span>
+                                        ),
+                                        accent: b.tag === 'must' || b.tag === 'target' ? 'gold' : b.tag === 'avoid' ? 'risk' : undefined,
+                                        onClick: () => onOpenModal(p),
+                                    })}
+                                    {showTouchMove && (
+                                        <div style={{ display: 'flex', gap: 6, padding: '5px 2px 2px' }}>
+                                            <button type="button" aria-label={'Move ' + (p.name || 'player') + ' up'} onClick={e => { e.stopPropagation(); onMovePlayer(p, -1); }} style={moveBtnCss}>▲ Up</button>
+                                            <button type="button" aria-label={'Move ' + (p.name || 'player') + ' down'} onClick={e => { e.stopPropagation(); onMovePlayer(p, 1); }} style={moveBtnCss}>▼ Down</button>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {React.createElement(FilterSheetC, {
+                        open: phFilterOpen,
+                        onClose: () => setPhFilterOpen(false),
+                        title: 'Board filters',
+                        sections: [
+                            { label: 'Search', node: (
+                                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search players, teams, colleges..." style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', minHeight: '44px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '6px', color: 'var(--white)', fontSize: '16px', fontFamily: FONT_UI, outline: 'none' }} />
+                            ) },
+                            { label: 'Position', node: (
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    <button type="button" style={phChipBtn(posFilter === '')} onClick={() => setPosFilter('')}>ALL</button>
+                                    {availablePositions.map(pos => (
+                                        <button key={pos} type="button" style={phChipBtn(posFilter === pos, posColors[pos])} onClick={() => setPosFilter(posFilter === pos ? '' : pos)}>{posLabel(pos)}</button>
+                                    ))}
+                                </div>
+                            ) },
+                            { label: 'Drafted', node: (
+                                <button type="button" style={phChipBtn(hideDrafted)} onClick={toggleHideDrafted}>{hideDrafted ? '✓ Hide drafted' : 'Hide drafted'}</button>
+                            ) },
+                        ],
+                        footer: (
+                            <React.Fragment>
+                                <button type="button" style={{ ...phChipBtn(false), flex: 1 }} onClick={() => { setSearch(''); setPosFilter(''); }}>Reset</button>
+                                <button type="button" style={{ ...phChipBtn(true), flex: 2 }} onClick={() => setPhFilterOpen(false)}>Apply</button>
+                            </React.Fragment>
+                        ),
+                    })}
+                </div>
+            );
+        }
+
         return (
             <div style={containerCss}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                     <div style={{ fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
                         Big Board
                     </div>
+                    <button onClick={askAlexBoard} style={{ padding: '3px 8px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '4px', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_UI, fontWeight: 700, letterSpacing: '0.05em', flexShrink: 0, whiteSpace: 'nowrap' }}>💬 ASK ALEX</button>
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, fontFamily: FONT_UI }}>
                         {state.pool.length} avail
                     </div>

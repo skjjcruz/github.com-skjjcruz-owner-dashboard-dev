@@ -2772,7 +2772,16 @@
                 id,
                 archivedAt: opts.archivedAt || Date.now(),
             };
-            const next = [archived, ...existing.filter(row => row?.id !== id)]
+            const next = [archived, ...existing.filter(row => {
+                    if (!row || row.id === id) return false;
+                    // A live-synced REAL draft is ONE archive entry: re-opening the
+                    // results re-saves the same sleeper draft — replace, don't dupe.
+                    // (Mock recaps keep individual entries; each run is distinct.)
+                    if (archived.mode === 'live-sync' && archived.sleeperDraftId
+                        && row.mode === 'live-sync'
+                        && String(row.sleeperDraftId || '') === String(archived.sleeperDraftId)) return false;
+                    return true;
+                })]
                 .sort((a, b) => Number(b.savedAt || b.archivedAt || 0) - Number(a.savedAt || a.archivedAt || 0))
                 .slice(0, opts.limit || 25);
             localStorage.setItem(key, JSON.stringify(next));
@@ -2787,7 +2796,7 @@
         const archive = readStoredArray(draftRecapArchiveKey(leagueId));
         const learning = readStoredArray(draftLearningKey(leagueId));
         const seen = new Set();
-        return archive.concat(learning)
+        const rows = archive.concat(learning)
             .filter(recap => {
                 if (!recap) return false;
                 const id = recap.id || String(recap.savedAt || '');
@@ -2797,6 +2806,16 @@
             })
             .map(recap => ({ ...recap, id: recap.id || ('recap_' + recap.savedAt) }))
             .sort((a, b) => Number(b.savedAt || b.archivedAt || 0) - Number(a.savedAt || a.archivedAt || 0));
+        // Collapse duplicate live-sync recaps of the same real draft — archives
+        // written before the write-side dedup hold several copies; newest wins.
+        const seenLive = new Set();
+        return rows.filter(r => {
+            if (r.mode !== 'live-sync' || !r.sleeperDraftId) return true;
+            const k = String(r.sleeperDraftId);
+            if (seenLive.has(k)) return false;
+            seenLive.add(k);
+            return true;
+        });
     }
 
     function deleteDraftRecap(leagueId, recapId) {
@@ -2811,7 +2830,12 @@
     }
 
     function buildRecapLearningDefaults(leagueId, opts = {}) {
-        const recaps = listDraftRecaps(leagueId).filter(recap => !opts.variant || recap.variant === opts.variant);
+        // opts.modes limits which recap kinds feed the model — the setup studio
+        // passes ['live-sync'] so only REAL drafts adjust tuning (mock recaps
+        // stay archived but never feed the model; owner ask 2026-07-12).
+        const recaps = listDraftRecaps(leagueId).filter(recap =>
+            (!opts.variant || recap.variant === opts.variant)
+            && (!opts.modes || opts.modes.includes(recap.mode)));
         const sample = recaps.slice(0, opts.limit || 8);
         const base = opts.baseTuning || {};
         const totals = sample.reduce((acc, recap) => {
