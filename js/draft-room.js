@@ -3361,6 +3361,22 @@
                         });
                         if (boardMode !== 'my') setBoardMode('my');
                     };
+                    // Grip drag commit (WR.dragReorderGrip): like handleDrop but honors
+                    // the insertion-line half — lower half lands AFTER the target row.
+                    const handleGripDrop = (srcPid, targetPid, after) => {
+                        if (!srcPid || !targetPid || srcPid === targetPid) return;
+                        setMyBoardOrder(prev => {
+                            const order = prev.length ? [...prev] : aiSeedOrder.slice();
+                            const fromIdx = order.indexOf(srcPid);
+                            if (fromIdx === -1) return order;
+                            order.splice(fromIdx, 1);
+                            const at = order.indexOf(targetPid);
+                            if (at === -1) return prev;
+                            order.splice(after ? at + 1 : at, 0, srcPid);
+                            return order;
+                        });
+                        if (boardMode !== 'my') setBoardMode('my');
+                    };
 
                     const buildOrderedPlayers = (order) => {
                         const cleanOrder = Array.isArray(order) && order.length ? order : draftPoolRows.map(r => r.pid);
@@ -3539,6 +3555,7 @@
                                     <React.Fragment key={r.pid}>
                                     <div
                                         data-draft-pid={r.pid}
+                                        data-reorder-key={r.pid}
                                         draggable={!isDhq}
                                         onDragStart={!isDhq ? (e) => handleDragStart(e, r.pid) : undefined}
                                         onDragOver={!isDhq ? handleDragOver : undefined}
@@ -3549,6 +3566,16 @@
                                         onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.04))'; }}
                                         onMouseLeave={e => { if (!isExp) e.currentTarget.style.background = idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent'; }}>
                                         <div className="wr-brd-numcell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: idx < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>
+                                            {!isDhq && (() => {
+                                                // Grip drag handle (owner ask 2026-07-13): pointer-based reorder
+                                                // for touch/pencil/mouse; HTML5 row drag + ▲/▼ stay as-is.
+                                                const gp = window.WR && window.WR.dragReorderGrip ? window.WR.dragReorderGrip({ key: r.pid, onDrop: handleGripDrop }) : null;
+                                                return gp && (
+                                                    <button type="button" className="wr-drag-grip" title="Hold and drag to reorder" aria-label={'Drag ' + pName(r.p) + ' to reorder'}
+                                                        {...gp}
+                                                        style={{ ...gp.style, width: 14, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 3, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontSize: '0.7rem', lineHeight: 1, flexShrink: 0, position: 'relative' }}>≡</button>
+                                                );
+                                            })()}
                                             <span>{idx + 1}</span>
                                             {!isDhq && (
                                                 <span className="wr-brd-move" style={{ display: 'inline-grid', gap: 2 }}>
@@ -4008,7 +4035,7 @@
                             {[...(typeof getLeaguePositions === 'function' ? getLeaguePositions() : ['QB','RB','WR','TE','K','DEF','DL','LB','DB']), ...(window.App?.getLeagueFlexGroups?.() || [])].map(pos => (
                                 <button key={pos} onClick={() => setBoardPosFilter(boardPosFilter === pos ? '' : pos)} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '55' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '18' : 'transparent', color: boardPosFilter === pos ? posColors[pos] : 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</button>
                             ))}
-                            <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Use arrows or drag to reorder My Board</span>
+                            <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Hold ≡ to drag — or use arrows — to reorder My Board</span>
                         </div>
 
                         {/* Team & Round filters */}
@@ -4047,7 +4074,7 @@
                         <div style={{ marginBottom: '14px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 8, color: 'var(--silver)', opacity: 0.65, fontSize: 'var(--text-micro, 0.6875rem)' }}>
                                 <span>{activeBoardInfo.label} - {visibleBoardPlayers.length} visible players</span>
-                                <span>{boardMode === 'my' ? 'Drag rows to reorder - click a player for notes' : 'Switch to User Board to edit rank order'}</span>
+                                <span>{boardMode === 'my' ? 'Hold ≡ (or drag a row) to reorder - click a player for notes' : 'Switch to User Board to edit rank order'}</span>
                             </div>
                             {renderCompactBoard(visibleBoardPlayers, boardMode !== 'my')}
                         </div>

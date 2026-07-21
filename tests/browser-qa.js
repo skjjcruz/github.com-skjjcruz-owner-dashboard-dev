@@ -11,9 +11,17 @@ const ROOT = path.join(__dirname, '..');
 const LEAGUE_ID = process.env.WARROOM_QA_LEAGUE || '1312100327931019264';
 const USER = process.env.WARROOM_QA_USER || 'bigloco';
 const BASE_PATH = process.env.WARROOM_QA_PATH || '/dist-preview/';
-// Phone floor (390/430), iPad portrait (768 mini, 820 Air, 834 Pro 11", 1024 Pro 12.9"),
-// iPad landscape (1180), desktop (1365). iPad portrait is now a first-class layout tier.
-const WIDTHS = [390, 430, 768, 820, 834, 1024, 1180, 1365];
+// Phone floor (390/430), iPad mini portrait (744 — PHONE tier by ruling),
+// iPad portrait (768 9.7", 810 10.2", 820 Air, 834 Pro 11", 1024 Pro 12.9"),
+// iPad landscape (1180 + short-height variants), desktop (1365). Heights
+// matter for the sidebar-scroll (F1) and tier-contract checks.
+const SIZES = [
+  { width: 390, height: 900 }, { width: 430, height: 900 },
+  { width: 744, height: 1133 }, { width: 768, height: 900 },
+  { width: 810, height: 1080 }, { width: 820, height: 900 },
+  { width: 834, height: 900 }, { width: 1024, height: 768 },
+  { width: 1180, height: 820 }, { width: 1365, height: 900 },
+];
 const TABS = ['dashboard', 'myteam', 'compare', 'trades', 'fa', 'draft', 'analytics', 'alex', 'trophies', 'calendar', 'strategy'];
 const CHROME = process.env.PLAYWRIGHT_CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT_START = Number(process.env.WARROOM_QA_PORT || 3210);
@@ -123,7 +131,7 @@ async function main() {
     throw err;
   }
   const server = await startStaticServer(port);
-  const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: (process.env.PLAYWRIGHT_CHROME_ARGS || '').split(' ').filter(Boolean) });
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
   const failures = [];
   let checked = 0;
 
@@ -134,8 +142,7 @@ async function main() {
       if (['image', 'font', 'media'].includes(type)) return route.abort();
       return route.continue();
     });
-    for (const width of WIDTHS) {
-      const height = width <= 430 ? 900 : 900;
+    for (const { width, height } of SIZES) {
       for (const tab of TABS) {
         const page = await context.newPage();
         await page.setViewportSize({ width, height });
@@ -168,20 +175,27 @@ async function main() {
       localStorage.setItem('dynastyhq_username', u);
     }, USER);
     await page.goto(`http://127.0.0.1:${port}${BASE_PATH}?dev=true&user=${USER}#league=${LEAGUE_ID}&tab=dashboard`, { waitUntil: 'domcontentloaded', timeout: 12000 });
-    await page.locator('.wr-hamburger').waitFor({ state: 'attached', timeout: 15000 }).catch(() => {});
+    // One-row phone header (owner ruling 2026-07-09): at ≤767 the hamburger is
+    // REMOVED (dock covers nav; Refresh lives in the header sheet) and the
+    // compact .wr-phone-lhdr row renders instead. The drawer + hamburger remain
+    // the contract for the 768-1023 tablet tier only.
+    await page.locator('.wr-phone-lhdr').waitFor({ state: 'attached', timeout: 15000 }).catch(() => {});
 
-    const hamburger = page.locator('.wr-hamburger');
-    if (await hamburger.count() !== 1) {
-      failures.push('dashboard-shell@390: hamburger control not found');
+    if (await page.locator('.wr-hamburger').count() !== 0) {
+      failures.push('dashboard-shell@390: hamburger should not render on phone (one-row header)');
+    }
+    const phoneHdr = page.locator('.wr-phone-lhdr');
+    if (await phoneHdr.count() !== 1) {
+      failures.push('dashboard-shell@390: one-row phone header not found');
     } else {
-      await hamburger.click({ timeout: 4000 }).catch(err => {
-        failures.push(`dashboard-shell@390: hamburger click failed (${err.message})`);
+      await phoneHdr.locator('[role="button"]').first().click({ timeout: 4000 }).catch(err => {
+        failures.push(`dashboard-shell@390: phone header tap failed (${err.message})`);
       });
-      await page.waitForTimeout(150);
-      const open = await page.locator('.wr-sidebar.open').count();
-      if (open !== 1) failures.push('dashboard-shell@390: hamburger did not open sidebar');
-      const overlay = page.locator('.wr-sidebar-overlay');
-      if (await overlay.count()) await overlay.click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(250);
+      const sheet = await page.locator('.wr-sheet').count();
+      if (sheet !== 1) failures.push('dashboard-shell@390: header league sheet did not open');
+      const closeBtn = page.locator('.wr-sheet [aria-label="Close"]');
+      if (await closeBtn.count()) await closeBtn.click({ timeout: 4000 }).catch(() => {});
       await page.waitForTimeout(150);
     }
 
@@ -238,6 +252,109 @@ async function main() {
     checked++;
     process.stdout.write('.');
 
+    // ── iPad tier contracts (iPad pass, 2026-07-12) ──────────────────
+    // 744×1133 (iPad mini portrait) = PHONE tier by ruling: one-row phone
+    // header + dock, NO hamburger. 810×1080 (iPad 10.2 portrait) = tablet
+    // drawer tier: hamburger present and CLEAR of the league title.
+    {
+      const mini = await context.newPage();
+      await mini.setViewportSize({ width: 744, height: 1133 });
+      await mini.addInitScript(u => {
+        try { localStorage.setItem('wr_tutorial_done_v1', '1'); localStorage.setItem('dynastyhq_username', u); } catch (e) {}
+      }, USER);
+      await mini.goto(`http://127.0.0.1:${port}${BASE_PATH}?dev=true&user=${USER}#league=${LEAGUE_ID}&tab=dashboard`, { waitUntil: 'domcontentloaded', timeout: 12000 });
+      await mini.locator('.wr-phone-lhdr').waitFor({ state: 'attached', timeout: 15000 }).catch(() => {});
+      if (await mini.locator('.wr-hamburger').count() !== 0) failures.push('ipad-mini@744: hamburger should not render (phone tier by ruling)');
+      if (await mini.locator('.wr-phone-lhdr').count() !== 1) failures.push('ipad-mini@744: one-row phone header not found');
+      if (await mini.locator('.wr-phone-dock').count() !== 1) failures.push('ipad-mini@744: phone dock not found');
+      await mini.close();
+      checked++;
+      process.stdout.write('.');
+
+      const tab810 = await context.newPage();
+      await tab810.setViewportSize({ width: 810, height: 1080 });
+      await tab810.addInitScript(u => {
+        try { localStorage.setItem('wr_tutorial_done_v1', '1'); localStorage.setItem('dynastyhq_username', u); } catch (e) {}
+      }, USER);
+      await tab810.goto(`http://127.0.0.1:${port}${BASE_PATH}?dev=true&user=${USER}#league=${LEAGUE_ID}&tab=dashboard`, { waitUntil: 'domcontentloaded', timeout: 12000 });
+      await tab810.locator('.wr-hamburger').waitFor({ state: 'attached', timeout: 15000 }).catch(() => {});
+      const drawerSnap = await tab810.evaluate(() => {
+        const ham = document.querySelector('.wr-hamburger');
+        const row = document.querySelector('.wr-league-header-row');
+        const title = document.querySelector('.wr-league-header-row .header-title') || row;
+        return {
+          ham: !!ham, dock: !!document.querySelector('.wr-phone-dock'),
+          hamRect: ham ? ham.getBoundingClientRect().toJSON() : null,
+          titleRect: title ? title.getBoundingClientRect().toJSON() : null,
+          rowPadLeft: row ? parseFloat(getComputedStyle(row).paddingLeft) : -1,
+        };
+      });
+      if (!drawerSnap.ham) failures.push('ipad-tablet@810: hamburger missing (drawer-tier contract)');
+      if (drawerSnap.dock) failures.push('ipad-tablet@810: phone dock must not render at tablet tier');
+      if (drawerSnap.rowPadLeft < 44) failures.push(`ipad-tablet@810: header row padding-left ${drawerSnap.rowPadLeft} < 44 (title clearance)`);
+      if (drawerSnap.ham && drawerSnap.hamRect && drawerSnap.titleRect
+        && drawerSnap.titleRect.left < drawerSnap.hamRect.right - 1
+        && drawerSnap.titleRect.top < drawerSnap.hamRect.bottom
+        && drawerSnap.titleRect.bottom > drawerSnap.hamRect.top) {
+        failures.push(`ipad-tablet@810: league title intersects hamburger ${JSON.stringify({ ham: drawerSnap.hamRect, title: drawerSnap.titleRect })}`);
+      }
+      await tab810.close();
+      checked++;
+      process.stdout.write('.');
+    }
+
+    // ── Coarse-pointer pass (iPad pass, 2026-07-12) ──────────────────
+    // isMobile+hasTouch makes Chromium report (pointer:coarse)+(hover:none),
+    // so the iPad coarse block's rules are ASSERTED here, not just shipped.
+    // env(safe-area-inset-*) is 0 in emulation — the --sat probe overrides
+    // the token and asserts the plumbing moved the chrome by exactly 47px.
+    {
+      const coarseCtx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 1180, height: 820 } });
+      await coarseCtx.route('**/*', route => {
+        const type = route.request().resourceType();
+        if (['image', 'font', 'media'].includes(type)) return route.abort();
+        return route.continue();
+      });
+      const cp = await coarseCtx.newPage();
+      await cp.addInitScript(u => {
+        try { localStorage.setItem('wr_tutorial_done_v1', '1'); localStorage.setItem('dynastyhq_username', u); } catch (e) {}
+      }, USER);
+      await cp.goto(`http://127.0.0.1:${port}${BASE_PATH}?dev=true&user=${USER}#league=${LEAGUE_ID}&tab=trades`, { waitUntil: 'domcontentloaded', timeout: 12000 });
+      await cp.waitForTimeout(900);
+      const coarseSnap = await cp.evaluate(() => {
+        const out = {
+          coarse: matchMedia('(hover: none) and (pointer: coarse)').matches,
+          sidebarOverflow: (() => { const sb = document.querySelector('.wr-sidebar'); return sb ? getComputedStyle(sb).overflowY : 'missing'; })(),
+        };
+        const hdr = document.querySelector('header.header');
+        const padBefore = hdr ? parseFloat(getComputedStyle(hdr).paddingTop) : -1;
+        document.documentElement.style.setProperty('--sat', '47px');
+        const padAfter = hdr ? parseFloat(getComputedStyle(hdr).paddingTop) : -1;
+        out.satDelta = Math.round(padAfter - padBefore);
+        document.documentElement.style.removeProperty('--sat');
+        return out;
+      });
+      if (!coarseSnap.coarse) failures.push('coarse@1180: (hover:none)+(pointer:coarse) did not match under touch emulation');
+      if (coarseSnap.sidebarOverflow !== 'auto') failures.push(`coarse@1180: .wr-sidebar overflow-y=${coarseSnap.sidebarOverflow}, expected auto (F1)`);
+      if (coarseSnap.satDelta !== 47) failures.push(`coarse@1180: header --sat plumbing moved ${coarseSnap.satDelta}px, expected 47`);
+      // Halo engagement: the 26px one-tap "+" must win taps 13px above its
+      // visual box (44×44 ::after). Needs Deal HQ rows (Pro dev login).
+      await cp.locator('.tc-dhq-add-btn').first().waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+      const haloHit = await cp.evaluate(() => {
+        const btn = document.querySelector('.tc-dhq-add-btn');
+        if (!btn) return 'no-btn';
+        const r = btn.getBoundingClientRect();
+        const el = document.elementFromPoint(r.left + r.width / 2, r.top - 8);
+        return el === btn || btn.contains(el) ? 'hit' : 'miss:' + (el ? el.className || el.tagName : 'null');
+      });
+      if (haloHit !== 'hit' && haloHit !== 'no-btn') failures.push(`coarse@1180: add-btn halo hit-test failed (${haloHit})`);
+      if (haloHit === 'no-btn') console.log('\n  note: coarse add-btn probe skipped (no Deal HQ rows rendered)');
+      await cp.close();
+      await coarseCtx.close();
+      checked++;
+      process.stdout.write('.');
+    }
+
     const empirePage = await context.newPage();
     await empirePage.setViewportSize({ width: 1365, height: 900 });
     // The hub league-selector (which holds the Launch Empire Dashboard control) only renders
@@ -250,15 +367,14 @@ async function main() {
     await empirePage.goto(`http://127.0.0.1:${port}${BASE_PATH}?dev=true&user=${USER}`, { waitUntil: 'domcontentloaded', timeout: 12000 });
     // The selector renders only after the user's leagues finish loading (network).
     await empirePage.locator('.hub-league-selector').waitFor({ state: 'attached', timeout: 20000 }).catch(() => {});
-    // FranchisePicker hub (2026-07): the launch control is the EMPIRE COMMAND hero card.
-    const launch = empirePage.locator('.empire-hero:not(.locked)');
-    await launch.first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+    const launch = empirePage.getByText('Launch Empire Dashboard', { exact: true });
+    await launch.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
     if (await launch.count() !== 1) {
       const diag = await empirePage.evaluate(() => ({
-        sel: !!document.querySelector('.hub-franchise-picker'),
+        sel: !!document.querySelector('.hub-league-selector'),
         body: String(document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 160),
       })).catch(() => ({}));
-      failures.push(`empire-launch: EMPIRE COMMAND hero not found [picker=${diag.sel} body="${diag.body || ''}"]`);
+      failures.push(`empire-launch: Launch Empire Dashboard control not found [selector=${diag.sel} body="${diag.body || ''}"]`);
     } else {
       await launch.click();
       await empirePage.waitForTimeout(1200);
