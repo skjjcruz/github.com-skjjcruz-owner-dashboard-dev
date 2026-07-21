@@ -1,0 +1,1122 @@
+{
+ "meta": {
+  "viewport": "1440x900",
+  "basePath": "/dist-preview/",
+  "league": "1312100327931019264",
+  "tabs": [
+   "dashboard",
+   "myteam",
+   "compare",
+   "trades",
+   "fa",
+   "draft",
+   "analytics",
+   "alex",
+   "trophies",
+   "settings",
+   "legend"
+  ]
+ },
+ "tabs": {
+  "dashboard": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "myteam": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "compare": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "trades": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "fa": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "draft": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "analytics": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "alex": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "trophies": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "settings": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  },
+  "legend": {
+   ".wr-sidebar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-nav-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sidebar-toggle": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-league-header-row": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-time-bar": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-hamburger": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-nav button": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-module-strip": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-dashboard-grid": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-widget": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-mkt-row": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-colpick-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".fa-detail-drawer": {
+    "count": 0,
+    "first": []
+   },
+   "[data-draft-pid]": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-brd-move-btn": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-ta-sticky-summary": {
+    "count": 0,
+    "first": []
+   },
+   ".tc-team-card": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-tip-icon": {
+    "count": 0,
+    "first": []
+   },
+   "input": {
+    "count": 0,
+    "first": []
+   },
+   "select": {
+    "count": 0,
+    "first": []
+   },
+   "table": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-phone-dock": {
+    "count": 0,
+    "first": []
+   },
+   ".wr-sheet": {
+    "count": 0,
+    "first": []
+   },
+   "__shape": {
+    "elements": 253,
+    "buttons": 3,
+    "coarse": false,
+    "hoverNone": false
+   }
+  }
+ }
+}

@@ -1,7 +1,7 @@
 {
   "name": "fantasy-war-room",
   "version": "1.0.0",
-  "description": "Fantasy football owner dashboard — draft war room, earnings tracking, free agent targets",
+  "description": "Fantasy football owner dashboard \u2014 draft war room, earnings tracking, free agent targets",
   "main": "index.html",
   "scripts": {
     "test": "node tests/run.js && npm run test:landing-content && npm run test:regression && npm run test:power-score && npm run test:click-paths && npm run test:intelligence-surfaces && npm run test:situation-room && npm run test:brief-pulse && npm run test:surface-read && npm run test:player-brief && npm run test:player-wire && npm run test:draft-context && npm run test:draft-analyst-mock && npm run test:draft-trade-simulator && npm run test:draft-live-sync && npm run test:draft-live-decision && npm run test:draft-recap && npm run test:post-draft-craze && npm run test:draft-strategy-studio && npm run test:ai && npm run test:ai-scale && npm run test:billing && npm run test:security && npm run test:bug-capture && npm run test:analytics && npm run test:tutorial && npm run test:rookies && npm run test:rookie-capital && npm run test:rookie-fields",
@@ -52,7 +52,10 @@
     "start": "npm run sync:shared && node scripts/serve-static.cjs --port=3001 --compile",
     "dev": "npm run sync:shared && node scripts/serve-static.cjs --port=3001 --compile",
     "dev:raw": "npm run sync:shared && node scripts/serve-static.cjs --port=3001",
-    "landing:edit": "node scripts/serve-static.cjs --port=3011 --open=landing-editor.html"
+    "landing:edit": "node scripts/serve-static.cjs --port=3011 --open=landing-editor.html",
+    "freeze:capture": "npm run build:preview && node tests/desktop-freeze.js capture tests/baselines/desktop-freeze.json",
+    "freeze:compare": "npm run build:preview && node tests/desktop-freeze.js compare tests/baselines/desktop-freeze.json",
+    "freeze:coarse": "npm run build:preview && node tests/desktop-freeze.js coarse"
   },
   "keywords": [
     "fantasy",
