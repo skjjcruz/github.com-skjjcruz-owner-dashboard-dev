@@ -452,6 +452,17 @@
             saveManualOrder(order);
         };
 
+        // Grip drag commit (WR.dragReorderGrip): honors the insertion-line
+        // half — drop on a row's lower half lands AFTER it (owner ask 2026-07-13).
+        const onGripDrop = (sourcePid, targetPid, after) => {
+            if (activeLane !== 'my' || !sourcePid || !targetPid || String(sourcePid) === String(targetPid)) return;
+            const order = manualOrderIds().filter(pid => pid !== String(sourcePid));
+            const targetIdx = order.indexOf(String(targetPid));
+            if (targetIdx < 0) return;
+            order.splice(after ? targetIdx + 1 : targetIdx, 0, String(sourcePid));
+            saveManualOrder(order);
+        };
+
         const _onEditTier = (player) => {
             const pid = idOf(player);
             if (!pid) return;
@@ -593,7 +604,7 @@
                         ))}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '7px', minHeight: 18 }}>
-                        <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: MICRO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeLane === 'my' ? 'Tap ▲ / ▼ under a row to reorder your board' : laneCopy}</span>
+                        <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: MICRO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeLane === 'my' ? 'Hold ≡ and drag to reorder — or tap ▲ / ▼' : laneCopy}</span>
                         {pro && activeLane === 'my' && boardContext?.canSeedMyBoardFromAi && (
                             <button onClick={onSeedMyBoardFromAi} style={{ padding: '6px 10px', minHeight: '36px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '4px', cursor: 'pointer', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 700, flexShrink: 0 }}>SEED</button>
                         )}
@@ -615,8 +626,18 @@
                             const college = collegeOf(p);
                             const showTouchMove = activeLane === 'my' && !p._drafted;
                             const remaining = p._copies - p._copiesTaken;
+                            // Grip drag handle beside my-lane cards (owner ask 2026-07-13);
+                            // ▲/▼ under the card stays as the precision fallback.
+                            const phGp = showTouchMove && window.WR && window.WR.dragReorderGrip ? window.WR.dragReorderGrip({ key: idOf(p), onDrop: onGripDrop }) : null;
                             return (
-                                <div key={p.pid} style={p._drafted ? { opacity: 0.45 } : undefined}>
+                                <div key={p.pid} data-reorder-key={idOf(p)} style={p._drafted ? { opacity: 0.45 } : undefined}>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'stretch' }}>
+                                    {phGp && (
+                                        <button type="button" className="wr-drag-grip" aria-label={'Drag ' + (p.name || 'player') + ' to reorder'}
+                                            {...phGp}
+                                            style={{ ...phGp.style, width: '30px', minHeight: '44px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '6px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontSize: '0.9rem', lineHeight: 1, position: 'relative' }}>≡</button>
+                                    )}
+                                    <div style={{ flex: 1, minWidth: 0 }}>
                                     {React.createElement(AssetRowC, {
                                         pos: normEdPos(p.pos),
                                         name: p.name,
@@ -632,6 +653,8 @@
                                         accent: b.tag === 'must' || b.tag === 'target' ? 'gold' : b.tag === 'avoid' ? 'risk' : undefined,
                                         onClick: () => onOpenModal(p),
                                     })}
+                                    </div>
+                                    </div>
                                     {showTouchMove && (
                                         <div style={{ display: 'flex', gap: 6, padding: '5px 2px 2px' }}>
                                             <button type="button" aria-label={'Move ' + (p.name || 'player') + ' up'} onClick={e => { e.stopPropagation(); onMovePlayer(p, -1); }} style={moveBtnCss}>▲ Up</button>
@@ -796,13 +819,13 @@
 
                 {activeLane === 'my' && (
                     <div style={{ padding: '4px 2px 7px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', opacity: 0.72, fontFamily: FONT_UI, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ fontWeight: 900 }}>{'↕'}</span> {touchReorder ? 'Tap ▲ / ▼ under a row to reorder your board' : 'Drag rows to reorder your board'}
+                        <span style={{ fontWeight: 900 }}>{'↕'}</span> {touchReorder ? 'Hold ≡ and drag to reorder — or tap ▲ / ▼' : 'Hold ≡ (or drag a row) to reorder your board'}
                     </div>
                 )}
 
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 44px',
+                    gridTemplateColumns: (activeLane === 'my' ? '38px' : '22px') + ' minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 44px',
                     gap: '5px',
                     alignItems: 'center',
                     padding: '0 3px 4px 5px',
@@ -837,6 +860,7 @@
                         return (
                             <React.Fragment key={p.pid}>
                             <div
+                                data-reorder-key={idOf(p)}
                                 onClick={() => onOpenModal(p)}
                                 draggable={activeLane === 'my' && !p._drafted}
                                 onDragStart={e => {
@@ -859,7 +883,7 @@
                                 }}
                                 style={{
                                     display: 'grid',
-                                    gridTemplateColumns: '22px minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 44px',
+                                    gridTemplateColumns: (activeLane === 'my' ? '38px' : '22px') + ' minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 44px',
                                     gap: '5px',
                                     alignItems: 'center',
                                     padding: '3px 3px 3px 0',
@@ -874,7 +898,23 @@
                                 onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'}
                                 onMouseLeave={e => e.currentTarget.style.background = dragPid === idOf(p) ? 'var(--acc-fill2, rgba(212,175,55,0.10))' : (idx === 0 ? 'var(--acc-fill1, rgba(212,175,55,0.045))' : 'transparent')}
                             >
-                                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rowRank <= 12 ? 'var(--gold)' : 'var(--ov-8, rgba(255,255,255,0.34))', textAlign: 'right', fontFamily: FONT_MONO }}>{rowRank}</span>
+                                {activeLane === 'my' && !p._drafted ? (() => {
+                                    // Grip drag handle (owner ask 2026-07-13): pointer-based reorder
+                                    // for touch/pencil/mouse; row-body HTML5 drag + ▲/▼ stay as-is.
+                                    const gp = window.WR && window.WR.dragReorderGrip ? window.WR.dragReorderGrip({ key: idOf(p), onDrop: onGripDrop }) : null;
+                                    return (
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px' }}>
+                                            {gp && (
+                                                <button type="button" className="wr-drag-grip" title="Hold and drag to reorder" aria-label={'Drag ' + (p.name || 'player') + ' to reorder'}
+                                                    {...gp}
+                                                    style={{ ...gp.style, width: '15px', height: '22px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '4px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontSize: '0.7rem', lineHeight: 1, flexShrink: 0, position: 'relative' }}>≡</button>
+                                            )}
+                                            <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rowRank <= 12 ? 'var(--gold)' : 'var(--ov-8, rgba(255,255,255,0.34))', fontFamily: FONT_MONO }}>{rowRank}</span>
+                                        </span>
+                                    );
+                                })() : (
+                                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rowRank <= 12 ? 'var(--gold)' : 'var(--ov-8, rgba(255,255,255,0.34))', textAlign: 'right', fontFamily: FONT_MONO }}>{rowRank}</span>
+                                )}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
                                     <span style={{ color: 'var(--white)', fontWeight: 700, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: p._drafted ? 'line-through' : 'none' }}>{p.name}</span>
                                     {p._copies > 1 && p._copiesTaken > 0 && (() => {

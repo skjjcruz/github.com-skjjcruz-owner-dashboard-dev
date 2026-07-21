@@ -3358,7 +3358,9 @@
                       {(() => {
                         const champs = window.App?.LI?.championships || {};
                         const cnt = Object.values(champs).filter(c => c.champion === myRoster?.roster_id).length;
-                        if (cnt > 0) return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)' }} title={cnt + 'x Champion'}>{'\uD83C\uDFC6'}</span>;
+                        // iPad pass: the \u00D7N count lived only in the hover title \u2014
+                        // surface it inline on coarse pointers (fine-pointer identical).
+                        if (cnt > 0) return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)' }} title={cnt + 'x Champion'}>{'\uD83C\uDFC6'}{alexVp.isCoarse && cnt > 1 ? '\u00D7' + cnt : ''}</span>;
                         return null;
                       })()}
                     </div>
@@ -3533,6 +3535,10 @@
                     title="Reload DHQ values, league history, and AI data"
                     >
                         {sidebarCollapsed ? renderNavIcon('refresh') : 'Refresh Data'}
+                        {/* iPad pass: title= never fires on touch — promote the
+                            info-exclusive tooltip to the tap-to-toggle Tip on
+                            coarse pointers only (desktop byte-identical). */}
+                        {!sidebarCollapsed && alexVp.isCoarse && typeof Tip === 'function' && <Tip>Reloads DHQ values, league history, and AI data. Data also auto-refreshes when you return to the tab.</Tip>}
                     </button>
                 </div>
 

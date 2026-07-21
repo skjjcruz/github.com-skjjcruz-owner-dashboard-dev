@@ -2686,6 +2686,74 @@ WRShared.preloadMany(WR_SHARED_FILES);
     .wr-delta-neg{color:var(--bad);font-weight:700}
     .wr-delta-neg::before{content:'\\0021 ';font-size:0.7rem}
 
+    /* ══ iPAD / COARSE-POINTER TIER (iPad pass, 2026-07-12) ═══════════════
+       Owner ruling: iPad keeps the DESKTOP layout, touch-optimized only.
+       ONE block for every width-independent touch rule: (hover:none) AND
+       (pointer:coarse) never matches a mouse-driven desktop (the freeze
+       gate at 1440×900 asserts fine-pointer), and still matches an iPad
+       with a trackpad attached (primary pointer stays touch) — hover/drag
+       JS wiring is untouched everywhere, so trackpads keep full behavior.
+       Growth is HIT-AREA only (halos / hit-padding): visual density is
+       ruled frozen — 30px rows stay 30px. */
+    @media (hover:none) and (pointer:coarse){
+        /* F1 — sidebar nav scrolls (iPad landscape ≥1024: the ~700px nav
+           stack clipped; the phone tier has its own copy at ≤767). */
+        .wr-sidebar { overflow-y:auto; overscroll-behavior:contain; }
+
+        /* F5 — FA detail drawer clears the notch/home bar (verbatim twin
+           of the ≤767 rules; idempotent where both match). */
+        .fa-detail-drawer {
+            padding-top:calc(20px + var(--sat)) !important;
+            padding-bottom:calc(20px + var(--sab)) !important;
+            padding-right:calc(20px + var(--sar)) !important;
+        }
+        .fa-detail-close { top:calc(12px + var(--sat)) !important; }
+
+        /* ── Hit-area halos (visuals frozen; targets grow to 44px) ──
+           Invisible ::after extensions — the in-repo idiom from the draft
+           board's phone bump. Pseudo-elements hit-test as their owner, so
+           where a halo overlaps a neighboring row the smaller precise
+           control wins — desired for the one-tap + add. */
+        .tc-dhq-add-btn { position:relative; }
+        .tc-dhq-add-btn::after { content:''; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:44px; height:44px; }
+        .tc-dhq-modebar button, .tc-dhq-browser-controls button,
+        .tc-dhq-show-more, .tc-dhq-detail-toggle,
+        .tc-dhq-actions button, .tc-dhq-hero-actions button,
+        .tc-rail-hide, .wr-drop-chip { position:relative; }
+        .tc-dhq-modebar button::after, .tc-dhq-browser-controls button::after,
+        .tc-dhq-show-more::after, .tc-dhq-detail-toggle::after,
+        .tc-dhq-actions button::after, .tc-dhq-hero-actions button::after,
+        .tc-rail-hide::after { content:''; position:absolute; left:0; right:0; top:50%; transform:translateY(-50%); height:44px; }
+        .wr-drop-chip::after { content:''; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:44px; height:44px; }
+        /* Drag-reorder grips (boards): small visual, full 44pt press target.
+           The halo inherits the grip's touch-action:none, so a press that
+           starts in it drags instead of scrolling. */
+        .wr-drag-grip::after { content:''; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:44px; height:44px; touch-action:none; }
+
+        /* ── Tap feedback — iPad gets neither hover nor pressed states on
+           the desktop surfaces. Gold pressed tint on every CLASSED touch
+           surface (the ~25 unclassed inline-styled hover rows are a named
+           residual for a future classing pass). !important beats inline
+           backgrounds — phone-tier precedent. */
+        * { -webkit-tap-highlight-color:transparent; }
+        .wr-sidebar-nav-btn:active, .wr-module-nav button:active, .wr-module-nav-item:active,
+        button.tc-dhq-asset-row:active, div.tc-dhq-asset-row[tabindex]:active,
+        .tc-dhq-modebar button:active, .tc-dhq-browser-controls button:active,
+        .tc-dhq-show-more:active, .tc-dhq-detail-toggle:active, .tc-dhq-add-btn:active,
+        .wr-brd-move-btn:active, .tc-ta-roster-item:active, .tc-rail-dna-link:active,
+        .session-strip-btn:active, .wr-drop-chip:active, .tc-rail-hide:active,
+        .fa-hq-mini-card:active, .fa-hq-swap:active, .fa-mkt-row:active,
+        .wr-drag-grip:active {
+            background:rgba(212,175,55,0.14) !important;
+        }
+    }
+    /* Home-indicator clearance for the ≥768 sidebar (fixed inset column).
+       The ≥768 guard keeps this from out-cascading the phone tier's larger
+       dock-aware !important padding. */
+    @media (hover:none) and (pointer:coarse) and (min-width:768px){
+        .wr-sidebar { padding-bottom:calc(16px + var(--sab, 0px)) !important; }
+    }
+
     /* ══════════════════════════════════════════════════════════════
        PHONE-ONLY LAYER (≤767px) — Dynasty HQ readability
        iPad portrait starts at 768px, so nothing in this block can
