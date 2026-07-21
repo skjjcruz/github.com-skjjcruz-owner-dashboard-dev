@@ -15,80 +15,47 @@ huge, but all three are required. Two I can build for you. One is a decision onl
 
 ---
 
-## The 3 things blocking you right now
+## The 3 former blockers — ALL CLEARED (updated 2026-07-21)
 
-### 1. 🔴 Payments — the big one (a decision only you can make)
-Right now the app sells subscriptions (Scout / War Room / Pro) using **Stripe**. On the
-**web and on Android, that's fine.** But **Apple does not allow Stripe** for digital
-subscriptions inside an iPhone app. Apple requires you to use **their own payment system
-("In-App Purchase")** — and **Apple takes a 15–30% cut** (vs. Stripe's ~3%).
+### 1. ✅ Payments — BUILT
+Decision landed and shipped: **iOS sells through Apple In-App Purchase via RevenueCat**
+(`js/billing.js`, `fw-revenuecat-webhook`); **web sells through Stripe** (`upgrade.html`,
+`fw-create-checkout`). Either path grants the same entitlement. Users can cancel:
+web → Stripe Billing Portal from Settings (`fw-billing-portal`); iOS → Apple ID
+subscription settings (linked from Settings, as Apple requires).
 
-**DECIDED:** Sell through the **App Store using Apple In-App Purchase (StoreKit)**, Apple
-only. No third-party billing layer (RevenueCat), not worrying about cross-platform sync for
-now.
+### 2. ✅ "Delete my account" button — DONE AND SURFACED
+Apple requires in-app account deletion (guideline 5.1.1(v)). The Settings account panel has
+a double-confirm Delete Account control wired to `fw-delete-account`, pinned by a contract
+test so it can't silently disappear.
 
-**⏸ BLOCKED ON PRODUCTS:** The actual purchase wiring can't be built until we decide **what
-products we're selling and at what price** — In-App Purchase is literally "buy *product X* →
-unlock *feature Y* at *price Z*." Products/pricing are intentionally on hold (TBD), so the
-IAP build waits for that decision. Everything below that doesn't touch products is unblocked.
-
-### 2. ✅ "Delete my account" button — DONE
-Apple requires any app with account creation to let users delete their account in-app. Built
-and shipped: a Delete Account button in Settings + the `fw-delete-account` back-end.
-
-### 3. ✅ Privacy Policy + Terms pages — DRAFTED
-Apple requires a public Privacy Policy link and Terms. Both drafted in `legal/` (fill in
-company details + a quick legal review before publishing).
+### 3. ✅ Privacy Policy + Terms pages — FINAL AND LIVE
+Published at `legal/privacy-policy.html` and `legal/terms-of-service.html`, linked from
+Settings. Draft banners removed, placeholders filled (Tennessee governing law), provider
+table matches the app (incl. RevenueCat). A professional legal review is still recommended
+but no longer blocks submission.
 
 ---
 
-## What I'm building for you right now (in this change)
+## What remains — all owner/admin steps in App Store Connect (no code)
 
-- ✅ **Draft Privacy Policy page** (`legal/privacy-policy.html`) — written around the data
-  your app actually uses (email, Sleeper username, league data, AI chat, payments).
-- ✅ **Draft Terms of Service page** (`legal/terms-of-service.html`).
-- ⚠️ Both are **solid drafts, not final** — a lawyer (or a service like Termly/iubenda)
-  should review them, and you'll fill in your company name, contact email, and state. They
-  give you real, hostable pages so this stops being a blocker.
+1. **IAP products live in App Store Connect** — the two subscriptions
+   (`com.dhqfootball.app.dhq.monthly` / `.annual`) must exist, be priced, and be attached
+   to the app version you submit, and the RevenueCat dashboard must point at them.
+2. **App Privacy questionnaire** — paste-ready answers in
+   `docs/APP-PRIVACY-QUESTIONNAIRE.md`.
+3. **Store listing** — name, subtitle, description, keywords, support URL, and the
+   **Privacy Policy URL** (use the live `legal/privacy-policy.html` link).
+4. **Screenshots** — Apple requires iPhone (6.7" and 6.5") sets; iPad set if the iPad
+   box is checked.
+5. **Reviewer test account** — a working email+password login with a connected league so
+   Apple's reviewer sees a real dashboard (put it in App Review Information → Sign-in
+   required).
+6. **Build upload** — archive in Xcode on a Mac (Product → Archive → Distribute →
+   App Store Connect), then select that build on the version page and Submit for Review.
 
-## What I can build next (just say go)
-
-- **Delete-account flow** (blocker #2) — a button in settings + the back-end to honor it.
-- **Apple In-App Purchase** (blocker #1) — once you pick option A/B/C above.
-- **The actual iPhone/Android app build** — packaging, app icons, splash screen, and the
-  files Apple/Google need. (Note: the final iPhone build must be done on a Mac with Xcode —
-  I can prepare everything up to that point.)
-
----
-
-## What only YOU can do (no code — admin/business steps)
-
-1. **Apple Developer account** — $99/year at developer.apple.com. Required to submit.
-   (Google Play is a one-time $25.)
-2. **Decide the payments approach** (option A / B / C above).
-3. **Company + legal info** for the privacy policy/terms: legal name, contact email, and
-   your state/country.
-4. **App Store listing content:** app name, description, keywords, support URL, and
-   **screenshots** (taken on real devices — Apple requires several sizes).
-5. **A test login for Apple's reviewers** — they need a working account to review the app.
-6. **App privacy questionnaire** — Apple's "nutrition label" form asking what data you
-   collect. (I'll give you the exact answers to paste in, based on your code.)
-
----
-
-## The simple order to do this in
-
-```
-1. You: buy Apple Developer account ($99/yr) + decide payments (A/B/C)
-2. Me:  build delete-account + finalize privacy/terms pages
-3. Me:  build the chosen payments path (if A)
-4. Me:  prepare the iPhone/Android app package (icons, splash, config)
-5. You: lawyer-review the legal pages; write the store listing + screenshots
-6. Both: submit to Apple + Google, answer review questions, ship 🚀
-```
-
-Realistic time to a submittable app once you've got the Apple account and made the payments
-decision: **roughly 2–4 weeks of build work**, plus Apple's review (usually 1–3 days).
+Apple review usually takes 1–3 days. Rejections, if any, come with a message — bring it
+back here and we fix and resubmit.
 
 ---
 
