@@ -522,13 +522,16 @@ function IntelligenceBriefWidget({
         const weakPos = needs.map(n => (typeof n === 'string' ? n : n?.pos)).filter(Boolean).slice(0, 4);
         const hasWaiverNames = !!(waiverTarget || (keyDrops && keyDrops.length));
 
+        // Each line leads with its own emoji instead of a shared ◆ bullet
+        // (owner's brief spec 2026-07-21). The lead read is 📰 on a quiet day
+        // and flips to 👀 whenever ANY material change or trade surfaces.
         const lines = [];
-        // Line 1 — 24-hour lead read. A fresh league trade leads with 👀 and
-        // links to the Transaction Ticker; otherwise it scrolls to Power Rankings.
-        lines.push({ key: 'lead', pr: !_leadEyes, txn: _leadEyes, src: _leadEyes ? 'Transaction Ticker' : 'Power Rankings', body: [_leadEyes ? ('👀 ' + leadChangeText) : leadChangeText] });
+        // Line 1 — 24-hour lead read. A fresh league trade links to the
+        // Transaction Ticker; otherwise it scrolls to Power Rankings.
+        lines.push({ key: 'lead', icon: _leadMaterial ? '👀' : '📰', pr: !_leadEyes, txn: _leadEyes, src: _leadEyes ? 'Transaction Ticker' : 'Power Rankings', body: [leadChangeText] });
         // Line 2 — rank + health → Analytics tab.
         if (myRank > 0 && tier !== 'UNKNOWN') {
-            lines.push({ key: 'rank', target: 'analytics', src: 'Analytics',
+            lines.push({ key: 'rank', icon: '🎯', target: 'analytics', src: 'Analytics',
                 body: ["You're ranked ", val(ordinal(myRank), 'var(--bad, #e86a5a)'), ' with an overall Health score of ', val(String(hs), 'var(--white)'), ' — ', React.createElement('strong', { key: 't', style: { color: 'var(--white)' } }, tier), ' tier.'] });
         }
         // Line 3 — roster count → My Roster.
@@ -536,17 +539,17 @@ function IntelligenceBriefWidget({
             const detail = taxiCap > 0
                 ? [' — ', val(activeCount + '/' + activeCap, 'var(--silver)'), ' active · ', val(taxiCount + '/' + taxiCap, 'var(--silver)'), ' taxi']
                 : [];
-            lines.push({ key: 'roster', target: 'myteam', src: 'My Roster',
+            lines.push({ key: 'roster', icon: '💪', target: 'myteam', src: 'My Roster',
                 body: ['Roster: ', val(String(totalPlayers), 'var(--white)'), ' of ', val(String(totalCap), 'var(--white)'), ...detail] });
         }
         // Line 4 — positional weaknesses → My Roster.
         if (weakPos.length) {
-            lines.push({ key: 'weak', target: 'myteam', src: 'My Roster',
+            lines.push({ key: 'weak', icon: '🤔', target: 'myteam', src: 'My Roster',
                 body: ['Key positional weaknesses: ', ...weakPos.map(chip)] });
         }
         // Line 5 — FAAB → Free Agency.
         if (budget > 0) {
-            lines.push({ key: 'faab', target: 'fa', src: 'Free Agency',
+            lines.push({ key: 'faab', icon: '💵', target: 'fa', src: 'Free Agency',
                 body: ["You've got ", val('$' + faabRemaining.toLocaleString(), 'var(--k-7c6bf8, #7c6bf8)'), ' FAAB left' + (hasWaiverNames ? ', with names available on waivers.' : '.')] });
         }
 
@@ -557,9 +560,9 @@ function IntelligenceBriefWidget({
             onClick: () => (ln.txn ? scrollToTransactions() : ln.pr ? scrollToPowerRankings() : goTo(ln.target)),
             onMouseEnter: (e) => { e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))'; },
             onMouseLeave: (e) => { e.currentTarget.style.background = 'transparent'; },
-            style: { display: 'grid', gridTemplateColumns: '14px 1fr', gap: '10px', padding: compact ? '8px' : '11px 8px', borderTop: i === 0 ? 'none' : '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', alignItems: 'start', cursor: 'pointer', transition: 'background 0.12s' },
+            style: { display: 'grid', gridTemplateColumns: '20px 1fr', gap: '10px', padding: compact ? '8px' : '11px 8px', borderTop: i === 0 ? 'none' : '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', alignItems: 'start', cursor: 'pointer', transition: 'background 0.12s' },
         },
-            React.createElement('div', { style: { marginTop: '4px', color: 'var(--gold-dim, #b8912f)', fontSize: '11px', lineHeight: 1 } }, '◆'),
+            React.createElement('div', { 'aria-hidden': 'true', style: { marginTop: '2px', fontSize: '14px', lineHeight: 1 } }, ln.icon || '◆'),
             React.createElement('div', { style: { minWidth: 0 } },
                 React.createElement('div', { style: { fontSize: bodyFs, color: '#cdd3de', lineHeight: 1.5 } }, ...ln.body),
                 React.createElement('div', { style: { marginTop: '3px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', letterSpacing: '0.03em', color: 'var(--gold-dim, #b8912f)' } }, '↳ ' + ln.src + ' →'),
