@@ -39,7 +39,11 @@
         // Without the ?home escape this head-level check bounces a signed-in
         // visitor back into the app before the body's STAY_HOME-aware
         // handlers ever run, making the hub logo appear to do nothing.
-        if (q.has('landingPreview') || q.has('signout') || q.has('home')) { reveal(); return; }
+        // A marketing sign-in hint (?start/?mode) means the visitor tapped a
+        // sign-in button — ALWAYS show the account screen (never teleport a
+        // signed-in visitor into their league; the body shows an
+        // "already signed in" choice instead).
+        if (q.has('landingPreview') || q.has('signout') || q.has('home') || q.has('start') || q.has('mode')) { reveal(); return; }
         // OAuth return: Supabase brings us back here with the session in the URL
         // (hash #access_token=… for implicit, ?code=… for PKCE) BEFORE the page's
         // callback handler has stored it. Show a neutral splash, not the marketing
@@ -1037,6 +1041,10 @@
         const start = (q.get('start') || '').toLowerCase();
         const mode = (q.get('mode') || '').toLowerCase();
         if (!start && !mode) return;
+        // Tell the body's session check a sign-in button was tapped — the
+        // visitor gets the account screen, never an auto-bounce (URL hints
+        // are consumed below, so a flag carries the intent forward).
+        window.__SIGNIN_INTENT = true;
         const hash = window.location.hash || '';
         if (hash.indexOf('access_token=') !== -1 || /[?&]code=/.test(window.location.search)
             || hash.indexOf('error=') !== -1 || q.has('error')) return;
@@ -1044,6 +1052,25 @@
         q.delete('start'); q.delete('mode');
         const rest = q.toString();
         try { history.replaceState(null, '', window.location.pathname + (rest ? '?' + rest : '') + hash); } catch {}
+        // Already signed in on this device? Don't silently re-run OAuth —
+        // show the choice: open your league, or use the card below to switch
+        // accounts. (This is the no-teleport rule, owner ask 2026-07-21.)
+        var _signedIn = false;
+        try {
+          var _sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
+          _signedIn = !!(_sess && _sess.token && _sess.user && _sess.user.id);
+        } catch (e) {}
+        if (_signedIn) {
+          try {
+            var _al = document.getElementById('alertJoin');
+            _al.className = 'alert alert-success show';
+            _al.innerHTML = 'You\u2019re already signed in \u2014 <a href="index.html" style="color:inherit;font-weight:700;text-decoration:underline">Open your league \u2192</a><br>Or use the options below to switch accounts.';
+            var _card = document.getElementById('auth');
+            if (_card) _card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } catch (e) {}
+          if (mode === 'signin' && authMode === 'signup') toggleAuthMode();
+          return;
+        }
         if (mode === 'signin' && authMode === 'signup') toggleAuthMode();
         // The landing content system hydrates copy async after DOMContentLoaded
         // and would overwrite the sign-in wording — re-assert once it settles.
@@ -1070,11 +1097,11 @@
         // purpose — a signed-in visitor must be able to look at this page
         // without being bounced straight back into the app. Their way back
         // in is the nav button, which flips from "Sign in" to "Open app".
-        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT || STAY_HOME) {
+        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT || STAY_HOME || window.__SIGNIN_INTENT) {
           try {
             const staySession = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
             const navBtn = document.getElementById('navSignin');
-            if (STAY_HOME && staySession?.token && navBtn) {
+            if ((STAY_HOME || window.__SIGNIN_INTENT) && staySession?.token && navBtn) {
               navBtn.textContent = 'Open app';
               navBtn.onclick = () => { window.location.href = nextAfterAuth(); };
             }
