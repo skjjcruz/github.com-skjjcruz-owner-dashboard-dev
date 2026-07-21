@@ -2303,12 +2303,14 @@ WRShared.preloadMany(WR_SHARED_FILES);
             border-top:2px solid transparent;
             cursor:pointer;
             color:var(--silver, #8a8f98);
-            font-family:var(--font-mono, 'JetBrains Mono', monospace);
+            /* Owner ask (2026-07-12): match the desktop/iPad sidebar nav font
+               (var(--font-body)) so all three surfaces read as one menu. */
+            font-family:var(--font-body, 'DM Sans', sans-serif);
             font-size:var(--text-micro, 0.6875rem); /* 11px floor — no new sub-11px text */
             font-weight:600;
             letter-spacing:0.05em;
             line-height:1;
-            text-transform:uppercase;
+            text-transform:none;
             white-space:nowrap;
         }
         /* 20px matches Scout's icon-dominant nav weight + the Alex avatar. */
@@ -2335,7 +2337,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
             border-left:1px solid rgba(212,175,55,0.28);
             cursor:pointer;
             color:var(--silver, #8a8f98);
-            font-family:var(--font-mono, 'JetBrains Mono', monospace);
+            font-family:var(--font-body, 'DM Sans', sans-serif);
             font-size:var(--text-micro, 0.6875rem);
             font-weight:600;
             letter-spacing:0.05em;

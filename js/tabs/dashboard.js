@@ -283,6 +283,7 @@ const LEGACY_MODULE_MAP = {
 
 // ══════════════════════════════════════════════════════════════════
 // DashboardWidgetPicker — full-screen iPhone-style overlay
+// (phone tier <768 renders as a WR.Sheet — see the _phonePicker branch)
 // ══════════════════════════════════════════════════════════════════
 function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
     const [step, setStep] = React.useState(editWidget ? 'size' : 'module');
@@ -312,6 +313,122 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
         const metric = selectedMetric || (mod?.metrics?.[0]?.key || null);
         onAdd({ id: selectedModule + '_' + Date.now(), key: selectedModule, size: selectedSize, primaryMetric: metric });
         onClose();
+    }
+
+    // ── Phone tier (iPhone Phase 4): the picker opens as a WR.Sheet
+    // instead of the capped centered modal. Module list = full-width
+    // AssetRow rows (icon + name + one-line description, 🔒 Pro badge at
+    // the exact `m.pro && !pickerPro` boundary the desktop grid labels —
+    // zero gate movement); tapping a row expands its 44px size chips
+    // (+ Primary Stat chips when the module offers a choice); the sticky
+    // sheet-footer ADD/UPDATE button runs the same handleConfirm →
+    // onAdd({id,key,size,primaryMetric}) layout-slot semantics. The
+    // desktop modal return below is byte-identical to the pre-phase
+    // file. Hook-order safety: viewport.js + wr-primitives.js are plain
+    // scripts loaded before the babel chain, so the branch condition is
+    // fixed for the picker's lifetime.
+    const _pickerVp = (window.WR && window.WR.useViewport) ? window.WR.useViewport() : { isPhone: false };
+    const _phonePicker = _pickerVp.isPhone && !!(window.WR && window.WR.Sheet && window.WR.AssetRow);
+    // Edit mode opens with its module row pre-expanded — 18 rows scroll
+    // well past one sheet height, so center the row once on mount.
+    const _phoneEditRowRef = React.useCallback(node => {
+        if (node) { try { node.scrollIntoView({ block: 'center' }); } catch (e) { /* noop */ } }
+    }, []);
+
+    if (_phonePicker) {
+        const Sheet = window.WR.Sheet;
+        const AssetRow = window.WR.AssetRow;
+        const monoCaps = { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' };
+        const chipBase = (active, accentCol) => ({
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            minHeight: '44px', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+            border: '1px solid ' + (active ? (accentCol || 'var(--gold)') : 'var(--ov-6, rgba(255,255,255,0.1))'),
+            background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-1, rgba(255,255,255,0.02))',
+            color: active ? 'var(--gold)' : 'var(--silver)',
+            fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600,
+        });
+        // Row tap toggles selection/expansion. Switching modules keeps the
+        // metric default in sync (same setter pair as the desktop grid tap)
+        // and drops a carried size the new module doesn't offer, so the
+        // footer can never confirm an invalid module+size pair.
+        const pickModule = (key, m) => {
+            if (selectedModule === key) { setSelectedModule(null); return; }
+            setSelectedModule(key);
+            setSelectedMetric(m.metrics?.[0]?.key || null);
+            if (selectedSize && !(m.sizes || []).includes(selectedSize)) setSelectedSize(null);
+        };
+        return (
+            <Sheet open={true} onClose={onClose} title={editWidget ? 'Edit widget' : 'Add widget'}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 14px 0' }}>
+                    {Object.entries(WIDGET_MODULES).map(([key, m]) => {
+                        const isSel = selectedModule === key;
+                        const accentCol = typeof m.accent === 'function' ? m.accent() : m.accent;
+                        const row = (
+                            <AssetRow
+                                key={key}
+                                data-picker-module={key}
+                                pos={<span aria-hidden="true" style={{ fontSize: '1rem', lineHeight: 1 }}>{m.icon}</span>}
+                                name={m.label}
+                                tag={m.description}
+                                verdict={m.pro && !pickerPro ? (
+                                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro, 0.6875rem)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', border: '1px solid var(--acc-line3, rgba(212,175,55,0.4))', borderRadius: '2px', padding: '1px 6px', whiteSpace: 'nowrap' }}>🔒 Pro</span>
+                                ) : null}
+                                accent={isSel ? 'gold' : undefined}
+                                expanded={isSel}
+                                onClick={() => pickModule(key, m)}
+                            >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    <div>
+                                        <div style={{ ...monoCaps, color: 'var(--silver)', opacity: 0.65, marginBottom: '6px' }}>Size</div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                            {m.sizes.map(sz => {
+                                                const meta = SIZE_META[sz];
+                                                if (!meta) return null;
+                                                const on = selectedSize === sz;
+                                                return (
+                                                    <button key={sz} type="button" onClick={() => setSelectedSize(sz)} style={chipBase(on, accentCol)}>
+                                                        {meta.label}
+                                                        <span style={{ opacity: 0.55, fontWeight: 500 }}>{meta.dims}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    {m.metrics.length > 1 && (
+                                        <div>
+                                            <div style={{ ...monoCaps, color: 'var(--gold)', marginBottom: '6px' }}>Primary Stat</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                {m.metrics.map(mt => (
+                                                    <button key={mt.key} type="button" onClick={() => setSelectedMetric(mt.key)} style={chipBase(selectedMetric === mt.key, accentCol)}>{mt.label}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </AssetRow>
+                        );
+                        return editWidget && editWidget.key === key
+                            ? <div key={'edit-' + key} ref={_phoneEditRowRef}>{row}</div>
+                            : row;
+                    })}
+                </div>
+                {/* Sticky footer — FilterSheet idiom: pinned inside the sheet-body scroller */}
+                <div style={{
+                    position: 'sticky', bottom: 0, marginTop: '12px', padding: '10px 14px',
+                    background: 'var(--k-0a0b0d, #0a0b0d)',
+                    borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.07))',
+                }}>
+                    <button type="button" onClick={handleConfirm} disabled={!selectedModule || !selectedSize} style={{
+                        width: '100%', minHeight: '48px', padding: '12px', borderRadius: '8px',
+                        cursor: (selectedModule && selectedSize) ? 'pointer' : 'not-allowed',
+                        background: (selectedModule && selectedSize) ? 'var(--gold)' : 'var(--ov-4, rgba(255,255,255,0.06))',
+                        border: 'none', color: (selectedModule && selectedSize) ? 'var(--k-000000, #000000)' : 'var(--silver)',
+                        fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-body, 1rem)', fontWeight: 700,
+                        letterSpacing: '0.06em',
+                    }}>{editWidget ? 'UPDATE WIDGET' : 'ADD TO DASHBOARD'}</button>
+                </div>
+            </Sheet>
+        );
     }
 
     return (
@@ -471,6 +588,103 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
 // ══════════════════════════════════════════════════════════════════
 // DashboardPanel — main component
 // ══════════════════════════════════════════════════════════════════
+// ── Phone widget-reorder sheet ──────────────────────────────────────
+// A dedicated "move them around" window (owner ask 2026-07-09): drag any
+// widget by its grip to reslot it. Operates on the whole selectedWidgets
+// array (sm tiles + stack, in layout order) and commits via onReorder on
+// each drop. Pointer-based so it works on iOS touch; the grip owns
+// touch-action:none so a drag reorders instead of scrolling the sheet.
+function WrDashReorder({ widgets, modules, onReorder, onClose }) {
+    const Sheet = window.WR && window.WR.Sheet;
+    const [order, setOrder] = React.useState(() => (widgets || []).slice());
+    const orderRef = React.useRef(order);
+    orderRef.current = order;
+    const listRef = React.useRef(null);
+    const dragRef = React.useRef(null); // the widget object currently dragged
+    const [dragKey, setDragKey] = React.useState(null);
+
+    if (!Sheet) return null;
+
+    const labelFor = (w) => (modules[w.key] && modules[w.key].label) || w.key || 'Widget';
+    const iconFor = (w) => (modules[w.key] && modules[w.key].icon) || '▦';
+    const keyFor = (w, i) => (w.id || w.key || 'w') + '::' + i;
+
+    function onMove(e) {
+        const dragged = dragRef.current;
+        if (!dragged || !listRef.current) return;
+        e.preventDefault();
+        const cur = orderRef.current;
+        const from = cur.indexOf(dragged);
+        if (from < 0) return;
+        const rows = Array.prototype.slice.call(listRef.current.querySelectorAll('[data-ro-row]'));
+        let target = rows.length - 1;
+        for (let k = 0; k < rows.length; k++) {
+            const r = rows[k].getBoundingClientRect();
+            if (e.clientY < r.top + r.height / 2) { target = k; break; }
+        }
+        if (target !== from) {
+            const next = cur.slice();
+            next.splice(from, 1);
+            next.splice(target, 0, dragged);
+            orderRef.current = next;
+            setOrder(next);
+        }
+    }
+    function endDrag() {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', endDrag);
+        window.removeEventListener('pointercancel', endDrag);
+        if (dragRef.current) {
+            dragRef.current = null;
+            setDragKey(null);
+            onReorder(orderRef.current.slice());
+        }
+    }
+    function startDrag(e, w) {
+        e.preventDefault();
+        dragRef.current = w;
+        setDragKey(keyFor(w, orderRef.current.indexOf(w)));
+        window.addEventListener('pointermove', onMove, { passive: false });
+        window.addEventListener('pointerup', endDrag);
+        window.addEventListener('pointercancel', endDrag);
+    }
+
+    return React.createElement(Sheet, { open: true, onClose: onClose, title: 'Reorder widgets' },
+        React.createElement('div', { style: { padding: '2px 12px 8px' } },
+            React.createElement('div', { style: { fontFamily: "'DM Sans', sans-serif", fontSize: '0.8rem', color: 'var(--text-muted)', padding: '2px 4px 10px', lineHeight: 1.4 } }, 'Drag a widget by its handle to move it. Changes save as you go.'),
+            React.createElement('div', { ref: listRef, style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
+                order.map((w, i) => {
+                    const k = keyFor(w, i);
+                    const isDrag = dragKey === k;
+                    return React.createElement('div', {
+                        key: k, 'data-ro-row': '',
+                        style: {
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            padding: '10px', minHeight: '52px',
+                            background: isDrag ? 'var(--surface-3, #27262E)' : 'var(--black, #121217)',
+                            border: '1px solid ' + (isDrag ? 'rgba(212,175,55,0.5)' : 'rgba(255,255,255,0.07)'),
+                            borderRadius: '9px',
+                            boxShadow: isDrag ? '0 8px 22px rgba(0,0,0,0.5)' : 'none',
+                            opacity: (dragRef.current && !isDrag) ? 0.7 : 1,
+                            touchAction: 'pan-y',
+                            transition: isDrag ? 'none' : 'background 0.12s, border-color 0.12s',
+                        },
+                    },
+                        React.createElement('span', {
+                            'aria-label': 'Drag to reorder', role: 'button',
+                            onPointerDown: (e) => startDrag(e, w),
+                            style: { flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '40px', minHeight: '44px', marginLeft: '-4px', color: 'var(--text-muted)', cursor: 'grab', touchAction: 'none', fontSize: '1.15rem' },
+                        }, '⠿'),
+                        React.createElement('span', { 'aria-hidden': 'true', style: { flex: 'none', fontSize: '1.05rem', width: '22px', textAlign: 'center' } }, iconFor(w)),
+                        React.createElement('span', { style: { flex: '1 1 auto', minWidth: 0, fontFamily: "'DM Sans', sans-serif", fontSize: '0.9rem', fontWeight: 600, color: 'var(--white, #F5F2EA)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, labelFor(w)),
+                        w.size ? React.createElement('span', { style: { flex: 'none', fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' } }, w.size) : null
+                    );
+                })
+            )
+        )
+    );
+}
+
 function DashboardPanel({
     selectedWidgets,
     setSelectedWidgets,
@@ -498,6 +712,7 @@ function DashboardPanel({
     const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
     const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
     const [pickerOpen, setPickerOpen] = React.useState(false);
+    const [reorderOpen, setReorderOpen] = React.useState(false); // phone widget-reorder sheet
     const [editingWidget, setEditingWidget] = React.useState(null); // { widgetId, widget }
     const [dragIdx, setDragIdx] = React.useState(null);
     // Phone/touch tier (plan Phase 2 item 11): HTML5 DnD never fires on iOS
@@ -1175,6 +1390,12 @@ function DashboardPanel({
     function WidgetShell({ widget, idx, children }) {
         const isTouch = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
         const [showGear, setShowGear] = React.useState(isTouch);
+        // Phone (<768) chrome (iPhone program Phase 1): the ⚙/✕ pair
+        // collapses behind ONE ⋯ toggle per card; the shipped 44px ▲/▼
+        // touch-reorder controls below stay exactly as they are. Desktop
+        // and tablet never render the phone chrome (shellPhone false).
+        const shellPhone = dashViewport.isPhone;
+        const [phoneMenu, setPhoneMenu] = React.useState(false);
         const sizeSpan = { sm: 'span 1', slim: 'span 1', narrow: 'span 1', md: 'span 2', lg: 'span 2', tall: 'span 2', xl: 'span 4', xxl: 'span 4' };
         const rowSpan = { sm: 'span 1', slim: 'span 2', narrow: 'span 4', md: 'span 1', lg: 'span 2', tall: 'span 4', xl: 'span 2', xxl: 'span 4' };
 
@@ -1226,7 +1447,7 @@ function DashboardPanel({
                 {children}
 
                 {/* Gear button */}
-                {showGear && (
+                {!shellPhone && showGear && (
                     <button
                         onClick={e => { e.stopPropagation(); setEditingWidget({ widget, idx }); setPickerOpen(true); }}
                         title="Widget settings"
@@ -1248,7 +1469,7 @@ function DashboardPanel({
                 )}
 
                 {/* Remove button */}
-                {showGear && (
+                {!shellPhone && showGear && (
                     <button
                         onClick={e => { e.stopPropagation(); setSelectedWidgets(selectedWidgets.filter((_, i) => i !== idx)); }}
                         title="Remove widget"
@@ -1270,11 +1491,12 @@ function DashboardPanel({
                 )}
 
                 {/* Touch reorder ▲/▼ — HTML5 drag events never fire on iOS
-                    Safari, so coarse-pointer/phone reorders with these instead.
-                    44px hit areas (glyph circle stays 22px, hit-padding only),
-                    same float row as the gear/remove affordance. Fine-pointer
-                    desktop never renders them (touchReorder false). */}
-                {showGear && touchReorder && [
+                    Safari. PHONE reorders via the dedicated reorder sheet
+                    (⇅ Reorder toolbar → drag list) so the cards stay clean;
+                    these per-card arrows are the fallback for coarse-pointer
+                    TABLETS only (isCoarse && !isPhone). Fine-pointer desktop
+                    never renders them (touchReorder false). */}
+                {showGear && touchReorder && !shellPhone && [
                     { glyph: '▼', delta: 1, ok: canMoveDown, right: '77px', label: 'Move widget down' },
                     { glyph: '▲', delta: -1, ok: canMoveUp, right: '121px', label: 'Move widget up' },
                 ].map(b => (
@@ -1300,6 +1522,50 @@ function DashboardPanel({
                             transition: 'all 0.12s', pointerEvents: 'none',
                         }}>{b.glyph}</span></button>
                 ))}
+
+                {/* Phone ⋯ chrome — one toggle per card; tap opens a small
+                    inline action row (⚙ Edit / ✕ Remove) wired to the same
+                    setters the desktop gear/remove buttons use. ▲/▼ above
+                    stay as shipped. */}
+                {shellPhone && (
+                    <button
+                        onClick={e => { e.stopPropagation(); setPhoneMenu(v => !v); }}
+                        aria-label="Widget actions"
+                        aria-expanded={phoneMenu}
+                        title="Widget actions"
+                        style={{
+                            position: 'absolute', top: '-11px', right: '-11px',
+                            width: '44px', height: '44px', padding: 0,
+                            border: 'none', background: 'transparent',
+                            cursor: 'pointer', fontSize: 'var(--text-label, 0.75rem)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            zIndex: 6,
+                        }}
+                    ><span style={{
+                            width: '22px', height: '22px', borderRadius: '50%',
+                            border: '1px solid ' + (phoneMenu ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.15))'),
+                            background: 'var(--surf-solid, rgba(10,10,10,0.85))', backdropFilter: 'blur(4px)',
+                            color: phoneMenu ? G : S, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.12s', pointerEvents: 'none', fontWeight: 700, letterSpacing: '1px',
+                        }}>⋯</span></button>
+                )}
+                {shellPhone && phoneMenu && (
+                    <div style={{
+                        position: 'absolute', top: '26px', right: '2px', zIndex: 7,
+                        display: 'flex', gap: '4px', padding: '3px 4px',
+                        background: 'var(--surf-solid, rgba(10,10,10,0.92))', backdropFilter: 'blur(4px)',
+                        border: '1px solid var(--ov-6, rgba(255,255,255,0.15))', borderRadius: '9px',
+                    }}>
+                        <button
+                            onClick={e => { e.stopPropagation(); setPhoneMenu(false); setEditingWidget({ widget, idx }); setPickerOpen(true); }}
+                            style={{ minHeight: '44px', padding: '0 12px', background: 'transparent', border: 'none', color: W, cursor: 'pointer', fontFamily: dmFont, fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600 }}
+                        >⚙ Edit</button>
+                        <button
+                            onClick={e => { e.stopPropagation(); setPhoneMenu(false); setSelectedWidgets(selectedWidgets.filter((_, i) => i !== idx)); }}
+                            style={{ minHeight: '44px', padding: '0 12px', background: 'transparent', border: 'none', color: 'var(--bad, #e74c3c)', cursor: 'pointer', fontFamily: dmFont, fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600 }}
+                        >✕ Remove</button>
+                    </div>
+                )}
             </div>
         );
     }
@@ -1542,6 +1808,255 @@ function DashboardPanel({
         setShowHint(false);
         try { localStorage.setItem(HINT_KEY, '1'); } catch {}
     };
+
+    // ══ PHONE (<768) — Phase 1 re-pour (iPhone program) ═══════════
+    // Early-return branch: everything inside `if (_phone)` below renders
+    // ONLY at the phone tier; the desktop/tablet MAIN RENDER further down
+    // stays byte-identical to the pre-phase file. Kit presence
+    // (wr-primitives.js loads earlier in the babel chain) is fixed for
+    // the page's lifetime. Layout: severity hero → ONE .wr-kpi-strip band
+    // (all sm widgets) → md+ widget cards in existing stack order →
+    // Add-widget tile at the bottom → Pinned.
+    const _kitReady = !!(window.WR && window.WR.HeroCard);
+    const _phone = dashViewport.isPhone && _kitReady;
+
+    // Lineup delta — feeds the phone sm-strip lineup-check tile (the hero
+    // rung it used to drive moved into the Intel Brief). Same engine call +
+    // MFL empty-starters guard as LineupCheckWidget (js/widgets/lineup-check.js).
+    // Pro-only at the exact wrPro boundary that already gates the
+    // lineup-check widget (pro: true / startsit_depth) — zero gate drift.
+    // Hook runs unconditionally (order safety); short-circuits off-phone.
+    const _phoneLineup = React.useMemo(() => {
+        if (!_phone || !wrPro) return null;
+        const WP = window.App && window.App.WeeklyProj;
+        if (!WP || typeof WP.optimalForRoster !== 'function' || !myRoster || !currentLeague) return null;
+        const platformStarters = (myRoster.starters || []).filter(pid => pid && String(pid) !== '0');
+        if (!platformStarters.length) return null;
+        try { return WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: prevStatsData }); }
+        catch (e) { if (window.wrLog) window.wrLog('dashboard.phoneHero', e); return null; }
+    }, [_phone, wrPro, myRoster, currentLeague, playersData, statsData, prevStatsData]);
+
+    if (_phone) {
+        // ── Hero: latest pinned insight only. The old rung-1 "lineup alert"
+        // hero moved INTO the Intel Brief (owner ask 2026-07-12,
+        // flash-brief.js lineupAlert), and the "Franchise pulse" fallback is
+        // deleted outright (same ask) — its health/rank stats already render
+        // in the KPI strip and the brief's xxl band, so the card was pure
+        // repetition. No pinned intel → no hero; the widget stack leads.
+        // _ld stays: it still feeds the sm-strip lineup-check tile below.
+        let _phoneHeroEl = null;
+        const _ld = _phoneLineup && _phoneLineup.delta;
+        if (starredWidgets.length > 0) {
+            const _pin = [...starredWidgets].sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+            const _pinDest = WIDGET_DESTINATIONS[_pin.sourceModule] ? resolveWidgetDestination(_pin.sourceModule) : null;
+            _phoneHeroEl = React.createElement(window.WR.HeroCard, {
+                kicker: _pin.sourceModule ? String(_pin.sourceModule) : 'Pinned intel',
+                headline: _pin.title || 'Pinned intel',
+                facts: _pin.content ? String(_pin.content).slice(0, 120) : 'Starred from across the app',
+                cta: _pinDest ? 'Open' : null,
+                onCta: _pinDest ? () => navigateWidget(_pinDest) : undefined,
+            });
+        }
+
+        // ── Layout split: ALL size-sm widgets merge into one KPI strip;
+        // everything else keeps its card form in existing stack order.
+        // Original selectedWidgets indices ride along so ▲▼/edit/remove in
+        // WidgetShell keep mutating the exact same layout array slots.
+        const _phoneSm = [];
+        const _phoneStack = [];
+        widgets.forEach((w, i) => { ((w && w.size === 'sm') ? _phoneSm : _phoneStack).push({ w, i }); });
+
+        // Strip-tile value ladder (no new engines): Pro-locked teaser at
+        // the exact renderWidget gate → KPI value via the same
+        // computeKpiValue feed the desktop SmallKpiCard reads (plus two
+        // existing-KPI fallbacks for metric-less modules) → the lineup
+        // delta already computed above → icon launcher to the module's
+        // existing sm clickTarget.
+        const _PHONE_SM_KPI = { 'draft-capital': 'pick-capital', 'market-radar': 'faab-efficiency' };
+        const _phoneKpiTile = (widget) => {
+            const mod = WIDGET_MODULES[widget.key];
+            const clickTab = resolveWidgetDestination(mod?.clickTarget?.sm || mod?.clickTarget?.md || null);
+            const tileBase = {
+                background: BK, border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
+                borderRadius: '9px', padding: '9px 11px', minHeight: '68px', maxWidth: '150px',
+                display: 'flex', flexDirection: 'column', gap: '2px', cursor: 'pointer', boxSizing: 'border-box',
+            };
+            const labelCss = { fontFamily: monoFont, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, color: S, opacity: 0.65, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+            const subCss = { fontFamily: dmFont, fontSize: 'var(--text-micro, 0.6875rem)', color: S, opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 'auto' };
+            const valCss = (col) => ({ fontFamily: monoFont, fontSize: '1.15rem', fontWeight: 700, color: col || W, lineHeight: 1.15, whiteSpace: 'nowrap' });
+            const tileKey = widget.id || widget.key;
+            // Tiles keep the WidgetShell data-widget-* hooks so live click
+            // QA (tests/live-click-paths.js) finds sm widgets at the phone
+            // breakpoint too.
+            const tileProps = (onTap, label) => ({
+                role: 'button', tabIndex: 0, title: label,
+                'data-widget-id': widget.id || '',
+                'data-widget-key': widget.key || '',
+                'data-widget-size': widget.size || '',
+                onClick: onTap,
+                onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap && onTap(e); } },
+                style: tileBase,
+            });
+            // 1) Pro module + free user — same condition renderWidget gates
+            //    on; tap routes to the same upsell WidgetProTeaser opens.
+            if (mod?.pro && !wrPro) {
+                const openUpsell = () => {
+                    if (window.showProLaunchPage) window.showProLaunchPage();
+                    else if (window.showUpgradePrompt) window.showUpgradePrompt(mod?.proFeature || '');
+                };
+                return (
+                    <div key={tileKey} {...tileProps(openUpsell, (mod?.label || widget.key) + ' — Pro')}>
+                        <div style={labelCss}>{mod?.label || widget.key}</div>
+                        <div style={valCss(G)}>🔒</div>
+                        <div style={subCss}>Pro</div>
+                    </div>
+                );
+            }
+            const goTab = () => { if (clickTab) navigateWidget(clickTab); };
+            // 2) KPI-backed tile — label / value / delta.
+            const kpiKey = widget.primaryMetric || mod?.metrics?.[0]?.key || _PHONE_SM_KPI[widget.key] || null;
+            if (kpiKey) {
+                const val = kv(kpiKey);
+                const metricLabel = (mod?.metrics || []).find(m => m.key === kpiKey)?.label || KPI_OPTIONS?.[kpiKey]?.label || mod?.label || kpiKey;
+                return (
+                    <div key={tileKey} {...tileProps(goTab, metricLabel)}>
+                        <div style={labelCss}>{metricLabel}</div>
+                        <div style={valCss(val.color)}>{val.value}{trendArrow(val.sparkData, val.color)}</div>
+                        <div style={subCss}>{val.sub || ' '}</div>
+                    </div>
+                );
+            }
+            // 3) Lineup check — reuse the delta already computed for the hero.
+            if (widget.key === 'lineup-check' && _ld) {
+                return (
+                    <div key={tileKey} {...tileProps(() => navigateWidget('lineup'), 'Lineup Check')}>
+                        <div style={labelCss}>Lineup Check</div>
+                        <div style={valCss(_ld.isOptimal ? 'var(--good, #2ecc71)' : G)}>{_ld.isOptimal ? 'SET' : _ld.delta.toFixed(1)}</div>
+                        <div style={subCss}>{_ld.isOptimal ? 'optimal' : 'pts on bench'}</div>
+                    </div>
+                );
+            }
+            // 4) Launcher tile — module icon, taps through to its tab.
+            return (
+                <div key={tileKey} {...tileProps(goTab, mod?.label || widget.key)}>
+                    <div style={labelCss}>{mod?.label || widget.key}</div>
+                    <div style={valCss(W)}>{mod?.icon || '▦'}</div>
+                    <div style={subCss}>Open ›</div>
+                </div>
+            );
+        };
+
+        return (
+            <React.Fragment>
+                {/* Phone "Yours to customize" hint banner removed (owner ask
+                    2026-07-12) — the ⋯ / Reorder / + Add Widget affordances are
+                    self-evident. Desktop banner (showHint, further down) is
+                    untouched. */}
+
+                {/* Widgets carry inline grid spans — flatten them to the 1-col stack */}
+                <style>{`@media(max-width:767px){
+                    .wr-dashboard-grid>.wr-widget{ grid-column:1 / -1 !important; grid-row:auto !important; min-width:0; }
+                }`}</style>
+
+                {/* Severity hero only — the sm KPI strip (Health Score /
+                    Power Rankings tiles) is removed on phone (owner ask
+                    2026-07-12): that read lives in the Intel Brief now and the
+                    strip was clutter above the widget stack. sm widgets still
+                    render on desktop/tablet via the grid; _phoneSm is left
+                    built (unrendered) so re-enabling is a one-line change. */}
+                {_phoneHeroEl && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: 'var(--space-md) var(--space-md) 0', background: BK }}>
+                        {_phoneHeroEl}
+                    </div>
+                )}
+
+                {/* Customizable-widgets section header + reorder entry. The
+                    ⇅ Reorder button opens the drag-to-rearrange sheet (replaces
+                    the per-card ▲▼ arrows on phone, owner ask). */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '16px var(--space-md) 2px', background: BK }}>
+                    <div role="heading" aria-level={2} style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: '1.05rem', fontWeight: 700, letterSpacing: '0.03em', color: W, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Customizable Widgets</div>
+                    {widgets.length >= 2 && (
+                        <button type="button" onClick={() => setReorderOpen(true)} style={{
+                            flex: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px', minHeight: '40px', padding: '0 14px',
+                            background: 'var(--acc-fill2, rgba(212,175,55,0.10))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
+                            borderRadius: '8px', color: G, cursor: 'pointer', fontFamily: dmFont, fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, letterSpacing: '0.04em',
+                        }}>
+                            <span aria-hidden="true" style={{ fontSize: '1rem', lineHeight: 1 }}>⇅</span> Reorder
+                        </button>
+                    )}
+                </div>
+
+                {/* md+ widget cards — existing stack order, original indices */}
+                <div className="wr-dashboard-grid" style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0,1fr)',
+                    gridAutoRows: 'minmax(160px,auto)',
+                    gap: 'var(--space-md)',
+                    padding: 'var(--space-md) var(--space-md) 0',
+                    background: BK,
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    overflowX: 'hidden',
+                }}>
+                    {_phoneStack.map(({ w, i }) => renderWidget(w, i))}
+                </div>
+
+                {/* Add widget — bottom of the phone stack */}
+                <div style={{ padding: 'var(--space-md)', background: BK, borderBottom: '1px solid ' + (theme.colors?.border || 'var(--acc-fill2, rgba(212,175,55,0.12))') }}>
+                    <button
+                        type="button"
+                        className="wr-add-widget"
+                        onClick={() => { setEditingWidget(null); setPickerOpen(true); }}
+                        style={{
+                            width: '100%', minHeight: '56px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                            border: '1px dashed var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '10px',
+                            background: 'transparent', cursor: 'pointer',
+                            color: 'var(--acc-line2, rgba(212,175,55,0.35))', fontFamily: 'inherit',
+                        }}
+                    >
+                        <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>+</span>
+                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: dmFont, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Add Widget</span>
+                    </button>
+                </div>
+
+                {/* Pinned / starred section */}
+                <PinnedSection />
+
+                {/* Transaction Ticker full-detail overlay — the ticker renders
+                    in the phone stack too, so its tap-to-expand must keep
+                    working at this tier (prod #254/#255/#257). */}
+                {txnDetail && renderTransactionDetailModal()}
+
+                {/* Full-screen widget picker overlay (same wiring as desktop) */}
+                {pickerOpen && (
+                    <DashboardWidgetPicker
+                        editWidget={editingWidget?.widget || null}
+                        onClose={() => { setPickerOpen(false); setEditingWidget(null); }}
+                        onAdd={newWidget => {
+                            if (editingWidget !== null) {
+                                const updated = [...selectedWidgets];
+                                updated[editingWidget.idx] = { ...newWidget, id: editingWidget.widget?.id || newWidget.id };
+                                setSelectedWidgets(updated);
+                            } else {
+                                setSelectedWidgets([...selectedWidgets, newWidget]);
+                            }
+                        }}
+                    />
+                )}
+
+                {/* Drag-to-reorder sheet (phone). Mounts fresh each open. */}
+                {reorderOpen && (
+                    <WrDashReorder
+                        widgets={widgets}
+                        modules={WIDGET_MODULES}
+                        onReorder={setSelectedWidgets}
+                        onClose={() => setReorderOpen(false)}
+                    />
+                )}
+            </React.Fragment>
+        );
+    }
 
     // ══════════════════════════════════════════════════════════════
     // MAIN RENDER
