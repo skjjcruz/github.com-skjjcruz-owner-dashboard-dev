@@ -169,9 +169,92 @@
         function goToManagePlan() {
             window.location.href = 'upgrade.html';
         }
-        // No Stripe customer portal exists yet — upgrade.html is the plan +
-        // checkout page, so nothing here may claim to be a cancellation ('Cancel'
-        // affordances were merged into the honest 'Change Plan' button, 2026-07-06).
+
+        // ── Manage / cancel subscription ─────────────────────────────
+        // App Store subs are managed in Apple ID settings (Apple requirement);
+        // web (Stripe) subs open the Stripe Billing Portal via fw-billing-portal,
+        // where cancel / change-plan / update-card all live. Accounts with no
+        // Stripe history fall back to the plans page.
+        const [billingBusy, setBillingBusy] = React.useState(false);
+        async function manageBilling() {
+            const isNative = !!(window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function'
+                ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative));
+            if (isNative) { window.open('https://apps.apple.com/account/subscriptions', '_blank'); return; }
+            const client = window.OD && typeof window.OD.getClient === 'function' ? window.OD.getClient() : null;
+            if (!client) { goToManagePlan(); return; }
+            setBillingBusy(true);
+            try {
+                const { data, error } = await client.functions.invoke('fw-billing-portal', {
+                    body: { returnUrl: window.location.origin + window.location.pathname },
+                });
+                if (!error && data && data.url) { window.location.href = data.url; return; }
+                goToManagePlan();
+            } catch { goToManagePlan(); }
+            finally { setBillingBusy(false); }
+        }
+
+        // ── Avatar (local preset, no upload round-trip) ──────────────
+        const AVATAR_CHOICES = ['🏈', '🏆', '🎯', '🛡️', '👑', '🔥', '⚡', '🦅', '💪', '🧠', '🎲', '⭐'];
+        const [avatarEmoji, setAvatarEmoji] = React.useState(() => {
+            try { return localStorage.getItem('od_avatar_emoji') || ''; } catch { return ''; }
+        });
+        function pickAvatar(emoji) {
+            const next = emoji === avatarEmoji ? '' : emoji; // tap again to clear back to initials
+            setAvatarEmoji(next);
+            try {
+                if (next) localStorage.setItem('od_avatar_emoji', next);
+                else localStorage.removeItem('od_avatar_emoji');
+            } catch { /* private mode */ }
+        }
+
+        // ── Notification preferences ─────────────────────────────────
+        const NOTIFY_DEFAULTS = { tradeAlerts: true, waiverWire: true, gameDay: true, alexDigest: true };
+        const NOTIFY_LABELS = { tradeAlerts: 'Trade alerts', waiverWire: 'Waiver wire moves', gameDay: 'Game day updates', alexDigest: "Alex's weekly digest" };
+        const [notifyPrefs, setNotifyPrefs] = React.useState(() => {
+            try { return { ...NOTIFY_DEFAULTS, ...(JSON.parse(localStorage.getItem('dhq_notify_prefs_v1') || '{}')) }; }
+            catch { return { ...NOTIFY_DEFAULTS }; }
+        });
+        function toggleNotify(key) {
+            setNotifyPrefs(prev => {
+                const next = { ...prev, [key]: !prev[key] };
+                try { localStorage.setItem('dhq_notify_prefs_v1', JSON.stringify(next)); } catch { /* private mode */ }
+                return next;
+            });
+        }
+
+        // ── Invite friends ───────────────────────────────────────────
+        const [inviteMsg, setInviteMsg] = React.useState('');
+        async function inviteFriends() {
+            const url = 'https://skjjcruz.github.io/github.com-skjjcruz-owner-dashboard-dev/landing.html';
+            const shareData = { title: 'Dynasty HQ', text: 'Run your dynasty league like a front office — join me on Dynasty HQ.', url };
+            try {
+                if (navigator.share) { await navigator.share(shareData); return; }
+            } catch { return; /* user closed the share sheet */ }
+            try {
+                await navigator.clipboard.writeText(url);
+                setInviteMsg('Link copied — send it to your leaguemates!');
+            } catch {
+                setInviteMsg(url);
+            }
+        }
+
+        // ── Delete account (App Store 5.1.1(v) requirement) ──────────
+        const [deleteBusy, setDeleteBusy] = React.useState(false);
+        async function handleDeleteAccount() {
+            if (!confirm('Delete your Dynasty HQ account? This permanently removes your account, subscription link, and saved data. This cannot be undone.')) return;
+            if (!confirm('Last check — are you sure? Your account and data will be gone for good.')) return;
+            setDeleteBusy(true);
+            try {
+                await window.OD.deleteAccount();
+                try {
+                    ['fw_session_v1', 'od_auth_v1', 'od_display_name', 'od_avatar_emoji', 'dhq_notify_prefs_v1'].forEach(k => localStorage.removeItem(k));
+                } catch { /* best effort */ }
+                window.location.href = 'landing.html?signout=1';
+            } catch (err) {
+                setDeleteBusy(false);
+                alert('Could not delete the account: ' + (err && err.message ? err.message : 'unknown error') + '. Contact support if this keeps happening.');
+            }
+        }
 
         function handleDisplayNameSave() {
             if (typeof onDisplayNameSave === 'function') onDisplayNameSave(displayName);
@@ -404,7 +487,7 @@
                     ? { background: 'transparent', width: '100%', boxSizing: 'border-box', paddingBottom: 'calc(0.5rem + var(--wr-bottom-inset, 0px))' }
                     : { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid var(--gold)', borderRadius: '14px', maxWidth: 'min(440px, calc(100vw - 40px))', width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,0.7)', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '18px 18px 14px', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.18))' }}>
-                        <div style={{ width: '44px', height: '44px', borderRadius: '50%', border: '1.5px solid var(--gold)', background: 'var(--black)', color: 'var(--gold)', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{ini}</div>
+                        <div style={{ width: '44px', height: '44px', borderRadius: '50%', border: '1.5px solid var(--gold)', background: 'var(--black)', color: 'var(--gold)', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: avatarEmoji ? '1.35rem' : '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{avatarEmoji || ini}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.15rem', letterSpacing: '0.1em', color: 'var(--gold)' }}>ACCOUNT</div>
                             <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Signed in as {uname || '—'}{isGiftedAccount ? ' · gifted' : ''}</div>
@@ -436,8 +519,63 @@
                                 <div style={labelStyle} >Plan</div>
                                 <div style={{ marginTop: '2px', fontSize: 'var(--text-body, 1rem)', fontWeight: 700, color: tierColor[currentTier] || 'var(--silver)' }}>{tierLabel[currentTier] || 'Dynasty HQ Free'}</div>
                             </div>
-                            <button onClick={goToManagePlan} style={{ ...btnOutline, flex: 'none', padding: '0.5rem 0.9rem' }}>Manage</button>
+                            <button onClick={manageBilling} disabled={billingBusy} style={{ ...btnOutline, flex: 'none', padding: '0.5rem 0.9rem' }}>{billingBusy ? 'Opening…' : 'Manage'}</button>
                         </div>
+                        <div style={{ fontSize: 'var(--text-label, 0.72rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', marginTop: '-12px' }}>
+                            Manage opens your billing portal — change plan, update your card, or cancel anytime. App Store subscriptions are managed in your Apple ID settings.
+                        </div>
+
+                        {/* ── Avatar ── */}
+                        <div>
+                            <div style={labelStyle}>Avatar</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
+                                {AVATAR_CHOICES.map(e => (
+                                    <button key={e} onClick={() => pickAvatar(e)} aria-label={'Avatar ' + e}
+                                        style={{ height: '44px', fontSize: '1.3rem', borderRadius: '10px', cursor: 'pointer',
+                                            background: avatarEmoji === e ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'var(--ov-1, rgba(255,255,255,0.02))',
+                                            border: avatarEmoji === e ? '1.5px solid var(--gold)' : '1px solid var(--acc-line1, rgba(212,175,55,0.18))' }}>{e}</button>
+                                ))}
+                            </div>
+                            <div style={{ marginTop: '6px', fontSize: 'var(--text-label, 0.72rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))' }}>Tap your pick again to go back to initials.</div>
+                        </div>
+
+                        {/* ── Notifications ── */}
+                        <div>
+                            <div style={labelStyle}>Notifications</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {Object.keys(NOTIFY_LABELS).map(key => (
+                                    <button key={key} onClick={() => toggleNotify(key)}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '10px 14px', minHeight: '44px', cursor: 'pointer', textAlign: 'left',
+                                            background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: '10px',
+                                            color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 0.95rem)' }}>
+                                        <span>{NOTIFY_LABELS[key]}</span>
+                                        <span aria-hidden="true" style={{ width: '38px', height: '22px', borderRadius: '11px', position: 'relative', flexShrink: 0, transition: 'background 0.15s',
+                                            background: notifyPrefs[key] ? 'var(--gold)' : 'var(--ov-6, rgba(255,255,255,0.1))' }}>
+                                            <span style={{ position: 'absolute', top: '2px', left: notifyPrefs[key] ? '18px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: 'var(--black)', transition: 'left 0.15s' }} />
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                            <div style={{ marginTop: '6px', fontSize: 'var(--text-label, 0.72rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))' }}>Controls in-app alerts; push notifications arrive with the App Store release.</div>
+                        </div>
+
+                        {/* ── Invite friends ── */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: '10px' }}>
+                            <div style={{ minWidth: 0 }}>
+                                <div style={labelStyle}>Invite friends</div>
+                                <div style={{ marginTop: '2px', fontSize: 'var(--text-label, 0.78rem)', color: 'var(--silver)' }}>{inviteMsg || 'Bring your leaguemates into the War Room.'}</div>
+                            </div>
+                            <button onClick={inviteFriends} style={{ ...btnOutline, flex: 'none', padding: '0.5rem 0.9rem' }}>Share</button>
+                        </div>
+
+                        {/* ── Feedback ── */}
+                        {window.WR && window.WR.Feedback && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                <button onClick={() => { onClose && onClose(); window.WR.Feedback.reportBug(); }} style={{ ...btnOutline, flex: 'none' }}>Report a bug</button>
+                                <button onClick={() => { onClose && onClose(); window.WR.Feedback.openBoard(); }} style={{ ...btnOutline, flex: 'none' }}>Request a feature</button>
+                            </div>
+                        )}
+
                         {/* Community / Discord — hidden until the owner sets WR_DISCORD_URL (js/app.js) */}
                         {window.WR_DISCORD_URL && (
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: '10px' }}>
@@ -449,6 +587,15 @@
                             </div>
                         )}
                         <button onClick={handleLogout} style={{ padding: '0.8rem', background: 'rgba(231,76,60,0.14)', border: '1px solid rgba(231,76,60,0.4)', borderRadius: '10px', color: 'var(--k-fca5a5, #fca5a5)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>Sign out</button>
+
+                        {/* ── Legal + account deletion (App Store review requirements) ── */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', fontSize: 'var(--text-label, 0.75rem)' }}>
+                            <a href="legal/terms-of-service.html" target="_blank" rel="noopener" style={{ color: 'var(--silver)', textDecoration: 'underline' }}>Terms of Service</a>
+                            <span style={{ color: 'var(--ov-8, rgba(255,255,255,0.3))' }}>·</span>
+                            <a href="legal/privacy-policy.html" target="_blank" rel="noopener" style={{ color: 'var(--silver)', textDecoration: 'underline' }}>Privacy Policy</a>
+                            <span style={{ color: 'var(--ov-8, rgba(255,255,255,0.3))' }}>·</span>
+                            <button onClick={handleDeleteAccount} disabled={deleteBusy} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--k-e74c3c, #e74c3c)', textDecoration: 'underline', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)' }}>{deleteBusy ? 'Deleting…' : 'Delete account'}</button>
+                        </div>
                     </div>
                 </div>
             );
@@ -595,10 +742,16 @@
                         </div>
                         <div style={_phone ? { display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem' } : { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                             <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: 'var(--text-label, 0.75rem)' }}>Upgrade</button>
-                            <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Change Plan</button>
+                            <button onClick={manageBilling} disabled={billingBusy} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>{billingBusy ? 'Opening…' : 'Manage / Cancel'}</button>
                             <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Gift Sub</button>
                         </div>
-                        <div style={{ marginTop: '0.6rem', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', textAlign: 'center' }}>Manage your Dynasty HQ subscription</div>
+                        <div style={{ marginTop: '0.6rem', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', textAlign: 'center' }}>
+                            Manage / Cancel opens your billing portal (web) — App Store subscriptions are managed in your Apple ID settings.
+                        </div>
+                        <div style={{ marginTop: '0.6rem', display: 'flex', justifyContent: 'center', gap: '14px', fontSize: 'var(--text-label, 0.75rem)' }}>
+                            <a href="legal/terms-of-service.html" target="_blank" rel="noopener" style={{ color: 'var(--silver)', textDecoration: 'underline' }}>Terms of Service</a>
+                            <a href="legal/privacy-policy.html" target="_blank" rel="noopener" style={{ color: 'var(--silver)', textDecoration: 'underline' }}>Privacy Policy</a>
+                        </div>
                     </div>
 
                     <div style={sectionStyle}>

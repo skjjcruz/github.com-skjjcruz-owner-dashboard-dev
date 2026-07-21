@@ -956,6 +956,44 @@ test('a different league scoring yields a different Proj from the same Sleeper l
   });
 
 // ══════════════════════════════════════════════════════════════════
+// Account surface — App Store review requirements (owner ask 2026-07-21)
+// The settings account panel must keep: a real subscription-management path
+// (Stripe portal on web, Apple ID settings on iOS), Terms/Privacy links, and
+// account deletion (App Store 5.1.1(v)). These went missing once; never again.
+// ══════════════════════════════════════════════════════════════════
+group('account surface (App Store requirements)');
+
+{
+  const settingsSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'settings.js'), 'utf8');
+  const deployFns = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'deploy-functions.yml'), 'utf8');
+
+  test('subscription management reaches a real cancel path', () => {
+    ok(settingsSrc.includes("fw-billing-portal"), 'settings must call the Stripe billing portal function');
+    ok(settingsSrc.includes('apps.apple.com/account/subscriptions'), 'native subs must link to Apple ID subscription settings');
+    ok(fs.existsSync(path.join(__dirname, '..', 'supabase', 'functions', 'fw-billing-portal', 'index.ts')), 'fw-billing-portal edge function must exist');
+    ok(deployFns.includes('fw-billing-portal'), 'deploy-functions.yml must deploy fw-billing-portal');
+  });
+
+  test('terms and privacy are linked from settings and the files exist', () => {
+    ok(settingsSrc.includes('legal/terms-of-service.html'), 'settings must link the Terms of Service');
+    ok(settingsSrc.includes('legal/privacy-policy.html'), 'settings must link the Privacy Policy');
+    ok(fs.existsSync(path.join(__dirname, '..', 'legal', 'terms-of-service.html')), 'terms page must exist');
+    ok(fs.existsSync(path.join(__dirname, '..', 'legal', 'privacy-policy.html')), 'privacy page must exist');
+  });
+
+  test('account deletion is surfaced in settings (App Store 5.1.1(v))', () => {
+    ok(settingsSrc.includes('handleDeleteAccount'), 'settings must offer account deletion');
+    ok(settingsSrc.includes('deleteAccount()'), 'deletion must call the backend delete');
+  });
+
+  test('new account features are present: avatar, notifications, invite', () => {
+    ok(settingsSrc.includes('od_avatar_emoji'), 'avatar picker must persist a choice');
+    ok(settingsSrc.includes('dhq_notify_prefs_v1'), 'notification preferences must persist');
+    ok(settingsSrc.includes('navigator.share'), 'invite friends must use the native share sheet when available');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════
 console.log('\n');

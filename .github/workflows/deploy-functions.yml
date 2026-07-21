@@ -207,6 +207,9 @@ jobs:
       - name: Deploy fw-create-checkout function
         run: supabase functions deploy fw-create-checkout --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
+      - name: Deploy fw-billing-portal function
+        run: supabase functions deploy fw-billing-portal --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+
       - name: Deploy fw-stripe-webhook function
         run: supabase functions deploy fw-stripe-webhook --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
