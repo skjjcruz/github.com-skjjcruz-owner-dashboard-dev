@@ -14,9 +14,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'https://c2-football.github.io',
   'https://skjjcruz.github.io',
   'https://warroom.skjjcruz.com',
-  // Live marketing/app domain (dhqfootball.com cutover).
-  'https://dhqfootball.com',
-  'https://www.dhqfootball.com',
+  // FIREWALL (owner ruling 2026-07-21): the marketing domain is a pure
+  // brochure with no API access — deliberately NOT in this allowlist.
   // Capacitor native app origins. iOS serves the bundled web app from the
   // 'capacitor' scheme; Android uses the 'https' scheme (see
   // capacitor.config.json androidScheme). Without these the WebView's fetch to
