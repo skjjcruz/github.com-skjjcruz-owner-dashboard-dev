@@ -24,14 +24,14 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # reconai-shared/ is gitignored, so the bundled browser modules must be
       # regenerated from the canonical engine (skjjcruz/DHQ-Shared) at deploy time —
       # otherwise the Pages artifact ships a stale (or missing) copy of
       # supabase-client.js and the other shared modules.
       - name: Checkout DHQ-Shared (canonical engine)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: skjjcruz/DHQ-Shared
           path: dhq-shared-src
@@ -60,7 +60,7 @@ jobs:
       # and the other shared modules. dhq-shared is the neutral shared-engine repo
       # that both War Room and ReconAI vendor; War Room no longer reads ReconAI.
       - name: Checkout dhq-shared (canonical shared engine)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: C2-Football/dhq-shared
           path: shared-src
