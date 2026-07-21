@@ -43,6 +43,13 @@
         // sign-in button — ALWAYS show the account screen (never teleport a
         // signed-in visitor into their league; the body shows an
         // "already signed in" choice instead).
+        // Arriving from a marketing sign-in button: suppress this page's own
+        // marketing content pre-paint — the visitor gets a clean, dark brand
+        // backdrop with ONLY the sign-in card (no second sales pitch behind
+        // it). Direct visits and the App Store build keep the full landing.
+        if (q.has('start') || q.has('mode')) {
+          try { document.documentElement.classList.add('dhq-auth-only'); } catch (e) {}
+        }
         if (q.has('landingPreview') || q.has('signout') || q.has('home') || q.has('start') || q.has('mode')) { reveal(); return; }
         // OAuth return: Supabase brings us back here with the session in the URL
         // (hash #access_token=… for implicit, ?code=… for PKCE) BEFORE the page's
@@ -75,6 +82,15 @@
       } catch (e) { reveal(); }
     })();
   </script>
+    <style>
+      /* dhq-auth-only: marketing-button arrivals see only the sign-in card
+         over the ambient brand backdrop — never a second marketing page. */
+      html.dhq-auth-only .nav, html.dhq-auth-only .hero, html.dhq-auth-only .ticker,
+      html.dhq-auth-only section.section, html.dhq-auth-only .creed,
+      html.dhq-auth-only .platforms, html.dhq-auth-only .auth-cta,
+      html.dhq-auth-only .footer { display:none !important }
+      html.dhq-auth-only body { background:#07090f }
+    </style>
   <link rel="icon" href="icon-192.png">
   <meta name="description" content="Dynasty HQ scores your Sleeper league by its own rules — then reads how every manager you face actually trades. Free, or $9.99/mo.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
