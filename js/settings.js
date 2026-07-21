@@ -12,20 +12,18 @@
         // badge/exec/analyst/coach/scout) — the set the chat/GMMessage renderer
         // (AlexAvatar) actually displays. Legacy emoji ids (brain/target/chart/…)
         // stored on wr_alex_avatar normalize to 'badge' (no broken images).
-        const avatars = window.ALEX_AVATARS || [{ id: 'badge', label: 'Gold Badge', src: null }];
-        const readAvatar = () => {
-            const id = localStorage.getItem('wr_alex_avatar') || 'badge';
-            return avatars.some(a => a.id === id) ? id : 'badge';
-        };
-        const [currentAvatar, setCurrentAvatar] = React.useState(readAvatar);
+        // Alex is always the "AI" badge now (photos retired) — the user picks its
+        // COLOR (owner ask). Stored via components.js window.setAlexBadgeColor.
+        const badgeColors = window.ALEX_BADGE_COLORS || [{ id: 'gold', label: 'Gold', from: '#d4af37', to: '#b8941e', text: '#0a0a0a' }];
+        const [currentBadge, setCurrentBadge] = React.useState(() => (window.getAlexBadgeColor && window.getAlexBadgeColor().id) || 'gold');
         return (<>
         <div style={sectionStyle}>
-            <div style={sectionTitle}>AVATAR</div>
-            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem' }}>Choose Alex's look. Displayed in briefings and chat.</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px' }}>
-                {avatars.map(av => {
-                    const isActive = currentAvatar === av.id;
-                    return <button key={av.id} onClick={() => { localStorage.setItem('wr_alex_avatar', av.id); setCurrentAvatar(av.id); }}
+            <div style={sectionTitle}>ALEX BADGE</div>
+            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem' }}>Pick the color of Alex's badge. Shown in briefings and chat.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: '8px' }}>
+                {badgeColors.map(bc => {
+                    const isActive = currentBadge === bc.id;
+                    return <button key={bc.id} onClick={() => { if (window.setAlexBadgeColor) window.setAlexBadgeColor(bc.id); setCurrentBadge(bc.id); window.dispatchEvent(new CustomEvent('wr:alex-badge-changed')); }}
                         style={{
                             padding: '12px 8px', textAlign: 'center',
                             background: isActive ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-1, rgba(255,255,255,0.02))',
@@ -33,19 +31,17 @@
                             borderRadius: '10px', cursor: 'pointer',
                         }}>
                         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
-                            {av.src
-                                ? <img src={av.src} alt="" style={{ width: '44px', height: '44px', borderRadius: '8px', objectFit: 'cover', border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))' }} />
-                                : <div style={{ width: '44px', height: '44px', borderRadius: '8px', background: 'linear-gradient(135deg, var(--k-d4af37, #d4af37), var(--k-b8941e, #b8941e))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'var(--k-0a0a0a, #0a0a0a)', fontFamily: 'Rajdhani, sans-serif' }}>AI</div>}
+                            <div style={{ width: '44px', height: '44px', borderRadius: '8px', background: 'linear-gradient(135deg, ' + bc.from + ', ' + bc.to + ')', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: bc.text, fontFamily: 'Rajdhani, sans-serif', boxShadow: isActive ? '0 0 0 2px var(--acc-line3, rgba(212,175,55,0.4))' : 'none' }}>AI</div>
                         </div>
-                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: isActive ? 'var(--gold)' : 'var(--silver)' }}>{av.label}</div>
+                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: isActive ? 'var(--gold)' : 'var(--silver)' }}>{bc.label}</div>
                     </button>;
                 })}
             </div>
         </div>
         <div style={sectionStyle}>
             <div style={sectionTitle}>GM BRIEFING</div>
-            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.45 }}>Replay the first-launch Dynasty HQ briefing any time you want to re-orient the room.</div>
-            <button onClick={() => { if (window.replayWRTutorial) window.replayWRTutorial(); }} style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>Replay GM Briefing</button>
+            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.45 }}>Re-open Alex's welcome briefing in the chat any time you want to re-orient the room.</div>
+            <button onClick={() => window.dispatchEvent(new CustomEvent('wr:replay-welcome'))} style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '6px', color: 'var(--gold)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>Replay GM Briefing</button>
         </div>
         </>);
     }
@@ -141,6 +137,15 @@
         const [matesAccess, setMatesAccess] = React.useState(null); // Set of usernames with accounts
         const [giftLinks, setGiftLinks] = React.useState({}); // { username: { url, password } }
         const [giftingFor, setGiftingFor] = React.useState(null);
+
+        // ── Phone tier (<768, iPhone program Phase 4) ──
+        // WR.useViewport (js/shared/viewport.js) precedes the babel chain,
+        // so its presence is page-constant — the hook call is order-safe.
+        // `_phone` only ever swaps in phone-scoped styling below; when it
+        // is false every desktop/tablet branch renders byte-identical.
+        const _vpUse = window.WR && window.WR.useViewport;
+        const _vp = _vpUse ? _vpUse() : { isPhone: false };
+        const _phone = !!_vp.isPhone;
 
         const isGiftedAccount = React.useMemo(() => {
             try {
@@ -249,7 +254,9 @@
         const shellStyle = isModule
             ? { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: '10px', padding: '1.1rem', width: '100%', boxSizing: 'border-box', boxShadow: '0 12px 28px rgba(0,0,0,0.22)' }
             : phoneSheet
-                ? { background: 'transparent', padding: '0.25rem 1rem 1rem', width: '100%', boxSizing: 'border-box' }
+                // Bottom pad clears --wr-bottom-inset so the Logout/Close
+                // stack stays tappable above the home indicator + dock zone.
+                ? { background: 'transparent', padding: '0.25rem 1rem calc(1rem + var(--wr-bottom-inset, 0px))', width: '100%', boxSizing: 'border-box' }
                 : { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '3px solid var(--gold)', borderRadius: '12px', padding: '1.5rem', maxWidth: 'min(720px, calc(100vw - 48px))', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', maxHeight: '90vh', overflowY: 'auto' };
 
         if (isModule) {
@@ -291,30 +298,6 @@
                                 <button onClick={handleLogout} style={{ width: '100%', padding: '0.7rem', background: 'rgba(231,76,60,0.18)', border: '1px solid rgba(231,76,60,0.45)', borderRadius: '6px', color: 'var(--k-fca5a5, #fca5a5)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
                                     Logout
                                 </button>
-                                <div style={{ marginTop: '0.85rem', paddingTop: '0.85rem', borderTop: '1px solid var(--ov-6, rgba(255,255,255,0.1))' }}>
-                                    <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginBottom: '0.5rem', lineHeight: 1.5 }}>
-                                        Permanently delete your account and all of your data. This cannot be undone.
-                                    </div>
-                                    <button onClick={async () => {
-                                        if (!confirm('Delete your account permanently? This erases your profile, leagues, AI history, and cancels any subscription. This cannot be undone.')) return;
-                                        if (!confirm('Are you absolutely sure? There is no way to recover your account after this.')) return;
-                                        try {
-                                            await window.OD.deleteAccount();
-                                            try { localStorage.removeItem('fw_session_v1'); localStorage.removeItem('od_session_v1'); } catch (e) {}
-                                            try { if (window.OD.signOut) await window.OD.signOut(); } catch (e) {}
-                                            alert('Your account has been deleted.');
-                                            window.location.href = 'landing.html?signout=1';
-                                        } catch (e) {
-                                            alert('Could not delete your account: ' + (e && e.message ? e.message : 'please try again later.'));
-                                        }
-                                    }} style={{ width: '100%', minHeight: '44px', padding: '0.7rem', background: 'none', border: '1px solid var(--k-e74c3c, #e74c3c)', borderRadius: '6px', color: 'var(--k-e74c3c, #e74c3c)', fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer' }}>
-                                        Delete Account
-                                    </button>
-                                    <div style={{ marginTop: '0.85rem', display: 'flex', gap: '1rem', justifyContent: 'center', fontSize: 'var(--text-label, 0.75rem)' }}>
-                                        <a href="legal/privacy-policy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Privacy Policy</a>
-                                        <a href="legal/terms-of-service.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Terms of Service</a>
-                                    </div>
-                                </div>
                             </div>
                         </div>
 
@@ -328,7 +311,7 @@
                                 <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
                                     Change the visual style of your dashboard widgets.
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                <div style={_phone ? { display: 'grid', gridTemplateColumns: '1fr', gap: '10px' } : { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                                     {(window.WrTheme ? window.WrTheme.list() : ['default']).map(themeId => {
                                         const t = window.WrTheme?.themes?.[themeId] || {};
                                         const isActive = (window.WrTheme?.current || 'default') === themeId;
@@ -353,9 +336,6 @@
                                                     color: isActive ? 'var(--gold)' : 'var(--white)',
                                                     letterSpacing: '0.06em',
                                                 }}>{t.name || themeId}</div>
-                                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '4px' }}>
-                                                    {themeId === 'default' ? 'Dark mode - gold accent' : themeId === 'light' ? 'Light mode - clean and bright' : 'Custom theme'}
-                                                </div>
                                                 {isActive && (
                                                     <div style={{
                                                         marginTop: '8px',
@@ -383,19 +363,13 @@
                                         {tierLabel[currentTier] || 'Dynasty HQ Free'}
                                     </span>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                <div style={_phone ? { display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem' } : { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                                     <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: 'var(--text-label, 0.75rem)' }}>Upgrade</button>
                                     <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Change Plan</button>
                                     <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Gift Sub</button>
                                 </div>
                             </div>
-                            <div style={moduleSectionStyle}>
-                                <div style={sectionTitle}>AI KEY</div>
-                                <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.55, marginBottom: '0.75rem' }}>
-                                    Session-only BYO keys are supported in the AI controls.
-                                </div>
-                                <button onClick={() => { window.location.href = 'ai-setup.html'; }} style={{ ...btnOutline, width: '100%', flex: 'none', fontSize: 'var(--text-body, 1rem)' }}>Review AI Setup</button>
-                            </div>
+                            {/* AI KEY section removed (owner ask). */}
                             <div style={moduleSectionStyle}>
                                 <div style={sectionTitle}>DATA</div>
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -412,12 +386,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div style={moduleSectionStyle}>
-                                <div style={sectionTitle}>ABOUT</div>
-                                <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.65 }}>
-                                    Dynasty HQ v2.0 &middot; Powered by DHQ Engine
-                                </div>
-                            </div>
+                            {/* ABOUT section removed (owner ask). */}
                         </div>
                     </div>
                 </div>
@@ -432,7 +401,7 @@
             const labelStyle = { fontFamily: 'var(--font-title)', fontSize: 'var(--text-label, 0.8rem)', letterSpacing: '0.1em', color: 'var(--silver)', textTransform: 'uppercase', marginBottom: '8px' };
             return (
                 <div className="wr-settings-modal wr-account-modal" style={phoneSheet
-                    ? { background: 'transparent', width: '100%', boxSizing: 'border-box' }
+                    ? { background: 'transparent', width: '100%', boxSizing: 'border-box', paddingBottom: 'calc(0.5rem + var(--wr-bottom-inset, 0px))' }
                     : { background: 'linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%)', border: '1px solid var(--gold)', borderRadius: '14px', maxWidth: 'min(440px, calc(100vw - 40px))', width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,0.7)', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '18px 18px 14px', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.18))' }}>
                         <div style={{ width: '44px', height: '44px', borderRadius: '50%', border: '1.5px solid var(--gold)', background: 'var(--black)', color: 'var(--gold)', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{ini}</div>
@@ -494,7 +463,23 @@
                         {isGiftedAccount && <span style={{ marginLeft: '0.5rem', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', background: 'var(--acc-fill3, rgba(212,175,55,0.15))', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>GIFTED — change your password below</span>}
                     </div>
 
-                    {/* Tab bar */}
+                    {/* Tab bar — phone re-pours the same six sections as P2
+                        .wr-seg chips (44px, horizontal scroll); desktop keeps
+                        the .wr-module-nav row byte-identical. */}
+                    {_phone ? (
+                        <div className="wr-seg" style={{ marginBottom: '1rem' }}>
+                            {[
+                                { id: 'account', label: 'Account' },
+                                { id: 'alex', label: 'Alex' },
+                                { id: 'display', label: 'Display' },
+                                { id: 'commissioner', label: 'Commish' },
+                                { id: 'subscription', label: 'Plan' },
+                                { id: 'data', label: 'Data' },
+                            ].map(tab => (
+                                <button key={tab.id} className={settingsTab === tab.id ? 'is-on' : ''} style={{ minHeight: '44px' }} onClick={() => setSettingsTab(tab.id)}>{tab.label}</button>
+                            ))}
+                        </div>
+                    ) : (
                     <div className="wr-module-nav" style={{ marginBottom: '1.25rem' }}>
                         {[
                             { id: 'account', label: 'Account' },
@@ -507,6 +492,7 @@
                             <button key={tab.id} className={settingsTab === tab.id ? 'is-active' : ''} onClick={() => setSettingsTab(tab.id)}>{tab.label}</button>
                         ))}
                     </div>
+                    )}
 
                     {/* ══ ACCOUNT TAB ══ */}
                     {settingsTab === 'account' && (<>
@@ -548,7 +534,7 @@
                             <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginBottom: '0.75rem', lineHeight: 1.5 }}>
                                 Change the visual style of your dashboard widgets.
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div style={_phone ? { display: 'grid', gridTemplateColumns: '1fr', gap: '10px' } : { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                                 {(window.WrTheme ? window.WrTheme.list() : ['default']).map(themeId => {
                                     const t = window.WrTheme?.themes?.[themeId] || {};
                                     const isActive = (window.WrTheme?.current || 'default') === themeId;
@@ -607,7 +593,7 @@
                                 {tierLabel[currentTier] || 'Dynasty HQ Free'}
                             </span>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                        <div style={_phone ? { display: 'grid', gridTemplateColumns: '1fr', gap: '0.5rem' } : { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                             <button onClick={goToManagePlan} style={{ ...btnPrimary, fontSize: 'var(--text-label, 0.75rem)' }}>Upgrade</button>
                             <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Change Plan</button>
                             <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Gift Sub</button>
@@ -648,10 +634,6 @@
                         <div style={sectionTitle}>ABOUT</div>
                         <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.65 }}>
                             Dynasty HQ v2.0 &middot; Powered by DHQ Engine
-                        </div>
-                        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '1rem', fontSize: 'var(--text-label, 0.75rem)' }}>
-                            <a href="legal/privacy-policy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Privacy Policy</a>
-                            <a href="legal/terms-of-service.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Terms of Service</a>
                         </div>
                     </div>
                     </>)}

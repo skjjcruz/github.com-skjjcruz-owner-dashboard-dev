@@ -20,6 +20,17 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
     const [recapText, setRecapText] = useState('');
     const leagueId = currentLeague?.id || currentLeague?.league_id || '';
 
+    // ── Phone tier (<768, iPhone program Phase 4) ──
+    // WR.useViewport lives in js/shared/viewport.js — a plain script that
+    // runs before the babel chain, so its presence is fixed for the page's
+    // lifetime (hook-order safe). `_phone` only gates ADDITIVE phone markup:
+    // whenever it is false every desktop/tablet path below renders
+    // byte-identical to the pre-phase file.
+    const _vpUse = window.WR && window.WR.useViewport;
+    const _vp = _vpUse ? _vpUse() : { isPhone: false };
+    const _kitReady = !!(window.WR && window.WR.HeroCard && window.WR.AssetRow && window.WR.CardList);
+    const _phone = !!_vp.isPhone && _kitReady;
+
     // Scout-free vs Pro (gate-map row 16): all history/records browsing,
     // custom events, and manual chronicle browsing stay free; the two AI
     // triggers (chronicles parse, season recap) are Pro. wrIsPro only.
@@ -247,6 +258,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
     }
 
     function renderChampionshipTimelineCard(seasons) {
+        if (_phone) return _renderChampTimelinePhone(seasons);
         return React.createElement('div', { id: 'trophy-champ-card', style: { ...cardStyle, marginBottom: 0 } },
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
                     React.createElement('div', { style: { ...headerStyle, flex: 1, marginBottom: 0 } }, 'CHAMPIONSHIP TIMELINE'),
@@ -307,7 +319,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
     function renderAllTimeLeadersCard() {
         return React.createElement('div', { style: { ...cardStyle, marginBottom: 0 } },
             React.createElement('div', { style: headerStyle }, 'ALL-TIME LEADERS'),
-            React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } },
+            React.createElement('div', _phone ? { className: 'wr-kpi-strip' } : { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } },
                 _leaderCard('Most Titles', owners, o => o.championships, o => o.champSeasons.join(', ')),
                 _leaderCard('Most Wins', owners, o => o.wins, o => o.wins + '-' + o.losses),
                 _leaderCard('Most Playoffs', owners, o => o.playoffAppearances || 0, o => (o.playoffAppearances || 0) + ' runs'),
@@ -327,6 +339,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
             || ((b.wins / Math.max(1, b.wins + b.losses)) - (a.wins / Math.max(1, a.wins + a.losses)))
             || (b.wins - a.wins)
         );
+        if (_phone) return _renderStandingsPhone(ranked);
         const cols = '32px 32px 1.4fr 80px 50px 50px 50px 60px 60px 60px';
         const headerCell = { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, opacity: 0.7 };
         return React.createElement('div', { style: cardStyle },
@@ -455,7 +468,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
             // Phase 9 deferred: all-time RS record card (chronicles)
             chronRow && React.createElement('div', { style: cardStyle },
                 React.createElement('div', { style: headerStyle }, 'ALL-TIME REGULAR SEASON'),
-                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--space-sm, 8px)' } },
+                React.createElement('div', _phone ? { className: 'wr-kpi-strip' } : { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--space-sm, 8px)' } },
                     _statBox('Wins', chronRow.wins || 0, chronRow.winPct || ''),
                     _statBox('Losses', chronRow.losses || 0, ''),
                     _statBox('Playoffs', chronRow.playoffsMade || 0, (chronRow.playoffWins || 0) + '-' + (chronRow.playoffLosses || 0)),
@@ -497,7 +510,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                     return { earned: evald.earned.length, total: evald.earned.length + evald.unearned.length };
                 })() : null;
                 const earn = earningsFor(o.ownerName);
-                return React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--space-sm, 8px)', marginBottom: 'var(--space-md, 12px)' } },
+                return React.createElement('div', _phone ? { className: 'wr-kpi-strip', style: { marginBottom: 'var(--space-md, 12px)' } } : { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--space-sm, 8px)', marginBottom: 'var(--space-md, 12px)' } },
                     _statBox('Record', o.record || (o.wins + '-' + o.losses), totalG + ' games'),
                     _statBox('Win %', winPct != null ? winPct + '%' : '\u2014', totalG ? o.wins + 'W \u00B7 ' + o.losses + 'L' : 'No games yet'),
                     _statBox('Playoffs', o.playoffAppearances || 0, o.playoffAppearances > 0 ? (o.playoffAppearances + ' run' + (o.playoffAppearances === 1 ? '' : 's')) : 'None yet'),
@@ -934,10 +947,27 @@ ${importText.substring(0, 8000)}`;
 
         // Sort the All-Time roster by appearances → totalPoints
         const sortedRoster = [...champEntries].sort((a, b) => b.appearances - a.appearances || b.totalPoints - a.totalPoints);
+        // Group by position group (owner ask): groups ordered by most titles then
+        // pts; players within a group by titles (appearances) then pts.
+        const _normPos = window.App?.normPos;
+        const posGroups = (() => {
+            const g = {};
+            sortedRoster.forEach(p => {
+                const meta = resolve(p.pid);
+                const key = (_normPos ? _normPos(meta.pos) : meta.pos) || meta.pos || '?';
+                if (!g[key]) g[key] = { key, players: [], titles: 0, pts: 0 };
+                g[key].players.push(p);
+                g[key].titles += (p.appearances || 0);
+                g[key].pts += (p.totalPoints || 0);
+            });
+            Object.values(g).forEach(grp => grp.players.sort((a, b) => (b.appearances - a.appearances) || (b.totalPoints - a.totalPoints)));
+            return Object.values(g).sort((a, b) => (b.titles - a.titles) || (b.pts - a.pts));
+        })();
+        const _posLabelOf = (window.App && window.App.posLabel) || (p => p);
 
         return React.createElement('div', null,
             // ── Stats banner ──
-            React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 'var(--space-sm, 8px)', marginBottom: 'var(--space-md, 12px)' } },
+            React.createElement('div', _phone ? { className: 'wr-kpi-strip', style: { marginBottom: 'var(--space-md, 12px)' } } : { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 'var(--space-sm, 8px)', marginBottom: 'var(--space-md, 12px)' } },
                 React.createElement('div', { style: { ...cardStyle, marginBottom: 0, textAlign: 'center' } },
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.6rem', fontWeight: 700, color: 'var(--gold)' } }, totalChamps),
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Champion Seasons Captured'),
@@ -1012,7 +1042,8 @@ ${importText.substring(0, 8000)}`;
                 ),
             ),
 
-            // ── Full champion-roster table ──
+            // ── Full champion-roster table (grouped by position group) ──
+            _phone ? _renderChampRosterPhone(posGroups, resolve) :
             React.createElement('div', { style: cardStyle },
                 React.createElement('div', { style: { ...headerStyle, display: 'flex', alignItems: 'center', gap: '6px' } },
                     React.createElement('span', { style: { fontSize: '1rem' } }, '📜'),
@@ -1028,24 +1059,31 @@ ${importText.substring(0, 8000)}`;
                         React.createElement('span', { style: { textAlign: 'right' } }, 'Avg'),
                         React.createElement('span', null, 'Seasons'),
                     ),
-                    ...sortedRoster.map(p => {
-                        const meta = resolve(p.pid);
-                        const posCol = POS_COLORS[meta.pos] || 'var(--k-8d887e, #8d887e)';
-                        const avg = (p.totalPoints / p.appearances).toFixed(1);
-                        return React.createElement('div', {
-                            key: p.pid, onClick: () => { if (typeof window.openPlayerModal === 'function') window.openPlayerModal(p.pid); },
-                            style: { display: 'grid', gridTemplateColumns: '40px 1fr 60px 70px 60px 1fr', gap: '8px', padding: '5px 8px', fontSize: '0.74rem', alignItems: 'center', cursor: 'pointer', background: p.appearances >= 2 ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'var(--ov-1, rgba(255,255,255,0.01))', borderRadius: '4px' },
-                        },
-                            React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posCol, padding: '2px 5px', borderRadius: '3px', background: wrAlpha(posCol, '22'), textAlign: 'center' } }, meta.pos),
-                            React.createElement('span', { style: { color: 'var(--white)', fontWeight: p.appearances >= 2 ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, meta.name + (p.appearances >= 2 ? ' 🎓' : '')),
-                            React.createElement('span', { style: { textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: 'var(--gold)', fontWeight: 700 } }, p.appearances + '🏆'),
-                            React.createElement('span', { style: { textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: 'var(--white)' } }, Math.round(p.totalPoints)),
-                            React.createElement('span', { style: { textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: 'var(--silver)' } }, avg),
-                            React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
-                                p.championships.map(c => c.season).join(', '),
-                            ),
-                        );
-                    }),
+                    ...posGroups.flatMap(grp => [
+                        React.createElement('div', { key: 'grp-' + grp.key, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 8px 3px' } },
+                            React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: POS_COLORS[grp.key] || 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em' } }, _posLabelOf(grp.key)),
+                            React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.55, fontFamily: 'JetBrains Mono, monospace' } }, grp.titles + ' titles · ' + Math.round(grp.pts).toLocaleString() + ' pts'),
+                            React.createElement('span', { 'aria-hidden': 'true', style: { flex: 1, height: '1px', background: wrAlpha(POS_COLORS[grp.key] || 'var(--gold)', '2e') } }),
+                        ),
+                        ...grp.players.map(p => {
+                            const meta = resolve(p.pid);
+                            const posCol = POS_COLORS[meta.pos] || 'var(--k-8d887e, #8d887e)';
+                            const avg = (p.totalPoints / p.appearances).toFixed(1);
+                            return React.createElement('div', {
+                                key: p.pid, onClick: () => { if (typeof window.openPlayerModal === 'function') window.openPlayerModal(p.pid); },
+                                style: { display: 'grid', gridTemplateColumns: '40px 1fr 60px 70px 60px 1fr', gap: '8px', padding: '5px 8px', fontSize: '0.74rem', alignItems: 'center', cursor: 'pointer', background: p.appearances >= 2 ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'var(--ov-1, rgba(255,255,255,0.01))', borderRadius: '4px' },
+                            },
+                                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posCol, padding: '2px 5px', borderRadius: '3px', background: wrAlpha(posCol, '22'), textAlign: 'center' } }, meta.pos),
+                                React.createElement('span', { style: { color: 'var(--white)', fontWeight: p.appearances >= 2 ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, meta.name + (p.appearances >= 2 ? ' 🎓' : '')),
+                                React.createElement('span', { style: { textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: 'var(--gold)', fontWeight: 700 } }, p.appearances + '🏆'),
+                                React.createElement('span', { style: { textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: 'var(--white)' } }, Math.round(p.totalPoints)),
+                                React.createElement('span', { style: { textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: 'var(--silver)' } }, avg),
+                                React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
+                                    p.championships.map(c => c.season).join(', '),
+                                ),
+                            );
+                        }),
+                    ]),
                 ),
             ),
         );
@@ -1104,6 +1142,195 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
     }
 
     // ══════════════════════════════════════════════════════════════
+    // PHONE (<768) — iPhone program Phase 4 (Trophy Room)
+    // Function declarations (hoisted) called ONLY when `_phone` is true;
+    // each replaces one desktop card with its phone-kit re-pour. Every
+    // handler (setSelectedOwner→'personal' push, exportAsImage, clipboard
+    // share, openPlayerModal, generateSeasonRecap incl. its Pro gate) is
+    // the SAME path the desktop element drives — zero gate movement.
+    // ══════════════════════════════════════════════════════════════
+
+    // View switcher → P2 .wr-seg strip; the Season Recap CTA re-homes as a
+    // full-width row under the seg (league view only), identical Pro-gated
+    // labels/handler as the desktop toolbar button.
+    function _renderPhoneToolbar() {
+        const segBtn = (label, tabKey, clickOverride) => React.createElement('button', {
+            key: tabKey,
+            className: view === tabKey ? 'is-on' : '',
+            onClick: clickOverride || (() => setView(tabKey)),
+            style: { minHeight: '44px' },
+        }, label);
+        return React.createElement(React.Fragment, null,
+            React.createElement('div', { className: 'wr-seg', style: { marginBottom: 'var(--space-sm, 8px)' } },
+                segBtn('League', 'league'),
+                segBtn('Me', 'personal', () => { setView('personal'); if (!selectedOwner) setSelectedOwner(myRoster?.roster_id); }),
+                segBtn('All-Time', 'alltime'),
+                segBtn('Calendar', 'calendar'),
+                chronicles && segBtn('Chronicles', 'chronicles'),
+                segBtn('Import', 'import'),
+            ),
+            view === 'league' && React.createElement('button', {
+                key: 'recap-btn',
+                onClick: generateSeasonRecap, disabled: recapStatus === 'generating',
+                style: { width: '100%', marginBottom: 'var(--space-md, 12px)', padding: '6px 12px', minHeight: '44px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '6px', color: 'var(--gold)', fontSize: '0.7rem', fontWeight: 700, cursor: recapStatus === 'generating' ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+            }, !isPro ? '🔒 Season Recap — Pro' : recapStatus === 'generating' ? 'Alex is writing…' : '✨ Season Recap'),
+        );
+    }
+
+    // Championship banner (P5): the newest championships[season] row is
+    // promoted to a centered HeroCard; earlier seasons become P1 timeline
+    // rows that deep-link setSelectedOwner→'personal' exactly like the
+    // desktop rows. Export/Copy ride the banner (same exportAsImage id +
+    // the same share text as the desktop buttons).
+    function _renderChampTimelinePhone(seasons) {
+        const ghostBtnStyle = {
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            minHeight: '44px', padding: '8px 14px', margin: '8px 4px 0',
+            borderRadius: '6px', cursor: 'pointer',
+            background: 'transparent', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.5)',
+            fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
+            fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700,
+            letterSpacing: '0.06em', textTransform: 'uppercase',
+        };
+        const shareChamps = () => {
+            const text = seasons.map(s => {
+                const c = championships[s];
+                const champ = ownerHistory[c.champion]?.ownerName || '?';
+                const runner = ownerHistory[c.runnerUp]?.ownerName || '';
+                return s + ': ' + champ + (runner ? ' def. ' + runner : '');
+            }).join('\n');
+            navigator.clipboard?.writeText(currentLeague?.name + ' Championships\n' + text).then(() => {
+                const btn = document.getElementById('share-champ-btn');
+                if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); }
+            });
+        };
+        const newest = seasons.length ? seasons[seasons.length - 1] : null;
+        const c0 = newest ? championships[newest] : null;
+        const champOwner0 = c0 ? ownerHistory[c0.champion] : null;
+        const champName0 = champOwner0?.ownerName || c0?.championName || 'Unknown';
+        const runnerName0 = c0 ? (ownerHistory[c0.runnerUp]?.ownerName || c0.runnerUpName || null) : null;
+        const older = seasons.slice(0, Math.max(0, seasons.length - 1)).reverse();
+        return React.createElement('div', null,
+            React.createElement('div', { id: 'trophy-champ-card', style: { textAlign: 'center' } },
+                newest
+                    ? React.createElement(window.WR.HeroCard, {
+                        kicker: newest + ' League champion',
+                        headline: String(champName0).toUpperCase(),
+                        facts: (runnerName0 ? 'DEF. ' + String(runnerName0).toUpperCase() : 'REIGNING TITLE HOLDER')
+                            + (!champOwner0 && c0?.championName ? ' · FORMER OWNER' : ''),
+                    },
+                        React.createElement('div', { style: { fontSize: '1.7rem', lineHeight: 1.2, margin: '4px 0 0' } }, '🏆'),
+                        React.createElement('div', null,
+                            React.createElement('button', { onClick: () => exportAsImage('trophy-champ-card', (currentLeague?.name || 'league') + '-championships'), style: ghostBtnStyle }, 'Export card'),
+                            React.createElement('button', { id: 'share-champ-btn', onClick: shareChamps, style: ghostBtnStyle }, 'Copy'),
+                        ),
+                    )
+                    : React.createElement(window.WR.HeroCard, {
+                        kicker: 'League champion',
+                        headline: 'NO TITLES YET',
+                        facts: 'No championship data yet. Play a full season to see your league history.',
+                    }),
+            ),
+            older.length > 0 && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' } },
+                older.map(season => {
+                    const c = championships[season];
+                    const champOwner = ownerHistory[c.champion];
+                    const champName = champOwner?.ownerName || c.championName || 'Unknown';
+                    const runnerName = ownerHistory[c.runnerUp]?.ownerName || c.runnerUpName || null;
+                    return React.createElement(window.WR.AssetRow, {
+                        key: season,
+                        pos: '🏆',
+                        name: champName + (!champOwner && c.championName ? ' (former)' : ''),
+                        tag: runnerName ? 'DEF. ' + runnerName : 'CHAMPION',
+                        slots: [{ label: 'SZN', value: season, tone: 'gold' }],
+                        onClick: c.champion != null ? () => { setSelectedOwner(c.champion); setView('personal'); } : undefined,
+                    });
+                }),
+            ),
+        );
+    }
+
+    // All-time standings → P7 sticky-first-column ledger: every desktop
+    // metric survives inside the scoped scroller (no column deaths). Calm
+    // monochrome per the table doctrine — gold only on the title count,
+    // top-3 rank and the isMe left rule (kept from desktop).
+    function _renderStandingsPhone(ranked) {
+        const mono = 'var(--font-mono, "JetBrains Mono", monospace)';
+        const micro = 'var(--text-micro, 0.6875rem)';
+        const thS = { padding: '9px 8px', textAlign: 'right', fontFamily: mono, fontSize: micro, color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, opacity: 0.7, whiteSpace: 'nowrap', borderBottom: '1px solid var(--ov-5, rgba(255,255,255,0.08))' };
+        const tdS = { padding: '12px 8px', textAlign: 'right', fontFamily: mono, fontSize: '0.72rem', color: 'var(--silver)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' };
+        return React.createElement('div', { style: cardStyle },
+            React.createElement('div', { style: { ...headerStyle, display: 'flex', alignItems: 'center', gap: '6px' } },
+                React.createElement('span', { style: { flex: 1 } }, 'ALL-TIME STANDINGS'),
+                React.createElement('span', { style: { fontSize: micro, color: 'var(--silver)', textTransform: 'none', letterSpacing: 0 } }, ranked.length, ' owner', ranked.length === 1 ? '' : 's'),
+            ),
+            React.createElement('div', { className: 'wr-sticky-table-wrap' },
+                React.createElement('table', { className: 'wr-sticky-table', style: { width: '100%', borderCollapse: 'collapse' } },
+                    React.createElement('thead', null, React.createElement('tr', null,
+                        React.createElement('th', { style: { ...thS, textAlign: 'left', minWidth: '124px' } }, 'Owner'),
+                        ['Rec', 'Win%', 'Titles', 'R-Up', 'PO', 'PF', 'PA'].map(hd => React.createElement('th', { key: hd, style: thS }, hd)),
+                    )),
+                    React.createElement('tbody', null, ranked.map((o, i) => {
+                        const isMe = !o.isFormer && o.rosterId === myRoster?.roster_id;
+                        const total = (o.wins || 0) + (o.losses || 0);
+                        const winPct = total > 0 ? Math.round((o.wins / total) * 100) : 0;
+                        return React.createElement('tr', {
+                            key: o.rosterId,
+                            onClick: () => { if (!o.isFormer) { setSelectedOwner(o.rosterId); setView('personal'); } },
+                            style: { cursor: o.isFormer ? 'default' : 'pointer', opacity: o.isFormer ? 0.65 : 1 },
+                        },
+                            React.createElement('td', { style: { ...tdS, textAlign: 'left', borderLeft: isMe ? '2px solid var(--gold)' : '2px solid transparent' } },
+                                React.createElement('span', { style: { fontFamily: mono, fontSize: micro, color: i < 3 ? 'var(--gold)' : 'var(--silver)', fontWeight: 700, marginRight: '7px' } }, i + 1),
+                                React.createElement('span', { style: { fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 600, color: isMe ? 'var(--gold)' : 'var(--white)' } },
+                                    o.ownerName, isMe ? ' ★' : '', o.isFormer ? ' (former)' : ''),
+                                React.createElement('div', { style: { fontFamily: 'var(--font-body)', fontSize: micro, color: 'var(--silver)', opacity: 0.6, marginLeft: '15px' } }, (o.tenure || 0) + ' season' + ((o.tenure || 0) === 1 ? '' : 's')),
+                            ),
+                            React.createElement('td', { style: { ...tdS, color: 'var(--white)', fontWeight: 600 } }, o.wins + '-' + o.losses),
+                            React.createElement('td', { style: tdS }, winPct + '%'),
+                            React.createElement('td', { style: { ...tdS, color: o.championships > 0 ? 'var(--gold)' : 'var(--silver)', fontWeight: o.championships > 0 ? 700 : 400 } }, o.championships > 0 ? o.championships + '🏆' : '—'),
+                            React.createElement('td', { style: tdS }, o.runnerUps > 0 ? o.runnerUps : '—'),
+                            React.createElement('td', { style: tdS }, o.playoffAppearances || 0),
+                            React.createElement('td', { style: tdS }, Math.round(o.pointsFor || 0).toLocaleString()),
+                            React.createElement('td', { style: { ...tdS, opacity: 0.65 } }, Math.round(o.pointsAgainst || 0).toLocaleString()),
+                        );
+                    })),
+                ),
+            ),
+        );
+    }
+
+    // All-time champion roster → P1 AssetRows: pos badge · seasons tag ·
+    // titles/pts/avg slots (gold spent on the title count only). Row tap =
+    // the same openPlayerModal path as the desktop rows.
+    function _renderChampRosterPhone(posGroups, resolve) {
+        const posLabelOf = (window.App && window.App.posLabel) || (p => p);
+        return React.createElement(window.WR.CardList, {
+            // One group per position group (owner ask), ordered by titles then pts.
+            groups: posGroups.map(grp => ({
+                label: posLabelOf(grp.key),
+                sub: grp.titles + (grp.titles === 1 ? ' title · ' : ' titles · ') + grp.players.length + (grp.players.length === 1 ? ' player' : ' players'),
+                rows: grp.players.map(p => {
+                    const meta = resolve(p.pid);
+                    const avg = (p.totalPoints / p.appearances).toFixed(1);
+                    return React.createElement(window.WR.AssetRow, {
+                        key: p.pid,
+                        pos: meta.pos,
+                        name: meta.name + (p.appearances >= 2 ? ' 🎓' : ''),
+                        tag: p.championships.map(c => c.season).join(' · '),
+                        slots: [
+                            { label: 'Titles', value: p.appearances, tone: 'gold' },
+                            { label: 'Pts', value: Math.round(p.totalPoints).toLocaleString() },
+                            { label: 'Avg', value: avg, tone: 'mute' },
+                        ],
+                        accent: p.appearances >= 2 ? 'gold' : undefined,
+                        onClick: () => { if (typeof window.openPlayerModal === 'function') window.openPlayerModal(p.pid); },
+                    });
+                }),
+            })),
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // MAIN RENDER
     // ══════════════════════════════════════════════════════════════
     const tabBtn = (label, tabKey, clickOverride) => React.createElement('button', {
@@ -1113,6 +1340,7 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
 
     return React.createElement('div', { style: { padding: '0' } },
         // Tab toolbar — view toggle on the left, Season Recap CTA on the right (League view only)
+        _phone ? _renderPhoneToolbar() :
         React.createElement('div', { style: { display: 'flex', gap: 'var(--space-sm, 8px)', marginBottom: 'var(--space-md, 12px)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', alignItems: 'center', flexWrap: 'wrap' } },
             tabBtn('League', 'league'),
             tabBtn('My Trophies', 'personal', () => { setView('personal'); if (!selectedOwner) setSelectedOwner(myRoster?.roster_id); }),

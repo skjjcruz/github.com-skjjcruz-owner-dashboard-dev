@@ -40,6 +40,9 @@ function LineupTab({
     const [formWindow, setFormWindow] = React.useState(5); // rolling-PPG window: 3 | 5 | 8 | 'season'
     const [openSlot, setOpenSlot] = React.useState(null);  // slot idx whose picker is expanded
     const [workingAssign, setWorkingAssign] = React.useState({}); // slotIdx -> pid (the user's working lineup)
+    const [applyOpen, setApplyOpen] = React.useState(false);      // phone-only: WR.ActionBar apply/push sheet (inert off-phone)
+    const [phoneView, setPhoneView] = React.useState('week');     // phone Game Day: 'week' (matchup + lineup) | 'season' (outlook + schedule)
+    const [appliedMoves, setAppliedMoves] = React.useState(null); // phone: swap list shown after Apply Optimal ({sl,cur,opt,gain}[])
 
     const GOLD = 'var(--gold, #d4af37)', SILVER = 'var(--silver, #9aa0a6)', TEXT = 'var(--text, #e8e8ea)';
     const GREEN = 'var(--k-2ecc71, #2ecc71)', RED = 'var(--k-e74c3c, #e74c3c)', AMBER = 'var(--k-f0a500, #f0a500)';
@@ -113,18 +116,6 @@ function LineupTab({
         return () => { alive = false; };
     }, [lineupKey]);
 
-    // Load Sleeper's own published weekly projections so start/sit uses the same
-    // number the owner sees in Sleeper (scored to this league), then recompute.
-    React.useEffect(() => {
-        const SP = window.App && window.App.SleeperProj;
-        if (!SP || !SP.loadCurrent) return;
-        let alive = true;
-        SP.loadCurrent(currentLeague && currentLeague.season).then(wk => { if (alive && wk) setCtxTick(t => t + 1); }).catch(() => {});
-        const onProj = () => { if (alive) setCtxTick(t => t + 1); };
-        window.addEventListener('wr:proj-updated', onProj);
-        return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
-    }, [lineupKey]);
-
     // ── Weekly opponent (head-to-head): resolve, project, forecast ──
     const [oppRosterId, setOppRosterId] = React.useState(null);
     const [showOpp, setShowOpp] = React.useState(false);
@@ -148,6 +139,7 @@ function LineupTab({
 
     // ── Game Day Central: DvP, season schedule rail, Alex note, MFL push ──
     const [seasonData, setSeasonData] = React.useState(null);
+    const [note, setNote] = React.useState('');
     const [submit, setSubmit] = React.useState({ status: 'idle', msg: '' });
     // Real DvP: spin up the SOS engine (18-week defense-vs-position rankings),
     // then bump ctxTick so projections recompute with matchup context applied.
@@ -157,6 +149,18 @@ function LineupTab({
         let alive = true;
         SOS.initialize(currentLeague && currentLeague.season, playersData, () => { if (alive) setCtxTick(t => t + 1); });
         return () => { alive = false; };
+    }, [lineupKey]);
+
+    // Load Sleeper's own published weekly projections so start/sit uses the same
+    // number the owner sees in Sleeper (scored to this league), then recompute.
+    React.useEffect(() => {
+        const SP = window.App && window.App.SleeperProj;
+        if (!SP || !SP.loadCurrent) return;
+        let alive = true;
+        SP.loadCurrent(currentLeague && currentLeague.season).then(wk => { if (alive && wk) setCtxTick(t => t + 1); }).catch(() => {});
+        const onProj = () => { if (alive) setCtxTick(t => t + 1); };
+        window.addEventListener('wr:proj-updated', onProj);
+        return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
     }, [lineupKey]);
 
     // Full-season schedule + win projection for the right rail. Wait until the
@@ -173,8 +177,110 @@ function LineupTab({
         return () => { alive = false; };
     }, [lineupKey, ctxTick, _projReady]);
 
-    // Alex's game-day note (builder + seeded copy + background AI enhance)
-    // was removed from the top of Game Day per owner request.
+    // Alex's game-day note: a stable weekly briefing off the CURRENT lineup +
+    // matchup (not the working edits). Seeded template renders instantly; AI
+    // upgrades it in the background when reachable (falls back to the template).
+    function buildNoteFacts() {
+        if (!result || !result.optimal) return null;
+        const proj = result.projections;
+        const curIds = Object.values(currentAssign).filter(Boolean);
+        // MFL never exposes platform starters (starters:[]) — fall back to the
+        // optimal lineup so the note forecasts the same lineup as the hero.
+        // With the fallback there IS no visible bench gap: benchPts reads 0 and
+        // no upgrade is pitched (a delta vs an empty platform lineup would
+        // claim the whole optimal total is "stranded on the bench").
+        const noPlatformLineup = !curIds.length;
+        const noteIds = noPlatformLineup ? result.optimal.starters.map(s => String(s.pid)) : curIds;
+        const curTotal = noteIds.reduce((s, pid) => { const p = proj[pid]; return s + (p && p.available ? (p.points[result.objective] || 0) : 0); }, 0);
+        const benchPts = noPlatformLineup ? 0 : Math.round((result.optimal.total - curTotal) * 10) / 10;
+        let topStart = null;
+        if (!noPlatformLineup) (result.delta && result.delta.startInstead || []).forEach(s => { if (!topStart || s.pts > topStart.pts) topStart = s; });
+        let winPct = null, oppName = null, margin = null;
+        const M = window.App && window.App.Matchup;
+        if (M && oppResult && oppResult.res) {
+            const oppOpt = oppResult.res.optimal.starters.map(s => s.pid);
+            const fc = M.forecast(M.dist(noteIds, proj, 'median'), M.dist(oppOpt, oppResult.res.projections, 'median'));
+            winPct = fc.winPct; margin = fc.margin;
+            const users = (currentLeague && currentLeague.users) || [];
+            const u = users.find(x => String(x.user_id) === String(oppResult.roster.owner_id));
+            oppName = (oppResult.roster.metadata && oppResult.roster.metadata.team_name) || (u && u.display_name) || ('Team ' + oppResult.roster.roster_id);
+        }
+        const injuries = noteIds.map(pid => { const p = proj[pid]; const st = p && p.injuryStatus; return st ? { name: pmeta(pid).name, status: st } : null; }).filter(Boolean);
+        const topName = topStart ? pmeta(topStart.pid).name : null;
+        const byeWatch = (seasonData && seasonData.byeWatch) || [];
+        const topBye = byeWatch.length ? byeWatch[0] : null;   // worst upcoming bye week
+        return {
+            week: result.week, benchPts, topStart, topName, winPct, oppName, margin, injuries, mode: result.mode, topBye,
+            ctx: { week: result.week, winPct, margin, opponent: oppName, pointsLeftOnBench: benchPts, topUpgrade: topName, topUpgradeSlot: topStart ? topStart.slot : null, injuries: injuries.map(i => i.name + ' (' + i.status + ')'), byeWatch: byeWatch.slice(0, 3).map(b => ({ week: b.week, count: b.count, unfilled: b.unfilled, reason: b.reason, positions: b.positions })), objective: result.objective, mode: result.mode },
+        };
+    }
+    function seededNote(f) {
+        const AV = window.AlexVoice;
+        if (!AV) return '';
+        const seed = (currentLeague && (currentLeague.league_id || currentLeague.id) || '') + '|w' + f.week;
+        let lead;
+        if (f.winPct != null && f.oppName) {
+            // Thresholds match the hero's win% coloring: ≥55 favored, ≤45 uphill.
+            if (f.winPct >= 55) lead = AV.pick(seed + 'a', ['You’re favored this week', 'The numbers like your side', 'You’ve got the edge this week']) + ' — about ' + f.winPct + '% to beat ' + f.oppName + '.';
+            else if (f.winPct > 45) lead = AV.pick(seed + 'a', ['Coin-flip week', 'This one’s tight', 'Dead heat']) + ' against ' + f.oppName + ' (~' + f.winPct + '%).';
+            else lead = AV.pick(seed + 'a', ['Uphill week', 'You’re the underdog', 'Tough draw']) + ' vs ' + f.oppName + ' (~' + f.winPct + '%) — chase ceiling.';
+        } else {
+            lead = AV.pick(seed + 'a', ['Let’s set the week', 'Here’s your week', 'Locking in the lineup']) + '.';
+        }
+        let mid;
+        if (f.benchPts >= 1 && f.topName) mid = ' ' + AV.pick(seed + 'b', ['You’re leaving ' + f.benchPts + ' on the bench', 'There’s ' + f.benchPts + ' sitting on your bench', f.benchPts + ' points are stranded on the bench']) + ' — ' + f.topName + (f.topStart && f.topStart.slot ? ' into your ' + String(f.topStart.slot).replace('_', ' ') : '') + ' is the move.';
+        else mid = ' ' + AV.pick(seed + 'b', ['Lineup’s optimal', 'Nothing left on the table', 'Your best is already in']) + ' — no changes needed.';
+        let tail = '';
+        if (f.injuries && f.injuries.length) tail = ' ' + AV.pick(seed + 'c', ['Keep an eye on', 'Watch', 'Monitor']) + ' ' + AV.joinNatural(f.injuries.map(i => i.name)) + '.';
+        let byeTail = '';
+        if (f.topBye && (f.topBye.unfilled || f.topBye.count >= 2)) {
+            const b = f.topBye;
+            // Only blame byes when bye starters actually drive the hole —
+            // count===0 means a roster gap (position unrostered / players OUT).
+            const byeDriven = b.reason ? b.reason === 'bye' : b.count > 0;
+            if (byeDriven) {
+                const c = {}; (b.positions || []).forEach(p => { c[p] = (c[p] || 0) + 1; });
+                const posLabel = Object.keys(c).map(p => c[p] > 1 ? c[p] + ' ' + p + 's' : p).join(' + ');
+                byeTail = ' ' + AV.pick(seed + 'd', ['Bye watch —', 'Plan ahead —', 'Down the road —']) + ' Week ' + b.week + (b.unfilled ? ' leaves a hole' : ' you’re thin') + (posLabel ? ' at ' + posLabel : '') + ', so line up cover.';
+            } else if (b.unfilled) {
+                byeTail = ' ' + AV.pick(seed + 'd', ['Plan ahead —', 'Heads up —', 'Down the road —']) + ' Week ' + b.week + ' you can’t field a full lineup as rostered, so line up cover.';
+            }
+        }
+        return (lead + mid + tail + byeTail).trim();
+    }
+    React.useEffect(() => {
+        // Composed note guard: the seeded copy is itself a rec ("X is the
+        // move"), so the whole note is Pro-only — free renders no note (and
+        // never builds facts, so no optimizer output is computed for free).
+        // Future format carve-outs (cross-track C5) compose in here, e.g.
+        // `pro && isDynastyFormat`. The AV.enhance AI upgrade below is
+        // additionally behind hasAmbientAI() (ambient-AI policy seam) — a Pro
+        // user without AI still keeps the seeded template.
+        const noteAllowed = pro;
+        if (!noteAllowed) { setNote(''); return; }
+        if (!_projReady) return;                 // wait for real projections (avoid a stale AI-note cache)
+        const facts = buildNoteFacts();
+        if (!facts) { setNote(''); return; }
+        const seeded = seededNote(facts);
+        setNote(seeded);
+        let alive = true;
+        const AV = window.AlexVoice;
+        if (AV && AV.enhance && (typeof AV.hasAmbientAI !== 'function' || AV.hasAmbientAI())) {
+            // Bucket win% into the cache key so a materially different matchup
+            // outlook re-generates rather than reusing an early note. v2: the
+            // facts source changed (optimal-lineup fallback) — don't let notes
+            // cached off the old empty-lineup facts survive the fix.
+            const wpBucket = facts.winPct == null ? 'na' : Math.round(facts.winPct / 10);
+            AV.enhance({
+                type: 'start-sit',
+                message: 'Give me a punchy 1-2 sentence game-day coaching note for my fantasy team this week. Are we favored? Any must-start upgrade sitting on the bench? Any injuries to watch, or an upcoming bye-week hole to plan for? Natural prose, no lists, no sign-off.',
+                context: JSON.stringify(facts.ctx),
+                fallback: seeded,
+                cacheKey: 'gd-note-v2-' + lineupKey + '-w' + facts.week + '-' + wpBucket + (facts.topBye ? '-b' + facts.topBye.week + (facts.topBye.unfilled ? 'x' : '') : ''),
+            }).then(txt => { if (alive && txt && typeof txt === 'string') setNote(txt); }).catch(() => {});
+        }
+        return () => { alive = false; };
+    }, [lineupKey, ctxTick, oppRosterId, _projReady, seasonData]);
 
     // MFL is the only platform with a public lineup-write API (Sleeper has none).
     const _plat = (window.App && window.App.Matchup && window.App.Matchup._platform) ? window.App.Matchup._platform(currentLeague) : 'sleeper';
@@ -572,9 +678,288 @@ function LineupTab({
         );
     }
 
+    // ══ PHONE (<768) — Game Day Central phone branch (iPhone program Phase 1).
+    // EARLY RETURN: everything below the closing brace renders only off-phone,
+    // so the desktop/tablet return underneath stays byte-identical. Kit
+    // presence (wr-primitives.js loads earlier in the babel chain) is fixed
+    // for the page's lifetime, so gating the return on it has no hook hazard.
+    // Free/Pro: every phone surface re-pours gated content at the EXACT
+    // existing `pro` boundaries — optimal hero/delta, matchup grades, win%,
+    // breakdown and the Alex note stay Pro; the manual builder, raw
+    // projections, bye listing and the MFL push stay free.
+    const _kitReady = !!(window.WR && window.WR.HeroCard && window.WR.AssetRow && window.WR.CardList && window.WR.Sheet && window.WR.ActionBar);
+    if (isPhone && _kitReady) {
+        const HeroCard = window.WR.HeroCard, AssetRow = window.WR.AssetRow, CardList = window.WR.CardList, Sheet = window.WR.Sheet, ActionBar = window.WR.ActionBar;
+        const MONO = 'var(--font-mono, "JetBrains Mono", monospace)';
+        const MICRO = 'var(--text-micro, 0.6875rem)';
+        const SLOT_SHORT = { SUPER_FLEX: 'SF', REC_FLEX: 'RF', FLEX: 'FLX', WRTQ: 'WRT', IDP_FLEX: 'IDP', WILDCARD: 'WC' };
+        const dispSlots = [...startingSlots].sort((a, b) => (SLOT_DISPLAY_ORDER[a.slotName] ?? 50) - (SLOT_DISPLAY_ORDER[b.slotName] ?? 50));
+
+        // Working-vs-platform dirtiness drives the ActionBar (P6). MFL rosters
+        // never expose platform starters (currentAssign = {}), so any set slot
+        // reads as "unpushed" — exactly when the push path matters.
+        const dirty = startingSlots.some(sl => String(workingAssign[sl.idx] || '') !== String(currentAssign[sl.idx] || ''));
+
+        // Optimal swap summary for the hero facts — the same per-slot
+        // assignment walk as applyOptimal(), diffed against the working
+        // lineup. Pro only (the optimizer layer).
+        let swaps = [], topSwap = null;
+        if (pro) {
+            const byName = {};
+            result.optimal.starters.forEach(s => { (byName[s.slot] = byName[s.slot] || []).push(s.pid); });
+            const optAssign = {};
+            startingSlots.forEach(sl => { const arr = byName[sl.slotName]; if (arr && arr.length) optAssign[sl.idx] = String(arr.shift()); });
+            startingSlots.forEach(sl => {
+                const cur = String(workingAssign[sl.idx] || ''), opt = String(optAssign[sl.idx] || '');
+                if (cur === opt) return;
+                const sw = { sl, cur, opt, gain: objPts(opt) - objPts(cur) };
+                swaps.push(sw);
+                if (!topSwap || sw.gain > topSwap.gain) topSwap = sw;
+            });
+        }
+        const swapFacts = topSwap
+            ? swaps.length + ' swap' + (swaps.length === 1 ? '' : 's') + ': ' + (topSwap.cur ? pmeta(topSwap.cur).name : 'Empty') + ' → ' + (topSwap.opt ? pmeta(topSwap.opt).name : 'Empty') + ' · ' + topSwap.sl.slotName.replace('_', ' ') + ' slot'
+            : 'No swaps — your best lineup is in';
+
+        // Apply Optimal, then show the moves it made as a list (owner ask).
+        // Capture the swaps BEFORE applying (post-apply they recompute to []).
+        const applyOptimalWithSummary = () => {
+            const moves = swaps.slice();
+            applyOptimal();
+            if (moves.length) setAppliedMoves(moves);
+        };
+
+        // Matchup-grade verdict chip (Pro interpretation — mirrors the Mtch column gate).
+        const gradeChip = (grade) => (
+            <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: '5px', border: '1px solid ' + gradeColor(grade), color: gradeColor(grade), whiteSpace: 'nowrap' }}>{grade}</span>
+        );
+
+        // P1 slot row — the shipped phone column-set (GRID above: slot /
+        // player / proj / mtch) recast as a WR.AssetRow: slot label rides the
+        // tag, PROJ is the stat slot, the Pro matchup grade is the verdict
+        // chip. Row tap = the EXISTING openSlot toggle.
+        const slotRow = (sl) => {
+            const pid = workingAssign[sl.idx] || null;
+            const slotLabel = sl.slotName.replace('_', ' ');
+            const open = openSlot === sl.idx;
+            if (!pid) {
+                return <AssetRow key={sl.idx} pos={SLOT_SHORT[sl.slotName] || sl.slotName} name="Empty — tap to set" tag={slotLabel}
+                    slots={[{ label: 'PROJ', value: '—', tone: 'mute' }]} accent={open ? 'gold' : undefined}
+                    onClick={() => setOpenSlot(open ? null : sl.idx)} />;
+            }
+            const meta = pmeta(pid), proj = projOf(pid), pts = proj && proj.points;
+            const status = (proj && proj.injuryStatus) || '';
+            const opp = proj && proj.opponent;
+            const tag = [slotLabel, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, status || null].filter(Boolean).join(' · ');
+            const atRisk = !!status || (proj && proj.available === false);
+            return <AssetRow key={sl.idx} pos={meta.pos || '?'} name={meta.name} tag={tag}
+                slots={[{ label: 'PROJ', value: pts ? (pts[objective] || 0).toFixed(1) : '—' }]}
+                verdict={pro ? gradeChip((proj && proj.matchupGrade) || '—') : null}
+                accent={open ? 'gold' : atRisk ? 'risk' : undefined}
+                onClick={() => setOpenSlot(open ? null : sl.idx)} />;
+        };
+
+        // Eligible-player picker (openSlot) — a WR.Sheet instead of the
+        // desktop inline expansion; rows drive the EXACT same assign/empty
+        // setters. Form stats + the L3/L5/L8/SZN window ride here (the
+        // Form/Hi/Lo columns stay dropped from phone rows).
+        const openSl = openSlot != null ? startingSlots.find(sl => sl.idx === openSlot) : null;
+        const openPid = openSl ? (workingAssign[openSl.idx] || null) : null;
+        const openElig = openSl ? eligibleFor(openSl) : [];
+        const openFs = openPid ? formOf(openPid) : null;
+        const pickRow = (epid) => {
+            const isCur = String(openPid) === String(epid);
+            const meta = pmeta(epid), proj = projOf(epid), pts = proj && proj.points;
+            const status = (proj && proj.injuryStatus) || '';
+            const opp = proj && proj.opponent;
+            const fs = formOf(epid);
+            return <AssetRow key={epid} pos={meta.pos || '?'} name={meta.name}
+                tag={[isCur ? 'IN' : null, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, status || null].filter(Boolean).join(' · ')}
+                slots={[{ label: 'PROJ', value: pts ? (pts[objective] || 0).toFixed(1) : '—' }, { label: formWinLabel, value: fs ? fs.rollingPPG.toFixed(1) : '—', tone: 'mute' }]}
+                verdict={pro ? gradeChip((proj && proj.matchupGrade) || '—') : null}
+                accent={isCur ? 'gold' : undefined}
+                onClick={() => { setWorkingAssign(w => ({ ...w, [openSl.idx]: epid })); setOpenSlot(null); }} />;
+        };
+
+        // P5 decision hero. Pro: optimal-vs-working delta + one-swap summary
+        // + APPLY OPTIMAL → the existing applyOptimal(). Free: matchup
+        // context + raw working total, optimizer teaser at the existing gate.
+        const heroEl = pro ? (
+            <HeroCard kicker="Optimizer"
+                headline={isOptimal ? 'LINEUP OPTIMAL · ' + workingTotal.toFixed(1) + ' PROJ' : 'OPTIMAL LINEUP +' + benchPts.toFixed(1) + ' PROJ'}
+                facts={isOptimal ? 'No changes needed · yours ' + workingTotal.toFixed(1) + ' = optimal ' + optimalTotal.toFixed(1) : swapFacts}
+                cta={isOptimal ? null : 'APPLY OPTIMAL'} onCta={applyOptimalWithSummary} />
+        ) : (
+            <HeroCard kicker={'Week ' + result.week + ' · Game Day'}
+                headline={'YOUR LINEUP ' + workingTotal.toFixed(1) + ' PTS'}
+                facts={matchup ? 'vs ' + matchup.oppName + (matchup.oppCurTotal > 0 ? ' · them ' + matchup.oppCurTotal.toFixed(1) + ' (current lineup)' : '') : 'Tap a slot below to set your starters — the total updates live.'}>
+                {GatedRow ? <div style={{ marginTop: '10px' }}><GatedRow title="Lineup optimizer" sub="Optimal lineup + points left on bench, floor–ceiling bands, matchup grades and win odds" feature={STARTSIT_FEAT} /></div> : null}
+            </HeroCard>
+        );
+
+        const kpiTile = (label, value, sub, valColor) => (
+            <div key={label} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '9px 11px' }}>
+                <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+                <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.3rem', fontWeight: 700, color: valColor || TEXT, lineHeight: 1.15, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+                {sub ? <div style={{ fontFamily: MONO, fontSize: MICRO, color: SILVER, opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '110px' }}>{sub}</div> : null}
+            </div>
+        );
+        const goldDiv = (label) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 600, color: GOLD, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{label}</span>
+                <span aria-hidden="true" style={{ flex: 1, height: '1px', background: 'rgba(212,175,55,0.25)' }} />
+            </div>
+        );
+        const winColor = matchup && matchup.fc.winPct != null ? (matchup.fc.winPct >= 55 ? GREEN : matchup.fc.winPct <= 45 ? RED : GOLD) : SILVER;
+
+        return (
+            <div style={{ padding: '14px var(--wr-phone-gutter, 12px) 72px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* This Week ⇄ Season toggle (owner ask) — week = matchup +
+                    lineup; season = outlook + schedule. */}
+                <div className="wr-seg">
+                    <button className={phoneView === 'week' ? 'is-on' : ''} onClick={() => setPhoneView('week')}>This Week</button>
+                    <button className={phoneView === 'season' ? 'is-on' : ''} onClick={() => setPhoneView('season')}>Season</button>
+                </div>
+
+                {phoneView === 'week' ? (<React.Fragment>
+                {/* Matchup + breakdown LEAD the week view (owner ask). Free
+                    keeps the raw you-vs-their-current totals; win%, margin,
+                    their-ideal and the breakdown stay Pro (existing gates). */}
+                {matchup ? (
+                    <React.Fragment>
+                        {goldDiv('Matchup · vs ' + matchup.oppName)}
+                        <div className="wr-kpi-strip">
+                            {pro ? [
+                                kpiTile('Win%', matchup.fc.winPct == null ? '—' : matchup.fc.winPct + '%', matchup.fc.margin == null ? null : (matchup.fc.margin >= 0 ? '+' : '') + matchup.fc.margin.toFixed(1) + ' margin', winColor),
+                                kpiTile('You', matchup.fc.projMe.toFixed(1), 'working proj'),
+                                kpiTile('Them', matchup.fc.projOpp.toFixed(1), matchup.oppName),
+                                kpiTile('Their ideal', matchup.oppIdealTotal.toFixed(1), matchup.oppCurTotal > 0 ? 'current ' + matchup.oppCurTotal.toFixed(1) : 'current —'),
+                            ] : [
+                                kpiTile('You', matchup.fc.projMe.toFixed(1), 'working proj'),
+                                kpiTile('Them', matchup.oppCurTotal > 0 ? matchup.oppCurTotal.toFixed(1) : '—', 'current lineup'),
+                            ]}
+                        </div>
+                        {!pro && GatedRow ? <GatedRow title="Win probability" sub="Projected margin and your win odds this week" feature={STARTSIT_FEAT} /> : null}
+                        {/* Matchup breakdown (toggle + position-strength / slot-by-slot
+                            panel) removed on phone (owner ask 2026-07-12) — the Win% ·
+                            You · Them · Their-ideal KPI row above carries the matchup
+                            read; the verbose breakdown was noise on a small screen.
+                            Desktop Game Day is a separate render and is untouched. */}
+                    </React.Fragment>
+                ) : null}
+
+                {/* Alex game-day note as a card (note state is Pro-gated upstream: free = '') */}
+                {note ? (
+                    <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderLeft: `3px solid ${GOLD}`, borderRadius: '6px', padding: '12px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: fz('0.6rem'), fontWeight: 800, letterSpacing: '0.08em', color: GOLD, marginTop: '3px', whiteSpace: 'nowrap' }}>ALEX ·</span>
+                        <span style={{ fontSize: '0.86rem', color: TEXT, lineHeight: 1.5 }}>{note}</span>
+                        {/* Ask Alex follow-up: opens recon chat pre-loaded with the game-plan ask (crossover, owner ask 2026-07-13) */}
+                        <button onClick={() => {
+                            const msg = 'Walk me through my Week ' + result.week + ' game plan' + (matchup && matchup.oppName ? ' against ' + matchup.oppName : '') + ' — the start/sit calls worth a second look, where I can attack this matchup, and what would change your read before kickoff.';
+                            try { window.dispatchEvent(new CustomEvent('wr:ask-alex', { detail: { message: msg } })); } catch (e) { /* chat seam unavailable */ }
+                        }} style={{ flexShrink: 0, alignSelf: 'flex-start', background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.35)', borderRadius: '5px', color: GOLD, fontFamily: MONO, fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.05em', padding: '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap' }}>💬 ASK</button>
+                    </div>
+                ) : null}
+
+                {/* Optimizer + working lineup, below the matchup lead. */}
+                {heroEl}
+                <CardList groups={[{ label: 'Starters', sub: 'Proj ' + workingTotal.toFixed(1), rows: dispSlots.map(slotRow) }]} />
+                </React.Fragment>) : (<React.Fragment>
+                {/* Season view — outlook + week-by-week schedule (renderRail
+                    carries every existing free/Pro gate). */}
+                {renderRail()}
+                </React.Fragment>)}
+
+                {/* P3-style picker sheet — bench players for the open slot */}
+                <Sheet open={!!openSl} onClose={() => setOpenSlot(null)} title={openSl ? 'Set ' + openSl.slotName.replace('_', ' ') : ''} desktop={null}>
+                    {openSl ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 14px 4px' }}>
+                            <div className="wr-seg">
+                                {[['L3', 3], ['L5', 5], ['L8', 8], ['SZN', 'season']].map(opt => (
+                                    <button key={opt[0]} className={formWindow === opt[1] ? 'is-on' : ''} onClick={() => setFormWindow(opt[1])}>{opt[0]}</button>
+                                ))}
+                            </div>
+                            {openPid && openFs ? (
+                                <div style={{ fontSize: '0.74rem', color: SILVER, fontVariantNumeric: 'tabular-nums' }}>
+                                    {pmeta(openPid).name} · {formWinLabel} <span style={{ color: TEXT, fontWeight: 700 }}>{openFs.rollingPPG.toFixed(1)}</span>
+                                    {' · Hi '}<span style={{ color: GREEN, fontWeight: 700 }}>{openFs.high.toFixed(1)}</span>
+                                    {' · Lo '}<span style={{ color: SILVER, fontWeight: 700 }}>{openFs.low.toFixed(1)}</span>
+                                </div>
+                            ) : null}
+                            <div style={{ fontFamily: MONO, fontSize: MICRO, letterSpacing: '0.05em', color: SILVER, textTransform: 'uppercase' }}>Eligible for {openSl.slotName.replace('_', ' ')} — tap to start</div>
+                            {openElig.map(pickRow)}
+                            {!openElig.length ? <div style={{ color: SILVER, fontSize: '0.74rem', opacity: 0.7 }}>No eligible bench players.</div> : null}
+                            {openPid ? (
+                                <div onClick={() => { setWorkingAssign(w => { const n = { ...w }; delete n[openSl.idx]; return n; }); setOpenSlot(null); }}
+                                    style={{ padding: '13px 0', cursor: 'pointer', color: RED, fontSize: '0.74rem', fontWeight: 600 }}>✕ Empty this slot</div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </Sheet>
+
+                {/* P6 apply/push sheet — the MFL push card re-homes here on
+                    phone (never inline); same handlers, same submit machine. */}
+                <Sheet open={applyOpen} onClose={() => setApplyOpen(false)} title="Working lineup" desktop={null}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '10px 14px 4px' }}>
+                        <div style={{ fontSize: '0.82rem', color: TEXT }}>
+                            {pro ? (isOptimal ? <span style={{ color: GREEN, fontWeight: 700 }}>Lineup is optimal</span> : <span style={{ color: GOLD, fontWeight: 700 }}>{benchPts.toFixed(1)} pts below optimal</span>) : <span style={{ fontWeight: 700 }}>Your lineup {workingTotal.toFixed(1)} pts</span>}
+                            {pro ? <span style={{ color: SILVER, fontSize: '0.76rem' }}> · yours {workingTotal.toFixed(1)} · optimal {optimalTotal.toFixed(1)}</span> : null}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {pro ? <button onClick={applyOptimal} style={{ ...actBtn, color: GOLD, borderColor: 'var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.12)' }}>Apply Optimal</button> : null}
+                            <button onClick={() => { setWorkingAssign(currentAssign); setOpenSlot(null); }} style={actBtn}>Reset</button>
+                        </div>
+                        {renderMflPush()}
+                        {!isMfl ? <div style={{ fontSize: '0.72rem', color: SILVER, lineHeight: 1.5 }}>Your platform has no public lineup-write API — build and compare here, then set the final lineup on your platform.</div> : null}
+                    </div>
+                </Sheet>
+
+                {/* Apply-Optimal results — the moves it just made (owner ask). */}
+                <Sheet open={!!appliedMoves} onClose={() => setAppliedMoves(null)} title={(appliedMoves ? appliedMoves.length : 0) + ' move' + ((appliedMoves && appliedMoves.length === 1) ? '' : 's') + ' applied'} desktop={null}>
+                    {appliedMoves ? (() => {
+                        const totalGain = appliedMoves.reduce((s, m) => s + (m.gain || 0), 0);
+                        return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 14px 4px' }}>
+                            <div style={{ fontSize: '0.8rem', color: SILVER, lineHeight: 1.45 }}>Lineup set to optimal — <span style={{ color: GREEN, fontWeight: 700 }}>+{totalGain.toFixed(1)}</span> proj. Here's what changed:</div>
+                            {appliedMoves.map((m, i) => {
+                                const outN = m.cur ? pmeta(m.cur).name : 'Empty';
+                                const inN = m.opt ? pmeta(m.opt).name : 'Empty';
+                                return (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', background: PANEL, border: `1px solid ${LINE}`, borderRadius: '8px' }}>
+                                        <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: GOLD, minWidth: '44px', whiteSpace: 'nowrap' }}>{m.sl.slotName.replace('_', ' ')}</span>
+                                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                            <span style={{ color: m.cur ? SILVER : 'var(--text-muted, #8B8B96)', textDecoration: m.cur ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{outN}</span>
+                                            <span style={{ color: SILVER, flexShrink: 0 }}>→</span>
+                                            <span style={{ color: TEXT, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{inN}</span>
+                                        </span>
+                                        <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: GREEN, whiteSpace: 'nowrap' }}>+{(m.gain || 0).toFixed(1)}</span>
+                                    </div>
+                                );
+                            })}
+                            <button onClick={() => setAppliedMoves(null)} style={{ ...actBtn, marginTop: '4px', minHeight: '44px' }}>Done</button>
+                        </div>
+                        );
+                    })() : null}
+                </Sheet>
+
+                {/* P6 action bar — live while the working lineup differs from
+                    the platform lineup. APPLY = the same applyOptimal path
+                    (Pro); bar tap opens the apply/push sheet. */}
+                <ActionBar visible={dirty && phoneView === 'week'} label="WORKING LINEUP"
+                    value={pro ? (isOptimal ? workingTotal.toFixed(1) + ' PROJ' : '+' + benchPts.toFixed(1)) : workingTotal.toFixed(1) + ' PROJ'}
+                    tone="good" actionLabel="APPLY"
+                    onAction={pro ? applyOptimalWithSummary : () => setApplyOpen(true)}
+                    onOpen={() => setApplyOpen(true)} />
+            </div>
+        );
+    }
+
     return (
         <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px 16px 60px' }}>
-            {/* Alex's game-day note removed from the top per owner request. */}
+            {/* Alex's game-day note removed from the top of DESKTOP Game Day per
+                owner request (#229, 2026-07-17). The PHONE layout keeps its note
+                card + Ask Alex crossover (owner ask 2026-07-13) above. */}
+
             <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 300px', gap: '16px', alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                     {renderMflPush()}

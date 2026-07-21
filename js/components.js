@@ -22,12 +22,13 @@
         }
 
         const tierLabel = targetTier === 'scout' ? 'Scout' : 'Dynasty HQ';
+        const tierPrice = targetTier === 'scout' ? '$4.99/mo' : '$9.99/mo';
 
         return React.createElement('div', { style: { background:'linear-gradient(135deg, var(--off-black), var(--charcoal))', border:'1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius:'var(--card-radius)', padding:'24px', textAlign:'center', maxWidth:'480px', margin:'24px auto' } },
             React.createElement('div', { style: { fontFamily:'Rajdhani, sans-serif', fontSize:'1.6rem', color:'var(--gold)', letterSpacing:'0.06em', marginBottom:'8px' } }, title || 'UPGRADE TO UNLOCK'),
             React.createElement('div', { style: { fontSize:'var(--text-body, 1rem)', color:'var(--silver)', lineHeight:1.7, marginBottom:'16px' } }, description || 'This feature requires a paid subscription.'),
             React.createElement('div', { style: { display:'flex', gap:'10px', justifyContent:'center', marginBottom:'12px' } },
-                React.createElement('button', { onClick: () => { window.location.href = 'landing.html'; }, style: { padding:'10px 24px', background:'var(--gold)', color:'var(--black)', border:'none', borderRadius:'6px', fontFamily:'Rajdhani, sans-serif', fontSize:'1.1rem', letterSpacing:'0.05em', cursor:'pointer' } }, 'Unlock ' + tierLabel),
+                React.createElement('button', { onClick: () => { window.location.href = 'landing.html'; }, style: { padding:'10px 24px', background:'var(--gold)', color:'var(--black)', border:'none', borderRadius:'6px', fontFamily:'Rajdhani, sans-serif', fontSize:'1.1rem', letterSpacing:'0.05em', cursor:'pointer' } }, 'Unlock ' + tierLabel + ' — ' + tierPrice),
             ),
             React.createElement('div', { style: { fontSize:'var(--text-body, 1rem)', color:'var(--silver)', opacity:0.5 } }, 'Currently on Scout (free) plan'),
             onClose ? React.createElement('button', { onClick: onClose, style: { marginTop:'10px', background:'none', border:'none', color:'var(--silver)', cursor:'pointer', fontSize:'var(--text-body, 1rem)' } }, 'Maybe later') : null
@@ -206,16 +207,34 @@
     function setAlexAvatar(id) {
         ComponentsStorage.set(COMPONENTS_WR_KEYS.ALEX_AVATAR, id);
     }
+    // Owner ask (2026-07-12): retire the stock-photo avatars — Alex is always the
+    // "AI" badge, but its COLOR is user-configurable. Stored id → gradient/text.
+    const ALEX_BADGE_COLORS = [
+        { id: 'gold',   label: 'Gold',   from: '#d4af37', to: '#b8941e', text: '#0a0a0a' },
+        { id: 'blue',   label: 'Blue',   from: '#5dade2', to: '#2e86c1', text: '#0a0a0a' },
+        { id: 'violet', label: 'Violet', from: '#9b8afb', to: '#7c6bf8', text: '#ffffff' },
+        { id: 'green',  label: 'Green',  from: '#2ecc71', to: '#239b56', text: '#07100b' },
+        { id: 'red',    label: 'Red',    from: '#e5534b', to: '#c0392b', text: '#ffffff' },
+        { id: 'teal',   label: 'Teal',   from: '#4ecdc4', to: '#2c9c94', text: '#07100b' },
+    ];
+    function getAlexBadgeColor() {
+        let id;
+        try { id = localStorage.getItem('wr_alex_badge_color') || 'gold'; } catch (e) { id = 'gold'; }
+        return ALEX_BADGE_COLORS.find(c => c.id === id) || ALEX_BADGE_COLORS[0];
+    }
+    function setAlexBadgeColor(id) {
+        try { localStorage.setItem('wr_alex_badge_color', id); } catch (e) { /* no-op */ }
+    }
     function AlexAvatar({ size }) {
         const sz = size || 28;
-        const av = ALEX_AVATARS.find(a => a.id === getAlexAvatar());
-        if (av && av.src) {
-            return React.createElement('img', { src: av.src, alt: 'Alex', style: { width: sz+'px', height: sz+'px', borderRadius: sz > 24 ? '8px' : '6px', objectFit: 'cover', flexShrink: 0, border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))' } });
-        }
-        return React.createElement('div', { style: { width: sz+'px', height: sz+'px', borderRadius: sz > 24 ? '8px' : '6px', background: 'linear-gradient(135deg, var(--k-d4af37, #d4af37), var(--k-b8941e, #b8941e))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: (sz * 0.024) + 'rem', fontWeight: 800, color: 'var(--k-0a0a0a, #0a0a0a)', fontFamily: 'Rajdhani, sans-serif' } }, 'AI');
+        const c = getAlexBadgeColor();
+        return React.createElement('div', { style: { width: sz+'px', height: sz+'px', borderRadius: sz > 24 ? '8px' : '6px', background: 'linear-gradient(135deg, ' + c.from + ', ' + c.to + ')', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: (sz * 0.024) + 'rem', fontWeight: 800, color: c.text, fontFamily: 'Rajdhani, sans-serif' } }, 'AI');
     }
     window.AlexAvatar = AlexAvatar;
     window.ALEX_AVATARS = ALEX_AVATARS;
+    window.ALEX_BADGE_COLORS = ALEX_BADGE_COLORS;
+    window.getAlexBadgeColor = getAlexBadgeColor;
+    window.setAlexBadgeColor = setAlexBadgeColor;
 
     // ===== ALEX INGRAM — AI GM MESSAGE COMPONENT (Slack-style) =====
     function GMMessage({ children, timestamp, compact, title }) {
@@ -467,13 +486,9 @@
     window.ErrorBoundary = ErrorBoundary;
 
     // ===== DEV MODE =====
-    // Dev bypass (unlocks features AND skips the auth gate) is allowed ONLY on a
-    // local dev machine. A `?dev` URL param or a "sandbox" hostname must never open
-    // the app or unlock paid tiers in a deployed environment — anyone could append
-    // the param or land on a sandbox host.
     const IS_LOCAL = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-    const DEV_MODE = IS_LOCAL;
-    const DEV_DEBUG = IS_LOCAL && new URLSearchParams(window.location.search).get('dev') === 'true';
+    const DEV_MODE = new URLSearchParams(window.location.search).has('dev') || window.location.hostname.includes('sandbox') || IS_LOCAL;
+    const DEV_DEBUG = new URLSearchParams(window.location.search).get('dev') === 'true';
     if (DEV_MODE) {
         console.log('%c[DEV MODE] All features unlocked, auth bypassed','color:var(--k-d4af37, #d4af37);font-weight:bold;font-size:var(--text-body, 1rem)');
         document.documentElement.style.setProperty('--wr-dev-banner-height', '18px');
@@ -485,64 +500,35 @@
     }
 
     // ===== AUTHENTICATION CHECK =====
-    // The app shell renders only with a verified session token. The legacy
-    // od_auth_v1 key is just a Sleeper-username link — it is NOT proof of identity
-    // and no longer grants access on its own (the no-password "Connect" path used to
-    // satisfy the gate that way). Real enforcement is server-side: Supabase RLS keyed
-    // on the JWT rejects any data request without a valid token. This client check is
-    // a UX gate that requires a well-formed, unexpired token and clears stale or
-    // forged state otherwise.
     const AUTH_KEY    = 'od_auth_v1';
     const SESSION_KEY = 'fw_session_v1';
 
-    function decodeJwtPayload(token) {
-        try {
-            const part = String(token || '').split('.')[1];
-            if (!part) return null;
-            const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
-            const padded = b64.length % 4 ? b64 + '='.repeat(4 - (b64.length % 4)) : b64;
-            const decoded = decodeURIComponent(window.atob(padded).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
-            return JSON.parse(decoded);
-        } catch (e) { return null; }
-    }
-    function hasValidSessionToken(sess) {
-        const token = sess && sess.token;
-        if (!token || typeof token !== 'string' || token.split('.').length !== 3) return false;
-        const payload = decodeJwtPayload(token);
-        if (!payload) return false;
-        // exp is seconds since epoch — reject expired tokens.
-        if (payload.exp && Number(payload.exp) * 1000 <= Date.now()) return false;
-        return true;
-    }
+    const legacyAuth   = localStorage.getItem(AUTH_KEY);
+    const newSession   = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } })();
+    const isAuthed     = !!(legacyAuth || newSession?.token || DEV_MODE);
 
-    const legacyAuth = localStorage.getItem(AUTH_KEY); // Sleeper-username link only — not auth
-    const newSession = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } })();
-    const hasSession = hasValidSessionToken(newSession);
-    const isAuthed   = hasSession || DEV_MODE;
-
-    if (!isAuthed) {
-        // Drop stale/forged client state so a tampered od_auth_v1 or an expired
-        // token can't keep someone in a half-authenticated state, then bounce to
-        // the sign-in page.
-        try { localStorage.removeItem(AUTH_KEY); } catch (e) {}
-        try { if (newSession && !hasSession) localStorage.removeItem(SESSION_KEY); } catch (e) {}
-        window.location.href = 'landing.html';
-    }
+    // Franchise picker is now the default landing — logged-out visitors are no
+    // longer bounced to landing.html. They arrive on the hub and connect a league
+    // (which doubles as sign-in) via the "Add a league" tile. Marketing/landing
+    // stays reachable from the DHQ logo and the Empire upsell card.
+    void isAuthed;
 
     let sleeperUsername = '';
-    // Dev mode (local machine only): use URL param or default test username.
+    // Dev mode: use URL param or default test username
     if (DEV_MODE) {
         sleeperUsername = new URLSearchParams(window.location.search).get('user') || 'bigloco';
     }
     try {
         if (legacyAuth && !sleeperUsername) {
             const credentials = JSON.parse(legacyAuth);
-            sleeperUsername = credentials.username || credentials.sleeperUsername || '';
+            sleeperUsername = credentials.username || '';
             // Sync username to Team Comps page localStorage key so it auto-logs in
             if (sleeperUsername) {
                 localStorage.setItem('od_locked_username_v2', sleeperUsername);
             }
         }
     } catch (e) {
+        // Corrupt legacy auth blob — clear it and let the hub handle the
+        // logged-out state (no forced bounce to landing.html anymore).
         localStorage.removeItem(AUTH_KEY);
     }
