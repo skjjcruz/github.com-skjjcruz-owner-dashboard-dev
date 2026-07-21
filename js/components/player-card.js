@@ -543,15 +543,24 @@
             ];
             if (isPro) statCells.push({ v: rec, l: 'Action', c: recCol });
             return React.createElement(React.Fragment, null,
-                // Stats grid. Phone: 2-col reflow (D4) — statCells is 4 (free)
-                // or 5 (Pro, +Action) tiles; an odd last tile spans full width
-                // so the Pro verdict cell reads as the decision row.
-                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(' + statCells.length + ', 1fr)', gap: '8px', padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
-                    statCells.map((s, i) => React.createElement('div', { key: i, style: { textAlign: 'center', gridColumn: (isPhone && statCells.length % 2 === 1 && i === statCells.length - 1) ? '1 / -1' : undefined } },
-                        React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.05rem', fontWeight: 700, color: s.c } }, s.v),
-                        React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, s.l)
-                    ))
-                ),
+                // Stats. Phone (D4 polish): the 4 (free) / 5 (Pro, +Action)
+                // tiles ride the shared .wr-kpi-strip snap band (~2.3 tiles
+                // visible at 390px — P4, index.html ≤767 block) per the
+                // approved scr-player-card phone pane. Desktop keeps the
+                // equal-width grid untouched.
+                isPhone
+                    ? React.createElement('div', { className: 'wr-kpi-strip', style: { padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
+                        statCells.map((s, i) => React.createElement('div', { key: i, style: { background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '9px 11px' } },
+                            React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' } }, s.l),
+                            React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.05rem', fontWeight: 700, color: s.c, marginTop: '2px' } }, s.v)
+                        ))
+                    )
+                    : React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(' + statCells.length + ', 1fr)', gap: '8px', padding: '14px 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
+                        statCells.map((s, i) => React.createElement('div', { key: i, style: { textAlign: 'center' } },
+                            React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.05rem', fontWeight: 700, color: s.c } }, s.v),
+                            React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, s.l)
+                        ))
+                    ),
                 // Player Brief — the universal written summary (every player,
                 // always), via the shared block: Alex's Read → The Wire → DHQ
                 // Read, with the composed-at stamp top-right.
@@ -830,37 +839,62 @@
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gold)', marginBottom: '4px' } }, '📝 Your scouting note'),
                     React.createElement('div', { style: { fontSize: 'var(--text-label, 0.8rem)', color: 'var(--k-d0d0d0, #d0d0d0)', lineHeight: 1.45, whiteSpace: 'pre-wrap' } }, scoutNote)
                 ),
-                // Tabs. Phone: one-line momentum scroll strip (D4), scrollbar
-                // hidden via the shared .wr-hscroll rules from wr-primitives.
-                React.createElement('div', {
-                    className: isPhone ? 'wr-hscroll' : undefined,
-                    style: { display: 'flex', gap: '2px', padding: '0 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', ...(isPhone ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : null) }
-                },
-                    ['overview', 'stats', 'scouting'].map(t =>
-                        React.createElement('button', {
-                            key: t,
-                            onClick: () => setTab(t),
-                            style: {
-                                padding: '10px 14px', minHeight: '44px', background: 'transparent',
-                                border: 'none', borderBottom: tab === t ? '2px solid var(--gold)' : '2px solid transparent',
-                                color: tab === t ? 'var(--gold)' : 'var(--silver)',
-                                fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer',
-                                ...(isPhone ? { flexShrink: 0, whiteSpace: 'nowrap' } : null)
-                            }
-                        }, t === 'overview' ? 'Overview' : t === 'stats' ? 'Career Stats' : 'Scouting')
+                // Tabs. Phone (D4 polish): the shared .wr-seg segmented sub-nav
+                // (P2, index.html ≤767 block) with .is-on active anatomy —
+                // three items distribute evenly (flex:1), no momentum scroll
+                // needed. Desktop keeps the underline tab strip untouched.
+                isPhone
+                    ? React.createElement('div', { className: 'wr-seg', style: { margin: '12px 20px 0' } },
+                        ['overview', 'stats', 'scouting'].map(t =>
+                            React.createElement('button', {
+                                key: t,
+                                className: tab === t ? 'is-on' : undefined,
+                                onClick: () => setTab(t),
+                                style: { minHeight: '44px' }
+                            }, t === 'overview' ? 'Overview' : t === 'stats' ? 'Career Stats' : 'Scouting')
+                        )
                     )
-                ),
+                    : React.createElement('div', {
+                        style: { display: 'flex', gap: '2px', padding: '0 20px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }
+                    },
+                        ['overview', 'stats', 'scouting'].map(t =>
+                            React.createElement('button', {
+                                key: t,
+                                onClick: () => setTab(t),
+                                style: {
+                                    padding: '10px 14px', minHeight: '44px', background: 'transparent',
+                                    border: 'none', borderBottom: tab === t ? '2px solid var(--gold)' : '2px solid transparent',
+                                    color: tab === t ? 'var(--gold)' : 'var(--silver)',
+                                    fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer'
+                                }
+                            }, t === 'overview' ? 'Overview' : t === 'stats' ? 'Career Stats' : 'Scouting')
+                        )
+                    ),
                 // Tab body
                 tab === 'overview' ? OverviewTab() : tab === 'stats' ? StatsTab() : ScoutingTab(),
                 // Actions — Compare, Trade Finder, Tag As (no News button).
-                // Phone: the 4 buttons outgrow 375px — wrap instead of forcing
-                // the sheet body to pan sideways.
-                React.createElement('div', { style: { padding: '14px 20px', display: 'flex', gap: '8px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', position: 'relative', ...(isPhone ? { flexWrap: 'wrap' } : null) } },
+                // Phone (D4 polish): the 4 buttons ride a 2-up grid of 44px
+                // targets (never a sideways pan); desktop keeps the flex row.
+                React.createElement('div', { style: { padding: '14px 20px', display: 'flex', gap: '8px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', position: 'relative', ...(isPhone ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' } : null) } },
                     React.createElement('button', { onClick: goCompare, style: btnStyle() }, 'Compare'),
                     React.createElement('button', { onClick: goTradeFinder, style: btnStyle('primary') }, isOnMyTeam ? 'Trade Finder' : 'Find Trade'),
+                    // Ask Alex (owner ask 2026-07-13, phone-crossover batch): open
+                    // the chat pre-loaded with this player via the wr:ask-alex
+                    // seam (league-detail listens; no-op on standalone pages).
+                    // Close the card first so the chat takes the stage.
+                    React.createElement('button', {
+                        onClick: () => {
+                            const nm = p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || 'this player';
+                            const msg = 'Give me your read on ' + nm + ' (' + (pos || '?') + (p.team ? ', ' + p.team : '') + ') for my franchise — value right now, short-term and long-term outlook, and whether I should buy, hold, or sell.';
+                            if (onClose) onClose();
+                            try { window.dispatchEvent(new CustomEvent('wr:ask-alex', { detail: { message: msg } })); } catch (e) { /* headless */ }
+                        }, style: btnStyle(),
+                    }, '💬 Ask Alex'),
                     React.createElement('button', { onClick: () => setTagMenu(!tagMenu), style: btnStyle() }, 'Tag As ▾'),
                     tagMenu ? React.createElement('div', {
-                        style: { position: 'absolute', bottom: '54px', right: '20px', background: 'var(--k-0a0b0d, #0a0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '8px', padding: '6px', zIndex: 5, minWidth: '160px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }
+                        // Phone: full-width above the grid so the 4 tag rows are
+                        // easy 44px targets; desktop anchors right, unchanged.
+                        style: { position: 'absolute', bottom: '54px', right: '20px', background: 'var(--k-0a0b0d, #0a0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '8px', padding: '6px', zIndex: 5, minWidth: '160px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', ...(isPhone ? { left: '20px', right: '20px', bottom: '60px' } : null) }
                     },
                         ['trade', 'cut', 'watch', 'untouchable'].map(t =>
                             React.createElement('button', {
@@ -869,7 +903,7 @@
                             }, 'Tag as ' + t.charAt(0).toUpperCase() + t.slice(1))
                         )
                     ) : null,
-                    React.createElement('button', { onClick: onClose, style: btnStyle('ghost', { marginLeft: 'auto' }) }, 'Close')
+                    React.createElement('button', { onClick: onClose, style: btnStyle('ghost', isPhone ? null : { marginLeft: 'auto' }) }, 'Close')
                 )
         );
 

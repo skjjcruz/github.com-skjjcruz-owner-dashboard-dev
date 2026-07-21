@@ -83,6 +83,18 @@ function AnalyticsPanel({
             ? <div style={{ marginBottom: 'var(--card-gap, 14px)' }} dangerouslySetInnerHTML={{ __html: window.wrLockCard(label, 'analytics_depth', sub) }} />
             : null
     );
+    // Phone tier (≤767, iPhone program Phase 3): shared viewport seam
+    // (js/shared/viewport.js, one debounced app-wide listener) + kit gate.
+    // Kit presence (wr-primitives.js loads earlier in the babel chain) is
+    // fixed for the page's lifetime, so `_phone` can gate render without
+    // hook hazards. Desktop/tablet markup below stays byte-identical —
+    // phone re-pours ride {_phone ? …} wraps and early returns only.
+    const _vp = window.WR.useViewport();
+    const _phone = !!_vp.isPhone && !!(window.WR && window.WR.HeroCard);
+    // Phone proof-tile expansion (which tile shows its full explainer). Lives
+    // in panel scope: AnalyticsProofGrid is a closure component that remounts
+    // on every parent render, so local state there would reset each render.
+    const [_proofOpen, _setProofOpen] = React.useState(null);
     // _SS mirrors the window.S shape consumed throughout this component
     const _SS = {
         rosters: _seasonCtx.rosters?.length ? _seasonCtx.rosters : (window.S?.rosters || currentLeague?.rosters || []),
@@ -203,10 +215,39 @@ function AnalyticsPanel({
         const n = Number(v);
         return (n > 0 ? '+' : '') + n.toLocaleString(undefined, { maximumFractionDigits: 1 }) + suffix;
     };
-    const AnalyticsCommandPanel = ({ title, thesis, mode, stats = [], note = "Elite player = 7000+ DHQ or top 5 at position. Elite team benchmarks compare against the league's proven top teams." }) => {
-        const hasStats = Array.isArray(stats) && stats.length > 0;
+    const AnalyticsCommandPanel = ({ title, thesis, mode, note = "Elite player = 7000+ DHQ or top 5 at position. Elite team benchmarks compare against the league's proven top teams." }) => {
+        // ══ PHONE (≤767) — P5 re-pour (gallery scr-analytics-roster IMPL
+        // CONTRACT): Research Question → HeroCard kicker, title → Rajdhani
+        // headline, thesis → mono facts, mode callout inline, the stats
+        // aside → a snapping .wr-kpi-strip band under the hero. The
+        // boilerplate `note` is dropped on phone (calm spec). Early return —
+        // the desktop panel below is untouched. Only rendered inside the
+        // existing isPro branches, so the gate boundary never moves.
+        if (_phone) {
+            return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: 'var(--card-gap, 14px)' }}>
+                    {React.createElement(window.WR.HeroCard, {
+                        kicker: 'Research Question',
+                        headline: title,
+                        // Thesis rides a 2-line clamp below (owner ask: the full
+                        // paragraph ate most of a screen before any data).
+                        facts: null,
+                    }, <React.Fragment>
+                        {window.WR.ClampedRead
+                            ? React.createElement(window.WR.ClampedRead, { text: thesis, maxHeight: 44, fadeColor: 'var(--black, #121217)', style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 500, color: 'var(--silver)', lineHeight: 1.5, marginTop: '2px' } })
+                            : <div style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 500, color: 'var(--silver)', lineHeight: 1.5 }}>{thesis}</div>}
+                        {/* "Suggested Mode" callout removed from the phone analytics
+                            hero (owner ask 2026-07-12) — your operating posture already
+                            lives in the persistent GM Mode badge + GM's Office. Desktop
+                            analytics panel (below) keeps its callout. */}
+                    </React.Fragment>)}
+                    {/* Methodology stat band removed everywhere (owner ask) —
+                        the hero carries question + thesis + suggested mode only. */}
+                </div>
+            );
+        }
         return (
-        <div className={'analytics-command-panel' + (hasStats ? '' : ' is-bare')}>
+        <div className="analytics-command-panel is-bare">
             <div>
                 <span>Research Question</span>
                 <h2>{title}</h2>
@@ -219,32 +260,52 @@ function AnalyticsPanel({
                     </div>
                 )}
             </div>
-            {hasStats && (
-            <aside>
-                {stats.map((s, i) => (
-                    <div key={i} data-tip={s.tip || undefined} aria-label={s.tip || undefined} style={s.tip ? { cursor: 'help' } : undefined}>
-                        <span>{s.label}</span>
-                        <strong style={{ color: s.color || 'var(--white)' }}>{s.value}</strong>
-                        {s.sub && <em>{s.sub}</em>}
-                    </div>
-                ))}
-            </aside>
-            )}
+            {/* Methodology stat aside removed everywhere (owner ask). */}
             {note && <div className="analytics-command-note">{note}</div>}
         </div>
         );
     };
-    const AnalyticsProofGrid = ({ items }) => (
-        <div className="analytics-proof-grid">
-            {items.map((item, i) => (
-                <div key={i} className={'analytics-proof-card is-' + (item.tone || 'neutral')}>
-                    <span>{item.label}</span>
-                    <strong style={{ color: item.color || undefined }}>{item.value}</strong>
-                    {item.detail && <em>{item.detail}</em>}
+    const AnalyticsProofGrid = ({ items }) => {
+        // ══ PHONE (≤767) — the desktop 1-col stack of tall explainer cards is
+        // the tab's endless-scroll source. Re-poured as a 2-col grid of compact
+        // stat tiles: label + tone-colored value; tap a tile and it expands to
+        // full width with its explainer. No data removed — one tap away.
+        if (_phone) {
+            const toneColOf = it => it.color || (it.tone === 'good' ? 'var(--good, #2ecc71)' : it.tone === 'warn' ? 'var(--warn, #f0a500)' : it.tone === 'bad' ? 'var(--bad, #e5534b)' : 'var(--white)');
+            return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '6px', marginBottom: 'var(--card-gap, 14px)' }}>
+                    {items.map((item, i) => {
+                        const key = item.label || String(i);
+                        const open = _proofOpen === key;
+                        const col = toneColOf(item);
+                        return (
+                            <button key={key} type="button" aria-expanded={open}
+                                onClick={() => _setProofOpen(open ? null : key)}
+                                style={{ textAlign: 'left', gridColumn: open ? '1 / -1' : 'auto', minHeight: '58px', background: 'var(--black, #121217)', border: '1px solid ' + (open ? 'var(--acc-line2, rgba(212,175,55,0.32))' : 'rgba(255,255,255,0.07)'), borderLeft: '3px solid ' + col, borderRadius: '9px', padding: '8px 10px', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
+                                    <span style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.05em', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+                                    <span aria-hidden="true" style={{ color: 'var(--text-muted, #55555f)', fontSize: '0.62rem', flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s' }}>›</span>
+                                </div>
+                                <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.18rem', fontWeight: 700, color: col, lineHeight: 1.15, marginTop: '2px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.value}</div>
+                                {open && item.detail && <div style={{ marginTop: '5px', color: 'var(--silver)', fontSize: '0.74rem', lineHeight: 1.5 }}>{item.detail}</div>}
+                            </button>
+                        );
+                    })}
                 </div>
-            ))}
-        </div>
-    );
+            );
+        }
+        return (
+            <div className="analytics-proof-grid">
+                {items.map((item, i) => (
+                    <div key={i} className={'analytics-proof-card is-' + (item.tone || 'neutral')}>
+                        <span>{item.label}</span>
+                        <strong style={{ color: item.color || undefined }}>{item.value}</strong>
+                        {item.detail && <em>{item.detail}</em>}
+                    </div>
+                ))}
+            </div>
+        );
+    };
     const AnalyticsDeltaRows = ({ rows, youLabel = 'You', benchmarkLabel = 'Elite' }) => {
         const max = Math.max(1, ...rows.map(r => Math.max(Math.abs(r.yours || 0), Math.abs(r.benchmark || 0))));
         return (
@@ -259,7 +320,10 @@ function AnalyticsPanel({
                     const yPct = Math.max(2, Math.min(100, Math.abs(yours) / max * 100));
                     const bPct = Math.max(0, Math.min(100, Math.abs(bench) / max * 100));
                     return (
-                        <div key={i} className="analytics-delta-row">
+                        // Phone: same bar idiom, 44px touch rows (grid already
+                        // centers via align-items). undefined off-phone —
+                        // desktop/tablet rows are byte-identical.
+                        <div key={i} className="analytics-delta-row" style={_phone ? { minHeight: '44px' } : undefined}>
                             <strong>{r.label}</strong>
                             <div className="analytics-delta-track">
                                 <div className="analytics-delta-fill" style={{ width: yPct + '%', background: r.color || 'var(--k-4ecdc4, #4ecdc4)' }} />
@@ -302,6 +366,20 @@ function AnalyticsPanel({
 
     return (
     <div className="analytics-shell" style={{ padding: 'var(--space-md) var(--space-lg) var(--space-lg)' }}>
+        {/* PHONE (≤767): the 5 sub-tabs re-pour as the shared P2 .wr-seg
+            (scrollable 4+ variant — min-width:fit-content children); long
+            labels compress for the 390px strip per the gallery spec. Same
+            setAnalyticsTab setter. Desktop/tablet keep the module strip
+            below, byte-identical. */}
+        {_phone ? (
+            <div className="wr-seg" style={{ marginBottom: '10px' }}>
+                {subTabs.map(t => (
+                    <button key={t.key} className={analyticsViewTab === t.key ? 'is-on' : ''} onClick={() => setAnalyticsTab(t.key)}>
+                        {{ trades: 'Market', assets: 'Players', reports: 'Reports' }[t.key] || t.label}
+                    </button>
+                ))}
+            </div>
+        ) : (
         <div className="wr-module-strip">
             <div className="wr-module-actions">
                 <div className="wr-module-nav">
@@ -312,6 +390,7 @@ function AnalyticsPanel({
                 <span className="wr-module-pill">{d?.computedAt ? 'Updated ' + new Date(d.computedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Loading'}</span>
             </div>
         </div>
+        )}
 
         {!d ? (
             <div style={{ ...aCardStyle, color: 'var(--silver)', textAlign: 'center', padding: '40px' }}>
@@ -770,14 +849,6 @@ function AnalyticsPanel({
                     title="What exactly separates this roster from the league's winning build?"
                     thesis={'Analytics is reading your roster as evidence: winner-template gaps, room-level coverage, age-window risk, and the positions where a move actually changes your title path.'}
                     mode={{ label: modeLabel, directive: modeDirective + ' (' + modeSource + ')', color: modeColor }}
-                    stats={[
-                        { label: 'Strategy Lens', value: gm.hasStrategy ? (gm.modeLabel || '').toUpperCase() : 'AUTO', sub: gm.hasStrategy ? 'GM Strategy · ' + windowLabel : 'no GM Strategy set · ' + windowLabel, color: gm.hasStrategy ? (gm.badgeColor || 'var(--gold)') : warnColor, tip: gm.hasStrategy ? 'Your GM Strategy is the lens for this whole tab — mode and analysis window come from your saved plan, not an inference.' : 'No GM Strategy set, so the posture below is inferred from your tier, window, and aging-cliff signals. Set a strategy to lock the lens.' },
-                        { label: 'Evidence Set', value: allRosters.length + ' teams', sub: 'live league rosters' },
-                        { label: 'Champion Sample', value: winnerN + ' teams', sub: winnerSource === 'brackets' ? 'real bracket champions' : 'standings fallback' },
-                        { label: 'Benchmark Confidence', value: benchConfidence, sub: benchHigh ? 'brackets, n>=3' : (winnerN < 2 ? 'sample too small' : 'low-trust template'), color: benchConfColor },
-                        { label: 'Current Tier', value: tier || 'UNKNOWN', sub: myRank ? '#' + myRank + ' of ' + teamRankings.length + (rankPct != null ? ' · ' + rankPct + 'th pct' : '') : healthScore + ' health', color: tier === 'REBUILDING' ? badColor : tier === 'CONTENDER' || tier === 'ELITE' ? goodColor : warnColor },
-                        { label: 'Win-Now Pressure', value: winNowScore, sub: rosterCliffPct + '% at cliff · ' + windowLabel, color: winNowColor },
-                    ]}
                 />}
 
                 <AnalyticsProofGrid items={rosterProofItems} />
@@ -1133,9 +1204,8 @@ function AnalyticsPanel({
                 { label: 'Elite R1 Benchmark', value: pctFmt(winnerR1Hit), detail: 'Title-tier R1 hit rate (n=' + winnerR1Count + ' winner R1 picks).', tone: winnerR1Count >= 3 ? 'good' : 'warn', color: winnerR1Count >= 3 ? goodColor : warnColor },
                 { label: 'Your R1 Conversion', value: myR1Count < 2 ? 'n=' + myR1Count : pctFmt(myR1Hit), detail: myR1Count < 2 ? 'Need 2+ recorded R1 picks; only ' + myR1Count + ' loaded.' : myR1Hits + '/' + myR1Count + ' R1 picks hit (elite ' + pctFmt(winnerR1Hit) + ').', tone: myR1Count < 2 ? 'warn' : (myR1Hit >= winnerR1Hit ? 'good' : 'warn'), color: myR1Count < 2 ? warnColor : (myR1Hit >= winnerR1Hit ? goodColor : warnColor) },
                 { label: 'R1-R2 Anchor Conversion', value: myAnchorN < 2 ? 'n=' + myAnchorN : pctFmt(myAnchorRate), detail: myAnchorN < 2 ? 'Need 2+ premium picks; only ' + myAnchorN + ' loaded.' : myAnchorHits + '/' + myAnchorN + ' premium picks hit (elite ' + pctFmt(winnerAnchorRate) + ', n=' + winnerAnchorN + ').', tone: myAnchorN < 2 ? 'warn' : (myAnchorRate >= winnerAnchorRate ? 'good' : 'warn'), color: myAnchorN < 2 ? warnColor : (myAnchorRate >= winnerAnchorRate ? goodColor : warnColor) },
-                { label: 'Value vs Slot', value: reachIndex == null ? '\u2014' : signedNum(reachIndex, ' pts'), detail: reachIndex == null ? 'Not enough graded picks to score reach.' : (reachIndex >= 0 ? 'Your picks beat their slot baseline on average.' : 'Your picks underperform their slot baseline (reach signal).'), tone: reachIndex == null ? 'warn' : toneFromDelta(reachIndex), color: reachIndex == null ? warnColor : (reachIndex >= 0 ? goodColor : badColor) },
+                // 'Value vs Slot' + 'Benchmark Confidence' proof cards removed (owner ask).
                 { label: 'Current Capital', value: currentPickValue.toLocaleString(), detail: currentPicks.length + ' current picks, ' + earlyPicks + ' in R1-R2.', tone: earlyPicks >= 3 ? 'good' : 'warn', color: earlyPicks >= 3 ? goodColor : warnColor },
-                { label: 'Benchmark Confidence', value: benchHigh ? 'High' : 'Low', detail: (benchSource === 'brackets' ? 'Champions from real playoff brackets' : 'Champions inferred from standings (fallback)') + ', n=' + winnerSampleN + '.', tone: benchHigh ? 'good' : 'warn', color: benchHigh ? goodColor : warnColor },
             ] : historicalProofItems;
             // \u2500\u2500 Draft intel: Round-Conversion tape + Winner-Formula DNA (full-width) \u2500\u2500
             // Fixed position palette: same position = same color across every round (the scannable
@@ -1225,7 +1295,7 @@ function AnalyticsPanel({
                                     </div>
                                 ))}
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '52px 34px minmax(0,1fr) 132px', gap: '10px', padding: '0 8px 5px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: _phone ? '44px 28px minmax(0,1fr) 78px' : '52px 34px minmax(0,1fr) 132px', gap: _phone ? '7px' : '10px', padding: '0 8px 5px' }}>
                                 <span /><span />
                                 <div style={{ position: 'relative', height: '12px', color: 'var(--silver)', fontSize: 'var(--text-micro)', opacity: 0.55 }}>
                                     {[0, 25, 50, 75, 100].map(t => <span key={t} style={{ position: 'absolute', left: t + '%', transform: t === 0 ? 'none' : t === 100 ? 'translateX(-100%)' : 'translateX(-50%)' }}>{t}</span>)}
@@ -1236,7 +1306,7 @@ function AnalyticsPanel({
                                 const tint = t.state !== 'solid' ? 'rgba(255,255,255,0.02)' : (t.gap >= 0 ? 'linear-gradient(90deg,rgba(46,204,113,0.10),transparent)' : 'rgba(240,165,0,0.10)');
                                 const gapColor = t.state !== 'solid' ? 'rgba(189,184,173,0.45)' : (t.gap >= 0 ? 'var(--good)' : 'var(--warn)');
                                 return (
-                                <div key={t.rd} style={{ display: 'grid', gridTemplateColumns: '52px 34px minmax(0,1fr) 132px', alignItems: 'center', gap: '10px', minHeight: '34px', borderRadius: '6px', padding: '4px 8px', borderBottom: '1px solid var(--ov-4,rgba(255,255,255,0.06))', background: tint, opacity: t.state === 'empty' ? 0.5 : 1 }}>
+                                <div key={t.rd} style={{ display: 'grid', gridTemplateColumns: _phone ? '44px 28px minmax(0,1fr) 78px' : '52px 34px minmax(0,1fr) 132px', alignItems: 'center', gap: _phone ? '7px' : '10px', minHeight: '34px', borderRadius: '6px', padding: '4px 8px', borderBottom: '1px solid var(--ov-4,rgba(255,255,255,0.06))', background: tint, opacity: t.state === 'empty' ? 0.5 : 1 }}>
                                     <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)' }}>R{t.rd}</span>
                                     <span style={{ fontSize: 'var(--text-micro)', color: t.n === 1 ? 'var(--warn)' : 'var(--silver)' }}>{t.n === 0 ? '\u2014' : 'n=' + t.n}</span>
                                     <div style={{ position: 'relative', height: '10px', borderRadius: '99px', background: 'rgba(255,255,255,0.055)', overflow: 'visible' }}>
@@ -1275,11 +1345,8 @@ function AnalyticsPanel({
                             <span>Winner Formula</span>
                             <strong>What Champions Draft, Round by Round</strong>
                             <p>Each bar is the full pick budget of title teams that round, split by position &mdash; the winning recipe. Your actual picks pin on as teal markers: on the recipe when you matched the champion lean, off-script when you zigged to a band they barely touch. One pick is one mark (&times;1), never a trend.</p>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 10px', background: 'rgba(212,175,55,0.08)', borderLeft: '3px solid var(--gold)', borderRadius: 'var(--card-radius-sm)', padding: '10px 12px', margin: '4px 0 14px' }}>
-                                <span style={{ fontSize: 'var(--text-micro)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Template Lean (R1-R2, R1 &times;2)</span>
-                                {blendedTopPos && <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro)', padding: '2px 8px', borderRadius: 'var(--card-radius-sm)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))' }}>{posLabel(blendedTopPos)} overall</span>}
-                                {r1TopPos && <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>but R1 itself runs {posLabel(r1TopPos)}-first{r1Entries.length ? ' (' + pctFmt(r1Entries[0][1]) + ')' : ''}.</span>}
-                            </div>
+                            {/* Template Lean callout removed (owner ask) — the per-round
+                                bars below already carry the champion recipe. */}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 12px', marginBottom: '14px', fontSize: 'var(--text-micro)', color: 'var(--silver)' }}>
                                 {['RB', 'WR', 'QB', 'TE', 'DL', 'LB', 'DB', 'K'].map(p => <span key={p}><i style={{ display: 'inline-block', width: '10px', height: '10px', background: POS_COLOR[p], borderRadius: '2px', marginRight: '4px', verticalAlign: 'middle' }} />{posLabel(p)}</span>)}
                                 <span><i style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--k-4ecdc4,#4ecdc4)', borderRadius: '50%', marginRight: '4px', verticalAlign: 'middle' }} />You (&times; = picks)</span>
@@ -1481,12 +1548,6 @@ function AnalyticsPanel({
                 {isPro && <AnalyticsCommandPanel
                     title="Where is the league market mispricing value?"
                     thesis="Market analytics should explain owner behavior and price movement. This view separates trade liquidity, deal quality, waiver pricing, FAAB leverage, and position flow before sending you to Trade Center or Free Agency."
-                    stats={[
-                        { label: 'Trade Pattern', value: tradeActivity || 'No trades', sub: tradeEfficiency || 'sample pending', color: mp.avgValueGained >= 0 ? goodColor : badColor, tip: 'Your trading vs title teams. The headline is volume \u2014 whether you trade more or less often than champions do (under/over-trading). The sub-line is efficiency \u2014 whether your completed deals gain or lose DHQ value on average. Green = you gain value per trade.' },
-                        { label: 'Elite Volume', value: wp.avgTradesPerSeason, sub: 'trades/season \u00b7 n=' + winnerN, tip: 'How many trades per season this league\u2019s title teams average (n = champion sample). It\u2019s the trade-activity bar you\u2019re measured against \u2014 winners are usually active traders.' },
-                        { label: 'FAAB Runway', value: faabRemaining == null ? '\u2014' : (runwayWeeks != null ? runwayWeeks + ' wk' : '$' + faabRemaining.toLocaleString()), sub: faabRemaining == null ? 'no FAAB budget' : (runwayWeeks != null ? '~$' + Math.round(burnPerWeek) + '/wk \u00b7 ' + faabPct + '% left' : faabPct + '% of budget left'), color: faabRemaining == null ? undefined : (runwayWeeks != null ? (runwayWeeks <= 2 ? warnColor : goodColor) : (faabPct != null && faabPct < 25 ? warnColor : goodColor)), tip: 'How long your remaining waiver budget lasts at your spend pace (FAAB left \u00f7 average weekly burn). The pace only becomes meaningful after ~4 scoring weeks \u2014 before that (offseason / early season) it shows your remaining budget and the % of FAAB still available instead of a misleading week count.' },
-                        { label: 'Benchmark Confidence', value: benchHigh ? 'High' : 'Low', sub: (benchSource === 'brackets' ? 'bracket' : 'standings') + ', n=' + winnerN, color: benchConfColor, tip: 'How trustworthy this tab\u2019s champion benchmarks are. High = the title teams come from real playoff brackets with a healthy sample; Low = inferred from final standings or too small a sample (n = teams in the benchmark).' },
-                    ]}
                 />}
 
                 <AnalyticsProofGrid items={shownMarketProofItems} />

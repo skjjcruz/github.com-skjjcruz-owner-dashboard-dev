@@ -1533,7 +1533,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 	    .fa-hq-panel { padding: 12px; min-width: 0; }
 	    .fa-hq-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; border-bottom: 1px solid rgba(212,175,55,0.1); padding-bottom: 8px; margin-bottom: 10px; }
 	    .fa-hq-panel-head em { color: var(--silver); opacity: 0.62; font-size: 0.68rem; font-style: normal; text-align: right; }
-	    .fa-hq-stack, .fa-hq-board-list, .fa-hq-competitors, .fa-hq-threats, .fa-hq-gap-matrix { display: flex; flex-direction: column; gap: 6px; }
+	    .fa-hq-stack, .fa-hq-board-list, .fa-hq-gap-matrix { display: flex; flex-direction: column; gap: 6px; }
 	    .fa-hq-mini-card, .fa-hq-swap, .fa-hq-candidate { width: 100%; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.025); color: var(--white); border-radius: 7px; cursor: pointer; text-align: left; }
 	    .fa-hq-mini-card { padding: 8px 9px; }
 	    .fa-hq-mini-card:hover, .fa-hq-swap:hover, .fa-hq-candidate:hover { border-color: rgba(212,175,55,0.38); background: rgba(212,175,55,0.06); }
@@ -1557,15 +1557,18 @@ WRShared.preloadMany(WR_SHARED_FILES);
 	    .fa-hq-why { grid-column: 2 / -1; color: var(--silver); opacity: 0.68; font-size: 0.68rem; line-height: 1.35; }
 	    .fa-hq-evidence { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 5px; margin-top: -1px; }
 	    .fa-hq-evidence em { color: #D0E7FA; background: rgba(125,183,232,0.07); border: 1px solid rgba(125,183,232,0.18); border-radius: 4px; padding: 2px 5px; font-size: 0.6rem; font-style: normal; line-height: 1.25; }
-	    .fa-hq-faab-card { position: relative; overflow: hidden; padding: 10px; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.025); border-radius: 8px; margin-bottom: 8px; }
-	    .fa-hq-faab-card strong { display: block; font-family: 'JetBrains Mono', monospace; font-size: 1.4rem; }
-	    .fa-hq-faab-card span { display: block; color: var(--silver); opacity: 0.68; font-size: 0.7rem; }
-	    .fa-hq-faab-card i { display: block; height: 5px; border-radius: 5px; margin-top: 8px; }
-	    .fa-hq-competitors div, .fa-hq-threats div, .fa-hq-gap-matrix div { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px; align-items: center; border: 1px solid rgba(255,255,255,0.045); background: rgba(255,255,255,0.022); border-radius: 6px; padding: 6px 7px; }
-	    .fa-hq-competitors span, .fa-hq-threats em, .fa-hq-gap-matrix i { color: var(--silver); opacity: 0.7; font-size: 0.68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	    .fa-hq-competitors strong, .fa-hq-threats strong, .fa-hq-gap-matrix strong { color: var(--gold); font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; }
-	    .fa-hq-threats div { grid-template-columns: 34px minmax(0,1fr) auto; }
-	    .fa-hq-gap-matrix div { grid-template-columns: 32px 24px 40px minmax(0,1fr); }
+	    /* Market Leverage consolidation (owner ask 2026-07-12): one-line FAAB card,
+	       competitor chips, threats merged into the gap matrix (grade is the 1-char
+	       letter in the 20px track — the word label rides title=, no more overlap). */
+	    .fa-hq-faab-card { position: relative; overflow: hidden; padding: 8px 10px; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.025); border-radius: 8px; margin-bottom: 8px; }
+	    .fa-hq-faab-card strong { font-family: 'JetBrains Mono', monospace; font-size: 1.02rem; }
+	    .fa-hq-faab-card span { color: var(--silver); opacity: 0.68; font-size: 0.7rem; }
+	    .fa-hq-faab-card i { display: block; height: 4px; border-radius: 5px; margin-top: 6px; }
+	    .fa-hq-gap-matrix div { display: grid; grid-template-columns: 32px 20px 38px minmax(0,1fr) auto; gap: 6px; align-items: center; border: 1px solid rgba(255,255,255,0.045); background: rgba(255,255,255,0.022); border-radius: 6px; padding: 5px 7px; }
+	    .fa-hq-gap-matrix span { font-size: 0.7rem; font-weight: 700; }
+	    .fa-hq-gap-matrix strong { color: var(--gold); font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; text-align: center; }
+	    .fa-hq-gap-matrix i { color: var(--silver); opacity: 0.7; font-size: 0.68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	    .fa-hq-gap-matrix b { color: var(--gold); font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; font-weight: 700; text-align: right; }
 	    .fa-hq-gap-matrix em { color: var(--silver); opacity: 0.72; font-size: 0.68rem; font-style: normal; }
 	    .fa-hq-chipline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 	    .fa-hq-chipline span { border: 1px solid rgba(240,165,0,0.28); color: var(--warn); background: rgba(240,165,0,0.07); border-radius: 4px; padding: 2px 5px; font-size: 0.62rem; font-weight: 800; }
@@ -2437,6 +2440,25 @@ WRShared.preloadMany(WR_SHARED_FILES);
            cancels the layout shift. Later-in-sheet equal specificity wins. */
         .tc-ta-remove { padding:12px; margin:-12px; }
 
+        /* Mock Draft setup on phone: the full SetupScreen renders ≤767 now
+           (mobile mock drafting) — bump the tap targets that ship at desktop
+           density. Media-gated: zero desktop impact. */
+        .draft-setup-choice button, .draft-setup-speed button,
+        .draft-league-actions button, .draft-setup-secondary > button { min-height: 44px; }
+
+        /* Analytics phone re-pour: the Waiver Economy price map collapses to a
+           full-width card PER POSITION at ≤720 — pack it 2-up instead; and the
+           shell's desktop padding (inline style, hence !important) tightens. */
+        .analytics-mini-table { grid-template-columns: repeat(2, minmax(0,1fr)); }
+        .analytics-shell { padding: 10px var(--wr-phone-gutter, 12px) 18px !important; }
+        /* Phone gutter normalization (owner ask 2026-07-12): every tab root
+           pads its sides with --wr-phone-gutter so swiping between tabs
+           doesn't shift the content edge (was 20-28px depending on tab).
+           Inline-styled roots (my-team/lineup/compare/trades) consume the
+           token in JS; the class-styled roots normalize here. */
+        .fa-page { padding-left: var(--wr-phone-gutter, 12px) !important; padding-right: var(--wr-phone-gutter, 12px) !important; }
+        .draft-cc-scope { padding-left: var(--wr-phone-gutter, 12px) !important; padding-right: var(--wr-phone-gutter, 12px) !important; }
+
         /* dvh audit (plan Phase 3): full-height overlay tracks the visual
            viewport so Safari's collapsing URL bar can't clip the bottom.
            Later-in-sheet rule wins where dvh is supported; on pre-15.4 iOS
@@ -2795,6 +2817,10 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/snapshot-store.js?v=20260601a"></script>
 
 <script src="js/shared/wr-ai-context.js?v=20260610a"></script>
+<!-- NFL draft capital dataset — window.WR_DRAFT_PROFILE — static historical
+     [year, round, overall, team] by Sleeper id (Sleeper's API has none).
+     Regenerate with scripts/build-draft-profile.cjs. -->
+<script src="js/shared/draft-profile-data.js?v=20260712draft1"></script>
 <!-- AI Conductor foundation — one shared team-state + change-fingerprint (window.WR.SituationRoom). Additive + flagged off; nothing consumes it yet. -->
 <script src="js/shared/situation-room.js?v=20260715sr3"></script>
 <!-- AI Conductor Phase 2 — the command brief's "what changed" line (window.WR.BriefPulse), flag-gated. -->

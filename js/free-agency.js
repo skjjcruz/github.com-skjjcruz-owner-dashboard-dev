@@ -25,29 +25,44 @@
         depthChart: { label: 'NFL Depth Chart Position',shortLabel: 'Depth',  width: '50px', group: 'scout'   },
         injury:     { label: 'Injury Status',           shortLabel: 'Inj',    width: '46px', sortKey: 'injury',  group: 'stats' },
         faab:       { label: 'Suggested FAAB Bid',      shortLabel: 'FAAB',   width: '60px', group: 'stats'   },
-        fit:        { label: 'Roster Fit',              shortLabel: 'Fit',    width: '76px', group: 'stats'   },
-        // Rookie/prospect columns — sourced from the rookie-data prospect record
-        // (window.App.RookieFields), not the Sleeper object. Show '—' for vets.
-        rkSlot:     { label: 'NFL Draft Slot (rookie)', shortLabel: 'Draft',  width: '56px', sortKey: 'rkSlot', group: 'scout' },
-        rkTeam:     { label: 'Drafted NFL Team (rookie)',shortLabel: 'Drafted',width: '52px', sortKey: 'rkTeam', group: 'scout' },
+        // Draft-capital + profile columns. Rookies use the rookie-data prospect
+        // record (window.App.RookieFields); vets fall back to the static NFL
+        // draft dataset (faDraftCap below). Consensus rank/tier stay rookie-only.
+        rkSlot:     { label: 'NFL Draft Capital — round + overall pick (UDFA = undrafted)', shortLabel: 'Draft',  width: '56px', sortKey: 'rkSlot', group: 'scout' },
+        rkTeam:     { label: 'NFL Team That Drafted Him',shortLabel: 'Drafted',width: '52px', sortKey: 'rkTeam', group: 'scout' },
         rkRank:     { label: 'Rookie Consensus Rank',   shortLabel: 'Cons #', width: '50px', sortKey: 'rkRank', group: 'scout' },
         rkTier:     { label: 'Rookie Tier',             shortLabel: 'Tier',   width: '70px', sortKey: 'rkTier', group: 'scout' },
-        rkProfile:  { label: 'Rookie Profile (Ht · Wt · 40)', shortLabel: 'Profile', width: '120px', group: 'scout' },
+        rkProfile:  { label: 'Profile — Ht · Wt (· 40 time for rookies)', shortLabel: 'Profile', width: '120px', group: 'scout' },
     };
+    // NFL draft capital for vets — static vendored dataset (window.WR_DRAFT_PROFILE,
+    // js/shared/draft-profile-data.js): [year, round, OVERALL pick, team];
+    // round 0 = confirmed UDFA. Mirrors my-team.js draftCapFor.
+    function faDraftCap(pid) {
+        const d = window.WR_DRAFT_PROFILE?.[pid];
+        if (!d) return null;
+        return { year: d[0] || 0, round: d[1] || 0, overall: d[2] || 0, team: d[3] || '' };
+    }
+    function faDraftSlotTxt(pid) {
+        const dp = faDraftCap(pid);
+        return dp ? (dp.round > 0 ? 'R' + dp.round + ' #' + dp.overall : 'UDFA') : null;
+    }
     const FA_COLUMN_PRESETS = {
-        default: ['pos','team','age','dhq','ppg','proj','faab','fit'],
+        default: ['pos','team','age','dhq','ppg','proj','faab'],
         scout:   ['pos','age','college','height','weight','depthChart'],
-        bidding: ['pos','team','dhq','ppg','faab','fit','injury'],
+        bidding: ['pos','team','dhq','ppg','faab','injury'],
         rookie:  ['pos','college','rkSlot','rkTeam','rkRank','rkTier','rkProfile','dhq'],
         full:    Object.keys(FA_COLUMNS),
     };
     const ROOKIE_DRAFT_LOCK_STATUSES = new Set(['pre_draft', 'drafting']);
     const ROOKIE_DHQ_SOURCES = new Set(['FC_ROOKIE', 'PROSPECT_ROOKIE']);
-    // Scout-free vs Pro: FAAB bid + roster-fit reads are Pro. Presets AND
-    // persisted/saved column prefs pass through faTierCols at every set-site
-    // plus once at render, so a stored 'faab'/'fit' pref can't resurrect the
-    // columns for a free user (mirrors the My Roster 'action' column).
-    const FA_PRO_COLS = new Set(['faab', 'fit']);
+    // Scout-free vs Pro: the FAAB bid read is Pro. Presets AND persisted/saved
+    // column prefs pass through faTierCols at every set-site plus once at
+    // render, so a stored 'faab' pref can't resurrect the column for a free
+    // user (mirrors the My Roster 'action' column). The 'fit' column is gone
+    // entirely (owner ask 2026-07-12) — the roster-fit read (fitRead + the
+    // team-assess needs) still powers the drawer's Roster Fit panel,
+    // decorateFaCandidate, and the action board.
+    const FA_PRO_COLS = new Set(['faab']);
     function faTierCols(cols) {
         const pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
         return pro ? (cols || []) : (cols || []).filter(k => !FA_PRO_COLS.has(k));
@@ -140,6 +155,15 @@
 
     function isRookieWaiverLockedCandidate(pid, p, { rookiesLocked, prospectNames, statsData, prevStatsData }) {
         if (!rookiesLocked || !p) return false;
+        // Exact vet excluder first (owner ask 2026-07-12: vets were leaking into
+        // the UDFA craze). WR_DRAFT_PROFILE (static NFL draft-capital dataset via
+        // faDraftCap; round 0 = confirmed UDFA) carries the entry year — any year
+        // before the current rookie class is definitively a veteran, no matter
+        // what the name/exp/gp heuristics below say (years_exp is null for some
+        // vets, e.g. a 2023 R4 pick with no recent gp).
+        const rookieClassSeason = Number(window.S?.league?.season || window.S?.nflState?.season) || new Date().getFullYear();
+        const dc = faDraftCap(pid);
+        if (dc && dc.year && dc.year < rookieClassSeason) return false;
         const source = String(window.App?.LI?.playerMeta?.[pid]?.source || '').toUpperCase();
         if (ROOKIE_DHQ_SOURCES.has(source) || source.includes('ROOKIE')) return true;
         const name = faNormName(p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim());
@@ -519,8 +543,22 @@
         const now = rookiesLockedForWaivers(currentLeague, briefDraftInfo);
         if (store) store.set(key, now);
         if (prev === true && now === false) {
+            // 21-day shelf life anchored to draft COMPLETION (owner ask 2026-07-12):
+            // this flip can be observed months after the real-platform draft ended
+            // (FA tab simply not opened), and openCraze would otherwise start a
+            // fresh window from Date.now(). Completion ts = last_picked ||
+            // start_time || created — same triple league-detail.js uses.
+            const CRAZE_MAX_MS = 21 * 24 * 3600 * 1000;
+            const completionTs = collectFaDrafts(currentLeague, briefDraftInfo)
+                .filter(d => sameDraftSeason(d, currentLeague) && isRookieDraftLike(d, currentLeague) && String(d.status || '').toLowerCase() === 'complete')
+                .reduce((ts, d) => Math.max(ts, Number(d.last_picked || d.start_time || d.created) || 0), 0);
+            if (completionTs && Date.now() > completionTs + CRAZE_MAX_MS) return null; // stale flip — lock flag stored above, craze stays shut
             if (window.App?.PostDraft?.openCraze) {
-                try { window.App.PostDraft.openCraze(leagueId, { league: currentLeague }); } catch (_) {}
+                // Cap the window at completion+21d; the (shorter) waiver-cadence default wins otherwise.
+                const defaultEnd = window.App.PostDraft.computeWindowEnd ? window.App.PostDraft.computeWindowEnd(currentLeague, Date.now()) : 0;
+                const crazeOpts = { league: currentLeague };
+                if (completionTs) crazeOpts.windowEnd = Math.min(defaultEnd || Infinity, completionTs + CRAZE_MAX_MS);
+                try { window.App.PostDraft.openCraze(leagueId, crazeOpts); } catch (_) {}
             }
             try { window.dispatchEvent(new CustomEvent('wr:udfa-craze-open', { detail: { leagueId, season: currentLeague?.season } })); } catch (_) {}
             return leagueId;
@@ -547,6 +585,17 @@
         // HQ, priority adds, FAAB bids, fit/window reads, UDFA craze) are Pro;
         // the raw Market Explorer + filters stay free. Fail-open.
         const isPro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
+        // ══ PHONE (<768) — iPhone program Phase 1 (FA) ═══════════════════
+        // Hooks are called HERE, unconditionally at the top of the component
+        // (this file has conditional returns further down — roster blocker +
+        // command view — so phone hooks can't live next to the phone branch
+        // itself). viewport.js + the Phase-0 kit are plain scripts earlier in
+        // the babel chain: presence is fixed for the page's lifetime, so the
+        // guarded call keeps hook order stable across renders.
+        const _faUseVp = window.WR && window.WR.useViewport;
+        const _faVp = _faUseVp ? _faUseVp() : { isPhone: false };
+        const [faPanel, setFaPanel] = useState(null);   // inline chooser: null|'filters'|'sort'|'view'
+        const _faPhone = !!_faVp.isPhone && !!(window.WR && window.WR.HeroCard && window.WR.AssetRow && window.WR.CardList && window.WR.FilterPill && window.WR.FilterSheet && window.WR.Sheet);
         // Redraft → build rest-of-season values so waiver/FA targets rank by ROS
         // production instead of dynasty DHQ. No-op (DHQ) for dynasty/keeper.
         React.useMemo(() => {
@@ -581,6 +630,13 @@
             return faTierCols(valid);
         });
         const [faColPreset, setFaColPreset] = useState('default');
+        // Derive the ACTIVE view from the PERSISTED columns (my-team idiom) —
+        // faColPreset is session-only and snapped to 'default' on reload, which
+        // froze the phone stat slots + VIEW pill no matter which view was saved
+        // (owner ask 2026-07-12). Tier-filter the preset side so a free user's
+        // default (faab stripped) still matches. Derived key wins over faColPreset.
+        const sameFaColSet = (a, b) => a.length === b.length && a.every((key, idx) => key === b[idx]);
+        const faActivePresetKey = Object.entries(FA_COLUMN_PRESETS).find(([, cols]) => sameFaColSet(faTierCols(cols), visibleFaCols))?.[0] || 'custom';
         const [showFaColPicker, setShowFaColPicker] = useState(false);
         // Rolling PPG window — shared localStorage key with My Roster so the setting persists across tabs.
         const [ppgWindow, setPpgWindow] = useState(() => { try { return localStorage.getItem('wr_ppg_window') || 'season'; } catch { return 'season'; } });
@@ -757,10 +813,14 @@
         const posColors = window.App.POS_COLORS;
         const faPosOrder = { QB:0, RB:1, WR:2, TE:3, K:4, DEF:5, DL:6, LB:7, DB:8 };
 
-        // League-specific position chips (only groups this league rosters).
+        // League-specific position chips (only groups this league rosters),
+        // plus league-derived flex groups (FLEX / SFLEX / IDP FLEX…, owner ask
+        // 2026-07-12) — the filter predicate below expands them via
+        // posMatchesFilter.
         const leaguePositions = useMemo(() => {
             const lp = leaguePlayablePositions(currentLeague?.roster_positions);
-            return lp.length ? lp : ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
+            const base = lp.length ? lp : ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
+            return [...base, ...(window.App?.getLeagueFlexGroups?.({ league: currentLeague }) || [])];
         }, [currentLeague]);
         // Rookies filter — UDFAs fold into the FA pool post-draft; this isolates them.
         const [rookieOnly, setRookieOnly] = useState(false);
@@ -830,7 +890,8 @@
             const q = faSearch.trim().toLowerCase();
             const filtered = availablePlayers.filter(x => {
                 const pos = normPos(x.p.position) || x.p.position || '';
-                if (faFilter && pos !== faFilter) return false;
+                // Group-aware: faFilter may be a flex-group key (FLEX/SFLEX/…)
+                if (faFilter && !(window.App?.posMatchesFilter ? window.App.posMatchesFilter(pos, faFilter) : pos === faFilter)) return false;
                 if (rookieOnly) {
                     if (!isRookiePlayer(x.pid, x.p)) return false;
                     if (rookieTeamFilter && rookieTeamOf(x) !== rookieTeamFilter) return false;
@@ -876,11 +937,17 @@
                 if (k === 'injury') return dir * ((a.p.injury_status || '').localeCompare(b.p.injury_status || ''));
                 if (k === 'rkSlot' || k === 'rkRank' || k === 'rkTier' || k === 'rkTeam') {
                     const ra = prospectFor(a.p); const rb = prospectFor(b.p);
-                    if (k === 'rkTeam') return dir * ((ra?.nflTeam || '').localeCompare(rb?.nflTeam || ''));
+                    if (k === 'rkTeam') return dir * ((ra?.nflTeam || faDraftCap(a.pid)?.team || '').localeCompare(rb?.nflTeam || faDraftCap(b.pid)?.team || ''));
                     if (k === 'rkSlot') {
-                        // Earlier capital sorts first; UDFA/undrafted last; non-rookies after that.
-                        const slot = r => !r ? 1e9 : (Number(r.draftRound) > 0 ? Number(r.draftRound) * 100 + (Number(r.draftPick) || 99) : 9000);
-                        return dir * (slot(ra) - slot(rb));
+                        // Earlier capital sorts first (unified ordinal ≈ overall pick);
+                        // UDFA last; players with no data after that.
+                        const slot = (r, pid) => {
+                            if (r && Number(r.draftRound) > 0) return (Number(r.draftRound) - 1) * 32 + (Number(r.draftPick) || 32);
+                            const d = faDraftCap(pid);
+                            if (d) return d.round > 0 ? (d.overall || (d.round - 1) * 32 + 32) : 9000;
+                            return r ? 9000 : 1e9;
+                        };
+                        return dir * (slot(ra, a.pid) - slot(rb, b.pid));
                     }
                     // rkRank / rkTier — lower consensus rank is better; non-rookies last.
                     const rank = r => (r && (r.consensusRank ?? r.rank) != null) ? Number(r.consensusRank ?? r.rank) : 1e9;
@@ -1288,6 +1355,12 @@
                                 <span>Priority Moves</span>
                                 <em>{topAdds.length} add targets · {swapRows.length} swaps</em>
                             </div>
+                            {/* Add targets | swaps ride side by side when the panel is
+                                wide (owner ask 2026-07-12 — stacked full-width cards
+                                left half the panel empty); auto-stacks below ~640px. */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '4px 16px', alignItems: 'start' }}>
+                            <div>
+                            <div className="fa-hq-subhead" style={{ marginTop: 0 }}>Add Targets</div>
                             <div className="fa-hq-stack">
                                 {topAdds.length ? topAdds.map((x, i) => (
                                     <button key={x.pid} className="fa-hq-mini-card" title="Open player card" onClick={() => openFaPlayer(x.pid)}>
@@ -1308,8 +1381,10 @@
                                     </div>
                                 );
                             })()}
+                            </div>
 
-                            <div className="fa-hq-subhead">Best Add/Drop Upgrades</div>
+                            <div>
+                            <div className="fa-hq-subhead" style={{ marginTop: 0 }}>Best Add/Drop Upgrades</div>
                             <div className="fa-hq-stack">
                                 {swapRows.length ? swapRows.map(pair => (
                                     <button key={pair.drop.pid + '-' + pair.add.pid} className="fa-hq-swap" title="Open player card" onClick={() => openFaPlayer(pair.add.pid)}>
@@ -1317,6 +1392,8 @@
                                         <span><b>Add</b>{playerName(pair.add.p)}<em>+{pair.gain.toLocaleString()}</em></span>
                                     </button>
                                 )) : <div className="fa-hq-empty">No obvious add/drop upgrade found from the current wire.</div>}
+                            </div>
+                            </div>
                             </div>
 
                             <div className="fa-hq-subhead">Fresh Drop Alerts</div>
@@ -1345,41 +1422,34 @@
                                 <span>Market Leverage</span>
                                 <em>{canOutbidRows.length ? canOutbidRows.length + ' teams can outbid you' : 'You control most bids'}</em>
                             </div>
+                            {/* Consolidated to ~half height (owner ask 2026-07-12): one-line FAAB
+                                card, competitors as a chip line, Position Threats merged into the
+                                gap matrix (both keyed by position). */}
                             {hasFAAB && <div className="fa-hq-faab-card">
                                 <strong style={{ color: faabColor }}>${remaining}</strong>
-                                <span>of ${budget} left · #{myFaabRank || '—'} in FAAB</span>
+                                <span> of ${budget} · #{myFaabRank || '—'} FAAB</span>
                                 <i style={{ width: budget > 0 ? Math.max(3, Math.round((remaining / budget) * 100)) + '%' : '0%', background: faabColor }} />
                             </div>}
-                            <div className="fa-hq-competitors">
+                            <div className="fa-hq-chipline">
                                 {(canOutbidRows.length ? canOutbidRows : faabMarketRows.filter(r => !r.isMe).slice(0, 4)).map(r => (
-                                    <div key={r.rosterId}>
-                                        <span>{r.name}</span>
-                                        <strong>${r.remaining}</strong>
-                                    </div>
+                                    <span key={r.rosterId}>{r.name} ${r.remaining}</span>
                                 ))}
-                            </div>
-
-                            <div className="fa-hq-subhead">Position Threats</div>
-                            <div className="fa-hq-threats">
-                                {positionThreats.length ? positionThreats.map(t => (
-                                    <div key={t.pos}>
-                                        <span style={{ color: posColors[t.pos] || 'var(--silver)' }}>{window.App?.posLabel?.(t.pos) || (t.pos === 'DEF' ? 'D/ST' : t.pos)}</span>
-                                        <em>{t.top.name}</em>
-                                        <strong>${t.top.remaining}</strong>
-                                    </div>
-                                )) : <div className="fa-hq-empty">No clear outbid threat by position.</div>}
                             </div>
 
                             <div className="fa-hq-subhead">Roster Gap Matrix</div>
                             <div className="fa-hq-gap-matrix">
-                                {rosterGapRows.map(row => (
-                                    <div key={row.pos} style={{ background: row.bg }}>
-                                        <span style={{ color: posColors[row.pos] || row.color }}>{window.App?.posLabel?.(row.pos) || (row.pos === 'DEF' ? 'D/ST' : row.pos)}</span>
-                                        <strong className="fa-gap-badge" style={{ color: row.color, borderColor: row.color }}>{row.label}</strong>
-                                        <em>{row.data.nflStarters || Math.min(row.data.actual || 0, row.data.minQuality || row.data.startingReq || 0)}/{row.data.minQuality || row.data.startingReq || 0}</em>
-                                        <i>{row.bestWire ? playerName(row.bestWire.p) : '—'}</i>
-                                    </div>
-                                ))}
+                                {rosterGapRows.map(row => {
+                                    const threat = positionThreats.find(t => t.pos === row.pos)?.top || null;
+                                    return (
+                                        <div key={row.pos} style={{ background: row.bg }}>
+                                            <span style={{ color: posColors[row.pos] || row.color }}>{window.App?.posLabel?.(row.pos) || (row.pos === 'DEF' ? 'D/ST' : row.pos)}</span>
+                                            <strong className="fa-gap-badge" style={{ color: row.color, borderColor: row.color }} title={row.label}>{row.grade}</strong>
+                                            <em>{row.data.nflStarters || Math.min(row.data.actual || 0, row.data.minQuality || row.data.startingReq || 0)}/{row.data.minQuality || row.data.startingReq || 0}</em>
+                                            <i>{row.bestWire ? playerName(row.bestWire.p) : '—'}</i>
+                                            {threat ? <b title={threat.name + ' also needs ' + row.pos + ' — $' + threat.remaining + ' FAAB left'}>${threat.remaining}</b> : null}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </aside>
                     </div>
@@ -1503,6 +1573,389 @@
             );
         }
 
+        // ══ PHONE (<768) EARLY RETURN — iPhone program Phase 1 (FA) ═══════
+        // Everything below this block (the analyst-view return, the market
+        // table with its click-path contract literals, and the fixed right
+        // .fa-detail-drawer) renders ONLY off-phone — desktop/tablet output
+        // stays byte-identical. Slot values call the SAME sources as the
+        // desktop renderCell (faabSuggest / fitRead / computeRollingPPG /
+        // RookieFields.fields) — lookups reused, no formulas duplicated.
+        // Row tap routes to the standard player card via openFaPlayer (the
+        // same path the HQ cards use); the drawer never opens on phone.
+        if (_faPhone) {
+            // Render-time tier filter — the SAME boundary as the desktop
+            // market table below: a Pro column can never ride a free slot.
+            const shownFaCols = faTierCols(visibleFaCols);
+            // Preset → "which 3 stat slots ride the card row" (P1 AssetRow);
+            // keyed off faActivePresetKey (derived from the PERSISTED columns,
+            // not session faColPreset) so the slots track the saved view across
+            // reloads (owner ask 2026-07-12). Named views map to a DISTINCT trio;
+            // 'full' is deliberately ABSENT — full/custom ride the first 3
+            // slot-capable picks of the actual columns ("full = your columns").
+            // PEAK left the default path; the this-week projection replaced it.
+            const FA_PHONE_SLOT_PRESETS = {
+                default: ['dhq', 'ppg', 'proj'],   // value · production · this-week projection
+                scout:   ['age', 'height', 'weight'],
+                bidding: ['dhq', 'faab', 'proj'],  // value · bid · this-week projection
+                rookie:  ['rkSlot', 'rkRank', 'rkTier'],
+            };
+            const FA_PHONE_SLOT_KEYS = new Set(['age', 'dhq', 'ppg', 'proj', 'peakYr', 'yrsExp', 'height', 'weight', 'depthChart', 'injury', 'faab', 'rkSlot', 'rkTeam', 'rkRank', 'rkTier']);
+            let _faSlotKeys = FA_PHONE_SLOT_PRESETS[faActivePresetKey]
+                || shownFaCols.filter(k => FA_PHONE_SLOT_KEYS.has(k)).slice(0, 3);
+            _faSlotKeys = faTierCols(_faSlotKeys);
+            if (!_faSlotKeys.length) _faSlotKeys = faTierCols(FA_PHONE_SLOT_PRESETS.default);
+
+            // Slot renderer — same data reads as the desktop renderCell.
+            const _faSlotFor = (k, x) => {
+                const p = x.p;
+                const short = ((faColumns[k] && faColumns[k].shortLabel) || k).toUpperCase();
+                switch (k) {
+                    case 'dhq': return { label: valueShortLabel, value: x.dhq > 0 ? x.dhq.toLocaleString() : '—', strong: true };
+                    case 'faab': {
+                        const f = faabSuggest(x.dhq, x.pos, p.age);
+                        return { label: 'BID', value: f ? '$' + f.lo + '-' + f.hi : '—', tone: f ? 'gold' : 'mute' };
+                    }
+                    case 'ppg': {
+                        // Same rolling-window override + seasonal fallback as
+                        // renderCell; the window rides the LABEL (L5/L3).
+                        let shown = seasonPpgFor(x.pid);
+                        let lbl = 'PPG';
+                        if (ppgWindow !== 'season') {
+                            const n = ppgWindow === 'l3' ? 3 : 5;
+                            const rolling = typeof window.App?.computeRollingPPG === 'function' ? window.App.computeRollingPPG(x.pid, n) : 0;
+                            if (rolling > 0) { shown = rolling; lbl = 'L' + n; } else { lbl = 'SZN'; }
+                        }
+                        return { label: lbl, value: shown > 0 ? shown : '—' };
+                    }
+                    case 'proj': return { label: 'WK', value: x.proj > 0 ? x.proj.toFixed(1) : '—' };
+                    case 'age': return { label: short, value: p.age || '—', tone: 'mute' };
+                    case 'peakYr': {
+                        const py = peakYearsFor(x.pos, p.age);
+                        const vy = valueYearsFor(x.pos, p.age);
+                        const lb = py >= 4 ? 'Rising' : py >= 1 ? 'Prime' : vy >= 1 ? 'Vet' : 'Post';
+                        return { label: short, value: lb, tone: py >= 1 ? 'gold' : 'mute' };
+                    }
+                    case 'yrsExp': return { label: short, value: p.years_exp != null ? p.years_exp : '—', tone: 'mute' };
+                    case 'height': return { label: short, value: p.height ? Math.floor(p.height / 12) + "'" + (p.height % 12) + '"' : '—', tone: 'mute' };
+                    case 'weight': return { label: short, value: p.weight || '—', tone: 'mute' };
+                    case 'depthChart': return { label: short, value: p.depth_chart_order >= 1 ? x.pos + p.depth_chart_order : '—', tone: 'mute' };
+                    case 'injury': return { label: short, value: p.injury_status || '—', tone: p.injury_status ? 'bad' : 'mute' };
+                    case 'rkSlot': case 'rkTeam': case 'rkRank': case 'rkTier': {
+                        const rf = window.App?.RookieFields?.fields?.(prospectFor(p)) || null;
+                        if (k === 'rkSlot') {
+                            const slotTxt = rf?.draftSlot || faDraftSlotTxt(x.pid);
+                            return { label: short, value: slotTxt || '—', tone: slotTxt ? undefined : 'mute' };
+                        }
+                        if (k === 'rkTeam') {
+                            const tm = rf?.nflTeam || faDraftCap(x.pid)?.team;
+                            return { label: short, value: tm || '—', tone: 'mute' };
+                        }
+                        if (!rf) return { label: short, value: '—', tone: 'mute' };
+                        if (k === 'rkRank') return { label: short, value: rf.consensusRank != null ? rf.consensusRank : '—' };
+                        return { label: short, value: rf.tierLabel || '—' };
+                    }
+                    default: return { label: short, value: '—', tone: 'mute' };
+                }
+            };
+            // ── P5 hero — the #1 priority add + bid + FAAB standing in one
+            // read. Bid/why reads are Pro (priorityAdds is [] for free — the
+            // exact existing boundary); free sees the top market name + raw
+            // market context, both already free in the explorer below.
+            const _heroPro = isPro && priorityAdds.length ? priorityAdds[0] : null;
+            const _heroFree = availablePlayers.length ? availablePlayers[0] : null;
+            let _faHeroEl = null;
+            if (_heroPro) {
+                const heroFaab = _heroPro.faab || null;
+                const faabBits = hasFAAB ? ' · $' + remaining + ' of $' + budget + ' left · #' + (myFaabRank || '—') + ' FAAB' : '';
+                _faHeroEl = React.createElement(window.WR.HeroCard, {
+                    kicker: 'Top add',
+                    headline: playerName(_heroPro.p, _heroPro.pid).toUpperCase() + (heroFaab ? ' — BID $' + heroFaab.lo + '–' + heroFaab.hi : ''),
+                    facts: _heroPro.why + faabBits,
+                    cta: heroFaab ? 'SET BID' : 'OPEN PLAYER CARD',
+                    onCta: () => openFaPlayer(_heroPro.pid),
+                });
+            } else if (_heroFree) {
+                _faHeroEl = React.createElement(window.WR.HeroCard, {
+                    kicker: 'Top add',
+                    headline: playerName(_heroFree.p, _heroFree.pid).toUpperCase(),
+                    facts: (_heroFree.p.team || 'FA') + ' · ' + _heroFree.pos + ' · ' + (_heroFree.dhq > 0 ? _heroFree.dhq.toLocaleString() + ' ' + valueShortLabel : '—') + ' · ' + availablePlayers.length + ' on the wire',
+                    ctaGhost: 'Open player card',
+                    onCtaGhost: () => openFaPlayer(_heroFree.pid),
+                });
+            }
+
+            // ── P3 pills + FilterSheet — re-homes the EXISTING toolbar
+            // controls (search, pos chips, rookie drill-down, sort, view
+            // presets, column picker trigger, PPG window, saved views);
+            // every control drives the exact same state setters as the
+            // desktop toolbar, which stays untouched for tablet/desktop.
+            const _faTogglePanel = (k) => setFaPanel(p => p === k ? null : k);
+            const _sortCol = faSort.key === 'name' ? { shortLabel: 'Player' } : Object.values(faColumns).find(c => c.sortKey === faSort.key);
+            const _faPillsEl = (
+                <div className="wr-hscroll" style={{ display: 'flex', gap: '6px', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
+                    {React.createElement(window.WR.FilterPill, { label: 'Filters', value: (faFilter ? (window.App?.posLabel?.(faFilter) || faFilter) : 'All') + (rookieOnly ? ' +RK' : ''), onClick: () => _faTogglePanel('filters') })}
+                    {React.createElement(window.WR.FilterPill, { label: 'Sort', value: ((_sortCol && _sortCol.shortLabel) || faSort.key) + (faSort.dir === -1 ? ' ↓' : ' ↑'), onClick: () => _faTogglePanel('sort') })}
+                    {React.createElement(window.WR.FilterPill, { label: 'View', value: faActivePresetKey, onClick: () => _faTogglePanel('view') })}
+                </div>
+            );
+            const _faSheetSelect = (active) => ({ width: '100%', minHeight: '44px', padding: '8px 10px', fontSize: '16px', fontFamily: 'var(--font-body)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px' });
+            const _faChipBtn = (active) => ({ padding: '7px 12px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'transparent', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', fontWeight: active ? 700 : 400 });
+            // ── Inline Filters / Sort / View choosers (owner ask: same as the
+            // Trade Center — each pill opens its own panel directly under the pill
+            // row, no modal sheet). Panels bundle related controls and stay open
+            // until you re-tap the pill or open another; the column customizer is
+            // still a drill-down sheet (opened from the View panel).
+            const _faPanelWrap = (body) => (
+                <div style={{ background: 'var(--black, #121217)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '8px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '9px' }}>{body}</div>
+            );
+            const _faPanelLbl = (t) => <div style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--silver)', opacity: 0.6, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t}</div>;
+            let _faPanelEl = null;
+            if (faPanel === 'filters') {
+                _faPanelEl = _faPanelWrap(
+                    <React.Fragment>
+                        {_faPanelLbl('Search')}
+                        <input value={faSearch} onChange={e => setFaSearch(e.target.value)} placeholder="Search player, team, college..." style={_faSheetSelect(!!faSearch)} />
+                        {_faPanelLbl('Position')}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {['', ...leaguePositions].map(pos => (
+                                <button key={pos || 'all'} onClick={() => setFaFilter(pos)} style={_faChipBtn(faFilter === pos)} title={pos && streamPosSet.has(pos) ? 'Streaming upgrade available at ' + pos + ' this week' : undefined}>
+                                    {pos ? (window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)) : 'All'}
+                                    {pos && streamPosSet.has(pos) ? <span style={{ color: 'var(--gold)', marginLeft: '3px', fontWeight: 800 }}>•</span> : null}
+                                </button>
+                            ))}
+                        </div>
+                        {_faPanelLbl('Type')}
+                        <button onClick={() => { const next = !rookieOnly; setRookieOnly(next); if (!next) { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); } }} style={_faChipBtn(rookieOnly)} title="Show only rookies / UDFAs">Rookies / UDFAs</button>
+                        {rookieOnly && (
+                            <React.Fragment>
+                                {_faPanelLbl('Rookie drill-down')}
+                                <select value={rookieTeamFilter} onChange={e => setRookieTeamFilter(e.target.value)} style={_faSheetSelect(!!rookieTeamFilter)}>
+                                    <option value="">All teams</option>
+                                    {rookieFilterOptions.teams.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <select value={rookieCollegeFilter} onChange={e => setRookieCollegeFilter(e.target.value)} style={_faSheetSelect(!!rookieCollegeFilter)}>
+                                    <option value="">All colleges</option>
+                                    {rookieFilterOptions.colleges.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {[{ k: '', label: 'All' }, { k: '1', label: 'R1' }, { k: '2', label: 'R2' }, { k: '3', label: 'R3' }, { k: '4', label: 'R4' }, { k: '5', label: 'R5' }, { k: '6', label: 'R6' }, { k: '7', label: 'R7' }, { k: 'UDFA', label: 'UDFA' }].map(opt => (
+                                        <button key={opt.k || 'all'} onClick={() => setRookieSlotFilter(rookieSlotFilter === opt.k ? '' : opt.k)} style={_faChipBtn(rookieSlotFilter === opt.k)} title={opt.k === 'UDFA' ? 'Undrafted free agents' : opt.k ? 'NFL draft round ' + opt.k : 'Any draft slot'}>{opt.label}</button>
+                                    ))}
+                                </div>
+                            </React.Fragment>
+                        )}
+                        <button onClick={() => { setFaSearch(''); setFaFilter(''); setRookieOnly(false); setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); setVisibleFaCols(faTierCols(FA_COLUMN_PRESETS.default)); setFaColPreset('default'); setFaSort({ key: 'dhq', dir: -1 }); setPpgWindow('season'); }} style={{ ..._faChipBtn(false), marginTop: '2px' }}>Reset all</button>
+                    </React.Fragment>
+                );
+            } else if (faPanel === 'sort') {
+                _faPanelEl = _faPanelWrap(
+                    <React.Fragment>
+                        {_faPanelLbl('Sort by')}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <select value={faSort.key} onChange={e => { const k = e.target.value; setFaSort(prev => ({ key: k, dir: prev.key === k ? prev.dir : -1 })); }} style={{ ..._faSheetSelect(faSort.key !== 'dhq'), flex: 2, width: 'auto' }}>
+                                <option value="name">Player</option>
+                                {Object.entries(faColumns).filter(([, c]) => c.sortKey).map(([k, c]) => <option key={k} value={c.sortKey}>{c.shortLabel}</option>)}
+                            </select>
+                            <button onClick={() => setFaSort(prev => ({ ...prev, dir: prev.dir * -1 }))} style={{ ..._faChipBtn(true), flex: 1 }} title="Flip sort direction">{faSort.dir === -1 ? 'Desc ↓' : 'Asc ↑'}</button>
+                        </div>
+                        {_faPanelLbl('PPG window')}
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            {[{ k: 'season', l: 'Season' }, { k: 'l5', l: 'L5' }, { k: 'l3', l: 'L3' }].map(opt => (
+                                <button key={opt.k} onClick={() => setPpgWindow(opt.k)} style={{ ..._faChipBtn(ppgWindow === opt.k), flex: 1 }} title={opt.k === 'season' ? 'Season-to-date PPG' : 'Last ' + (opt.k === 'l5' ? 5 : 3) + ' games'}>{opt.l}</button>
+                            ))}
+                        </div>
+                    </React.Fragment>
+                );
+            } else if (faPanel === 'view') {
+                _faPanelEl = _faPanelWrap(
+                    <React.Fragment>
+                        {_faPanelLbl('Preset')}
+                        <select value={faActivePresetKey} onChange={e => { const key = e.target.value; const cols = FA_COLUMN_PRESETS[key]; if (!cols) return; setVisibleFaCols(faTierCols(cols)); setFaColPreset(key); setRookieOnly(key === 'rookie'); if (key !== 'rookie') { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); } }} style={_faSheetSelect(faActivePresetKey !== 'default')} title="Column preset">
+                            {Object.keys(FA_COLUMN_PRESETS).map(k => <option key={k} value={k}>{k}</option>)}
+                            {faActivePresetKey === 'custom' && <option value="custom">custom</option>}
+                        </select>
+                        {_faPanelLbl('Columns')}
+                        <button onClick={() => { setShowFaColPicker(true); setFaPanel(null); }} style={{ ..._faChipBtn(showFaColPicker || faActivePresetKey === 'custom'), width: '100%' }} title="Add or remove market columns">Customize · {shownFaCols.length} fields active</button>
+                        {window.WR?.SavedViews?.SavedViewBar ? (
+                            <React.Fragment>
+                                {_faPanelLbl('Saved views')}
+                                {React.createElement(window.WR.SavedViews.SavedViewBar, {
+                                    surface: 'free_agency',
+                                    leagueId: currentLeague?.id || currentLeague?.league_id,
+                                    currentState: { columns: visibleFaCols, sort: faSort, filters: { faFilter, faSearch } },
+                                    onApply: (v) => {
+                                        if (Array.isArray(v.columns) && v.columns.length) { setVisibleFaCols(faTierCols(v.columns.filter(k => FA_COLUMNS[k]))); setFaColPreset('custom'); }
+                                        if (v.sort && v.sort.key) setFaSort({ key: v.sort.key, dir: v.sort.dir || 1 });
+                                        if (v.filters && typeof v.filters.faFilter === 'string') setFaFilter(v.filters.faFilter);
+                                        if (v.filters && typeof v.filters.faSearch === 'string') setFaSearch(v.filters.faSearch);
+                                    },
+                                })}
+                            </React.Fragment>
+                        ) : null}
+                    </React.Fragment>
+                );
+            }
+            // Column picker sheet — the phone home for the EXISTING
+            // showFaColPicker state (the desktop inline panel lives in the
+            // analyst return below and never renders on phone). The shared
+            // P3 FilterSheet customizer treatment (same anatomy as My
+            // Roster's): "Active (n)" 44px rows with ▲▼ move + × remove
+            // (the same setVisibleFaCols/setFaColPreset('custom') swaps the
+            // desktop ◀▶/× chips run — key-indexed so a free user's stored
+            // Pro column can't skew the reorder), then "Available" add chips
+            // grouped by the EXISTING col.group metadata, behind the same
+            // isPro/FA_PRO_COLS option gate. Active rows map over
+            // shownFaCols — the same render-time tier filter as the market
+            // table, so a Pro column never renders for free.
+            const _faColMove = (key, delta) => {
+                setFaColPreset('custom');
+                setVisibleFaCols(prev => {
+                    const at = prev.indexOf(key);
+                    const to = at + delta;
+                    if (at < 0 || to < 0 || to >= prev.length) return prev;
+                    const next = [...prev];
+                    [next[to], next[at]] = [next[at], next[to]];
+                    return next;
+                });
+            };
+            const _faColRemove = (key) => { setFaColPreset('custom'); setVisibleFaCols(prev => prev.filter(c => c !== key)); };
+            const _faColAdd = (key) => { setFaColPreset('custom'); setVisibleFaCols(prev => prev.includes(key) ? prev : [...prev, key]); };
+            const _faColGroups = [];
+            Object.entries(faColumns).filter(([key]) => isPro || !FA_PRO_COLS.has(key)).forEach(([key, col]) => {
+                if (visibleFaCols.includes(key)) return;
+                let g = _faColGroups.find(x => x.group === col.group);
+                if (!g) { g = { group: col.group, cols: [] }; _faColGroups.push(g); }
+                g.cols.push([key, col]);
+            });
+            const _faColSheetEl = React.createElement(window.WR.FilterSheet, {
+                open: !!showFaColPicker,
+                onClose: () => setShowFaColPicker(false),
+                title: 'Market columns',
+                sections: [
+                    { label: 'Active (' + shownFaCols.length + ')', node: (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, lineHeight: 1.5 }}>
+                                The first three stat-capable picks ride each market card; the full set applies to the desktop table.
+                            </div>
+                            {shownFaCols.map((key, i) => {
+                                const col = faColumns[key]; if (!col) return null;
+                                return (
+                                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '18px minmax(0, 1fr) 44px 44px 44px', gap: '3px', alignItems: 'center', minHeight: '44px', padding: '0 2px 0 8px', borderRadius: '7px', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
+                                        <span style={{ color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>{i + 1}</span>
+                                        <span title={col.label} style={{ color: 'var(--white, #f5f5f5)', fontSize: '0.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.shortLabel || col.label}</span>
+                                        <button disabled={i === 0} onClick={() => _faColMove(key, -1)} title="Move up" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: i === 0 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: i === 0 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: i === 0 ? 'default' : 'pointer' }}>{'▲'}</button>
+                                        <button disabled={i === shownFaCols.length - 1} onClick={() => _faColMove(key, 1)} title="Move down" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: i === shownFaCols.length - 1 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: i === shownFaCols.length - 1 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: i === shownFaCols.length - 1 ? 'default' : 'pointer' }}>{'▼'}</button>
+                                        <button onClick={() => _faColRemove(key)} title="Remove" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'×'}</button>
+                                    </div>
+                                );
+                            })}
+                            {!shownFaCols.length && (
+                                <div style={{ padding: '12px', borderRadius: '8px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
+                            )}
+                        </div>
+                    ) },
+                    { label: 'Available', node: (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {!_faColGroups.length && (
+                                <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>All columns are active.</div>
+                            )}
+                            {_faColGroups.map(({ group, cols }) => (
+                                <div key={group}>
+                                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '6px' }}>{group}</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                        {cols.map(([key, col]) => (
+                                            <button key={key} onClick={() => _faColAdd(key)} title={'Add ' + col.label} style={{ minHeight: '44px', padding: '7px 12px', fontSize: '0.74rem', fontFamily: 'var(--font-body)', background: 'var(--ov-1, rgba(255,255,255,0.018))', color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ {col.shortLabel || col.label}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) },
+                ],
+                footer: (
+                    <React.Fragment>
+                        <button onClick={() => { setFaColPreset('custom'); setVisibleFaCols(faTierCols(Object.keys(faColumns))); }} style={{ ..._faChipBtn(!_faColGroups.length), flex: 1 }}>All fields</button>
+                        <button onClick={() => { setVisibleFaCols(faTierCols(FA_COLUMN_PRESETS.default)); setFaColPreset('default'); }} style={{ ..._faChipBtn(false), flex: 1 }}>Reset</button>
+                        <button onClick={() => setShowFaColPicker(false)} style={{ ..._faChipBtn(true), flex: 1 }}>Done</button>
+                    </React.Fragment>
+                ),
+            });
+
+            // ── P1 card list — market rows + Pro streaming/drop groups.
+            // Phone shows a tighter top slice (owner ask: fewer by default) —
+            // desktop's sortedPlayers cap is untouched; sort/search/filters
+            // surface anyone below the cut.
+            const _faPhoneMkt = sortedPlayers.slice(0, 25);
+            const _faMktRows = _faPhoneMkt.map(x => {
+                const bits = [x.p.team || 'FA'];
+                if (x.p.age) bits.push('Age ' + x.p.age);
+                if (x.p.injury_status) bits.push(x.p.injury_status);
+                return React.createElement(window.WR.AssetRow, {
+                    key: x.pid,
+                    pos: x.pos,
+                    name: playerName(x.p, x.pid),
+                    tag: bits.join(' · '),
+                    slots: _faSlotKeys.map(k => _faSlotFor(k, x)),
+                    // Roster-fit verdict chip (Thin / Fills thin room / …) removed
+                    // from phone FA rows, and the desktop Fit column + _faFitChip
+                    // helper went with it (owner ask 2026-07-12) — the pos badge +
+                    // stat slots carry the read; the roster-fit read still powers
+                    // the drawer's Roster Fit panel and the rec surfaces.
+                    accent: (_heroPro && _heroPro.pid === x.pid) ? 'gold' : undefined,
+                    onClick: () => openFaPlayer(x.pid),
+                    title: 'Open player card',
+                });
+            });
+            const _faMktRowNodes = _faMktRows.length ? _faMktRows : [
+                <div key="fa-mkt-empty" style={{ padding: '14px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '9px', color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>No available players match this view.</div>
+            ];
+            const _faStreamRows = streaming.slice(0, 5).map(o => React.createElement(window.WR.AssetRow, {
+                key: 'stream-' + o.fa.pid,
+                pos: o.pos,
+                name: (playersData[o.fa.pid] || {}).full_name || o.fa.pid,
+                tag: 'over ' + o.worstName + ' (' + o.worstProj.toFixed(1) + ')',
+                slots: [{ label: 'WK', value: o.fa.proj.toFixed(1) }, { label: 'EDGE', value: '+' + o.delta.toFixed(1), tone: 'good' }],
+                onClick: () => openFaPlayer(o.fa.pid),
+                title: 'Open player card',
+            }));
+            const _faDropRows = isPro ? recentDrops.map(d => React.createElement(window.WR.AssetRow, {
+                key: 'drop-' + d.pid,
+                pos: d.pos,
+                name: d.name,
+                tag: 'Dropped W' + d.week + ' · back on the wire',
+                slots: [{ label: 'VAL', value: d.dhq.toLocaleString() }],
+                onClick: () => openFaPlayer(d.pid),
+                title: 'Open player card',
+            })) : [];
+            const _faGroups = [];
+            if (_faStreamRows.length) _faGroups.push({ label: 'Streaming', sub: 'beats your weakest starter', rows: _faStreamRows });
+            _faGroups.push({ label: 'Market', sub: _faPhoneMkt.length + ' of ' + availablePlayers.length + ' shown', rows: _faMktRowNodes });
+            if (_faDropRows.length) _faGroups.push({ label: 'Drop alerts', sub: 'fresh drops worth a claim', rows: _faDropRows });
+
+            return (
+                <React.Fragment>
+                    <div className="fa-page wr-fade-in">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {_faHeroEl}
+                            {!isPro && renderActionHqTeaser()}
+                            {renderCrazePanel()}
+                            {_faPillsEl}
+                            {_faPanelEl}
+                            {React.createElement(window.WR.CardList, { groups: _faGroups })}
+                        </div>
+                    </div>
+                    {/* The column customizer stays a drill-down sheet, rendered
+                        OUTSIDE .fa-page: its wr-fade-in leaves a lingering
+                        transform:translateY(0), which would make this position:fixed
+                        sheet resolve against .fa-page (down the page) instead of the
+                        viewport. As a sibling it escapes the transformed ancestor and
+                        overlays correctly. (Mirrors the .tc-trade-root transform:none
+                        fix in index.html.) */}
+                    {_faColSheetEl}
+                </React.Fragment>
+            );
+        }
+
         // ── ANALYST VIEW: full market terminal ──
         return (
             <div className="fa-page wr-fade-in">
@@ -1586,7 +2039,7 @@
                     <span className="wr-module-toolbar-label">View</span>
                     <div className="wr-module-nav">
                     {Object.entries(FA_COLUMN_PRESETS).map(([key, cols]) => (
-                        <button key={key} className={faColPreset === key ? 'is-active' : ''} onClick={() => { setVisibleFaCols(faTierCols(cols)); setFaColPreset(key); setRookieOnly(key === 'rookie'); if (key !== 'rookie') { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); } }}>{key}</button>
+                        <button key={key} className={faActivePresetKey === key ? 'is-active' : ''} onClick={() => { setVisibleFaCols(faTierCols(cols)); setFaColPreset(key); setRookieOnly(key === 'rookie'); if (key !== 'rookie') { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); } }}>{key}</button>
                     ))}
                     <button className={showFaColPicker ? 'is-active' : ''} onClick={() => setShowFaColPicker(!showFaColPicker)}>Columns</button>
                     </div>
@@ -1605,7 +2058,7 @@
                                 leagueId: currentLeague?.id || currentLeague?.league_id,
                                 currentState: { columns: visibleFaCols, sort: faSort, filters: { faFilter, faSearch } },
                                 onApply: (v) => {
-                                    if (Array.isArray(v.columns) && v.columns.length) { setVisibleFaCols(faTierCols(v.columns)); setFaColPreset('custom'); }
+                                    if (Array.isArray(v.columns) && v.columns.length) { setVisibleFaCols(faTierCols(v.columns.filter(k => FA_COLUMNS[k]))); setFaColPreset('custom'); }
                                     if (v.sort && v.sort.key) setFaSort({ key: v.sort.key, dir: v.sort.dir || 1 });
                                     if (v.filters && typeof v.filters.faFilter === 'string') setFaFilter(v.filters.faFilter);
                                     if (v.filters && typeof v.filters.faSearch === 'string') setFaSearch(v.filters.faSearch);
@@ -1720,13 +2173,11 @@
                                     if (rolling > 0) { ppg = rolling; ppgMarker = ' · L' + n; }
                                     else { ppgMarker = ' · Szn'; }
                                 }
-	                                const dhqCol = dhq >= 7000 ? 'var(--good)' : dhq >= 4000 ? 'var(--k-3498db, #3498db)' : dhq >= 2000 ? 'var(--silver)' : 'var(--ov-7, rgba(255,255,255,0.25))';
 	                                const faab = faabSuggest(dhq, pos);
 		                                const peakYrs = peakYearsFor(pos, p.age);
 		                                const valueYrs = valueYearsFor(pos, p.age);
 		                                const peakLabel = peakYrs >= 4 ? 'Rising' : peakYrs >= 1 ? 'Prime' : valueYrs >= 1 ? 'Vet' : 'Post';
 		                                const peakCol = peakYrs >= 4 ? 'var(--good)' : peakYrs >= 1 ? 'var(--gold)' : valueYrs >= 1 ? 'var(--warn)' : 'var(--bad)';
-                                const fit = fitRead(pos);
                                 // Rookie/prospect fields for this row (null for vets) — resolved once.
                                 const rf = window.App?.RookieFields?.fields?.(prospectFor(p)) || null;
                                 const rkDash = <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))' }}>{'—'}</span>;
@@ -1735,7 +2186,8 @@
                                         case 'pos':        return <span style={{ fontSize: '0.78rem', fontWeight: 700, color: posColors[pos] || 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</span>;
                                         case 'team':       return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontWeight: 600 }}>{p.team || 'FA'}</span>;
                                         case 'age':        return <span style={{ fontSize: '0.78rem', color: 'var(--silver)' }}>{p.age || '\u2014'}</span>;
-                                        case 'dhq':        return <span style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-body)', color: dhqCol }}>{dhq > 0 ? dhq.toLocaleString() : '\u2014'}</span>;
+                                        // DHQ reads white here \u2014 no tier colors in the market table (owner ask 2026-07-12)
+                                        case 'dhq':        return <span style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-body)', color: 'var(--white)' }}>{dhq > 0 ? dhq.toLocaleString() : '\u2014'}</span>;
                                         case 'ppg':        return <span style={{ fontSize: '0.78rem', color: ppg >= 10 ? 'var(--good)' : ppg >= 5 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{ppg > 0 ? ppg : '\u2014'}{ppgMarker}</span>;
                                         case 'proj':       return <span title="This week's projected points (league-scored)" style={{ fontSize: '0.78rem', fontWeight: 600, color: proj >= 14 ? 'var(--good)' : proj >= 8 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{proj > 0 ? proj.toFixed(1) : '\u2014'}</span>;
                                         case 'peakYr':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: peakCol, fontWeight: 600 }}>{peakLabel}</span>;
@@ -1747,12 +2199,23 @@
                                         case 'depthChart': return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.depth_chart_order >= 1 ? pos + p.depth_chart_order : '\u2014'}</span>;
                                         case 'injury':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: p.injury_status ? 'var(--bad)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.injury_status || '—'}</span>;
                                         case 'faab':       return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 700 }}>{faab ? '$' + faab.lo + '-' + faab.hi : '\u2014'}</span>;
-                                        case 'fit':        return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: fit.color, fontWeight: 700 }}>{fit.short}</span>;
-                                        case 'rkSlot':     return rf ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: rf.isUDFA ? 'var(--silver)' : rf.draftRound === 1 ? 'var(--good)' : rf.draftRound && rf.draftRound <= 3 ? 'var(--gold)' : 'var(--silver)' }}>{rf.draftSlot || '—'}</span> : rkDash;
-                                        case 'rkTeam':     return rf ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontWeight: 600 }}>{rf.nflTeam || '—'}</span> : rkDash;
+                                        case 'rkSlot': {
+                                            // Prospect slot wins; vets show R<rd> #<overall> / UDFA from the static dataset.
+                                            const dp = faDraftCap(pid);
+                                            const slotTxt = rf?.draftSlot || faDraftSlotTxt(pid);
+                                            const rd1 = rf ? rf.draftRound : dp?.round;
+                                            return slotTxt ? <span title={dp && dp.round > 0 ? dp.year + ' draft — round ' + dp.round + ', pick ' + dp.overall + ' overall' : undefined} style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: rd1 === 1 ? 'var(--good)' : rd1 && rd1 <= 3 ? 'var(--gold)' : 'var(--silver)' }}>{slotTxt}</span> : rkDash;
+                                        }
+                                        case 'rkTeam': {
+                                            const tm = rf?.nflTeam || faDraftCap(pid)?.team;
+                                            return tm ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontWeight: 600 }}>{tm}</span> : rkDash;
+                                        }
                                         case 'rkRank':     return rf && rf.consensusRank != null ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>{rf.consensusRank}</span> : rkDash;
                                         case 'rkTier':     return rf && rf.tierLabel ? <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)' }}>{rf.tierLabel}</span> : rkDash;
-                                        case 'rkProfile':  return rf && rf.profile ? <span title={rf.profile} style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rf.profile}</span> : rkDash;
+                                        case 'rkProfile': {
+                                            const prof = rf?.profile || [p.height ? Math.floor(p.height / 12) + "'" + (p.height % 12) + '"' : null, p.weight ? p.weight + ' lb' : null].filter(Boolean).join(' · ');
+                                            return prof ? <span title={prof} style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{prof}</span> : rkDash;
+                                        }
                                         default:           return <span>—</span>;
                                     }
                                 };

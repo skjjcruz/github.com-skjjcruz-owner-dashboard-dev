@@ -698,6 +698,20 @@
 
     // ── Sub-tab row ───────────────────────────────────────────────
     function SubTabs({ value, onChange, tabs }) {
+        // Phone (≤767): the SAME tabs + setters re-pour as a P2 .wr-seg
+        // segmented strip (5 items scroll horizontally, scrollbar hidden)
+        // with phone-short labels. Desktop keeps .wr-module-nav untouched.
+        const _vp = window.WR.useViewport();
+        if (_vp.isPhone) {
+            const shortLabels = { overview: 'Overview', strategy: 'Strategy', patterns: 'Patterns', history: 'History', settings: 'Model' };
+            return h('div', { className: 'wr-seg' },
+                tabs.map(t => h('button', {
+                    key: t.k,
+                    className: value === t.k ? 'is-on' : '',
+                    onClick: () => onChange(t.k),
+                }, shortLabels[t.k] || t.label))
+            );
+        }
         return h('div', { className: 'wr-module-nav', style: { margin: '0 0 var(--space-lg)' } },
             tabs.map(t => h('button', {
                 key: t.k,
@@ -709,6 +723,11 @@
 
     // ── Overview sub-tab ──────────────────────────────────────────
     function OverviewView({ kpis, insights, props, settings, isPro = true, lockedInsightCount = 0 }) {
+        // Phone (≤767): layout-only re-pours — the KPI grid becomes a P4
+        // snap strip and InsightCards go compact w/ full-width CTA (scoped
+        // CSS at the bottom of this file). Hook is unconditional (order-safe).
+        const _vp = window.WR.useViewport();
+        const _phone = !!_vp.isPhone;
         const Kpi = window.WR.Kpi;
         const InsightCard = window.WR.InsightCard;
         const fmtK = (n) => n == null ? null : ((n > 0 ? '+' : '') + (n / 1000).toFixed(1) + 'k');
@@ -774,7 +793,9 @@
         const cacheAge = aiState?.ts ? Math.round((Date.now() - aiState.ts) / 60000) : null;
 
         return h(React.Fragment, null,
-            h('div', { className: 'gm-office-kpi-grid' },
+            // Phone: the 4 tiles ride one horizontally-snapping band instead
+            // of the stacked 1-col grid — same Kpi elements, same gates.
+            h('div', { className: _phone ? 'wr-kpi-strip gmoff-kpis' : 'gm-office-kpi-grid' },
                 // GM Grade is an A-F composite interpretation \u2014 Pro. The other
                 // tiles are the raw activity counts free keeps (gate-map row 10).
                 h(Kpi, isPro ? {
@@ -867,8 +888,11 @@
                         // Chips win: when the why-chips render under a card, the
                         // body would just restate them — suppress it (never body
                         // + why-chips together).
-                        const cardIns = ins.recommendationWhy?.length > 0 ? { ...ins, body: null } : ins;
-                        return h('div', { key: i, style: { position: 'relative' } },
+                        const cardBase = ins.recommendationWhy?.length > 0 ? { ...ins, body: null } : ins;
+                        // Phone: compact card density; the .gmoff-phone-ins
+                        // wrapper class drives the full-width CTA (scoped CSS).
+                        const cardIns = _phone ? { ...cardBase, compact: true } : cardBase;
+                        return h('div', { key: i, className: _phone ? 'gmoff-phone-ins' : undefined, style: { position: 'relative' } },
                         h(InsightCard, ins.isAi ? {
                             ...cardIns,
                             // Learning loop: thumbs feed the ai_feedback rollup that
@@ -1247,6 +1271,11 @@
     }
 
     function HistoryView({ props }) {
+        // Phone (≤767): decision rows re-pour as two-line cards (call chip +
+        // result chip + when tag, asset chips wrapping below) — the desktop
+        // 4-col grid row stays byte-identical. Hook unconditional (order-safe).
+        const _vp = window.WR.useViewport();
+        const _phone = !!_vp.isPhone;
         const leagueId = getLeagueId(props);
         const myRid = props?.myRoster?.roster_id || window.S?.myRosterId;
         const [filter, setFilter] = useState('all'); // 'all' | 'trade' | 'waiver' | 'fa' | 'note'
@@ -1431,6 +1460,18 @@
             const date = _dhDate(ev.ts);
             const kind = classifyKind(ev);
             if (ev.kind === 'field-log') {
+                if (_phone) {
+                    // Phone: kind chip + when tag up top, note text wraps
+                    // below (the desktop single-line ellipsis row is unreadable
+                    // at card width).
+                    return h(window.WR.Card, { key: 'log' + (ev.id || i), padding: '10px 12px' },
+                        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' } },
+                            h(window.WR.Badge, { label: ev.category || 'note', kind: ev.category || 'note' }),
+                            h('div', { style: { marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-mono)', flexShrink: 0 } }, date),
+                        ),
+                        h('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--white)', lineHeight: 1.45 } }, ev.text || 'Logged decision')
+                    );
+                }
                 return h(window.WR.Card, { key: 'log' + (ev.id || i), padding: '10px 14px' },
                     h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
                         h(window.WR.Badge, { label: ev.category || 'note', kind: ev.category || 'note' }),
@@ -1512,6 +1553,30 @@
             }, prefix, '$' + amount + ' FAAB');
             const hasIncoming = !!(addedPids.length || addedPicks.length || addedFaab);
             const hasOutgoing = !!(droppedPids.length || droppedPicks.length || droppedFaab);
+
+            if (_phone) {
+                // Phone (AssetRow-ish two-line card): line 1 = call chip
+                // (kind badge) + net-DHQ result chip + when tag; line 2 =
+                // the SAME asset chips wrapping free. Semantic color stays
+                // on the result chip only — the call badge is monochrome.
+                return h(window.WR.Card, { key: 'tx' + i, padding: '10px 12px' },
+                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' } },
+                        h(window.WR.Badge, { label: kind, kind }),
+                        netStr && h('span', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: netCol, fontFamily: 'var(--font-mono)', flexShrink: 0 } }, netStr),
+                        h('div', { style: { marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-mono)', flexShrink: 0 } }, date),
+                    ),
+                    h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } },
+                        renderChips(addedPids, '+ ', 'var(--k-2ecc71, #2ecc71)'),
+                        renderPickChips(addedPicks, '+ ', 'var(--k-2ecc71, #2ecc71)'),
+                        renderFaabChip(addedFaab, '+ ', 'var(--k-2ecc71, #2ecc71)'),
+                        hasOutgoing && hasIncoming && h('span', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5, alignSelf: 'center' } }, 'for'),
+                        renderChips(droppedPids, '\u2212 ', 'var(--k-e74c3c, #e74c3c)'),
+                        renderPickChips(droppedPicks, '\u2212 ', 'var(--k-e74c3c, #e74c3c)'),
+                        renderFaabChip(droppedFaab, '\u2212 ', 'var(--k-e74c3c, #e74c3c)'),
+                        !hasTradeAssets && h('span', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6, fontStyle: 'italic' } }, 'No recorded asset changes'),
+                    ),
+                );
+            }
 
             return h(window.WR.Card, { key: 'tx' + i, padding: '10px 14px' },
                 h('div', { style: { display: 'grid', gridTemplateColumns: '60px 1fr auto auto', gap: '10px', alignItems: 'center' } },
@@ -1850,6 +1915,27 @@
             setGmStrategy: props.setGmStrategy,
         });
     }
+
+    // ── Phone-scoped CSS (≤767 only) ─────────────────────────────
+    // Brand-new classes, never referenced by desktop markup, and double-
+    // gated behind the media query — inert on desktop by construction.
+    // Lives here (not index.html / wr-primitives.js) per the GM's Office
+    // scope: the InsightCard CTA fix stays inside this file.
+    (function ensureGmOfficePhoneCss() {
+        if (document.getElementById('gmoff-phone-css')) return;
+        const el = document.createElement('style');
+        el.id = 'gmoff-phone-css';
+        el.textContent = '@media (max-width: 767px){'
+            // WR.Kpi tiles ride the P4 snap strip at a readable width
+            // (~2.2 tiles visible at 390px); long subs wrap inside.
+            + '.gmoff-kpis > *{max-width:200px;}'
+            // Compact InsightCard CTA goes full-width: wrapper > card root >
+            // content column (the root's last div child) > direct-child CTA
+            // button. The feedback thumbs sit one div deeper — untouched.
+            + '.gmoff-phone-ins > div > div:last-child > button{width:100%;justify-content:center;}'
+            + '}';
+        document.head.appendChild(el);
+    })();
 
     window.AlexInsightsTab = AlexInsightsTab;
 })();

@@ -26,6 +26,22 @@ function ReportSubView({
   const [viewResult, setViewResult] = React.useState(null);
   const [viewSort, setViewSort] = React.useState(null);
 
+  // Phone tier (≤767, iPhone program Phase 3): the desktop editor stack
+  // becomes a stepper WR.Sheet flow (Name/Source → Fields → Filters/Sort →
+  // Run) driving the EXACT same editDraft state object; players-source
+  // results render as P1 AssetRows. All hooks unconditional (desktop just
+  // never reads them). Kit presence is fixed for the page's lifetime.
+  const _rsVp = window.WR.useViewport();
+  const _phone = !!_rsVp.isPhone && !!(window.WR && window.WR.Sheet && window.WR.ActionBar && window.WR.AssetRow && window.WR.CardList && window.WR.FilterSheet);
+  const [phEditStep, setPhEditStep] = React.useState(0);
+  const [phEditOpen, setPhEditOpen] = React.useState(true);
+  React.useEffect(() => {
+    // Entering the editor always restarts the stepper at step 1 with the
+    // sheet open. On desktop this sets values nothing reads (React bails
+    // out once they settle) — zero desktop behavior change.
+    if (reportView === 'edit') { setPhEditStep(0); setPhEditOpen(true); }
+  }, [reportView]);
+
   function persistReports(next) { setReports(next); saveReportsToStorage(next); }
 
   function handleViewReport(report) {
@@ -262,6 +278,159 @@ function ReportSubView({
     const selectStyle = { ...inputStyle, cursor: 'pointer' };
     const labelStyle = { fontSize: '0.72rem', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', display: 'block' };
 
+    // ══ PHONE (≤767) — stepper WR.Sheet flow (gallery scr-analytics-reports
+    // IMPL CONTRACT): Step 1 Name/Source (source = .wr-seg), Step 2 Fields
+    // (FilterSheet-style 44px checkbox rows), Step 3 Filters/Sort/Limit +
+    // Run. Every control drives the SAME updateDraft/toggleColumn/
+    // addFilter/updateFilter/removeFilter/handleDataSourceChange helpers as
+    // the desktop builder (no new persistence); Save rides the WR.ActionBar,
+    // Cancel is the header button + sheet dismiss. Early return — the
+    // desktop editor stack below is untouched.
+    if (_phone) {
+      const MONO = 'var(--font-mono, "JetBrains Mono", monospace)';
+      const MICRO = 'var(--text-micro, 0.6875rem)';
+      const phInput = { ...inputStyle, width: '100%', boxSizing: 'border-box', minHeight: '44px', fontSize: '0.85rem' };
+      const phSelect = { ...selectStyle, minHeight: '44px', fontSize: '0.82rem' };
+      const phBtn = (goldOn) => ({ padding: '9px 14px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: '5px', fontFamily: 'var(--font-body)', textTransform: 'uppercase', border: '1px solid ' + (goldOn ? 'var(--acc-line2, rgba(212,175,55,0.4))' : 'rgba(255,255,255,0.14)'), background: goldOn ? 'rgba(212,175,55,0.12)' : 'transparent', color: goldOn ? 'var(--gold)' : 'var(--silver)' });
+      const nameOk = !!draft.name.trim();
+      const runDraft = () => { if (!nameOk) { setPhEditStep(0); return; } handleSaveReport(draft); handleViewReport(draft); };
+      const stepTitles = ['Name & Source', 'Fields', 'Filters · Sort · Limit'];
+      const stepBody = phEditStep === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={labelStyle}>Report Name</label>
+            <input value={draft.name} onChange={e => updateDraft({ name: e.target.value })} placeholder="My Custom Report" style={phInput} />
+          </div>
+          <div>
+            <label style={labelStyle}>Data Source</label>
+            <div className="wr-seg">
+              <button type="button" className={draft.dataSource === 'players' ? 'is-on' : ''} onClick={() => handleDataSourceChange('players')}>Players</button>
+              <button type="button" className={draft.dataSource === 'teams' ? 'is-on' : ''} onClick={() => handleDataSourceChange('teams')}>Teams</button>
+            </div>
+            <div style={{ fontSize: MICRO, color: 'var(--silver)', opacity: 0.6, marginTop: '6px' }}>Switching source resets fields, filters, and sort.</div>
+          </div>
+        </div>
+      ) : phEditStep === 1 ? (
+        <div>
+          <label style={labelStyle}>Fields · {(draft.columns || []).length} selected</label>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {colDefs.map(c => {
+              const active = (draft.columns || []).includes(c.key);
+              return (
+                <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: '44px', padding: '0 4px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))', cursor: 'pointer', fontSize: '0.84rem', color: active ? 'var(--gold)' : 'var(--silver)', fontFamily: 'var(--font-body)' }}>
+                  <input type="checkbox" checked={active} onChange={() => toggleColumn(c.key)} />
+                  {c.label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={labelStyle}>Filters</label>
+            {(draft.filters || []).map((f, i) => {
+              const optSet = typeof getFilterOptionSet === 'function' ? getFilterOptionSet(f.field) : null;
+              return (
+                <div key={i} style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px', alignItems: 'center' }}>
+                  <select value={f.field} onChange={e => updateFilter(i, { field: e.target.value, value: '' })} style={{ ...phSelect, flex: '1 1 42%' }}>
+                    {filterFields.map(ff => <option key={ff} value={ff}>{ff}</option>)}
+                  </select>
+                  <select value={f.op} onChange={e => updateFilter(i, { op: e.target.value })} style={{ ...phSelect, flex: '1 1 30%' }}>
+                    {ops.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                  </select>
+                  {optSet && optSet.length && f.op !== 'in' ? (
+                    <select value={f.value} onChange={e => updateFilter(i, { value: e.target.value })} style={{ ...phSelect, flex: '1 1 55%' }}>
+                      <option value="">— choose —</option>
+                      {optSet.map(v => <option key={v} value={v}>{f.field === 'pos' ? leagueMapPosLabel(v) : v}</option>)}
+                    </select>
+                  ) : (
+                    <input value={f.value} onChange={e => updateFilter(i, { value: e.target.value })} placeholder={optSet && f.op === 'in' ? optSet.slice(0, 3).join(',') + '…' : 'value'} style={{ ...inputStyle, minHeight: '44px', flex: '1 1 55%' }} />
+                  )}
+                  <button onClick={() => removeFilter(i)} style={{ background: 'none', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', color: 'var(--bad)', cursor: 'pointer', fontSize: '0.72rem', fontFamily: 'var(--font-body)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                </div>
+              );
+            })}
+            <button onClick={addFilter} style={phBtn(false)}>+ Add Filter</button>
+          </div>
+          <div>
+            <label style={labelStyle}>Sort By</label>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <select value={draft.sort?.field || ''} onChange={e => updateDraft({ sort: { ...draft.sort, field: e.target.value } })} style={{ ...phSelect, flex: 1 }}>
+                <option value="">None</option>
+                {sortableFields.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <button onClick={() => updateDraft({ sort: { ...draft.sort, dir: draft.sort?.dir === 'asc' ? 'desc' : 'asc' } })} style={phBtn(false)}>
+                {draft.sort?.dir === 'asc' ? 'ASC ▲' : 'DESC ▼'}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Group By (optional)</label>
+            <select value={draft.groupBy || ''} onChange={e => updateDraft({ groupBy: e.target.value || null })} style={{ ...phSelect, width: '100%' }}>
+              <option value="">None</option>
+              {groupableFields.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Limit Per Group (optional)</label>
+            <input type="number" value={draft.limit || ''} onChange={e => updateDraft({ limit: e.target.value ? parseInt(e.target.value) : null })} placeholder="No limit" min="1" style={{ ...inputStyle, minHeight: '44px', width: '140px' }} />
+          </div>
+        </div>
+      );
+      const stepSummaries = [
+        (draft.name.trim() || 'Untitled') + ' · ' + draft.dataSource,
+        (draft.columns || []).length + ' selected',
+        (draft.filters || []).length + ((draft.filters || []).length === 1 ? ' filter' : ' filters') + ' · ' + (draft.sort?.field ? draft.sort.field + ' ' + (draft.sort.dir === 'asc' ? '▲' : '▼') : 'no sort') + (draft.limit ? ' · top ' + draft.limit : ''),
+      ];
+      return (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '14px', gap: '8px' }}>
+            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.05rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>{draft.id && reports.find(r => r.id === draft.id) ? 'EDIT REPORT' : 'NEW REPORT'}</div>
+            <button onClick={() => setReportView('list')} style={{ ...phBtn(false), marginLeft: 'auto' }}>Cancel</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {stepTitles.map((t, i) => (
+              <div key={i} role="button" tabIndex={0} title="Open builder step"
+                onClick={() => { setPhEditStep(i); setPhEditOpen(true); }}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPhEditStep(i); setPhEditOpen(true); } }}
+                style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: '52px', background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '9px', padding: '9px 12px', cursor: 'pointer', outline: 'none' }}>
+                <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: 'var(--gold)', flexShrink: 0 }}>{i + 1}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t}</div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stepSummaries[i]}</div>
+                </div>
+                <span aria-hidden="true" style={{ color: 'var(--text-muted, #55555f)', fontFamily: MONO }}>›</span>
+              </div>
+            ))}
+          </div>
+          {React.createElement(window.WR.FilterSheet, {
+            open: phEditOpen,
+            onClose: () => setPhEditOpen(false),
+            title: 'Report builder · ' + (phEditStep + 1) + '/3',
+            sections: [{ label: 'Step ' + (phEditStep + 1) + ' — ' + stepTitles[phEditStep], node: stepBody }],
+            footer: (
+              <React.Fragment>
+                {phEditStep > 0 && <button onClick={() => setPhEditStep(s => Math.max(0, s - 1))} style={{ ...phBtn(false), flex: 1 }}>‹ Back</button>}
+                {phEditStep < 2 && <button onClick={() => setPhEditStep(s => Math.min(2, s + 1))} style={{ ...phBtn(true), flex: 2 }}>Next ›</button>}
+                {phEditStep === 2 && <button onClick={() => { if (nameOk) handleSaveReport(draft); else setPhEditStep(0); }} style={{ ...phBtn(false), flex: 1, opacity: nameOk ? 1 : 0.5 }}>Save</button>}
+                {phEditStep === 2 && <button onClick={runDraft} style={{ ...phBtn(true), flex: 2, opacity: nameOk ? 1 : 0.5 }}>Run report</button>}
+              </React.Fragment>
+            ),
+          })}
+          {React.createElement(window.WR.ActionBar, {
+            visible: !phEditOpen,
+            label: 'Report',
+            value: nameOk ? draft.name : 'Name required',
+            tone: nameOk ? 'gold' : 'warn',
+            actionLabel: 'Save',
+            onAction: () => { if (nameOk) handleSaveReport(draft); else { setPhEditStep(0); setPhEditOpen(true); } },
+            onOpen: () => setPhEditOpen(true),
+          })}
+        </div>
+      );
+    }
+
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '14px' }}>
@@ -389,6 +558,53 @@ function ReportSubView({
       return 'var(--silver)';
     }
 
+    // ══ PHONE (≤767) — players-source results re-pour as P1 AssetRows
+    // (gallery scr-analytics-reports): slots = the report's first 3 numeric
+    // fields, group headers become CardList dividers, row tap keeps the
+    // openReportPlayerRow route. Teams/wide reports fall through to the
+    // sticky-col table below (tap-to-sort handleResort headers + the
+    // shipped ≤767 .lm-rp-card scroll CSS). Early return — desktop/tablet
+    // table below is untouched.
+    if (_phone && report.dataSource === 'players') {
+      const numericCols = columns.filter(c => c.key !== 'name' && c.key !== 'pos' && rows.some(r => !r._groupHeader && typeof r[c.key] === 'number')).slice(0, 3);
+      const slotCols = numericCols.length ? numericCols : columns.filter(c => c.key !== 'name').slice(0, 3);
+      const groups = [];
+      let cur = { label: null, sub: null, rows: [] };
+      groups.push(cur);
+      rows.forEach((row, idx) => {
+        if (row._groupHeader) {
+          cur = { label: report.groupBy === 'pos' ? leagueMapPosLabel(row._groupKey) : row._groupKey, sub: row._count + (row._count === 1 ? ' row' : ' rows'), rows: [] };
+          groups.push(cur);
+          return;
+        }
+        cur.rows.push(React.createElement(window.WR.AssetRow, {
+          key: 'ph_' + idx,
+          pos: row.pos || '—',
+          name: row.name,
+          tag: [row.team, row.age ? 'Age ' + row.age : null, row.owner].filter(Boolean).join(' · '),
+          slots: slotCols.map(c => ({ label: c.label, value: cellValue(row, c) })),
+          onClick: canOpenReportPlayer(row, report) ? () => openReportPlayerRow(row, report) : undefined,
+          title: canOpenReportPlayer(row, report) ? 'Open player card' : undefined,
+        }));
+      });
+      const shownGroups = groups.filter(g => g.rows.length || g.label);
+      return (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px', gap: '8px' }}>
+            <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.05rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{report.name || 'Report'}</div>
+            <span style={{ fontSize: '0.72rem', color: 'var(--silver)', flexShrink: 0 }}>{rows.filter(r => !r._groupHeader).length} results</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', flexShrink: 0 }}>
+              <button onClick={() => handleEditReport(report)} style={{ ...sortBtnStyle(false), minHeight: '44px' }}>Edit</button>
+              <button onClick={() => setReportView('list')} style={{ ...sortBtnStyle(false), minHeight: '44px' }}>Back</button>
+            </div>
+          </div>
+          {rows.length === 0
+            ? <div style={{ padding: '24px', textAlign: 'center', color: 'var(--silver)', fontSize: '0.82rem' }}>No data matches the report criteria.</div>
+            : React.createElement(window.WR.CardList, { groups: shownGroups })}
+        </div>
+      );
+    }
+
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px', gap: '8px' }}>
@@ -399,7 +615,9 @@ function ReportSubView({
             <button onClick={() => setReportView('list')} style={sortBtnStyle(false)}>Back</button>
           </div>
         </div>
-        <div className="lm-rp-card" style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflow: 'hidden' }}>
+        {/* Phone adds the shared P7 wrap class (≤767-only CSS) on top of the
+            shipped .lm-rp-card scroll treatment; desktop className unchanged. */}
+        <div className={'lm-rp-card' + (_phone ? ' wr-sticky-table-wrap' : '')} style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflow: 'hidden' }}>
           {/* Header */}
           <div className="lm-rp-head" style={{ display: 'grid', gridTemplateColumns: columns.map(() => '1fr').join(' '), gap: '4px', padding: '6px 10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: '0.74rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
             {columns.map(col => (
@@ -743,6 +961,14 @@ function LeagueMapTab({
   const resolvedLeagueSkin = leagueSkin || _seasonCtx.leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
   const skinFeatures = resolvedLeagueSkin?.features || {};
   const normPos = window.App.normPos;
+
+  // Phone tier (≤767, iPhone program Phase 3 — Analytics embeds): shared
+  // viewport seam + kit gate. Called unconditionally (before the
+  // selectedTeam early return) so hook order is stable. Kit presence
+  // (wr-primitives.js loads earlier in the babel chain) is fixed for the
+  // page's lifetime. Desktop/tablet output below stays byte-identical.
+  const _lmVp = window.WR.useViewport();
+  const _phone = !!_lmVp.isPhone && !!(window.WR && window.WR.AssetRow && window.WR.CardList);
 
   // Scout-free vs Pro (gate-map row 15 + Q3/Q7 rulings): raw player/pick
   // tables, search/filters, saved views, power rankings, and raw health
@@ -1420,11 +1646,18 @@ function LeagueMapTab({
         <button className={leagueSubView === 'picks' ? 'is-active' : ''} onClick={() => setLeagueSubView('picks')}>Draft Picks</button>
         <button className={leagueSubView === 'reports' ? 'is-active' : ''} onClick={() => setLeagueSubView('reports')}>Custom Reports</button>
       </div>}
-      {/* Combined Players & Picks screen (Analytics 'assets' sub-tab): internal segmented toggle. */}
-      {_activeSubView === 'assets' && <div className="wr-module-nav" style={{ marginBottom: '12px' }}>
+      {/* Combined Players & Picks screen (Analytics 'assets' sub-tab): internal segmented toggle.
+          Phone (≤767): same setAssetsView state re-poured as the shared P2 .wr-seg;
+          desktop/tablet keep the module-nav pills byte-identical. */}
+      {_activeSubView === 'assets' && (_phone ? (
+        <div className="wr-seg" style={{ marginBottom: '12px' }}>
+          <button className={assetsView === 'players' ? 'is-on' : ''} onClick={() => setAssetsView('players')}>Players</button>
+          <button className={assetsView === 'picks' ? 'is-on' : ''} onClick={() => setAssetsView('picks')}>Picks</button>
+        </div>
+      ) : <div className="wr-module-nav" style={{ marginBottom: '12px' }}>
         <button className={assetsView === 'players' ? 'is-active' : ''} onClick={() => setAssetsView('players')}>All Players</button>
         <button className={assetsView === 'picks' ? 'is-active' : ''} onClick={() => setAssetsView('picks')}>Draft Picks</button>
-      </div>}
+      </div>)}
       {_activeSubView === 'teams' && (<div>
       <div className="wr-module-toolbar">
         <span className="wr-module-toolbar-label">Sort</span>
@@ -1623,7 +1856,9 @@ function LeagueMapTab({
         }, {})).sort((a, b) => b[1] - a[1])[0];
         return (
             <div>
-                {_analyticsEmbed && (
+                {/* Summary cards are desktop-only (owner ask): on phone they were
+                    four stacked full-width cards eating a screen before the table. */}
+                {_analyticsEmbed && !_phone && (
                     <div className="analytics-embed-summary">
                         <div><span>Player Pool</span><strong>{playerSummary.total.toLocaleString()}</strong><em>{filtered.length.toLocaleString()} shown</em></div>
                         <div><span>Elite Assets</span><strong>{playerSummary.elite}</strong><em>7000+ DHQ or top 5 pos</em></div>
@@ -1632,6 +1867,76 @@ function LeagueMapTab({
                     </div>
                 )}
                 {/* Phase 8 deferred: search + position chips + SavedViewBar */}
+                {/* ══ PHONE (≤767) — mobile-first toolbar (owner ask): full-width
+                    search, ONE momentum-scroll chip line for positions + rookies
+                    (+ live count), a compact PPG/Columns row, then the saved-view
+                    bar. Same state setters as the desktop toolbar (untouched). */}
+                {_phone ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginBottom: '8px' }}>
+                        <input
+                            type="text"
+                            value={lpSearch || ''}
+                            onChange={e => setLpSearch && setLpSearch(e.target.value)}
+                            placeholder="Search by player name or owner…"
+                            style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', fontSize: '16px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '7px', color: 'var(--white)', fontFamily: 'var(--font-body)', outline: 'none', minHeight: '44px' }}
+                        />
+                        <div className="wr-hscroll" style={{ display: 'flex', gap: '5px', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', paddingBottom: '2px', alignItems: 'center' }}>
+                            {['', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', '__ROOKIE__'].map(pos => {
+                                const on = lpFilter === pos;
+                                const label = pos === '' ? 'All' : pos === '__ROOKIE__' ? 'Rookies' : (window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos));
+                                return (
+                                    <button key={pos || 'all'} onClick={() => setLpFilter(pos === '__ROOKIE__' && lpFilter === '__ROOKIE__' ? '' : pos)} style={{ flex: 'none', minHeight: '38px', padding: '6px 12px', borderRadius: '7px', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', color: on ? 'var(--gold)' : 'var(--silver)', background: on ? 'rgba(212,175,55,0.14)' : 'transparent', border: '1px solid ' + (on ? 'var(--gold)' : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{label}</button>
+                                );
+                            })}
+                            <span style={{ flex: 'none', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', color: 'var(--silver)', opacity: 0.55, paddingLeft: '2px', whiteSpace: 'nowrap' }}>{filtered.length} players</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>PPG</span>
+                            {[{ k: 'season', l: 'Season' }, { k: 'l5', l: 'L5' }, { k: 'l3', l: 'L3' }].map(opt => (
+                                <button key={opt.k} onClick={() => setPpgWindow(opt.k)} title={opt.k === 'season' ? 'Season-to-date PPG' : 'Last ' + (opt.k === 'l5' ? 5 : 3) + ' games'} style={{ minHeight: '38px', padding: '6px 12px', borderRadius: '7px', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', color: ppgWindow === opt.k ? 'var(--gold)' : 'var(--silver)', background: ppgWindow === opt.k ? 'rgba(212,175,55,0.14)' : 'transparent', border: '1px solid ' + (ppgWindow === opt.k ? 'var(--gold)' : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{opt.l}</button>
+                            ))}
+                            <div style={{ position: 'relative', marginLeft: 'auto' }}>
+                                <button onClick={() => setAllPlayersColPickerOpen(o => !o)} style={{ minHeight: '38px', padding: '6px 12px', borderRadius: '7px', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', cursor: 'pointer' }}>⚙ Columns ({allPlayersCols.length})</button>
+                                {allPlayersColPickerOpen && (
+                                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', padding: '8px', zIndex: 20, minWidth: '200px', boxShadow: '0 6px 20px rgba(0,0,0,0.6)' }}>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '6px' }}>Visible Columns</div>
+                                        {ALL_PLAYERS_COLUMNS.filter(c => isPro || c.key !== 'tier').map(c => {
+                                            const on = allPlayersCols.includes(c.key);
+                                            return (
+                                                <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 0', fontSize: '0.76rem', color: 'var(--silver)', cursor: c.toggleable === false ? 'not-allowed' : 'pointer', opacity: c.toggleable === false ? 0.6 : 1 }}>
+                                                    <input type="checkbox" checked={on} disabled={c.toggleable === false} onChange={() => {
+                                                        if (c.toggleable === false) return;
+                                                        setAllPlayersCols(prev => prev.includes(c.key) ? prev.filter(k => k !== c.key) : [...prev, c.key]);
+                                                    }} />
+                                                    {c.label}
+                                                </label>
+                                            );
+                                        })}
+                                        <div style={{ display: 'flex', gap: '4px', marginTop: '8px', borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))', paddingTop: '6px' }}>
+                                            <button onClick={() => setAllPlayersCols(ALL_PLAYERS_COLUMNS.map(c => c.key))} style={{ flex: 1, padding: '8px 4px', fontSize: 'var(--text-micro, 0.6875rem)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '3px', color: 'var(--silver)', cursor: 'pointer', fontFamily: 'inherit' }}>All</button>
+                                            <button onClick={() => setAllPlayersCols(ALL_PLAYERS_DEFAULT_VISIBLE.slice())} style={{ flex: 1, padding: '8px 4px', fontSize: 'var(--text-micro, 0.6875rem)', background: 'var(--acc-fill3, rgba(212,175,55,0.15))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '3px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'inherit' }}>Reset</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        {window.WR?.SavedViews?.SavedViewBar && (
+                            React.createElement(window.WR.SavedViews.SavedViewBar, {
+                                surface: 'all_players',
+                                leagueId: currentLeague?.id || currentLeague?.league_id,
+                                currentState: { columns: allPlayersCols, sort: lpSort, filters: { lpFilter, lpSearch: lpSearch || '' } },
+                                onApply: v => {
+                                    if (Array.isArray(v.columns) && v.columns.length) setAllPlayersCols(v.columns);
+                                    if (v.sort && v.sort.key) setLpSort({ key: v.sort.key, dir: v.sort.dir || -1 });
+                                    if (v.filters) {
+                                        if (typeof v.filters.lpFilter === 'string') setLpFilter(v.filters.lpFilter);
+                                        if (typeof v.filters.lpSearch === 'string' && setLpSearch) setLpSearch(v.filters.lpSearch);
+                                    }
+                                },
+                            })
+                        )}
+                    </div>
+                ) : (
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <input
                         type="text"
@@ -1717,7 +2022,47 @@ function LeagueMapTab({
                         </div>
                     )}
                 </div>
+                )}
                 {(() => {
+                    // ══ PHONE (≤767) — the All Players ledger re-pours as P1
+                    // AssetRows (iPhone program Phase 3, Analytics assets
+                    // embed): DHQ / PPG / Age slots from the SAME sources the
+                    // desktop renderCell uses; row tap toggles the EXISTING
+                    // allPlayersExpandedPid state and expands the same
+                    // RosterPlayerDossier inline. Free/Pro: raw table data is
+                    // free on desktop and stays free here (no tier column, no
+                    // verdicts — the dossier gates internally). Early return —
+                    // the desktop/tablet ledger below is untouched.
+                    if (_phone) {
+                        const phoneRows = filtered.map(x => {
+                            const isExpanded = String(allPlayersExpandedPid) === String(x.pid);
+                            let ppgShown = x.ppg, ppgLbl = 'PPG';
+                            if (ppgWindow !== 'season') {
+                                const n = ppgWindow === 'l3' ? 3 : 5;
+                                const rolling = typeof window.App?.computeRollingPPG === 'function' ? window.App.computeRollingPPG(x.pid, n) : 0;
+                                if (rolling > 0) { ppgShown = rolling; ppgLbl = 'L' + n; } else { ppgLbl = 'SZN'; }
+                            }
+                            return React.createElement(window.WR.AssetRow, {
+                                key: x.pid,
+                                pos: x.pos,
+                                name: x.p.full_name || ((x.p.first_name || '') + ' ' + (x.p.last_name || '')).trim(),
+                                tag: (x.p.team || 'FA') + (x.age ? ' · ' + x.age : '') + ' · ' + x.teamName + (x.isMe ? ' (You)' : ''),
+                                slots: [
+                                    { label: 'DHQ', value: x.dhq > 0 ? x.dhq.toLocaleString() : '—', tone: x.dhq >= 7000 ? 'good' : x.dhq >= 2000 ? undefined : 'mute' },
+                                    { label: ppgLbl, value: ppgShown > 0 ? ppgShown : '—' },
+                                    { label: 'Age', value: x.age || '—', tone: 'mute' },
+                                ],
+                                accent: x.isMe ? 'gold' : undefined,
+                                expanded: isExpanded,
+                                onClick: () => setAllPlayersExpandedPid(prev => String(prev) === String(x.pid) ? null : x.pid),
+                                title: 'Open player dossier',
+                            }, isExpanded ? <RosterPlayerDossier x={x} playersData={playersData} statsData={statsData} currentLeague={currentLeague} normPos={normPos} onCollapse={() => setAllPlayersExpandedPid(null)} /> : null);
+                        });
+                        if (!phoneRows.length) {
+                            return <div style={{ padding: '14px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '9px', color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>No players match this view.</div>;
+                        }
+                        return React.createElement(window.WR.CardList, { groups: [{ label: null, rows: phoneRows }] });
+                    }
                     // Owner Tier = the owning team's ELITE/CONTENDER/REBUILDING
                     // assessment — a competitive-tier read (Q7) → Pro. Filtered at
                     // the render seam so persisted column prefs and saved views
@@ -1952,7 +2297,10 @@ function LeagueMapTab({
 
         return (
             <div>
-                {_analyticsEmbed && (
+                {/* Summary cards, evidence head, and leader strip are desktop-only
+                    (owner ask) — on phone they stacked into screens of chrome
+                    before the pick ledger. */}
+                {_analyticsEmbed && !_phone && (
                     <div className="analytics-embed-summary">
                         <div><span>My Pick Capital</span><strong>{myValue.toLocaleString()}</strong><em>{myRows.length} slot-adjusted picks</em></div>
 	                        <div><span>Early Picks</span><strong>{myRows.filter(r => r.round <= 2).length}</strong><em>{years.length === 1 ? 'R1-R2 this draft' : 'R1-R2 through ' + (leagueSeason + 2)}</em></div>
@@ -1960,7 +2308,7 @@ function LeagueMapTab({
                         <div><span>Capital Leader</span><strong>{leaders[0] ? getOwnerName(leaders[0].rid) : '\u2014'}</strong><em>{leaders[0] ? leaders[0].value.toLocaleString() + ' DHQ' : 'no data'}</em></div>
                     </div>
                 )}
-                {_analyticsEmbed && (
+                {_analyticsEmbed && !_phone && (
                     <div className="analytics-evidence-head">
                         <div>
                             <span>Evidence Layer</span>
@@ -1985,11 +2333,13 @@ function LeagueMapTab({
                         ['traded', 'Moved'],
                         ['acquired', 'Acquired'],
                         ['away', 'Traded Away'],
-                    ].map(([key, label]) => (
+                    // 'Moved' (league-wide traded picks) is dropped on phone (owner
+                    // ask) — Acquired/Traded Away cover the decisions that matter.
+                    ].filter(([key]) => !_phone || key !== 'traded').map(([key, label]) => (
                         <button key={key} onClick={() => setPickStatusFilter(key)} className={pickStatusFilter === key ? 'is-active' : ''}>{label}</button>
                     ))}
                 </div>
-                {_analyticsEmbed && (
+                {_analyticsEmbed && !_phone && (
                     <div className="analytics-pick-leaders">
                         {leaders.map(leader => (
                             <div key={leader.rid}>
@@ -2000,7 +2350,36 @@ function LeagueMapTab({
                         ))}
                     </div>
                 )}
-                {years.map(yr => (
+                {/* PHONE (≤767): pick rows re-pour as P1 AssetRows grouped by
+                    draft year (iPhone program Phase 3) — same filteredRows
+                    data, same openPickContext route, status chip mirrors the
+                    desktop Status column colors. Desktop/tablet keep the
+                    per-year ledger tables below, byte-identical. */}
+                {_phone ? (() => {
+                    const statusColor = (row) => row.status === 'Acquired' ? 'var(--gold, #d4af37)' : row.traded ? 'var(--warn, #f0a500)' : 'var(--good, #2ecc71)';
+                    const groups = years.map(yr => {
+                        const yearRows = filteredRows.filter(row => row.year === yr);
+                        return {
+                            label: yr + ' draft',
+                            sub: yearRows.length + (yearRows.length === 1 ? ' pick' : ' picks'),
+                            rows: yearRows.map(row => React.createElement(window.WR.AssetRow, {
+                                key: yr + '-' + row.round + '-' + row.originalRid,
+                                pos: 'R' + row.round,
+                                name: row.label + ' · ' + getOwnerName(row.currentOwnerRid) + (row.isMyPick ? ' (You)' : ''),
+                                tag: row.traded ? 'via ' + getOwnerName(row.originalRid) + (row.isMyOriginal ? ' (You)' : '') : 'original slot',
+                                slots: [{ label: 'Val', value: row.value.toLocaleString(), tone: row.round === 1 ? 'gold' : 'mute' }],
+                                verdict: <span style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', border: '1px solid ' + statusColor(row), color: statusColor(row), textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{row.status}</span>,
+                                accent: row.isMyPick ? 'gold' : undefined,
+                                onClick: () => openPickContext(row),
+                                title: 'Open draft pick context',
+                            })),
+                        };
+                    }).filter(g => g.rows.length);
+                    if (!groups.length) {
+                        return <div style={{ padding: '18px', color: 'var(--silver)', opacity: 0.65, fontSize: '0.78rem', textAlign: 'center' }}>No picks match these filters.</div>;
+                    }
+                    return React.createElement(window.WR.CardList, { groups });
+                })() : years.map(yr => (
                     <div key={yr} style={{ marginBottom: '16px' }}>
                         <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.2rem', color: 'var(--gold)', marginBottom: '8px' }}>{yr} DRAFT PICKS</div>
                         <div className="lm-pk-card" style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflow: 'hidden' }}>
@@ -2226,7 +2605,11 @@ function LeagueMapTab({
 
         {leagueViewMode === 'roster' && (
         <div>
-        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflow: 'hidden' }}>
+        {/* Phone (owner iPhone pass 2026-07-12): the 307px of fixed columns
+            crushed the 1fr name track at 375px — scope an h-scroll with a
+            min-width floor instead. Desktop/tablet render unchanged. */}
+        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflow: 'hidden', overflowX: _phone ? 'auto' : 'hidden' }}>
+        <div style={{ minWidth: _phone ? '540px' : undefined }}>
           <div style={{ display: 'grid', gridTemplateColumns: '3px 28px 1fr 36px 32px 54px 42px 60px 52px', gap: '4px', padding: '6px 10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>
             <span></span><span></span><span>Player</span><span>Pos</span><span>Age</span><span>DHQ</span><span>PPG</span><span>Acquired</span><span>Date</span>
           </div>
@@ -2252,6 +2635,7 @@ function LeagueMapTab({
               </div>
             ))}
           </div>
+        </div>
         </div>
         </div>
         )}

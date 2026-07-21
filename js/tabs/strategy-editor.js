@@ -7,6 +7,13 @@
 function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, setGmStrategy }) {
     const leagueId = currentLeague?.league_id || currentLeague?.id;
 
+    // Phone tier (≤767) — layout-only re-pours below (1-col grids, 44px tap
+    // targets, WR.ActionBar save strip). Every state write is untouched and
+    // every ternary resolves to its original value on desktop. The hook is
+    // called unconditionally (order-safe across resizes).
+    const _vp = window.WR.useViewport();
+    const _phone = !!_vp.isPhone;
+
     const getWarRoomStorage = () => window.App?.WrStorage || window.WrStorage || null;
     const getWarRoomKeys = () => window.App?.WR_KEYS || window.WR_KEYS || null;
     const readSharedStrategy = () => {
@@ -79,8 +86,15 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     // Selecting a preset auto-bundles downstream variables; Custom unlocks them.
     const [draft, setDraft] = React.useState(() => normalizeDraft(readSavedStrategy()));
 
+    // Saved-state snapshot for the phone ActionBar dirty check. normalizeDraft
+    // builds its object literal in a fixed key order, so JSON equality is a
+    // stable "draft differs from the saved strategy" signal.
+    const [savedSnap, setSavedSnap] = React.useState(() => JSON.stringify(normalizeDraft(readSavedStrategy())));
+
     React.useEffect(() => {
-        setDraft(normalizeDraft(readSavedStrategy()));
+        const next = normalizeDraft(readSavedStrategy());
+        setDraft(next);
+        setSavedSnap(JSON.stringify(next));
     }, [leagueId]);
 
     // Selecting a preset auto-applies its bundled config (incl. re-seeding the
@@ -139,6 +153,9 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             if (setGmStrategy) setGmStrategy(savedPayload);
             // Phase 1: broadcast mode change so the header card + engines pick it up
             window.dispatchEvent(new CustomEvent('wr:gm-mode-changed', { detail: { mode: savedPayload.mode, strategy: savedPayload } }));
+            // Phone ActionBar dirty check: the working draft is now the saved
+            // strategy (desktop-inert — savedSnap only feeds the phone bar).
+            setSavedSnap(JSON.stringify(draft));
             setSyncStatus('saved');
             setTimeout(() => setSyncStatus('idle'), 3000);
         } catch (e) {
@@ -316,8 +333,17 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     }, [myRoster, playersData]);
     const recommendedMode = teamRec?.mode || null;
 
+    // Phone 44px tap-target aliases — desktop passes the original shared
+    // style objects through untouched — plus the ActionBar dirty flag
+    // (JSON.stringify only runs on the phone tier).
+    const inputStyle = _phone ? { ...styles.input, minHeight: 44 } : styles.input;
+    const addBtnStyle = _phone ? { ...styles.addBtn, minHeight: 44 } : styles.addBtn;
+    const tagXStyle = _phone ? { ...styles.tagX, minWidth: 44, minHeight: 44 } : styles.tagX;
+    const dropdownItemStyle = _phone ? { ...styles.dropdownItem, minHeight: 44 } : styles.dropdownItem;
+    const _dirty = _phone ? JSON.stringify(draft) !== savedSnap : false;
+
     return (
-        <div style={{ padding: '20px 0 60px', width: '100%', maxWidth: 'none', margin: 0 }}>
+        <div style={{ padding: _phone ? '20px 0 150px' : '20px 0 60px', width: '100%', maxWidth: 'none', margin: 0 }}>
 
             {/* ── Header ── */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
@@ -338,7 +364,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Mode (Phase 1: preset-first) ── */}
             <div style={styles.card}>
                 <SectionHeader title="Mode" sub={currentMode?.desc + (isCustom ? '' : ' Preset bundles every downstream setting — switch to Custom to tune individually.')} />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {MODES.map(m => {
                         const active = draft.mode === m.value;
                         return (
@@ -423,7 +449,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Free Agency Filters ── */}
             <div style={styles.card}>
                 <SectionHeader title="Free Agency Filters" sub="Tune who shows up in your waiver / FA recommendations. The market explorer still shows everyone." />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
                     <div>
                         <div style={styles.subLabel}>Minimum DHQ — hide anyone below</div>
                         <PillGroup
@@ -463,7 +489,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Priorities ── */}
             <div style={styles.card}>
                 <SectionHeader title="Priorities" />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
                     {/* Target Positions */}
                     <div>
                         <div style={styles.subLabel}>Target Positions</div>
@@ -491,7 +517,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         {(draft.sellRules || []).map((rule, i) => (
                             <span key={i} style={styles.tag}>
                                 {rule}
-                                <button onClick={() => set('sellRules', draft.sellRules.filter((_, j) => j !== i))} style={styles.tagX}>×</button>
+                                <button onClick={() => set('sellRules', draft.sellRules.filter((_, j) => j !== i))} style={tagXStyle}>×</button>
                             </span>
                         ))}
                         {draft.sellRules.length === 0 && <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', fontFamily: 'var(--font-body)' }}>No rules set</span>}
@@ -502,9 +528,9 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                             onChange={e => setNewSellRule(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter' && newSellRule.trim()) { set('sellRules', [...draft.sellRules, newSellRule.trim()]); setNewSellRule(''); }}}
                             placeholder='e.g. "Sell RB age 27+"'
-                            style={styles.input}
+                            style={inputStyle}
                         />
-                        <button onClick={() => { if (newSellRule.trim()) { set('sellRules', [...draft.sellRules, newSellRule.trim()]); setNewSellRule(''); }}} style={styles.addBtn}>Add</button>
+                        <button onClick={() => { if (newSellRule.trim()) { set('sellRules', [...draft.sellRules, newSellRule.trim()]); setNewSellRule(''); }}} style={addBtnStyle}>Add</button>
                     </div>
                 </div>
 
@@ -515,7 +541,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         {untouchableNames.map((name, i) => (
                             <span key={i} style={{ ...styles.tag, borderColor: 'var(--acc-line3, rgba(212,175,55,0.4))', color: 'var(--gold)' }}>
                                 🛡 {name}
-                                <button onClick={() => set('untouchable', draft.untouchable.filter((_, j) => j !== i))} style={styles.tagX}>×</button>
+                                <button onClick={() => set('untouchable', draft.untouchable.filter((_, j) => j !== i))} style={tagXStyle}>×</button>
                             </span>
                         ))}
                         {draft.untouchable.length === 0 && <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', fontFamily: 'var(--font-body)' }}>No untouchables set</span>}
@@ -526,7 +552,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                             onChange={e => { setUntouchableSearch(e.target.value); setShowUntouchablePicker(true); }}
                             onFocus={() => setShowUntouchablePicker(true)}
                             placeholder='Search roster…'
-                            style={styles.input}
+                            style={inputStyle}
                         />
                         {showUntouchablePicker && filteredRoster.length > 0 && (
                             <div style={styles.dropdown}>
@@ -537,12 +563,12 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                                         }
                                         setUntouchableSearch('');
                                         setShowUntouchablePicker(false);
-                                    }} style={styles.dropdownItem}>
+                                    }} style={dropdownItemStyle}>
                                         <span style={{ fontSize: 'var(--text-micro)', color: 'var(--acc-line4, rgba(212,175,55,0.7))', fontFamily: 'var(--font-title)', fontWeight: 700, marginRight: 6 }}>{p.pos}</span>
                                         {p.name}
                                     </button>
                                 ))}
-                                <button onClick={() => setShowUntouchablePicker(false)} style={{ ...styles.dropdownItem, color: 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: 'var(--text-micro)' }}>Close</button>
+                                <button onClick={() => setShowUntouchablePicker(false)} style={{ ...dropdownItemStyle, color: 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: 'var(--text-micro)' }}>Close</button>
                             </div>
                         )}
                     </div>
@@ -552,7 +578,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Draft Style (Custom only) ── */}
             {isCustom && <div style={styles.card}>
                 <SectionHeader title="Draft Style" />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {DRAFT_STYLES.map(ds => {
                         const active = draft.draftStyle === ds.value;
                         return (
@@ -576,7 +602,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Market Posture (Custom only) ── */}
             {isCustom && <div style={styles.card}>
                 <SectionHeader title="Market Posture" />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {MARKET_POSTURES.map(mp => {
                         const active = draft.marketPosture === mp.value;
                         return (
@@ -623,6 +649,18 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                     {syncStatus === 'saving' ? 'Saving…' : 'Save Strategy'}
                 </button>
             </div>
+
+            {/* ── P6 phone action bar — "UNSAVED CHANGES · SAVE STRATEGY ▸"
+                pinned above the dock while the draft differs from the saved
+                strategy. Same handleSave (local-draft / explicit-save model);
+                WR.ActionBar renders null off-phone by construction. ── */}
+            {window.WR && window.WR.ActionBar ? React.createElement(window.WR.ActionBar, {
+                visible: _dirty,
+                label: 'UNSAVED CHANGES',
+                actionLabel: syncStatus === 'saving' ? 'SAVING…' : 'SAVE STRATEGY',
+                onAction: handleSave,
+                onOpen: handleSave,
+            }) : null}
 
         </div>
     );
