@@ -234,9 +234,11 @@ const AI_TIER_MODELS: Record<AIWorkloadTier, Partial<Record<AIProvider, string>>
     premium: {
         anthropic: AI_MODELS.CLAUDE_REASONING,
         openai: AI_MODELS.OPENAI_PREMIUM,
+        gemini: AI_MODELS.GEMINI_BALANCED,
     },
     deep: {
         anthropic: AI_MODELS.CLAUDE_DEEP,
+        gemini: AI_MODELS.GEMINI_BALANCED,
     },
 };
 
@@ -612,7 +614,9 @@ function estimatePromptTokens(text: string): number {
 
 function isProviderAvailabilityError(error: any): boolean {
     const message = String(error?.message || error || '').toLowerCase();
-    return /429|rate|timeout|temporar|unavailable|overload|quota|502|503|529/.test(message);
+    // Billing exhaustion ("credit balance is too low", 2026-07-21 outage) must
+    // fall back like an outage: the provider is unusable until a human tops up.
+    return /429|rate|timeout|temporar|unavailable|overload|quota|502|503|529|credit|billing|insufficient/.test(message);
 }
 
 async function callAIProvider(args: {
