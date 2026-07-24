@@ -15,13 +15,13 @@ import { SignJWT } from 'npm:jose';
 // (Stripe free-trial subs carry status 'trialing' until first invoice.)
 export const ENTITLED_STATUSES = ['active', 'trialing'];
 
-// 'dhq' (the live Pro line) and legacy 'bundle' both mean full access to
-// both apps. Mirrors fw-profile / ai-analyze.
+// 'dhq' (the live Pro line), owner-granted 'dhq_gift', and legacy 'bundle'
+// all mean full access to both apps. Mirrors fw-profile / ai-analyze.
 export function expandProductSlugs(slugs: string[]): string[] {
   return [...new Set(
     slugs
       .filter(Boolean)
-      .flatMap((slug) => (slug === 'bundle' || slug === 'dhq') ? ['war_room', 'dynast_hq'] : [slug]),
+      .flatMap((slug) => (slug === 'bundle' || slug === 'dhq' || slug === 'dhq_gift') ? ['war_room', 'dynast_hq'] : [slug]),
   )];
 }
 
@@ -31,13 +31,14 @@ export async function resolveEntitlements(
 ): Promise<{ tier: 'pro' | 'free'; products: string[] }> {
   const { data, error } = await admin
     .from('subscriptions')
-    .select('product_slug, tier, status')
+    .select('product_slug, tier, status, expires_at')
     .eq('user_id', userId)
     .in('status', ENTITLED_STATUSES);
   if (error) {
     throw new Error(`Subscriptions query failed: ${error.message} (${error.code})`);
   }
-  const subs = data ?? [];
+  // expires_at (promotional/gift subs) bounds entitlement regardless of status.
+  const subs = (data ?? []).filter((s: any) => !s.expires_at || Date.parse(s.expires_at) > Date.now());
   const tier = subs.some((s: any) => s.tier === 'pro') ? 'pro' : 'free';
   const products = expandProductSlugs(subs.map((s: any) => String(s.product_slug || '')));
   return { tier, products };
