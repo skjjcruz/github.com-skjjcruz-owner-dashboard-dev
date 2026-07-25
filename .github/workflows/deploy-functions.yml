@@ -236,6 +236,9 @@ jobs:
       - name: Deploy admin-audit-log function
         run: supabase functions deploy admin-audit-log --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
+      - name: Deploy admin-billing-summary function
+        run: supabase functions deploy admin-billing-summary --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+
       - name: Deploy admin-delete-user function
         run: supabase functions deploy admin-delete-user --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
 
