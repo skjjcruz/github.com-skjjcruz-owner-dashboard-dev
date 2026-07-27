@@ -723,7 +723,7 @@ async function callAIProvider(args: {
         // low-coverage ("bad") player can't trigger a runaway, expensive search loop —
         // the model concludes with what it has, and the prompt makes that a depth/stash
         // read rather than a blank.
-        anthropicRequest.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
+        anthropicRequest.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }];
     }
 
     const textFromContent = (content: any[]) => (content || [])
