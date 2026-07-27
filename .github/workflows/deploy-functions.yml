@@ -19,6 +19,9 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history: the deploy planner diffs against the pre-push commit.
+          fetch-depth: 0
 
       - name: Verify Supabase deploy token
         run: |
@@ -176,74 +179,52 @@ jobs:
           print('Recorded migrations:', ', '.join(sorted(found & set(expected))))
           PYEOF
 
-      - name: Deploy get-session-token function
-        run: supabase functions deploy get-session-token --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+      # ── Selective function deploys ──────────────────────────────────
+      # Only functions whose source changed in this push redeploy — a push
+      # touching one function no longer ripples sign-in and every other
+      # endpoint through a fresh rollout (owner ruling 2026-07-27, after a
+      # rollout window briefly failed live sign-ins). _shared/** or changes
+      # to this workflow redeploy the full owned set, as does a manual
+      # workflow_dispatch. OWNED is this repo's set only: the espn/yahoo/mfl
+      # proxies deploy from ReconAI (SHARED-CODE.md "Backend Ownership");
+      # report-bug / feature-requests remain hand-managed.
+      - name: Plan function deploys
+        id: plan
+        run: |
+          OWNED="admin-analytics-report admin-audit-log admin-billing-summary admin-delete-user admin-grant-pro admin-list-users admin-support-queue ai-analyze ai-feedback fw-billing-portal fw-confirm-password-reset fw-create-checkout fw-delete-account fw-oauth-sync fw-profile fw-refresh-session fw-request-password-reset fw-revenuecat-webhook fw-signin fw-signup fw-stripe-webhook get-session-token set-password"
+          PLAN=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — full owned set"
+            PLAN="$OWNED"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              echo "No usable pre-push commit — full owned set"
+              PLAN="$OWNED"
+            else
+              DIFF=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
+              if echo "$DIFF" | grep -qE '^supabase/functions/_shared/|^\.github/workflows/deploy-functions\.yml$'; then
+                echo "Shared code or this workflow changed — full owned set"
+                PLAN="$OWNED"
+              else
+                TOUCHED=$(echo "$DIFF" | sed -n 's|^supabase/functions/\([^/]*\)/.*|\1|p' | sort -u)
+                for fn in $OWNED; do
+                  case " $TOUCHED " in *" $fn "*) PLAN="$PLAN $fn";; esac
+                done
+              fi
+            fi
+          fi
+          PLAN=$(echo $PLAN | xargs)
+          echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
+          echo "Will deploy: ${PLAN:-nothing (no owned function changed)}"
 
-      - name: Deploy set-password function
-        run: supabase functions deploy set-password --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy ai-analyze function
-        run: supabase functions deploy ai-analyze --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy ai-feedback function
-        run: supabase functions deploy ai-feedback --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-signup function
-        run: supabase functions deploy fw-signup --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-signin function
-        run: supabase functions deploy fw-signin --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-oauth-sync function
-        run: supabase functions deploy fw-oauth-sync --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-profile function
-        run: supabase functions deploy fw-profile --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-refresh-session function
-        run: supabase functions deploy fw-refresh-session --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-delete-account function
-        run: supabase functions deploy fw-delete-account --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-create-checkout function
-        run: supabase functions deploy fw-create-checkout --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-billing-portal function
-        run: supabase functions deploy fw-billing-portal --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-stripe-webhook function
-        run: supabase functions deploy fw-stripe-webhook --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-revenuecat-webhook
-        run: supabase functions deploy fw-revenuecat-webhook --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-request-password-reset function
-        run: supabase functions deploy fw-request-password-reset --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy fw-confirm-password-reset function
-        run: supabase functions deploy fw-confirm-password-reset --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy admin-list-users function
-        run: supabase functions deploy admin-list-users --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy admin-grant-pro function
-        run: supabase functions deploy admin-grant-pro --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy admin-support-queue function
-        run: supabase functions deploy admin-support-queue --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy admin-audit-log function
-        run: supabase functions deploy admin-audit-log --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy admin-billing-summary function
-        run: supabase functions deploy admin-billing-summary --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy admin-delete-user function
-        run: supabase functions deploy admin-delete-user --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
-
-      - name: Deploy admin-analytics-report function
-        run: supabase functions deploy admin-analytics-report --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+      - name: Deploy changed functions
+        if: steps.plan.outputs.plan != ''
+        run: |
+          for fn in ${{ steps.plan.outputs.plan }}; do
+            echo "── deploying $fn"
+            supabase functions deploy "$fn" --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+          done
 
       # NOTE: mfl-proxy is deliberately NOT deployed here. Both apps share the
       # sxshiqyxhhifvtfqawbq project, so mfl-proxy has a single owning repo —
