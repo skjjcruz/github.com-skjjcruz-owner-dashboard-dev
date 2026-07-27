@@ -88,14 +88,21 @@ Deno.serve(async (req) => {
 async function loadActiveProducts(admin: any, userId: string): Promise<Array<{ product_slug: string; tier: string }>> {
   const { data } = await admin
     .from('subscriptions')
-    .select('product_slug, tier, status')
+    .select('product_slug, tier, status, expires_at')
     .eq('user_id', userId)
     .in('status', ['active', 'trialing']);
-  return data || [];
+  // expires_at (promotional/gift subs) bounds entitlement here exactly as in
+  // _shared/entitlements.ts — the profile and the JWT must never disagree.
+  return (data || []).filter((s: any) => !s.expires_at || Date.parse(s.expires_at) > Date.now());
 }
 
+// Mirrors _shared/entitlements.ts expandProductSlugs: 'dhq' (the live Pro
+// line), owner-granted 'dhq_gift', and legacy 'bundle' all mean full access
+// to both apps. fw-profile previously only knew 'bundle', so dhq-line
+// subscribers' profiles carried a raw slug the clients don't recognize and
+// tier chrome fell back to the minimum paid level (owner report 2026-07-27).
 function expandProducts(products: string[]): string[] {
-  return [...new Set(products.flatMap((slug) => slug === 'bundle' ? ['war_room', 'dynast_hq'] : [slug]))];
+  return [...new Set(products.flatMap((slug) => (slug === 'bundle' || slug === 'dhq' || slug === 'dhq_gift') ? ['war_room', 'dynast_hq'] : [slug]))];
 }
 
 function sanitizeTutorialState(value: unknown): Record<string, unknown> {
