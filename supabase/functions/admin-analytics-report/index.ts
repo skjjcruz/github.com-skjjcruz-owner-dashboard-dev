@@ -42,6 +42,45 @@ Deno.serve(async (req) => {
     const days = clampDays(url.searchParams.get('days'));
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
+    // ── detail=users: who is behind the "known users" tile ──
+    // Same window as the rollup; aggregated here (not in SQL) because the
+    // volume is small and this avoids another security-definer function.
+    if (url.searchParams.get('detail') === 'users') {
+      const { data: rows, error } = await admin
+        .from('analytics_events')
+        .select('username, session_id, event_ts, module')
+        .gte('event_ts', since)
+        .not('username', 'is', null)
+        .order('event_ts', { ascending: false })
+        .limit(20000);
+      if (error) {
+        console.error('admin-analytics-report users query error:', error);
+        return json(req, { error: error.message }, 500);
+      }
+      const byUser = new Map<string, { events: number; sessions: Set<string>; lastSeen: string; modules: Map<string, number> }>();
+      for (const r of rows ?? []) {
+        const u = byUser.get(r.username) ??
+          { events: 0, sessions: new Set(), lastSeen: r.event_ts, modules: new Map() };
+        u.events++;
+        if (r.session_id) u.sessions.add(r.session_id);
+        if (r.event_ts > u.lastSeen) u.lastSeen = r.event_ts;
+        const m = r.module || 'unknown';
+        u.modules.set(m, (u.modules.get(m) ?? 0) + 1);
+        byUser.set(r.username, u);
+      }
+      const users = [...byUser.entries()]
+        .map(([username, u]) => ({
+          username,
+          events: u.events,
+          sessions: u.sessions.size,
+          lastSeen: u.lastSeen,
+          topModule: [...u.modules.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'unknown',
+        }))
+        .sort((a, b) => b.events - a.events);
+      await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'users' });
+      return json(req, { users, days, since });
+    }
+
     const { data, error } = await admin.rpc('admin_analytics_report', { p_since: since });
     if (error) {
       console.error('admin-analytics-report query error:', error);
