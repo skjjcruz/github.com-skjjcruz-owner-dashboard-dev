@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     if (url.searchParams.get('detail') === 'users') {
       const { data: rows, error } = await admin
         .from('analytics_events')
-        .select('username, session_id, event_ts, module')
+        .select('username, session_id, event_ts, module, widget')
         .gte('event_ts', since)
         .not('username', 'is', null)
         .order('event_ts', { ascending: false })
@@ -57,24 +57,29 @@ Deno.serve(async (req) => {
         console.error('admin-analytics-report users query error:', error);
         return json(req, { error: error.message }, 500);
       }
-      const byUser = new Map<string, { events: number; sessions: Set<string>; lastSeen: string; modules: Map<string, number> }>();
+      // Group case-insensitively — "Skjjcruz" and "skjjcruz" are the same
+      // person (Sleeper usernames are case-insensitive); display the casing
+      // seen most recently. "Most used" falls back to widget so it reflects
+      // real activity instead of "unknown" (owner ask 2026-07-30).
+      const byUser = new Map<string, { display: string; events: number; sessions: Set<string>; lastSeen: string; modules: Map<string, number> }>();
       for (const r of rows ?? []) {
-        const u = byUser.get(r.username) ??
-          { events: 0, sessions: new Set(), lastSeen: r.event_ts, modules: new Map() };
+        const key = String(r.username).toLowerCase();
+        const u = byUser.get(key) ??
+          { display: r.username, events: 0, sessions: new Set(), lastSeen: r.event_ts, modules: new Map() };
         u.events++;
         if (r.session_id) u.sessions.add(r.session_id);
-        if (r.event_ts > u.lastSeen) u.lastSeen = r.event_ts;
-        const m = r.module || 'unknown';
-        u.modules.set(m, (u.modules.get(m) ?? 0) + 1);
-        byUser.set(r.username, u);
+        if (r.event_ts > u.lastSeen) { u.lastSeen = r.event_ts; u.display = r.username; }
+        const m = r.module || r.widget;
+        if (m) u.modules.set(m, (u.modules.get(m) ?? 0) + 1);
+        byUser.set(key, u);
       }
-      const users = [...byUser.entries()]
-        .map(([username, u]) => ({
-          username,
+      const users = [...byUser.values()]
+        .map((u) => ({
+          username: u.display,
           events: u.events,
           sessions: u.sessions.size,
           lastSeen: u.lastSeen,
-          topModule: [...u.modules.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'unknown',
+          topModule: [...u.modules.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—',
         }))
         .sort((a, b) => b.events - a.events);
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'users' });

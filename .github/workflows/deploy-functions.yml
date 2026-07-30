@@ -66,6 +66,7 @@ jobs:
               '20260711000000': 'supabase/migrations/20260711000000_bug_reports.sql',
               '20260711010000': 'supabase/migrations/20260711010000_feature_requests.sql',
               '20260724000000': 'supabase/migrations/20260724000000_gift_grants.sql',
+              '20260730000000': 'supabase/migrations/20260730000000_analytics_case_insensitive_users.sql',
           }
 
           def run_query(query):
@@ -136,6 +137,7 @@ jobs:
               '20260711000000': 'supabase/migrations/20260711000000_bug_reports.sql',
               '20260711010000': 'supabase/migrations/20260711010000_feature_requests.sql',
               '20260724000000': 'supabase/migrations/20260724000000_gift_grants.sql',
+              '20260730000000': 'supabase/migrations/20260730000000_analytics_case_insensitive_users.sql',
           }
 
           for path in expected.values():
