@@ -86,6 +86,53 @@ Deno.serve(async (req) => {
       return json(req, { users, days, since });
     }
 
+    // ── detail=sessions: anonymous visitors behind the sessions tile ──
+    // No identity exists for these (never signed in, nothing personal is
+    // collected) — this profiles each session instead: when, platform,
+    // pages touched, dwell, and the external referrer when one was captured.
+    if (url.searchParams.get('detail') === 'sessions') {
+      const { data: rows, error } = await admin
+        .from('analytics_events')
+        .select('session_id, username, event_ts, platform, module, event_name, metadata')
+        .gte('event_ts', since)
+        .order('event_ts', { ascending: false })
+        .limit(20000);
+      if (error) {
+        console.error('admin-analytics-report sessions query error:', error);
+        return json(req, { error: error.message }, 500);
+      }
+      const named = new Set<string>();
+      for (const r of rows ?? []) if (r.username && r.session_id) named.add(r.session_id);
+      const bySession = new Map<string, { first: string; last: string; events: number; platform: string | null; pages: Map<string, number>; ref: string | null }>();
+      for (const r of rows ?? []) {
+        if (!r.session_id || named.has(r.session_id)) continue;
+        const s = bySession.get(r.session_id) ??
+          { first: r.event_ts, last: r.event_ts, events: 0, platform: null, pages: new Map(), ref: null };
+        s.events++;
+        if (r.event_ts < s.first) s.first = r.event_ts;
+        if (r.event_ts > s.last) s.last = r.event_ts;
+        if (!s.platform && r.platform) s.platform = r.platform;
+        const page = r.module || (r.metadata && (r.metadata as Record<string, unknown>).route as string) || null;
+        if (page) s.pages.set(String(page), (s.pages.get(String(page)) ?? 0) + 1);
+        const ref = r.metadata && (r.metadata as Record<string, unknown>).ref;
+        if (!s.ref && typeof ref === 'string' && ref) s.ref = ref;
+        bySession.set(r.session_id, s);
+      }
+      const sessions = [...bySession.values()]
+        .map((s) => ({
+          started: s.first,
+          minutes: Math.max(0, Math.round((Date.parse(s.last) - Date.parse(s.first)) / 60000)),
+          events: s.events,
+          platform: s.platform || '—',
+          pages: [...s.pages.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map((p) => p[0]),
+          ref: s.ref,
+        }))
+        .sort((a, b) => (a.started < b.started ? 1 : -1))
+        .slice(0, 150);
+      await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'sessions' });
+      return json(req, { sessions, anonymousTotal: bySession.size, days, since });
+    }
+
     const { data, error } = await admin.rpc('admin_analytics_report', { p_since: since });
     if (error) {
       console.error('admin-analytics-report query error:', error);
