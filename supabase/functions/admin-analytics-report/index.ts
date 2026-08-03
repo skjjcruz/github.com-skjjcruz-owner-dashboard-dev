@@ -45,37 +45,71 @@ Deno.serve(async (req) => {
     // ── detail=users: who is behind the "known users" tile ──
     // Same window as the rollup; aggregated here (not in SQL) because the
     // volume is small and this avoids another security-definer function.
+    // A person is keyed by ACCOUNT id when their events carry one (email or
+    // Google members), else by the account an identical username links to
+    // elsewhere in the window, else by lowercased username — mirrors the
+    // person_key in admin_analytics_report (owner ask 2026-08-03: members
+    // signed in without a Sleeper username were invisible here).
     if (url.searchParams.get('detail') === 'users') {
       const { data: rows, error } = await admin
         .from('analytics_events')
-        .select('username, session_id, event_ts, module, widget')
+        .select('username, user_id, session_id, event_ts, module, widget')
         .gte('event_ts', since)
-        .not('username', 'is', null)
+        .or('username.not.is.null,user_id.not.is.null')
         .order('event_ts', { ascending: false })
         .limit(20000);
       if (error) {
         console.error('admin-analytics-report users query error:', error);
         return json(req, { error: error.message }, 500);
       }
-      // Group case-insensitively — "Skjjcruz" and "skjjcruz" are the same
-      // person (Sleeper usernames are case-insensitive); display the casing
-      // seen most recently. "Most used" falls back to widget so it reflects
-      // real activity instead of "unknown" (owner ask 2026-07-30).
-      const byUser = new Map<string, { display: string; events: number; sessions: Set<string>; lastSeen: string; modules: Map<string, number> }>();
+      // username -> account bridge from events that carry both.
+      const links = new Map<string, string>();
       for (const r of rows ?? []) {
-        const key = String(r.username).toLowerCase();
+        if (r.username && r.user_id) {
+          const uname = String(r.username).toLowerCase();
+          if (!links.has(uname)) links.set(uname, String(r.user_id));
+        }
+      }
+      const personKey = (r: { username: string | null; user_id: string | null }) => {
+        if (r.user_id) return String(r.user_id);
+        const uname = String(r.username).toLowerCase();
+        return links.get(uname) ?? uname;
+      };
+      // Group per person; display the most recent username casing when one
+      // exists ("Skjjcruz" and "skjjcruz" are the same person). "Most used"
+      // falls back to widget so it reflects real activity (owner ask 2026-07-30).
+      const byUser = new Map<string, { display: string | null; accountId: string | null; events: number; sessions: Set<string>; lastSeen: string; modules: Map<string, number> }>();
+      for (const r of rows ?? []) {
+        const key = personKey(r);
         const u = byUser.get(key) ??
-          { display: r.username, events: 0, sessions: new Set(), lastSeen: r.event_ts, modules: new Map() };
+          { display: r.username, accountId: r.user_id ? String(r.user_id) : null, events: 0, sessions: new Set(), lastSeen: r.event_ts, modules: new Map() };
         u.events++;
         if (r.session_id) u.sessions.add(r.session_id);
-        if (r.event_ts > u.lastSeen) { u.lastSeen = r.event_ts; u.display = r.username; }
+        if (r.user_id && !u.accountId) u.accountId = String(r.user_id);
+        if (r.event_ts > u.lastSeen) u.lastSeen = r.event_ts;
+        if (r.username && (!u.display || r.event_ts >= u.lastSeen)) u.display = r.username;
         const m = r.module || r.widget;
         if (m) u.modules.set(m, (u.modules.get(m) ?? 0) + 1);
         byUser.set(key, u);
       }
+      // Friendly names for username-less accounts: the email's mailbox part.
+      const needEmail = [...byUser.values()].filter((u) => !u.display && u.accountId).map((u) => u.accountId as string);
+      if (needEmail.length) {
+        const { data: accounts } = await admin
+          .from('app_users')
+          .select('id, email')
+          .in('id', needEmail.slice(0, 200));
+        const emailById = new Map((accounts ?? []).map((a) => [String(a.id), String(a.email || '')]));
+        for (const u of byUser.values()) {
+          if (!u.display && u.accountId) {
+            const email = emailById.get(u.accountId) || '';
+            u.display = email ? email.split('@')[0] + ' (account)' : 'account ' + u.accountId.slice(0, 8);
+          }
+        }
+      }
       const users = [...byUser.values()]
         .map((u) => ({
-          username: u.display,
+          username: u.display || 'unknown',
           events: u.events,
           sessions: u.sessions.size,
           lastSeen: u.lastSeen,
@@ -93,7 +127,7 @@ Deno.serve(async (req) => {
     if (url.searchParams.get('detail') === 'sessions') {
       const { data: rows, error } = await admin
         .from('analytics_events')
-        .select('session_id, username, event_ts, platform, module, event_name, metadata')
+        .select('session_id, username, user_id, event_ts, platform, module, event_name, metadata')
         .gte('event_ts', since)
         .order('event_ts', { ascending: false })
         .limit(20000);
@@ -101,8 +135,10 @@ Deno.serve(async (req) => {
         console.error('admin-analytics-report sessions query error:', error);
         return json(req, { error: error.message }, 500);
       }
+      // A session with EITHER identity is a signed-in member, not a visitor
+      // (owner ask 2026-08-03 — Google members were listed as anonymous).
       const named = new Set<string>();
-      for (const r of rows ?? []) if (r.username && r.session_id) named.add(r.session_id);
+      for (const r of rows ?? []) if ((r.username || r.user_id) && r.session_id) named.add(r.session_id);
       const bySession = new Map<string, { first: string; last: string; events: number; platform: string | null; pages: Map<string, number>; ref: string | null }>();
       for (const r of rows ?? []) {
         if (!r.session_id || named.has(r.session_id)) continue;
