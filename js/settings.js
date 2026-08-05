@@ -2,58 +2,6 @@
 // settings.js — SettingsModal component
 // ══════════════════════════════════════════════════════════════════
 
-    // ── Shared account flows ─────────────────────────────────────
-    // Single source of truth for the Stripe billing portal + account
-    // deletion. Used by SettingsContent below AND by the hub's Owner
-    // Settings page (js/app.js) — do not fork these flows.
-    //
-    // Web (Stripe) subs open the Stripe Billing Portal via fw-billing-portal,
-    // where cancel / change-plan / update-card all live. Accounts with no
-    // Stripe history fall back to the plans page. (App Store subs are
-    // managed in Apple ID settings from the separate iOS app.)
-    async function dhqOpenBillingPortal() {
-        // Native app: Apple manages App Store subscriptions. Showing the
-        // Stripe portal inside the iOS app risks App Review 3.1.1
-        // (anti-steering), so route to Apple's subscriptions screen.
-        try {
-            if (window.WR_IS_NATIVE_APP || (window.DHQBilling && window.DHQBilling.isNative && window.DHQBilling.isNative())) {
-                window.location.href = 'https://apps.apple.com/account/subscriptions';
-                return;
-            }
-        } catch (e) { /* fall through to the web portal */ }
-        const goToManagePlan = () => { window.location.href = 'upgrade.html'; };
-        const client = window.OD && typeof window.OD.getClient === 'function' ? window.OD.getClient() : null;
-        if (!client) { goToManagePlan(); return; }
-        try {
-            const { data, error } = await client.functions.invoke('fw-billing-portal', {
-                body: { returnUrl: window.location.origin + window.location.pathname },
-            });
-            if (!error && data && data.url) { window.location.href = data.url; return; }
-            goToManagePlan();
-        } catch { goToManagePlan(); }
-    }
-    window.dhqOpenBillingPortal = dhqOpenBillingPortal;
-
-    // ── Delete account (App Store 5.1.1(v) requirement) ──────────
-    // Double-confirm, backend delete via window.OD.deleteAccount(), then local
-    // cleanup + redirect. Returns false if the user backed out or it failed.
-    async function dhqDeleteAccountFlow() {
-        if (!confirm('Delete your Dynasty HQ account? This permanently removes your account, subscription link, and saved data. This cannot be undone.')) return false;
-        if (!confirm('Last check — are you sure? Your account and data will be gone for good.')) return false;
-        try {
-            await window.OD.deleteAccount();
-            try {
-                ['fw_session_v1', 'od_auth_v1', 'od_display_name', 'od_avatar_emoji', 'dhq_notify_prefs_v1', 'dhq_owner_club_v1'].forEach(k => localStorage.removeItem(k));
-            } catch { /* best effort */ }
-            window.location.href = 'landing.html?signout=1';
-            return true;
-        } catch (err) {
-            alert('Could not delete the account: ' + (err && err.message ? err.message : 'unknown error') + '. Contact support if this keeps happening.');
-            return false;
-        }
-    }
-    window.dhqDeleteAccountFlow = dhqDeleteAccountFlow;
-
     // ── Sub-components (hooks require stable component boundaries) ──
 
     function AlexTab({ sectionStyle, sectionTitle }) {
@@ -223,12 +171,25 @@
         }
 
         // ── Manage / cancel subscription ─────────────────────────────
-        // Delegates to the shared dhqOpenBillingPortal flow above (Stripe
-        // Billing Portal via fw-billing-portal, plans-page fallback).
+        // App Store subs are managed in Apple ID settings (Apple requirement);
+        // web (Stripe) subs open the Stripe Billing Portal via fw-billing-portal,
+        // where cancel / change-plan / update-card all live. Accounts with no
+        // Stripe history fall back to the plans page.
         const [billingBusy, setBillingBusy] = React.useState(false);
         async function manageBilling() {
+            const isNative = !!(window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function'
+                ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative));
+            if (isNative) { window.open('https://apps.apple.com/account/subscriptions', '_blank'); return; }
+            const client = window.OD && typeof window.OD.getClient === 'function' ? window.OD.getClient() : null;
+            if (!client) { goToManagePlan(); return; }
             setBillingBusy(true);
-            try { await dhqOpenBillingPortal(); }
+            try {
+                const { data, error } = await client.functions.invoke('fw-billing-portal', {
+                    body: { returnUrl: window.location.origin + window.location.pathname },
+                });
+                if (!error && data && data.url) { window.location.href = data.url; return; }
+                goToManagePlan();
+            } catch { goToManagePlan(); }
             finally { setBillingBusy(false); }
         }
 
@@ -264,7 +225,7 @@
         // ── Invite friends ───────────────────────────────────────────
         const [inviteMsg, setInviteMsg] = React.useState('');
         async function inviteFriends() {
-            const url = 'https://www.dhqfootball.com/landing.html';
+            const url = 'https://skjjcruz.github.io/github.com-skjjcruz-owner-dashboard-dev/landing.html';
             const shareData = { title: 'Dynasty HQ', text: 'Run your dynasty league like a front office — join me on Dynasty HQ.', url };
             try {
                 if (navigator.share) { await navigator.share(shareData); return; }
@@ -278,13 +239,21 @@
         }
 
         // ── Delete account (App Store 5.1.1(v) requirement) ──────────
-        // Delegates to the shared dhqDeleteAccountFlow above, which calls the
-        // backend window.OD.deleteAccount() and cleans up local state.
         const [deleteBusy, setDeleteBusy] = React.useState(false);
         async function handleDeleteAccount() {
+            if (!confirm('Delete your Dynasty HQ account? This permanently removes your account, subscription link, and saved data. This cannot be undone.')) return;
+            if (!confirm('Last check — are you sure? Your account and data will be gone for good.')) return;
             setDeleteBusy(true);
-            const deleted = await dhqDeleteAccountFlow();
-            if (!deleted) setDeleteBusy(false);
+            try {
+                await window.OD.deleteAccount();
+                try {
+                    ['fw_session_v1', 'od_auth_v1', 'od_display_name', 'od_avatar_emoji', 'dhq_notify_prefs_v1'].forEach(k => localStorage.removeItem(k));
+                } catch { /* best effort */ }
+                window.location.href = 'landing.html?signout=1';
+            } catch (err) {
+                setDeleteBusy(false);
+                alert('Could not delete the account: ' + (err && err.message ? err.message : 'unknown error') + '. Contact support if this keeps happening.');
+            }
         }
 
         function handleDisplayNameSave() {
