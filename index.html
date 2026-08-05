@@ -83,6 +83,7 @@ const WR_PLATFORM_SANDBOX_ACCESS = window.SANDBOX_MODE === true
 // 'localhost' but ships no such proxy, so it must keep the real Supabase
 // endpoints — otherwise every AI call fails with a network "Load failed".
 const WR_IS_NATIVE_APP = !!(window.Capacitor && (typeof window.Capacitor.isNativePlatform === 'function' ? window.Capacitor.isNativePlatform() : window.Capacitor.isNative));
+window.WR_IS_NATIVE_APP = WR_IS_NATIVE_APP;
 const _isLocalDev = !WR_IS_NATIVE_APP && ['localhost', '127.0.0.1'].includes(window.location.hostname || '');
 if (_isLocalDev) {
   const existingConfig = window.DYNASTY_HQ_CONFIG || {};
@@ -2935,7 +2936,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/module-loader.js?v=20260612modlazy1"></script>
 <script src="js/shared/title-sweep.js?v=20260805club1"></script>
 <script type="text/babel" src="js/settings.js?v=20260805club1"></script>
-<script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20260707desk1"></script>
+<script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20260805club1"></script>
 <script type="text/babel" src="js/post-draft.js?v=20260609postdraft1"></script>
 <script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260613strip1"></script>
 <script type="text/babel" data-wr-defer="lineup" src="js/tabs/lineup.js?v=20260702bye1"></script>

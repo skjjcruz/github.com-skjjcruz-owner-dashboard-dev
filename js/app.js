@@ -688,7 +688,7 @@
                             <button style={btnLine} onClick={openBilling} disabled={billingBusy}>{billingBusy ? 'Opening…' : 'Manage subscription & payment method'}</button>
                             <button style={btnDanger} onClick={openBilling} disabled={billingBusy}>{billingBusy ? 'Opening…' : 'Cancel subscription'}</button>
                         </div>
-                        <div style={hint}>Both open your secure Stripe billing portal. Subscribed on the iPhone app instead? Manage it through your Apple subscriptions — your Pro works everywhere either way.</div>
+                        <div style={hint}>{(window.WR_IS_NATIVE_APP || (window.DHQBilling && window.DHQBilling.isNative && window.DHQBilling.isNative())) ? 'Subscriptions are managed through your Apple ID — both buttons open your Apple subscription settings.' : 'Both open your secure Stripe billing portal. Subscribed on the iPhone app instead? Manage it through your Apple subscriptions — your Pro works everywhere either way.'}</div>
 
                         <div style={{ ...cardH, marginTop: '20px' }}>League room widgets</div>
                         <div style={toggleRow}>

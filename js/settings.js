@@ -17,7 +17,7 @@
         // (anti-steering), so route to Apple's subscriptions screen.
         try {
             if (window.WR_IS_NATIVE_APP || (window.DHQBilling && window.DHQBilling.isNative && window.DHQBilling.isNative())) {
-                window.location.href = 'https://apps.apple.com/account/subscriptions';
+                window.open('https://apps.apple.com/account/subscriptions', '_blank');
                 return;
             }
         } catch (e) { /* fall through to the web portal */ }
@@ -553,7 +553,7 @@
                             <button onClick={manageBilling} disabled={billingBusy} style={{ ...btnOutline, flex: 'none', padding: '0.5rem 0.9rem' }}>{billingBusy ? 'Opening…' : 'Manage'}</button>
                         </div>
                         <div style={{ fontSize: 'var(--text-label, 0.72rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', marginTop: '-12px' }}>
-                            Manage opens your billing portal — change plan, update your card, or cancel anytime. App Store subscriptions are managed in your Apple ID settings.
+                            {(window.WR_IS_NATIVE_APP || (window.DHQBilling && window.DHQBilling.isNative && window.DHQBilling.isNative())) ? 'Manage opens your Apple subscription settings — App Store subscriptions are managed in your Apple ID.' : 'Manage opens your billing portal — change plan, update your card, or cancel anytime. App Store subscriptions are managed in your Apple ID settings.'}
                         </div>
 
                         {/* ── Avatar ── */}
@@ -777,7 +777,7 @@
                             <button onClick={goToManagePlan} style={{ ...btnOutline, fontSize: 'var(--text-label, 0.75rem)' }}>Gift Sub</button>
                         </div>
                         <div style={{ marginTop: '0.6rem', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--ov-8, rgba(255,255,255,0.3))', textAlign: 'center' }}>
-                            Manage / Cancel opens your billing portal (web) — App Store subscriptions are managed in your Apple ID settings.
+                            {(window.WR_IS_NATIVE_APP || (window.DHQBilling && window.DHQBilling.isNative && window.DHQBilling.isNative())) ? 'Manage / Cancel opens your Apple subscription settings — App Store subscriptions are managed in your Apple ID.' : 'Manage / Cancel opens your billing portal (web) — App Store subscriptions are managed in your Apple ID settings.'}
                         </div>
                         <div style={{ marginTop: '0.6rem', display: 'flex', justifyContent: 'center', gap: '14px', fontSize: 'var(--text-label, 0.75rem)' }}>
                             <a href="legal/terms-of-service.html" target="_blank" rel="noopener" style={{ color: 'var(--silver)', textDecoration: 'underline' }}>Terms of Service</a>
