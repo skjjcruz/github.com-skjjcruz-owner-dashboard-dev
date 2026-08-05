@@ -79,6 +79,8 @@
           }, 8000);
           return;
         }
+        var ga = null; try { ga = JSON.parse(localStorage.getItem('od_auth_v1') || 'null'); } catch (e) {}
+        if (localStorage.getItem('wr_guest_v1') === '1' && ga && ga.username) { window.location.replace('index.html'); return; }
         var sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
         if (!sess || !sess.token) { reveal(); return; } // not signed in -> show landing
         var profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
@@ -438,14 +440,14 @@
     <div class="hero-scrim" aria-hidden="true"></div>
     <div class="hero-in">
       <div class="hero-copy">
-        <div class="hero-eyebrow">Fantasy front office · Dynasty &amp; redraft · Free on Sleeper</div>
+        <div class="hero-eyebrow">Fantasy front office · Dynasty &amp; redraft · Supports Sleeper leagues</div>
         <h1>Generic advice: stop here.<br><span class="mk">This is your world.</span></h1>
         <p class="hero-sub">Every other tool ranks players for a league that isn't yours. Dynasty HQ rebuilds every value, trade, and draft call around <b>your exact scoring and roster</b> — and reads <b>how each rival actually operates.</b></p>
         <div class="hero-actions">
-          <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free with Sleeper</button>
+          <button class="hero-cta" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free</button>
           <button class="hero-secondary" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">See plans</button>
         </div>
-        <p class="hero-free">Free on all your Sleeper leagues · no credit card</p>
+        <p class="hero-free">Free to start · no credit card</p>
       </div>
       <div class="rig" aria-hidden="true">
         <div class="term-wrap">
@@ -673,6 +675,13 @@
     <p id="authSub" style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 22px">Step 1 of 2 — create your account with Google or email. Next, you'll connect your leagues.</p>
 
     <div class="alert" id="alertJoin"></div>
+
+    <!-- Guest lane (Apple 5.1.1(v): registration must be optional). Sets the
+         guest flag and heads straight to the league-connect page; no account,
+         no personal info. -->
+    <button class="auth-submit" id="btnGuest" style="margin-bottom:14px"
+      onclick="try{localStorage.setItem('wr_guest_v1','1')}catch(e){};window.location.href='connect-sleeper.html'">Guest Sign In</button>
+    <div class="auth-or"><span>or</span></div>
 
     <!-- Google -->
     <button id="btnGoogle" class="auth-google" onclick="handleGoogle()">
