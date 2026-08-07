@@ -20,7 +20,8 @@ assert(Array.isArray(landing.productSummary) && landing.productSummary.length ==
 assert(Array.isArray(landing.features?.cards) && landing.features.cards.length === 6, 'landing needs 6 feature cards');
 assert(Array.isArray(landing.pricing?.plans) && landing.pricing.plans.length === 3, 'landing needs 3 pricing plans (Scout / Pro Monthly / Pro Annual)');
 assert(Array.isArray(landing.platforms?.badges) && landing.platforms.badges.length >= 2, 'landing needs platform badges');
-assert(landing.auth?.signupSubmit && landing.auth?.signinSubmit, 'landing auth labels are required');
+// Sign-in only since 9851f79 (auth card carries no account-creation bias).
+assert(landing.auth?.signinSubmit, 'landing auth sign-in label is required');
 
 const html = fs.readFileSync(landingPath, 'utf8');
 assert(html.includes('js/landing-content.js'), 'landing.html must load js/landing-content.js');
