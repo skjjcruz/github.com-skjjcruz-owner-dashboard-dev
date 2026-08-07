@@ -270,7 +270,7 @@ test('revenuecat webhook mirrors App Store entitlements into subscriptions', () 
   ], 'revenuecat webhook contract');
   ok(rcWebhookSource.includes("'trialing' : 'active'"), 'RC trials must land as trialing, not active');
   ok(configToml.includes('[functions.fw-revenuecat-webhook]'), 'rc webhook must pin verify_jwt in config.toml');
-  ok(deployWorkflow.includes('supabase functions deploy fw-revenuecat-webhook'), 'rc webhook must be in the deploy list');
+  ok((/OWNED="[^"]*\bfw-revenuecat-webhook\b[^"]*"/.test(deployWorkflow) || deployWorkflow.includes('supabase functions deploy fw-revenuecat-webhook')), 'rc webhook must be in the deploy list');
 });
 
 test('new accounts route to the connect-your-leagues page', () => {
@@ -320,7 +320,7 @@ test('fw-refresh-session slides live sessions and is deployed', () => {
     'mintAppSessionJWT',
   ], 'refresh endpoint contract');
   ok(configToml.includes('[functions.fw-refresh-session]'), 'fw-refresh-session must pin verify_jwt in config.toml');
-  ok(deployWorkflow.includes('supabase functions deploy fw-refresh-session'), 'fw-refresh-session must be in the deploy list');
+  ok((/OWNED="[^"]*\bfw-refresh-session\b[^"]*"/.test(deployWorkflow) || deployWorkflow.includes('supabase functions deploy fw-refresh-session')), 'fw-refresh-session must be in the deploy list');
 });
 
 test('google oauth stores the full user record and re-syncs on fresh returns', () => {
@@ -376,7 +376,7 @@ test('admin delete-user tooling is wired with guardrails', () => {
     'fw-oauth-sync',
   ], 'admin gate sign-in');
   ok(configToml.includes('[functions.admin-delete-user]'), 'admin-delete-user must pin verify_jwt in config.toml');
-  ok(deployWorkflow.includes('supabase functions deploy admin-delete-user'), 'admin-delete-user must be in the deploy list');
+  ok((/OWNED="[^"]*\badmin-delete-user\b[^"]*"/.test(deployWorkflow) || deployWorkflow.includes('supabase functions deploy admin-delete-user')), 'admin-delete-user must be in the deploy list');
 });
 
 group('security');

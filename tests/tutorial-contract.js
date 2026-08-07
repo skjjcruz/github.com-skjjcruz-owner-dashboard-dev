@@ -90,7 +90,7 @@ test('Supabase deploy workflow ships tutorial state backend', () => {
   hasEvery(deployWorkflow, [
     '20260503010000_tutorial_state.sql',
     'deno check --node-modules-dir=auto "$fn"',
-    'supabase functions deploy fw-profile',
+    'fw-profile', // deployed via the OWNED list since the surgical-deploys restructure
     'if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then',
     'SUPABASE_ACCESS_TOKEN repo secret is required',
   ], 'deploy workflow');
