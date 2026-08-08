@@ -706,7 +706,7 @@
       <span id="sleeperHint"></span>
     </p>
     <div style="text-align:center;margin-top:14px;font-size:13px">
-      <button class="auth-linkbtn" id="toggleMode" onclick="toggleAuthMode()" style="display:none">Already have an account? Sign in</button>
+      <button class="auth-linkbtn" id="toggleMode" onclick="toggleAuthMode()">Need an account? Sign up</button>
       <button class="auth-linkbtn" id="forgotBtn" onclick="handleForgot()">Forgot password?</button>
     </div>
   </section>
@@ -846,7 +846,7 @@
     }
     const FW_API_BASE = SUPABASE_URL + '/functions/v1';
 
-    let authMode = 'signin'; // 'signup' | 'signin' — the app card is sign-in only; accounts are created on the website (owner ruling 2026-08-05)
+    let authMode = 'signin'; // 'signup' | 'signin' — defaults to sign-in; the toggle re-enabled per owner ruling 2026-08-08 (app signups wanted alongside website signups)
 
     function destForUser() {
       const pref = localStorage.getItem('fw_preferred_view');
