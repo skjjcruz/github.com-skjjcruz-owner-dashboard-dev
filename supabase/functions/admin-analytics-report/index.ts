@@ -120,6 +120,46 @@ Deno.serve(async (req) => {
       return json(req, { users, days, since });
     }
 
+    // ── detail=doors: which door (native app vs browser) + guest sign-ins ──
+    // surface comes from metadata stamped client-side: 'ios_app' when the UA
+    // is a bare WKWebView (the shell), 'web' for real browsers. Events older
+    // than the stamp's ship date carry no surface and count as 'unknown'.
+    if (url.searchParams.get('detail') === 'doors') {
+      const { data: rows, error } = await admin
+        .from('analytics_events')
+        .select('session_id, username, event_ts, event_name, module, metadata')
+        .gte('event_ts', since)
+        .order('event_ts', { ascending: false })
+        .limit(20000);
+      if (error) {
+        console.error('admin-analytics-report doors query error:', error);
+        return json(req, { error: error.message }, 500);
+      }
+      const surfaces: Record<string, { events: number; sessions: Set<string> }> = {};
+      const guests: Array<{ when: string; event: string; username: string | null; guest: boolean; surface: string }> = [];
+      for (const r of rows ?? []) {
+        const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        const surface = typeof meta.surface === 'string' && meta.surface ? meta.surface : 'unknown';
+        const s = surfaces[surface] ?? (surfaces[surface] = { events: 0, sessions: new Set() });
+        s.events++;
+        if (r.session_id) s.sessions.add(r.session_id);
+        if (r.module === 'connect' && guests.length < 200) {
+          guests.push({
+            when: r.event_ts,
+            event: String(r.event_name || ''),
+            username: (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || r.username || null,
+            guest: meta.guest === true,
+            surface,
+          });
+        }
+      }
+      const split = Object.fromEntries(
+        Object.entries(surfaces).map(([k, v]) => [k, { events: v.events, sessions: v.sessions.size }]),
+      );
+      await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'doors' });
+      return json(req, { surfaces: split, guests, days, since });
+    }
+
     // ── detail=sessions: anonymous visitors behind the sessions tile ──
     // No identity exists for these (never signed in, nothing personal is
     // collected) — this profiles each session instead: when, platform,
@@ -139,18 +179,22 @@ Deno.serve(async (req) => {
       // (owner ask 2026-08-03 — Google members were listed as anonymous).
       const named = new Set<string>();
       for (const r of rows ?? []) if ((r.username || r.user_id) && r.session_id) named.add(r.session_id);
-      const bySession = new Map<string, { first: string; last: string; events: number; platform: string | null; pages: Map<string, number>; ref: string | null }>();
+      const bySession = new Map<string, { first: string; last: string; events: number; platform: string | null; surface: string | null; pages: Map<string, number>; ref: string | null }>();
       for (const r of rows ?? []) {
         if (!r.session_id || named.has(r.session_id)) continue;
         const s = bySession.get(r.session_id) ??
-          { first: r.event_ts, last: r.event_ts, events: 0, platform: null, pages: new Map(), ref: null };
+          { first: r.event_ts, last: r.event_ts, events: 0, platform: null, surface: null, pages: new Map(), ref: null };
         s.events++;
         if (r.event_ts < s.first) s.first = r.event_ts;
         if (r.event_ts > s.last) s.last = r.event_ts;
         if (!s.platform && r.platform) s.platform = r.platform;
-        const page = r.module || (r.metadata && (r.metadata as Record<string, unknown>).route as string) || null;
+        const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        if (!s.surface && typeof meta.surface === 'string' && meta.surface) s.surface = meta.surface;
+        const page = r.module || (meta.route as string) || null;
         if (page) s.pages.set(String(page), (s.pages.get(String(page)) ?? 0) + 1);
-        const ref = r.metadata && (r.metadata as Record<string, unknown>).ref;
+        // Landing/connect trackers store the referrer as referrerHost; ref is
+        // the older key some events still carry.
+        const ref = meta.ref ?? meta.referrerHost;
         if (!s.ref && typeof ref === 'string' && ref) s.ref = ref;
         bySession.set(r.session_id, s);
       }
@@ -160,6 +204,7 @@ Deno.serve(async (req) => {
           minutes: Math.max(0, Math.round((Date.parse(s.last) - Date.parse(s.first)) / 60000)),
           events: s.events,
           platform: s.platform || '—',
+          surface: s.surface || 'unknown',
           pages: [...s.pages.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map((p) => p[0]),
           ref: s.ref,
         }))
