@@ -160,6 +160,54 @@ Deno.serve(async (req) => {
       return json(req, { surfaces: split, guests, days, since });
     }
 
+    // ── detail=errors: client errors with their context ──
+    // The rollup's clientErrors collapses to source+name ("wrLog: Error").
+    // This branch reads the raw events and groups by the context/detail the
+    // client started stamping on 2026-08-09 — older events show '—'.
+    if (url.searchParams.get('detail') === 'errors') {
+      const { data: rows, error } = await admin
+        .from('analytics_events')
+        .select('session_id, username, user_id, event_ts, metadata')
+        .eq('event_name', 'client_error')
+        .gte('event_ts', since)
+        .order('event_ts', { ascending: false })
+        .limit(20000);
+      if (error) {
+        console.error('admin-analytics-report errors query error:', error);
+        return json(req, { error: error.message }, 500);
+      }
+      const groups = new Map<string, { source: string; errorName: string; context: string | null; detail: string | null; times: number; people: Set<string>; lastSeen: string }>();
+      for (const r of rows ?? []) {
+        const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        const source = typeof meta.source === 'string' && meta.source ? meta.source : 'unknown';
+        const errorName = typeof meta.errorName === 'string' && meta.errorName ? meta.errorName : 'Error';
+        const context = typeof meta.context === 'string' && meta.context ? meta.context : null;
+        const detail = typeof meta.errorDetail === 'string' && meta.errorDetail ? meta.errorDetail : null;
+        const key = `${source}|${errorName}|${context ?? ''}`;
+        const g = groups.get(key) ??
+          { source, errorName, context, detail: null, times: 0, people: new Set<string>(), lastSeen: r.event_ts };
+        g.times++;
+        g.people.add(String(r.username || r.user_id || r.session_id || 'anon'));
+        if (r.event_ts > g.lastSeen) g.lastSeen = r.event_ts;
+        if (!g.detail && detail) g.detail = detail;
+        groups.set(key, g);
+      }
+      const errors = [...groups.values()]
+        .map((g) => ({
+          source: g.source,
+          errorName: g.errorName,
+          context: g.context,
+          detail: g.detail,
+          times: g.times,
+          people: g.people.size,
+          lastSeen: g.lastSeen,
+        }))
+        .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1))
+        .slice(0, 100);
+      await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'errors' });
+      return json(req, { errors, days, since });
+    }
+
     // ── detail=sessions: anonymous visitors behind the sessions tile ──
     // No identity exists for these (never signed in, nothing personal is
     // collected) — this profiles each session instead: when, platform,
