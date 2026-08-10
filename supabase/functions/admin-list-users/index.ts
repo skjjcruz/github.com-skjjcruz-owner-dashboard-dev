@@ -44,6 +44,7 @@ Deno.serve(async (req) => {
         id,
         email,
         display_name,
+        platform_usernames,
         created_at,
         subscriptions ( product_slug, tier, status )
       `, { count: 'exact' })
@@ -67,18 +68,66 @@ Deno.serve(async (req) => {
       const active  = subs.filter((s: any) => s.status === 'active');
       const tier    = active.some((s: any) => s.tier === 'pro') ? 'pro' : 'free';
       const products = active.map((s: any) => s.product_slug);
+      const pu = u.platform_usernames ?? {};
       return {
         id:          u.id,
         email:       u.email,
         displayName: u.display_name,
+        sleeperUsername: (typeof pu.sleeper === 'string' && pu.sleeper) || null,
         tier,
         products,
         createdAt:   u.created_at,
       };
     });
 
+    // ── Guests: Sleeper names seen in product usage with no account ──
+    // A guest never signs up, so app_users can't know them — analytics is
+    // the only place they exist. A username counts as a guest when no event
+    // ever links it to an account id AND it doesn't match any account's
+    // linked Sleeper name (owner ask 2026-08-10: capture guests as users).
+    const guests: Array<{ username: string; firstSeen: string; lastSeen: string }> = [];
+    try {
+      const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+      const [{ data: events }, { data: allAccounts }] = await Promise.all([
+        admin
+          .from('analytics_events')
+          .select('username, user_id, event_ts')
+          .not('username', 'is', null)
+          .gte('event_ts', since)
+          .order('event_ts', { ascending: false })
+          .limit(20000),
+        admin
+          .from('app_users')
+          .select('platform_usernames')
+          .limit(1000),
+      ]);
+      const accountSleepers = new Set(
+        (allAccounts ?? [])
+          .map((a: any) => String(a.platform_usernames?.sleeper || '').toLowerCase())
+          .filter(Boolean),
+      );
+      const seen = new Map<string, { display: string; firstSeen: string; lastSeen: string; linked: boolean }>();
+      for (const e of events ?? []) {
+        const key = String(e.username).toLowerCase();
+        const g = seen.get(key) ??
+          { display: String(e.username), firstSeen: e.event_ts, lastSeen: e.event_ts, linked: false };
+        if (e.user_id) g.linked = true;
+        if (e.event_ts < g.firstSeen) g.firstSeen = e.event_ts;
+        if (e.event_ts > g.lastSeen) { g.lastSeen = e.event_ts; g.display = String(e.username); }
+        seen.set(key, g);
+      }
+      for (const [key, g] of seen) {
+        if (g.linked || accountSleepers.has(key)) continue;
+        guests.push({ username: g.display, firstSeen: g.firstSeen, lastSeen: g.lastSeen });
+      }
+      guests.sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1));
+    } catch (guestErr) {
+      // Guests are additive — a failure here must not break the account list.
+      console.error('admin-list-users guest scan error:', guestErr);
+    }
+
     await auditEvent(admin, req, 'admin_list_users', 'success', { userId }, { page, limit, search: !!search });
-    return json(req, { users: rows, total: count ?? 0, page, limit });
+    return json(req, { users: rows, guests, total: count ?? 0, page, limit });
 
   } catch (err) {
     console.error('admin-list-users error:', err);
