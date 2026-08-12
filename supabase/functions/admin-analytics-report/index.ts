@@ -136,6 +136,10 @@ Deno.serve(async (req) => {
         return json(req, { error: error.message }, 500);
       }
       const surfaces: Record<string, { events: number; sessions: Set<string> }> = {};
+      // New accounts by door: email signups + first-ever OAuth sign-ins
+      // (oauth_succeeded stamps isNew as of 2026-08-12; older OAuth events
+      // can't be classified and simply don't count here).
+      const signups: Record<string, number> = {};
       const guests: Array<{ when: string; event: string; username: string | null; guest: boolean; surface: string }> = [];
       for (const r of rows ?? []) {
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
@@ -143,6 +147,9 @@ Deno.serve(async (req) => {
         const s = surfaces[surface] ?? (surfaces[surface] = { events: 0, sessions: new Set() });
         s.events++;
         if (r.session_id) s.sessions.add(r.session_id);
+        if (r.event_name === 'signup_succeeded' || (r.event_name === 'oauth_succeeded' && meta.isNew === true)) {
+          signups[surface] = (signups[surface] ?? 0) + 1;
+        }
         if (r.module === 'connect' && guests.length < 200) {
           guests.push({
             when: r.event_ts,
@@ -157,7 +164,7 @@ Deno.serve(async (req) => {
         Object.entries(surfaces).map(([k, v]) => [k, { events: v.events, sessions: v.sessions.size }]),
       );
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'doors' });
-      return json(req, { surfaces: split, guests, days, since });
+      return json(req, { surfaces: split, signups, guests, days, since });
     }
 
     // ── detail=errors: client errors with their context ──
