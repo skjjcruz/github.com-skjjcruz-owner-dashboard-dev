@@ -260,8 +260,9 @@ test('billing exhaustion falls back instead of failing (2026-07-21 outage)', () 
   ok(/credit\|billing\|insufficient/.test(source), 'availability classifier must catch credit/billing exhaustion');
   ok(/premium:\s*\{[^}]*gemini: AI_MODELS.GEMINI_BALANCED/.test(source), 'premium tier must carry a gemini fallback model');
   ok(/deep:\s*\{[^}]*gemini: AI_MODELS.GEMINI_BALANCED/.test(source), 'deep tier must carry a gemini fallback model');
-  // Claude stays the preferred provider — the gemini entries are fallbacks only.
-  ok(/premium: 'anthropic',\s*\n\s*deep: 'anthropic'/.test(source), 'anthropic must remain the default premium/deep provider');
+  // Owner ruling 2026-08-12: Gemini is the default on EVERY tier — Anthropic
+  // spend is off until revenue justifies it (env overrides can flip it back).
+  ok(/premium: 'gemini',\s*\n\s*deep: 'gemini'/.test(source), 'gemini must be the default premium/deep provider (owner ruling 2026-08-12)');
 });
 
 group('launch controls');

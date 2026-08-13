@@ -245,8 +245,11 @@ const AI_TIER_MODELS: Record<AIWorkloadTier, Partial<Record<AIProvider, string>>
 const DEFAULT_PROVIDER_BY_TIER: Record<AIWorkloadTier, AIProvider> = {
     fast: 'gemini',
     standard: 'gemini',
-    premium: 'anthropic',
-    deep: 'anthropic',
+    // Owner ruling 2026-08-12: run everything on Gemini — Anthropic spend off
+    // until revenue justifies it. Flip back per-tier via AI_PREMIUM_PROVIDER /
+    // AI_DEEP_PROVIDER env or by reverting this commit.
+    premium: 'gemini',
+    deep: 'gemini',
 };
 
 const PROVIDER_OVERRIDE_ENV: Record<AIWorkloadTier, string> = {
@@ -2709,7 +2712,10 @@ Deno.serve(async (req) => {
         // (~1 search/player/week/format-bucket). It therefore does NOT depend on the
         // generic AI_ALLOW_WEB_SEARCH launch flag; plan entitlement (planAllowsWebSearch)
         // and the master AI kill switch / AI_ENABLED above still govern it.
-        const webSearchFlagOn = envFlag('AI_ALLOW_WEB_SEARCH', false) || type === 'dynasty_read';
+        // dynasty_read's always-on exception removed 2026-08-12 (owner ruling):
+        // web search runs on Anthropic only, and Anthropic spend is off — the
+        // card falls back to the wire feed + engine read. Re-arm via the flag.
+        const webSearchFlagOn = envFlag('AI_ALLOW_WEB_SEARCH', false);
         if (useWebSearch && (!planAllowsWebSearch(aiSession.plan, type) || !webSearchFlagOn)) {
             useWebSearch = false;
             webSearchDisabled = true;
