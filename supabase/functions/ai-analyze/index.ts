@@ -2715,7 +2715,11 @@ Deno.serve(async (req) => {
         // dynasty_read's always-on exception removed 2026-08-12 (owner ruling):
         // web search runs on Anthropic only, and Anthropic spend is off — the
         // card falls back to the wire feed + engine read. Re-arm via the flag.
-        const webSearchFlagOn = envFlag('AI_ALLOW_WEB_SEARCH', false);
+        // HARD OFF — owner ruling 2026-08-14: a leftover AI_ALLOW_WEB_SEARCH=true
+        // secret kept dynasty reads on Claude+web search (~$0.45/call, $6.76 in
+        // one night) after the 2026-08-12 shutdown, so the env flag can no
+        // longer arm it. When Pro sales start, restore the envFlag read below.
+        const webSearchFlagOn = false; // was: envFlag('AI_ALLOW_WEB_SEARCH', false)
         if (useWebSearch && (!planAllowsWebSearch(aiSession.plan, type) || !webSearchFlagOn)) {
             useWebSearch = false;
             webSearchDisabled = true;
