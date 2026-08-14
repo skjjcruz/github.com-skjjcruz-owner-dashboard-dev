@@ -441,7 +441,18 @@ async function getVaultSecret(secretName: string): Promise<string | null> {
     }
 }
 
+// Paid providers UNPLUGGED — owner ruling 2026-08-14: absolutely zero AI
+// spend until Pro sales start. Anthropic and OpenAI both bill per call, and
+// the fallback ladder could reach either when Gemini rate-limits, so both
+// are refused at the single place keys are handed out. Every configured-
+// provider check then fails and no route, env override, or fallback can
+// reach a paid API even with their keys still set in secrets. Gemini stays
+// available (free tier covers current volume). Delete entries from this
+// set at Pro launch to plug providers back in.
+const UNPLUGGED_PROVIDERS: ReadonlySet<AIProvider> = new Set(['anthropic', 'openai'] as AIProvider[]);
+
 async function getProviderSecret(provider: AIProvider): Promise<string | null> {
+    if (UNPLUGGED_PROVIDERS.has(provider)) return null;
     const secretName = providerSecretName(provider);
     return Deno.env.get(secretName) || await getVaultSecret(secretName);
 }
@@ -1113,8 +1124,11 @@ async function reserveAIUsage(args: {
         p_daily_cost_limit: args.limits.dailyCostUsd,
         p_monthly_cost_limit: args.limits.monthlyCostUsd,
         p_estimated_request_cost_usd: args.estimatedRequestCostUsd,
-        p_global_daily_cost_limit: envNumber('AI_GLOBAL_DAILY_COST_LIMIT_USD', 50),
-        p_global_monthly_cost_limit: envNumber('AI_GLOBAL_MONTHLY_COST_LIMIT_USD', 1000),
+        // Zero-spend era defaults (owner ruling 2026-08-14): Gemini-only usage
+        // tracks ~$0.02/day, so $2/day / $20/month is pure runaway protection.
+        // Raise via env or here when Pro sales fund real budgets.
+        p_global_daily_cost_limit: envNumber('AI_GLOBAL_DAILY_COST_LIMIT_USD', 2),
+        p_global_monthly_cost_limit: envNumber('AI_GLOBAL_MONTHLY_COST_LIMIT_USD', 20),
         p_count_request: args.countRequest !== false,
     });
     if (error) {
