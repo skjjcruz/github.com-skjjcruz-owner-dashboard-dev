@@ -215,12 +215,22 @@ const AI_MODELS = {
 const MODEL_COSTS: Record<string, { input: number; output: number; cachedInput?: number }> = {
     'gemini-2.5-flash-lite': { input: 0.10, output: 0.40 },
     'gemini-2.5-flash': { input: 0.30, output: 2.50 },
+    // Gemini fallback-ladder ids (see GEMINI_MODEL_FALLBACKS) — flash-tier
+    // list-price approximations so served-by-fallback calls still track cost.
+    'gemini-3-flash-preview': { input: 0.30, output: 2.50 },
+    'gemini-flash-latest': { input: 0.30, output: 2.50 },
     'gpt-5.4-nano': { input: 0.20, output: 1.25, cachedInput: 0.02 },
     'gpt-5.4-mini': { input: 0.75, output: 4.50, cachedInput: 0.075 },
     'gpt-5.5': { input: 5.00, output: 30.00, cachedInput: 0.50 },
     'claude-sonnet-4-6': { input: 3.00, output: 15.00, cachedInput: 0.30 },
     'claude-opus-4-7': { input: 5.00, output: 25.00, cachedInput: 0.50 },
 };
+
+// Ladder of Gemini ids to try when the configured one 404s (newest first,
+// then the -latest alias, then the previous stable). Pinned per requested
+// model in-memory once a rung answers.
+const GEMINI_MODEL_FALLBACKS = ['gemini-3-flash-preview', 'gemini-flash-latest', 'gemini-2.5-flash'];
+const geminiModelPins = new Map<string, string>();
 
 const AI_TIER_MODELS: Record<AIWorkloadTier, Partial<Record<AIProvider, string>>> = {
     fast: {
@@ -652,24 +662,38 @@ async function callAIProvider(args: {
     if (route.provider === 'gemini') {
         const googleKey = await getProviderSecret('gemini');
         if (!googleKey) throw new Error('GOOGLE_AI_KEY not configured');
-        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${googleKey}`,
-            },
-            body: JSON.stringify({
-                model: route.model,
-                max_tokens: maxTokens,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt },
-                ],
-            }),
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error((err as any).error?.message || `Gemini API error ${res.status}`);
+        // Google retires Gemini model ids per project generation: the owner's
+        // fresh free-tier key 404s on gemini-2.5-* (its generation starts at
+        // Gemini 3 — AI Studio, 2026-08-14) while older projects still serve
+        // them. On 404 walk the ladder and pin whichever id answers, so one
+        // wasted round-trip per cold start at most.
+        const candidates = [geminiModelPins.get(route.model) || route.model, ...GEMINI_MODEL_FALLBACKS]
+            .filter((m, i, a) => a.indexOf(m) === i);
+        let res: Response | null = null;
+        let servedModel = candidates[0];
+        for (const m of candidates) {
+            res = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${googleKey}`,
+                },
+                body: JSON.stringify({
+                    model: m,
+                    max_tokens: maxTokens,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt },
+                    ],
+                }),
+            });
+            servedModel = m;
+            if (res.status !== 404) break; // 404 = unknown model id — try the next rung
+        }
+        if (servedModel !== route.model) geminiModelPins.set(route.model, servedModel);
+        if (!res || !res.ok) {
+            const err = res ? await res.json().catch(() => ({})) : {};
+            throw new Error((err as any).error?.message || `Gemini API error ${res ? res.status : 'unreachable'}`);
         }
         const data = await res.json();
         const usage = (data as any).usage || {};
