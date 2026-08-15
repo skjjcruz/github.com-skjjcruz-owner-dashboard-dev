@@ -58,7 +58,7 @@
         const _phoneKitReady = !!(window.WR && window.WR.HeroCard && window.WR.AssetRow && window.WR.CardList && window.WR.FilterPill && window.WR.FilterSheet);
         const _phone = !!_vp.isPhone && _phoneKitReady;
         const [draftSort, setDraftSort] = useState({ key: 'dhq', dir: -1 });
-        const [draftView, setDraftView] = useState('command'); // 'command' | 'board' | 'mock' | 'live'
+        const [draftView, setDraftView] = useState('board'); // 'command' | 'board' | 'mock' | 'live' — Big Board is the front door (owner ruling 2026-08-15); live-draft auto-open below still outranks it
         const [draftInfo, setDraftInfo] = useState(null);
         const draftVariant = useMemo(() => {
             try {
@@ -121,6 +121,7 @@
         const [boardTeamFilter, setBoardTeamFilter] = useState(''); // '' | NFL team abbr
         const [boardRoundFilter, setBoardRoundFilter] = useState(''); // '' | '1'..'7' | 'UDFA'
         const [boardSort, setBoardSort] = useState({ key: 'dhq', dir: -1 }); // sortable columns
+        const [pendingBoardSort, setPendingBoardSort] = useState(null); // User Board "bake this order" confirm dialog
         // Hide-drafted toggle for the standalone Big Board. Shares the SAME WrStorage key as
         // the Command Center BigBoardPanel (js/draft/big-board.js) so the two boards stay in
         // sync. Default OFF (preserves the always-show + dim/strike behavior).
@@ -1096,6 +1097,7 @@
             return () => { cancelled = true; if (timer) clearTimeout(timer); };
         }, [draftInfo?.draft_id, liveDraftStatus]);
 
+
         // Cloud-shared User Board — the board lived only in this device's
         // localStorage, so a board built on the website never appeared in the
         // native app or on the phone (owner request 2026-08-14). Adopt the
@@ -1615,6 +1617,19 @@
         // Lifted from the Big Board so both the board and the Flash Brief scouting
         // drawer can compute the same value rank + tier + scouting bits per player.
         const isSeasonalDraftCtx = !isRookieDraft;
+
+        // Real market ADP (lab port 2026-08-15): adp-market.js fetches once and
+        // caches ~18h; bump a tick when the map lands after this board's first
+        // paint so the "Mkt ADP" column fills in without a manual refresh.
+        // Redraft-only — the module has no dynasty/rookie signal to offer.
+        const [, bumpAdpTick] = useState(0);
+        useEffect(() => {
+            if (!isSeasonalDraftCtx) return undefined;
+            try { if (typeof window.App?.fetchRedraftAdp === 'function') window.App.fetchRedraftAdp(); } catch (e) { /* column just stays dashed */ }
+            const onAdpLoaded = () => bumpAdpTick(t => t + 1);
+            window.addEventListener('wr:adp-loaded', onAdpLoaded);
+            return () => window.removeEventListener('wr:adp-loaded', onAdpLoaded);
+        }, [isSeasonalDraftCtx]);
         const hasDraftCapital = useCallback((cs = {}) => Number(cs.draftRound) > 0 || Number(cs.draftPick) > 0, []);
         // True once this class's NFL draft is in (any prospect carries a round/pick). Post-draft,
         // a prospect with no capital went undrafted, so "Capital TBD" is reclassified as UDFA.
@@ -3375,10 +3390,10 @@
                         if (boardRoundFilter === 'UDFA') return isTrueUdfa(cs);
                         return String(cs.draftRound) === boardRoundFilter;
                     });
-                    if (boardSort.key) {
-                        dhqBoardPlayers.sort((a, b) => {
+                    // Shared column comparator — used by the research-board view sort
+                    // below AND by the User Board's bake-this-order reorder (toggleSort).
+                    const boardCompare = (k, dir) => (a, b) => {
                             let va, vb;
-                            const k = boardSort.key;
                             if (k === 'dhq') { va = a.dhq; vb = b.dhq; }
                             else if (k === 'name') { va = (a.p.full_name || '').toLowerCase(); vb = (b.p.full_name || '').toLowerCase(); }
                             else if (k === 'pos') { va = normPos(a.p.position) || ''; vb = normPos(b.p.position) || ''; }
@@ -3393,10 +3408,13 @@
                             else if (k === 'size')   { va = parseSizeIn(a.csv?.size) || (a.p?.height || 0); vb = parseSizeIn(b.csv?.size) || (b.p?.height || 0); }
                             else if (k === 'weight') { va = parseFloat(a.csv?.weight) || parseFloat(a.p?.weight) || 0; vb = parseFloat(b.csv?.weight) || parseFloat(b.p?.weight) || 0; }
                             else if (k === 'speed')  { va = parseFloat(a.csv?.speed) || 99; vb = parseFloat(b.csv?.speed) || 99; }
+                            else if (k === 'adp')    { const ga = window.App?.getRedraftAdp?.(String(a.pid)); const gb = window.App?.getRedraftAdp?.(String(b.pid)); va = (ga && ga.adp > 0) ? ga.adp : 9999; vb = (gb && gb.adp > 0) ? gb.adp : 9999; }
                             else { va = 0; vb = 0; }
-                            if (typeof va === 'string') return va < vb ? -boardSort.dir : va > vb ? boardSort.dir : 0;
-                            return ((va || 0) - (vb || 0)) * boardSort.dir;
-                        });
+                            if (typeof va === 'string') return va < vb ? -dir : va > vb ? dir : 0;
+                            return ((va || 0) - (vb || 0)) * dir;
+                    };
+                    if (boardSort.key) {
+                        dhqBoardPlayers.sort(boardCompare(boardSort.key, boardSort.dir));
                     }
 
                     const aiSeedOrder = aiRecommendedOrder.length ? aiRecommendedOrder : draftPoolRows.map(r => r.pid);
@@ -3489,7 +3507,19 @@
 
                     // Compact board renderer (used for both sides)
                     const sortArrow = (key) => boardSort.key === key ? (boardSort.dir === -1 ? ' \u25BC' : ' \u25B2') : '';
-                    const toggleSort = (key) => setBoardSort(prev => prev.key === key ? { ...prev, dir: prev.dir * -1 } : { key, dir: ['name','school','team','rank','tier','draft','speed','age'].includes(key) ? 1 : -1 });
+                    const SORT_ASC_KEYS = ['name','school','team','rank','tier','draft','speed','age','adp'];
+                    const toggleSort = (key) => {
+                        if (boardMode === 'my') {
+                            // User Board: sorting IS a reorder. Bake the column order into
+                            // the board itself (saved + cloud-synced like any edit) behind a
+                            // confirm so a stray header tap can never silently destroy a
+                            // hand-built order. Drag keeps working on the result.
+                            if (!key) return;
+                            setPendingBoardSort(key); // styled DHQ dialog below confirms + applies
+                            return;
+                        }
+                        setBoardSort(prev => prev.key === key ? { ...prev, dir: prev.dir * -1 } : { key, dir: SORT_ASC_KEYS.includes(key) ? 1 : -1 });
+                    };
                     const sortHdr = { cursor: 'pointer', userSelect: 'none' };
                     const renderCompactBoard = (players, isDhq) => {
                         // Auto cross-off players already taken in the live draft (parallel to
@@ -3498,7 +3528,7 @@
                         // above, so this re-renders the instant a pick lands in the live draft.
                         const liveDrafted = liveDraftedPids;
                         const boardGridCols = isSeasonalDraft
-                            ? '58px minmax(220px, 1.25fr) 96px 88px 68px 72px 64px minmax(156px, 0.95fr) 92px'
+                            ? '58px minmax(220px, 1.25fr) 96px 88px 68px 84px 72px 64px minmax(156px, 0.95fr) 92px'
                             : '58px minmax(205px, 1.15fr) minmax(128px, 0.82fr) 88px 64px 58px 82px 64px 58px minmax(156px, 0.95fr) 92px';
                         const boardHeaderCell = (label, key, extra = {}) => (
                             <div onClick={key ? () => toggleSort(key) : undefined} style={{ ...sortHdr, ...extra }}>
@@ -3509,7 +3539,7 @@
                             <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 16, padding: '0 5px', borderRadius: 4, background: bg || 'var(--ov-3, rgba(255,255,255,0.045))', color: color || 'var(--silver)', fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', fontWeight: 800, whiteSpace: 'nowrap' }}>{label}</span>
                         );
                         const snapshotCell = (value, color, extra = {}) => (
-                            <div style={{ padding: '4px 7px', minWidth: 0, ...extra }}>
+                            <div style={{ padding: '4px 7px', minWidth: 0, textAlign: 'center', ...extra }}>
                                 <strong style={{ display: 'block', color: color || 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.72rem', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value || '-'}</strong>
                             </div>
                         );
@@ -3548,14 +3578,17 @@
                             <div style={{ display: 'grid', gridTemplateColumns: boardGridCols, minHeight: '34px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1 }}>
                                 <div style={{ textAlign: 'center' }}>#</div>
                                 {boardHeaderCell('Player', 'name', { padding: '0 8px' })}
-                                {boardHeaderCell(isSeasonalDraft ? 'NFL Team' : 'College', isSeasonalDraft ? 'team' : 'school', { padding: '0 8px' })}
-                                {boardHeaderCell(valueShortLabel, 'dhq', { padding: '0 8px' })}
-                                {boardHeaderCell('Rank', 'rank', { padding: '0 8px' })}
-                                {boardHeaderCell('Tier', 'tier', { padding: '0 8px' })}
-                                {showDraftCapitalColumn && boardHeaderCell('Draft', 'draft', { padding: '0 8px' })}
-                                {showDraftCapitalColumn && boardHeaderCell('Team', 'team', { padding: '0 8px' })}
-                                {boardHeaderCell('Age', 'age', { padding: '0 8px' })}
-                                {boardHeaderCell('Profile', 'size', { padding: '0 8px' })}
+                                {boardHeaderCell(isSeasonalDraft ? 'NFL Team' : 'College', isSeasonalDraft ? 'team' : 'school', { padding: '0 8px', textAlign: 'center' })}
+                                {boardHeaderCell(valueShortLabel, 'dhq', { padding: '0 8px', textAlign: 'center' })}
+                                {boardHeaderCell('Rank', 'rank', { padding: '0 8px', textAlign: 'center' })}
+                                {/* Real market ADP (lab port) — display-only "market says" column,
+                                    redraft boards only; no real dynasty/rookie ADP source exists. */}
+                                {isSeasonalDraft && boardHeaderCell('Mkt ADP', 'adp', { padding: '0 8px', whiteSpace: 'nowrap', textAlign: 'center' })}
+                                {boardHeaderCell('Tier', 'tier', { padding: '0 8px', textAlign: 'center' })}
+                                {showDraftCapitalColumn && boardHeaderCell('Draft', 'draft', { padding: '0 8px', textAlign: 'center' })}
+                                {showDraftCapitalColumn && boardHeaderCell('Team', 'team', { padding: '0 8px', textAlign: 'center' })}
+                                {boardHeaderCell('Age', 'age', { padding: '0 8px', textAlign: 'center' })}
+                                {boardHeaderCell('Profile', 'size', { padding: '0 8px', textAlign: 'center' })}
                                 <div style={{ textAlign: 'center' }}>{isDhq ? 'Open' : 'Board'}</div>
                             </div>
                             {players.map((r, idx) => {
@@ -3683,6 +3716,10 @@
                                         {snapshotCell(isSeasonalDraft ? (team || 'FA') : (college || 'School TBD'), isSeasonalDraft && team ? 'var(--good)' : 'var(--silver)')}
                                         {snapshotCell(r.dhq > 0 ? r.dhq.toLocaleString() : '-', dhqC)}
                                         {snapshotCell(rankStr)}
+                                        {isSeasonalDraft && (() => {
+                                            const adp = typeof window.App?.getRedraftAdp === 'function' ? window.App.getRedraftAdp(String(r.pid)) : null;
+                                            return snapshotCell(adp && typeof adp.adp === 'number' ? adp.adp.toFixed(1) : '-', 'var(--silver)');
+                                        })()}
                                         {snapshotCell(tierStr)}
                                         {showDraftCapitalColumn && snapshotCell(draftStr || 'Capital TBD', draftCol)}
                                         {showDraftCapitalColumn && snapshotCell(team || 'TBD', team ? 'var(--good)' : 'var(--silver)')}
@@ -3800,7 +3837,7 @@
                         { k: 'dhq', label: 'Default Board', sub: valueShortLabel + ' value rank', detail: 'Canonical value order from the value engine.' },
                         // Strategy-fit re-rank lane is an optimizer output → Pro-only lane.
                         ...(isPro ? [{ k: 'ai', label: 'AI Recommended', sub: 'GM strategy fit', detail: 'Re-ranked for your strategy, roster pressure, and league format.' }] : []),
-                        { k: 'my', label: 'User Board', sub: 'editable front office board', detail: myBoardOrder.length ? 'Manual order with your notes, tags, and draft prep.' : (isPro ? 'Starts from AI Recommended, then becomes yours when edited.' : 'Starts from the value order, then becomes yours when edited.') },
+                        { k: 'my', label: 'My Draft Board', sub: 'editable front office board', detail: myBoardOrder.length ? 'Manual order with your notes, tags, and draft prep.' : (isPro ? 'Starts from AI Recommended, then becomes yours when edited.' : 'Starts from the value order, then becomes yours when edited.') },
                     ];
                     const activeBoardInfo = boardModeOptions.find(opt => opt.k === boardMode) || boardModeOptions[0];
                     const allBoardPlayers = boardMode === 'my' ? myBoardPlayers : boardMode === 'ai' ? aiBoardPlayers : dhqBoardPlayers;
@@ -4159,10 +4196,37 @@
                         <div style={{ marginBottom: '14px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 8, color: 'var(--silver)', opacity: 0.65, fontSize: 'var(--text-micro, 0.6875rem)' }}>
                                 <span>{activeBoardInfo.label} - {visibleBoardPlayers.length} visible players</span>
-                                <span>{boardMode === 'my' ? 'Hold ≡ (or drag a row) to reorder - click a player for notes' : 'Switch to User Board to edit rank order'}</span>
+                                <span>{boardMode === 'my' ? 'Hold ≡ (or drag a row) to reorder - click a player for notes' : 'Switch to My Draft Board to edit rank order'}</span>
                             </div>
                             {renderCompactBoard(visibleBoardPlayers, boardMode !== 'my')}
                         </div>
+
+                        {pendingBoardSort && (() => {
+                            const SORT_LABELS = { name: 'Player Name', school: isSeasonalDraft ? 'NFL Team' : 'College', team: 'NFL Team', dhq: valueShortLabel, rank: 'Rank', adp: 'Mkt ADP', tier: 'Tier', draft: 'Draft Capital', age: 'Age', size: 'Profile', speed: 'Speed', weight: 'Weight', pos: 'Position' };
+                            const label = SORT_LABELS[pendingBoardSort] || 'this column';
+                            const applyPendingSort = () => {
+                                const key = pendingBoardSort;
+                                const dir = SORT_ASC_KEYS.includes(key) ? 1 : -1;
+                                const sorted = [...myBoardPlayers].sort(boardCompare(key, dir)).map(r => r.pid);
+                                const inSorted = new Set(sorted.map(String));
+                                const rest = (myOrder || []).filter(pid => !inSorted.has(String(pid)));
+                                setMyBoardOrder([...sorted, ...rest]);
+                                setPendingBoardSort(null);
+                            };
+                            return (
+                                <div onClick={() => setPendingBoardSort(null)} style={{ position: 'fixed', inset: 0, zIndex: 95000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,8,12,0.72)', backdropFilter: 'blur(3px)', padding: '24px' }}>
+                                    <div onClick={e => e.stopPropagation()} style={{ width: 'min(30rem, 100%)', background: 'linear-gradient(180deg, var(--bg-secondary, #14161c) 0%, var(--black, #0b0d12) 100%)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.35))', borderRadius: 14, boxShadow: '0 18px 60px rgba(0,0,0,0.6)', padding: '22px 22px 18px', fontFamily: 'var(--font-body)' }}>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 8 }}>My Draft Board</div>
+                                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--white)', marginBottom: 8 }}>Rearrange your board by {label}?</div>
+                                        <div style={{ fontSize: '0.85rem', lineHeight: 1.55, color: 'var(--silver)', marginBottom: 18 }}>Your current custom order will be replaced with the {label} order. You can still drag players to fine-tune afterward — and this syncs to your other devices like any edit.</div>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                                            <button type="button" onClick={() => setPendingBoardSort(null)} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid var(--ov-6, rgba(255,255,255,0.14))', background: 'transparent', color: 'var(--silver)', fontFamily: 'var(--font-body)', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
+                                            <button type="button" onClick={applyPendingSort} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid var(--acc-line1, rgba(212,175,55,0.5))', background: 'var(--gold, #d4af37)', color: '#0b0d12', fontFamily: 'var(--font-body)', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer' }}>Rearrange Board</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                     </div>
                     );

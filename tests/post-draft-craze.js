@@ -85,7 +85,11 @@ console.log('\nWar Room post-draft protocol contract');
     eq(s.expectedDHQ({ overall: 4 }, { variant: 'rookie' }), 2000, 'overall 4');
   });
   test('expectedDHQ uses replacement floor for redraft K/DEF, slot for skill', () => {
-    ok(s.expectedDHQ({ overall: 50, pos: 'DEF' }, { variant: 'redraft' }) === 760, 'DEF replacement floor');
+    // Replacement floors recalibrated 2026-08-15 to the engine's real K/DEF
+    // scoring range (K 230 / DEF 250) — the old 520/760 floors sat above
+    // genuine engine scores and graded every K/DEF pick as a reach.
+    ok(s.expectedDHQ({ overall: 50, pos: 'DEF' }, { variant: 'redraft' }) === 250, 'DEF replacement floor');
+    ok(s.expectedDHQ({ overall: 60, pos: 'K' }, { variant: 'redraft' }) === 230, 'K replacement floor');
     ok(s.expectedDHQ({ overall: 2, pos: 'WR' }, { variant: 'redraft' }) > 0, 'skill falls through to slot');
   });
   test('expectedDHQ uses $ spent for auction', () => {

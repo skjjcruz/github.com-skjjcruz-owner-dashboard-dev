@@ -31,7 +31,7 @@
     const LANE_LABELS = {
         dhq: { label: 'DHQ Board', short: 'DHQ', sub: 'canonical value' },
         ai:  { label: 'AI Recommended', short: 'AI', sub: 'GM strategy' },
-        my:  { label: 'My Board', short: 'MY', sub: 'front-office prep' },
+        my:  { label: 'My Draft Board', short: 'MY DRAFT BOARD', sub: 'front-office prep' },
     };
 
     const TAG_META = {
@@ -228,6 +228,19 @@
         // For free, treat the Pro-only 'ai' lane as unknown — a persisted
         // activeLane:'ai' must clamp to 'dhq', never auto-open the optimizer lane.
         const activeLane = ((pro || boardLane !== 'ai') && (boardLane === 'my' || lanes[boardLane])) ? boardLane : 'dhq';
+        // Real market ADP (mirrors the Draft tab feeder): redraft drafts only —
+        // no real dynasty/rookie ADP source exists. adp-market.js caches ~18h
+        // and fires wr:adp-loaded when the map lands after first paint.
+        const showAdpCol = state.variant === 'redraft' || state.draftContext?.draftType === 'redraft' || state.draftContext?.leagueFormat?.draftType === 'redraft';
+        const [, bumpAdpTick] = React.useState(0);
+        React.useEffect(() => {
+            if (!showAdpCol) return undefined;
+            try { window.App?.fetchRedraftAdp?.(); } catch (e) { /* column dashes */ }
+            const onAdp = () => bumpAdpTick(t => t + 1);
+            window.addEventListener('wr:adp-loaded', onAdp);
+            return () => window.removeEventListener('wr:adp-loaded', onAdp);
+        }, [showAdpCol]);
+        const adpOf = (pl) => { const g = window.App?.getRedraftAdp?.(String(idOf(pl))); return g && typeof g.adp === 'number' ? g.adp : null; };
         const activeLaneData = lanes[activeLane] || lanes.dhq || { order: [] };
         const activeRanks = React.useMemo(() => rankMap(activeLaneData.order || []), [activeLaneData]);
         const dhqRanks = React.useMemo(() => rankMap(lanes.dhq?.order || []), [lanes.dhq]);
@@ -337,9 +350,11 @@
                 if (sortKey === 'age') return dir * ((ageOf(a) || 99) - (ageOf(b) || 99));
                 if (sortKey === 'team') { const x = nflTeamOf(a) || '', y = nflTeamOf(b) || ''; if (!x !== !y) return x ? -1 : 1; return dir * x.localeCompare(y); }
                 if (sortKey === 'college') { const x = collegeOf(a) || '', y = collegeOf(b) || ''; if (!x !== !y) return x ? -1 : 1; return dir * x.localeCompare(y); }
+                if (sortKey === 'adp') { const x = adpOf(a) ?? 9999, y = adpOf(b) ?? 9999; return dir * (x - y); }
+                if (sortKey === 'rank') return dir * (((a._board && a._board.dhqRank) || 9999) - (((b._board && b._board.dhqRank) || 9999)));
                 return dir * ((b.dhq || 0) - (a.dhq || 0));
             });
-            return sorted.slice(0, 100);
+            return sorted.slice(0, 300); // mirror the Draft tab feeder depth
         }, [decoratedPool, posFilter, search, sortKey, sortDir, hideDrafted]);
 
         // Ask Alex about the board: opens recon chat pre-loaded with the
@@ -352,7 +367,11 @@
 
         const availablePositions = React.useMemo(() => {
             const set = new Set();
-            (state.pool || []).slice(0, 120).forEach(p => { if (p.pos) set.add(normEdPos(p.pos)); });
+            (state.pool || []).forEach(p => { if (p.pos) set.add(normEdPos(p.pos)); });
+            // League-declared positions always get a chip (K / D-ST when the
+            // league rosters them), even when a stale saved pool predates the
+            // K/DEF position floor in buildPool.
+            (typeof window.getLeaguePositions === 'function' ? window.getLeaguePositions() : []).forEach(pos => set.add(pos));
             const priority = { QB: 1, RB: 2, WR: 3, TE: 4, DL: 5, LB: 6, DB: 7, K: 8 };
             const base = Array.from(set).sort((a, b) => (priority[a] || 99) - (priority[b] || 99));
             // League-derived flex groups (FLEX/SFLEX/IDP FLEX…) join the chip
@@ -528,9 +547,9 @@
         // terminal-styled buttons — 1px gold border, near-zero radius, mono
         // micro-caps — rendered as a control row under the player row.
         const moveBtnCss = {
-            flex: '1 1 0',
-            maxWidth: 132,
-            minHeight: 44,
+            flex: '0 0 auto',
+            width: 56,
+            minHeight: 30,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -604,7 +623,7 @@
                         ))}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '7px', minHeight: 18 }}>
-                        <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: MICRO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeLane === 'my' ? 'Hold ≡ and drag to reorder — or tap ▲ / ▼' : laneCopy}</span>
+                        <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: MICRO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeLane === 'my' ? 'Hold ≡ and drag to reorder — syncs with the Draft tab\u2019s My Draft Board' : laneCopy}</span>
                         {pro && activeLane === 'my' && boardContext?.canSeedMyBoardFromAi && (
                             <button onClick={onSeedMyBoardFromAi} style={{ padding: '6px 10px', minHeight: '36px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '4px', cursor: 'pointer', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 700, flexShrink: 0 }}>SEED</button>
                         )}
@@ -655,12 +674,6 @@
                                     })}
                                     </div>
                                     </div>
-                                    {showTouchMove && (
-                                        <div style={{ display: 'flex', gap: 6, padding: '5px 2px 2px' }}>
-                                            <button type="button" aria-label={'Move ' + (p.name || 'player') + ' up'} onClick={e => { e.stopPropagation(); onMovePlayer(p, -1); }} style={moveBtnCss}>▲ Up</button>
-                                            <button type="button" aria-label={'Move ' + (p.name || 'player') + ' down'} onClick={e => { e.stopPropagation(); onMovePlayer(p, 1); }} style={moveBtnCss}>▼ Down</button>
-                                        </div>
-                                    )}
                                 </div>
                             );
                         })}
@@ -819,13 +832,13 @@
 
                 {activeLane === 'my' && (
                     <div style={{ padding: '4px 2px 7px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', opacity: 0.72, fontFamily: FONT_UI, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ fontWeight: 900 }}>{'↕'}</span> {touchReorder ? 'Hold ≡ and drag to reorder — or tap ▲ / ▼' : 'Hold ≡ (or drag a row) to reorder your board'}
+                        <span style={{ fontWeight: 900 }}>{'↕'}</span> {'Hold ≡ and drag to reorder your board'}
                     </div>
                 )}
 
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: (activeLane === 'my' ? '38px' : '22px') + ' minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 44px',
+                    gridTemplateColumns: (activeLane === 'my' ? '38px' : '22px') + ' minmax(0,1.3fr) 44px 34px 48px 42px' + (showAdpCol ? ' 46px' : '') + ' 44px',
                     gap: '5px',
                     alignItems: 'center',
                     padding: '0 3px 4px 5px',
@@ -835,9 +848,10 @@
                     {colHeader('board', '#', 'right')}
                     {colHeader('name', 'Player', 'left')}
                     {colHeader('team', 'Team', 'left')}
-                    {colHeader('college', 'College', 'left')}
                     {colHeader('pos', 'Pos', 'center')}
                     {colHeader('dhq', 'DHQ', 'right')}
+                    {colHeader('rank', 'Rank', 'right')}
+                    {showAdpCol && colHeader('adp', 'ADP', 'right')}
                     {(isUserTurn || state.overrideMode || state.mode === 'manual') && <span />}
                 </div>
 
@@ -883,11 +897,11 @@
                                 }}
                                 style={{
                                     display: 'grid',
-                                    gridTemplateColumns: (activeLane === 'my' ? '38px' : '22px') + ' minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 44px',
+                                    gridTemplateColumns: (activeLane === 'my' ? '38px' : '22px') + ' minmax(0,1.3fr) 44px 34px 48px 42px' + (showAdpCol ? ' 46px' : '') + ' 44px',
                                     gap: '5px',
                                     alignItems: 'center',
                                     padding: '3px 3px 3px 0',
-                                    borderBottom: showTouchMove ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))',
+                                    borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))',
                                     borderLeft: b.tier ? '2px solid ' + tCol : '2px solid transparent',
                                     paddingLeft: '5px',
                                     cursor: activeLane === 'my' && !p._drafted ? 'grab' : 'pointer',
@@ -934,9 +948,10 @@
                                     )}
                                 </div>
                                 <span title={nflTeam} style={{ color: 'var(--silver)', opacity: 0.78, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nflTeam || '—'}</span>
-                                <span title={college} style={{ color: 'var(--silver)', opacity: 0.7, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{college || '—'}</span>
                                 <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '1px 5px', borderRadius: '3px', background: wrAlpha(posColor, '22'), color: posColor, textAlign: 'center', fontFamily: FONT_UI }}>{normEdPos(p.pos)}</span>
                                 <span style={{ color: col, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, fontFamily: FONT_MONO, textAlign: 'right' }}>{fmt(p.dhq)}</span>
+                                <span style={{ color: 'var(--silver)', opacity: 0.85, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, textAlign: 'right' }}>{b.dhqRank ? '#' + b.dhqRank : '—'}</span>
+                                {showAdpCol && <span style={{ color: 'var(--silver)', opacity: 0.85, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, textAlign: 'right' }}>{(() => { const av = adpOf(p); return av != null ? av.toFixed(1) : '—'; })()}</span>}
                                 {(isUserTurn || state.overrideMode || state.mode === 'manual') && (
                                     <button
                                         onClick={e => { e.stopPropagation(); onDraft(p); }}
@@ -961,27 +976,6 @@
                                     >{state.mode === 'live-sync' && state.overrideMode ? 'APPLY' : state.mode === 'manual' ? 'PICK' : (state.overrideMode ? 'FORCE' : 'DRAFT')}</button>
                                 )}
                             </div>
-                            {showTouchMove && (
-                                <div style={{
-                                    display: 'flex',
-                                    gap: 6,
-                                    padding: '4px 4px 8px 27px',
-                                    borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))',
-                                }}>
-                                    <button
-                                        type="button"
-                                        aria-label={'Move ' + (p.name || 'player') + ' up'}
-                                        onClick={e => { e.stopPropagation(); onMovePlayer(p, -1); }}
-                                        style={moveBtnCss}
-                                    >▲ Up</button>
-                                    <button
-                                        type="button"
-                                        aria-label={'Move ' + (p.name || 'player') + ' down'}
-                                        onClick={e => { e.stopPropagation(); onMovePlayer(p, 1); }}
-                                        style={moveBtnCss}
-                                    >▼ Down</button>
-                                </div>
-                            )}
                             </React.Fragment>
                         );
                     })}

@@ -582,10 +582,27 @@
         return opts.fallback || 'startup';
     }
 
+    // Grading replacement level for K/DEF picks (expectedDHQ only — NOT a
+    // pool value). Calibrated to the engine's real kicker range (~90-370 on
+    // the owner's league, 2026-08-15): a mid-pool starter grades ~1.0, elite
+    // legs grade as surplus, JAG legs as mild reaches. DEF sits on the same
+    // provisional scale until engine DEF data says otherwise.
     function redraftPositionBaseline(pos, variant) {
         if (variant !== 'redraft' && variant !== 'best_ball') return 0;
-        if (pos === 'DEF') return 760;
-        if (pos === 'K') return 520;
+        if (pos === 'DEF') return 250;
+        if (pos === 'K') return 230;
+        return 0;
+    }
+    // Pool fallback for a K/DEF the engine hasn't scored yet. MUST stay
+    // BELOW the engine's real scoring range (~90+): the old 520/760
+    // placeholders outranked genuine engine scores, so placeholder-valued
+    // retired legs led the board and the pick deck (owner report
+    // 2026-08-15). Low floors also park unscored K/DEF at the bottom of the
+    // board — where those positions actually get drafted.
+    function redraftPoolFloor(pos, variant) {
+        if (variant !== 'redraft' && variant !== 'best_ball') return 0;
+        if (pos === 'DEF') return 70;
+        if (pos === 'K') return 60;
         return 0;
     }
 
@@ -762,7 +779,7 @@
             ? window.getLeaguePositions({ asSet: true })
             : new Set(['QB','RB','WR','TE','K','DEF']);
         const src = playersData || window.S?.players || {};
-        const pool = Object.entries(src)
+        let pool = Object.entries(src)
             .filter(([, p]) => VALID.has(normPos(p.position)) && p.status !== 'Inactive' && (p.first_name || p.full_name))
             .map(([pid, p]) => {
                 const name = p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim();
@@ -770,7 +787,7 @@
                 const resolved = getDHQ(pid, p, name);
                 const yearsExpRaw = p.years_exp ?? p.yearsExp;
                 const yearsExp = Number.isFinite(Number(yearsExpRaw)) ? Number(yearsExpRaw) : null;
-                const fallbackValue = redraftPositionBaseline(pos, variant);
+                const fallbackValue = redraftPoolFloor(pos, variant);
                 const dhq = resolved.value || fallbackValue;
                 return {
                     pid,
@@ -788,12 +805,73 @@
                     val: dhq,
                     source: resolved.value ? resolved.source : (fallbackValue ? 'redraft-position-baseline' : resolved.source),
                     csv: null,
+                    searchRank: Number(p.search_rank) || 9999999,
+                    depthOrder: Number(p.depth_chart_order) || 99,
                     photoUrl: 'https://sleepercdn.com/content/nfl/players/thumb/' + pid + '.jpg',
                 };
             })
             .filter(p => p.dhq > 0)
-            .sort((a, b) => b.dhq - a.dhq)
-            .slice(0, maxSize);
+            .sort((a, b) => b.dhq - a.dhq);
+        // Kicker universe = each NFL team's depth-chart starter, nothing else
+        // (owner ruling 2026-08-15). Retired/FA legs and backups leave the
+        // pool ENTIRELY — engine-scored or not — so they can never appear on
+        // a board or in the pick deck. Depth 1 wins each team; search_rank
+        // popularity settles camp battles.
+        if (VALID.has('K')) {
+            const kStarterByTeam = {};
+            pool.forEach(p => {
+                if (p.pos !== 'K' || !p.team || p.team === 'FA') return;
+                const cur = kStarterByTeam[p.team];
+                const better = !cur
+                    || (p.depthOrder || 99) < (cur.depthOrder || 99)
+                    || ((p.depthOrder || 99) === (cur.depthOrder || 99) && (p.searchRank || 9999999) < (cur.searchRank || 9999999));
+                if (better) kStarterByTeam[p.team] = p;
+            });
+            const kStarters = new Set(Object.values(kStarterByTeam).map(p => String(p.pid)));
+            pool = pool.filter(p => p.pos !== 'K' || kStarters.has(String(p.pid)));
+        }
+        // Position floor: K/DEF values sit far below the offense curve, so a
+        // straight top-N value cut produced a board with no kickers or
+        // defenses (owner report 2026-08-15). Keep the value cut, then
+        // guarantee the top squads/legs a seat — mirrors the Draft tab
+        // feeder's position coverage. VALID above already scoped positions
+        // to what this league rosters.
+        {
+            const cut = pool.slice(0, maxSize);
+            const inCut = new Set(cut.map(p => String(p.pid)));
+            // K/DEF all share a flat baseline value, so a value cut can't rank
+            // them. The real universe is one starter per NFL team (owner
+            // ruling 2026-08-15): all 32 team defenses, and each team's
+            // starting kicker read off Sleeper's depth chart (depth 1, with
+            // search_rank popularity as the camp-battle tiebreak).
+            const addRow = (p) => { cut.push(p); inCut.add(String(p.pid)); };
+            // Order floor rows by market ADP when the cached map has it, so
+            // the board lists the kickers/defenses people actually draft
+            // first; popularity (search_rank) breaks the rest.
+            const kdAdp = (p) => {
+                const g = (typeof window !== 'undefined' && window.App && typeof window.App.getRedraftAdp === 'function')
+                    ? window.App.getRedraftAdp(String(p.pid)) : null;
+                return g && g.adp > 0 ? g.adp : 100000;
+            };
+            // Engine kicker/defense scores (App.LI.playerScores — the same
+            // database the Analytics table shows) outrank everything when
+            // loaded; market ADP then popularity break baseline ties for
+            // pools built before the league engine finishes loading.
+            const kdOrder = (x, y) => ((y.dhq || 0) - (x.dhq || 0)) || (kdAdp(x) - kdAdp(y)) || ((x.searchRank || 9999999) - (y.searchRank || 9999999));
+            // Defenses: the 32 team units, complete by definition.
+            pool.filter(p => p.pos === 'DEF' && !inCut.has(String(p.pid))).sort(kdOrder).forEach(addRow);
+            // Kickers: the depth-chart starter for every team; free agents skip.
+            const kByTeam = {};
+            pool.filter(p => p.pos === 'K' && p.team && p.team !== 'FA').forEach(p => {
+                const cur = kByTeam[p.team];
+                const better = !cur
+                    || (p.depthOrder || 99) < (cur.depthOrder || 99)
+                    || ((p.depthOrder || 99) === (cur.depthOrder || 99) && (p.searchRank || 9999999) < (cur.searchRank || 9999999));
+                if (better) kByTeam[p.team] = p;
+            });
+            Object.values(kByTeam).sort(kdOrder).forEach(p => { if (!inCut.has(String(p.pid))) addRow(p); });
+            pool = cut;
+        }
 
         // Synthetic consensusRank for reach/steal detection in startup mode —
         // index in the DHQ-sorted pool is the "consensus" rank order.

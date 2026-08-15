@@ -242,6 +242,54 @@
         };
     }
 
+    // Seasonal saves (redraft/best_ball/startup) bake their player pool at
+    // creation, so pool-builder fixes never reach an already-saved room —
+    // owner report 2026-08-15: a mock kept its retired-kicker pool after the
+    // starter-only kicker rebuild shipped, while the Draft tab's feeder
+    // (which rebuilds every load) showed the fixed list. Rebuild the pool
+    // with the CURRENT builder on every resume — minus players already
+    // drafted — so the live room always mirrors the feeder. The size guard
+    // protects saved pools from an engine that hasn't scored yet (a cold
+    // load would otherwise swap a full board for a near-empty one).
+    function refreshSeasonalPoolFromEngine(saved, stateFns, playersData) {
+        const seasonal = saved && (saved.variant === 'redraft' || saved.variant === 'best_ball' || saved.variant === 'startup');
+        if (!seasonal || saved.phase === 'complete' || !stateFns?.buildPool) return saved;
+        let freshPool = null;
+        try {
+            const totalPicks = Number(saved.rounds || 0) * Number(saved.leagueSize || 0);
+            freshPool = stateFns.buildPool({
+                variant: saved.variant,
+                playersData,
+                maxSize: saved.variant === 'redraft' ? Math.max(300, totalPicks + 80) : 200,
+            });
+        } catch (e) {}
+        const savedSize = (saved.originalPool && saved.originalPool.length) || (saved.pool && saved.pool.length) || 0;
+        if (!freshPool || freshPool.length < 100 || freshPool.length < savedSize * 0.5) return saved;
+        const drafted = {};
+        (saved.picks || []).forEach(p => { if (p?.pid) drafted[p.pid] = (drafted[p.pid] || 0) + 1; });
+        const copies = Math.max(1, Number(saved.playerCopies) || 1);
+        // Drafted names NEVER leave the board — they show struck through
+        // (big-board re-adds them from originalPool). Carry over the old row
+        // for any drafted player the fresh builder no longer includes (junk
+        // pick from a pre-fix pool, or a player who fell below the rebuilt
+        // cut) so his lined-through row survives the rebuild.
+        const freshIds = new Set(freshPool.map(p => String(p?.pid)));
+        const oldRows = new Map();
+        [...(saved.originalPool || []), ...(saved.pool || [])].forEach(p => {
+            if (p?.pid != null && !oldRows.has(String(p.pid))) oldRows.set(String(p.pid), p);
+        });
+        const carryover = Object.keys(drafted)
+            .filter(pid => !freshIds.has(String(pid)) && oldRows.has(String(pid)))
+            .map(pid => oldRows.get(String(pid)));
+        const fullPool = freshPool.concat(carryover);
+        if (window.wrLog) window.wrLog('cc.seasonalPoolRefresh', { variant: saved.variant, size: freshPool.length, picks: (saved.picks || []).length, carryover: carryover.length });
+        return {
+            ...saved,
+            pool: fullPool.filter(p => p?.pid != null && (drafted[p.pid] || 0) < copies),
+            originalPool: fullPool.slice(),
+        };
+    }
+
     function DraftCommandCenter({ playersData, myRoster, currentLeague, draftRounds: propRounds, forcedMode, autoStartLiveToken }) {
         const stateFns = window.DraftCC.state;
 
@@ -519,6 +567,7 @@
                 let saved = stateFns.loadFromLocal(currentLeague?.league_id || currentLeague?.id, forcedMode);
                 if (saved && saved.phase !== 'setup') {
                     saved = refreshRookieValuesFromEngine(saved, stateFns, playersData);
+                    saved = refreshSeasonalPoolFromEngine(saved, stateFns, playersData);
                     // Recompose personas — we strip them on save, so rehydrate from the live DNA map
                     const leagueId = currentLeague?.league_id || currentLeague?.id || '';
                     let draftDnaMap = {};
@@ -3587,6 +3636,47 @@
             return m;
         }, [rosterRows]);
 
+        // Lineup slots (owner ask 2026-08-15, modeled on Sleeper's team view):
+        // the league's actual starting slots plus bench/IR/taxi counts,
+        // filling as picks land so open QB/RB/BN requirements stay visible.
+        const lineupSlots = React.useMemo(() => {
+            const league = window.S?.leagues?.find(l => l.league_id === window.S?.currentLeagueId) || window.S?.league || {};
+            const rp = (league.roster_positions || []).map(x => String(x || '').toUpperCase());
+            if (!rp.length) return null;
+            const DEFS = {
+                QB: { label: 'QB', elig: ['QB'] }, RB: { label: 'RB', elig: ['RB'] },
+                WR: { label: 'WR', elig: ['WR'] }, TE: { label: 'TE', elig: ['TE'] },
+                K: { label: 'K', elig: ['K'] }, DEF: { label: 'D/ST', elig: ['DEF'] },
+                DL: { label: 'DL', elig: ['DL'] }, LB: { label: 'LB', elig: ['LB'] }, DB: { label: 'DB', elig: ['DB'] },
+                FLEX: { label: 'FLX', elig: ['RB', 'WR', 'TE'] },
+                SUPER_FLEX: { label: 'SFLX', elig: ['QB', 'RB', 'WR', 'TE'] },
+                REC_FLEX: { label: 'WRT', elig: ['WR', 'TE'] },
+                WRRB_FLEX: { label: 'W/R', elig: ['RB', 'WR'] },
+                IDP_FLEX: { label: 'IDP', elig: ['DL', 'LB', 'DB'] },
+            };
+            const starters = [];
+            let benchCount = 0, irCount = 0, taxiCount = 0;
+            rp.forEach(raw => {
+                if (raw === 'BN') { benchCount++; return; }
+                if (raw === 'IR') { irCount++; return; }
+                if (raw === 'TAXI') { taxiCount++; return; }
+                const def = DEFS[raw] || { label: raw, elig: [raw] };
+                starters.push({ label: def.label, elig: def.elig, badge: def.elig[0], player: null });
+            });
+            const sorted = [...rosterRows].sort((a, b) => (b.dhq || 0) - (a.dhq || 0));
+            const taken = new Set();
+            // Exact-position slots claim players first, then flex slots — both
+            // best-value-first, mirroring how an owner actually fills a lineup.
+            [starters.filter(sl => sl.elig.length === 1), starters.filter(sl => sl.elig.length > 1)].forEach(group => {
+                group.forEach(sl => {
+                    const row = sorted.find(r => !taken.has(r) && sl.elig.includes(r.pos));
+                    if (row) { sl.player = row; taken.add(row); }
+                });
+            });
+            const bench = sorted.filter(r => !taken.has(r));
+            return { starters, benchCount, irCount, taxiCount, bench };
+        }, [rosterRows]);
+
         const totalDhq = rosterRows.reduce((sum, r) => sum + (r.dhq || 0), 0);
         const pickDhq = myPicks.reduce((sum, p) => sum + (p.dhq || 0), 0);
         const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'].filter(pos => grouped[pos]?.length)
@@ -3620,6 +3710,42 @@
                 </div>
 
                 <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', paddingRight: '3px' }}>
+                    {lineupSlots && (
+                        <div style={{ marginBottom: '10px' }}>
+                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Lineup</div>
+                            {lineupSlots.starters.map((sl, i) => (
+                                <div key={'slot' + i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 2px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))' }}>
+                                    <span style={{ width: 36, textAlign: 'center', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '2px 0', borderRadius: 4, background: (posColors[sl.badge] || 'var(--k-666666, #666666)') + '22', color: posColors[sl.badge] || 'var(--silver)', flexShrink: 0 }}>{sl.label}</span>
+                                    {sl.player
+                                        ? <span style={{ flex: 1, minWidth: 0, fontSize: '0.72rem', color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortName(sl.player.name)}{sl.player.isPick ? <span style={{ color: 'var(--k-2ecc71, #2ecc71)', marginLeft: 5, fontSize: 'var(--text-micro, 0.6875rem)' }}>{sl.player.source}</span> : null}</span>
+                                        : <span style={{ flex: 1, fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.4 }}>Empty</span>}
+                                    {sl.player ? <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)' }}>{fmt(sl.player.dhq)}</span> : null}
+                                </div>
+                            ))}
+                            {lineupSlots.benchCount > 0 && (
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '8px 0 4px' }}>Bench</div>
+                            )}
+                            {Array.from({ length: lineupSlots.benchCount }, (_, bi) => {
+                                const row = lineupSlots.bench[bi] || null;
+                                return (
+                                    <div key={'bn' + bi} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 2px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))' }}>
+                                        <span style={{ width: 36, textAlign: 'center', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '2px 0', borderRadius: 4, background: 'var(--ov-3, rgba(255,255,255,0.045))', color: 'var(--silver)', flexShrink: 0 }}>BN</span>
+                                        {row
+                                            ? <span style={{ flex: 1, minWidth: 0, fontSize: '0.72rem', color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortName(row.name)}{row.isPick ? <span style={{ color: 'var(--k-2ecc71, #2ecc71)', marginLeft: 5, fontSize: 'var(--text-micro, 0.6875rem)' }}>{row.source}</span> : null}</span>
+                                            : <span style={{ flex: 1, fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.4 }}>Empty</span>}
+                                        {row ? <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)' }}>{fmt(row.dhq)}</span> : null}
+                                    </div>
+                                );
+                            })}
+                            {(lineupSlots.irCount > 0 || lineupSlots.taxiCount > 0 || lineupSlots.bench.length > lineupSlots.benchCount) && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 2px 0', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.75 }}>
+                                    {lineupSlots.irCount ? <span>IR {lineupSlots.irCount}</span> : null}
+                                    {lineupSlots.taxiCount ? <span>{lineupSlots.irCount ? '\u00B7 ' : ''}Taxi {lineupSlots.taxiCount}</span> : null}
+                                    {lineupSlots.bench.length > lineupSlots.benchCount ? <span>{'\u00B7'} +{lineupSlots.bench.length - lineupSlots.benchCount} overflow</span> : null}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Build By Position</div>
                     {positions.length === 0 && (
                         <div style={{ padding: '12px', textAlign: 'center', color: 'var(--silver)', opacity: 0.45, fontSize: '0.7rem' }}>Your mock picks will appear here.</div>
