@@ -144,6 +144,18 @@ const WIDGET_MODULES = {
         clickTarget: { sm: 'trades', md: 'trades' },
         pro: true, proFeature: 'faab_intelligence', formatFlag: null,
     },
+    // FAAB Command (lab port 2026-08-16): the FA tab's league-aware bid plan,
+    // auto-picking the top wire target so it works without opening FA first.
+    'faab-command': {
+        label: 'FAAB Command',
+        icon: '💰',
+        description: 'League-aware bid plan for the top add on the wire',
+        accent: () => T().color?.('gold') || 'var(--gold, #d4af37)',
+        metrics: [],
+        sizes: ['sm', 'md', 'lg'],
+        clickTarget: { sm: 'fa', md: 'fa', lg: 'fa' },
+        pro: true, proFeature: 'faab_intelligence', formatFlag: null,
+    },
     'draft-capital': {
         label: 'Draft Capital',
         icon: '🎯',
@@ -479,7 +491,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
 
                 {/* Step 1: Module grid — 3×2 compact, no scroll */}
                 {step === 'module' && (
-                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px' }}>
+                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px', overflowY: 'auto', minHeight: 0, WebkitOverflowScrolling: 'touch' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px' }}>
                             {Object.entries(WIDGET_MODULES).map(([key, m]) => (
                                 <button key={key}
@@ -509,7 +521,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
 
                 {/* Step 2: Size picker — compact, no scroll */}
                 {step === 'size' && mod && (
-                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px' }}>
+                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px', overflowY: 'auto', minHeight: 0, WebkitOverflowScrolling: 'touch' }}>
                         {/* Module info — compact */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', padding: '10px 14px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px' }}>
                             <span style={{ fontSize: '1.4rem' }}>{mod.icon}</span>
@@ -1731,6 +1743,12 @@ function DashboardPanel({
             return React.createElement(MRW, {
                 size, myRoster, rankedTeams, sleeperUserId, currentLeague,
                 playersData, setActiveTab, navigateWidget,
+            });
+        }
+        // FAAB Command -> FaabCommandWidget (js/widgets/faab-command.js)
+        if (moduleKey === 'faab-command' && typeof window.FaabCommandWidget === 'function') {
+            return React.createElement(window.FaabCommandWidget, {
+                size, myRoster, currentLeague, playersData, setActiveTab, navigateWidget,
             });
         }
         // Draft Capital → DraftCapitalWidget (js/widgets/draft-capital.js)
