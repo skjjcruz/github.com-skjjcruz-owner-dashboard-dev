@@ -241,7 +241,10 @@ test('existing module components consume the league skin contract for labels and
   sourceHas(dashboardSrc, 'League {valueShortLabel}', 'Dashboard league value label must be skin-aware');
   sourceHas(compareSrc, 'const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || \'DHQ\';', 'Compare must use skin value vocabulary');
   sourceHas(compareSrc, 'const valueLabel = resolvedLeagueSkin?.vocabulary?.valueLabel || \'DHQ Value\';', 'Compare must use the full skin value label');
-  sourceHas(draftRoomSrc, 'const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || \'DHQ\';', 'Draft room must use skin value vocabulary');
+  // Owner ruling 2026-08-15: the draft room pins DHQ instead of consuming the
+  // skin vocabulary — redraft's 'ROS' label read as a different stat on the
+  // board. Other surfaces (dashboard/compare/my-team) stay skin-aware.
+  sourceHas(draftRoomSrc, "const valueShortLabel = 'DHQ';", 'Draft room pins the DHQ value label');
   sourceHas(draftRoomSrc, "const _draftCapitalLabel = skinFeatures.showFuturePicks === false ? 'draft capital' : 'future capital';", 'Draft room copy must adapt future-pick language');
   sourceHas(draftRoomSrc, 'skinFeatures.showFuturePicks === false ? [leagueSeason] : [leagueSeason, leagueSeason + 1, leagueSeason + 2]', 'Draft room pick-year model must hide future years in redraft');
   sourceHas(draftRoomSrc, 'futureCapitalRows.length > 0', 'Draft room must hide empty future-pick controls');

@@ -572,7 +572,10 @@
     //              the same card (row tap is the only toggle; children
     //              clicks don't re-toggle).
     //   ...rest  — forwarded to the card root (data-* hooks etc.).
-    function AssetRow({ pos, name, tag, slots, verdict, onClick, expanded, children, accent, ...rest }) {
+    // `struck` lines through the name — the phone-card analog of the desktop
+    // tables' drafted strikethrough, so a picked player reads as gone on
+    // every tier (owner ask 2026-08-15).
+    function AssetRow({ pos, name, tag, slots, verdict, onClick, expanded, children, accent, struck, ...rest }) {
         const tint = POS_TINTS[String(pos || '').toUpperCase()] || { bg: 'var(--ov-4, rgba(255,255,255,0.06))', fg: 'var(--silver, #BDB8AD)' };
         const borderColor = accent === 'gold' ? 'rgba(212,175,55,0.4)'
             : accent === 'risk' ? 'rgba(240,165,0,0.4)'
@@ -608,7 +611,7 @@
                     }
                 }, pos),
                 h('div', { style: { flex: 1, minWidth: 0 } },
-                    h('div', { style: { fontFamily: 'var(--font-body, "DM Sans", sans-serif)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--white)', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, name),
+                    h('div', { style: { fontFamily: 'var(--font-body, "DM Sans", sans-serif)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--white)', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: struck ? 'line-through' : 'none' } }, name),
                     tag != null && h('div', { style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 500, color: 'var(--text-muted, #8B8B96)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '1px' } }, tag)
                 ),
                 h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 } },
@@ -618,10 +621,13 @@
                         h('div', { style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: s.strong ? 700 : 500, color: s.strong ? 'var(--gold)' : 'var(--text-muted, #55555f)', textTransform: 'uppercase', letterSpacing: '0.02em' } }, s.label),
                         h('div', { style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: s.strong ? '0.98rem' : '0.8rem', fontWeight: s.strong ? 700 : 600, color: s.strong ? 'var(--gold)' : toneColor(s.tone) } }, s.value != null && s.value !== '' ? s.value : '—')
                     )),
-                    // Verdict clamp (owner iPhone pass 2026-07-12): an unclamped
-                    // chip here squeezed the name column to ~2 chars on 375px
-                    // rows with three slots — cap and ellipsize.
-                    verdict ? h('div', { style: { maxWidth: '92px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 } }, verdict) : null,
+                    // Verdict clamp (owner iPhone pass 2026-07-12, widened 2026-08-09):
+                    // an unclamped chip here squeezed the name column to ~2 chars on
+                    // 375px rows with three slots — cap and ellipsize. 92px cut off
+                    // two-word verdicts mid-word ("Build Around" → "BUILD AROUN…");
+                    // 108px is still well short of the original bug's threshold but
+                    // fits the longest current verdict label in full.
+                    verdict ? h('div', { style: { maxWidth: '108px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 } }, verdict) : null,
                     h('span', { 'aria-hidden': 'true', style: { color: 'var(--text-muted, #55555f)', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: '0.9rem', fontWeight: 600, transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' } }, '›')
                 )
             ),
