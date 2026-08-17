@@ -24,6 +24,10 @@ assert(Array.isArray(landing.platforms?.badges) && landing.platforms.badges.leng
 assert(landing.auth?.signinSubmit, 'landing auth sign-in label is required');
 
 const html = fs.readFileSync(landingPath, 'utf8');
-assert(html.includes('js/landing-content.js'), 'landing.html must load js/landing-content.js');
+// Owner ruling 2026-08-17 (marketing-page swap): the new landing page is
+// self-contained and does NOT load js/landing-content.js — the JSON deck
+// stays valid for the editor pipeline (asserted above) but must no longer
+// repaint the live page into an older design.
+assert(!html.includes('js/landing-content.js'), 'swapped landing.html must not load js/landing-content.js');
 
 console.log('landing content contract ok');
