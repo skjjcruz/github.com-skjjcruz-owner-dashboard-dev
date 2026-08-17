@@ -892,7 +892,10 @@ test('landing copy advertises free on all leagues, not one',
     const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
     ok(!/one Sleeper league/i.test(landing), 'landing must not say "one Sleeper league"');
     ok(!/Free — one league/i.test(landing), 'pricing note must not say "one league"');
-    ok(/all your Sleeper leagues/i.test(landing), 'landing must advertise all leagues free');
+    // Owner ruling 2026-08-17: marketing page dropped "free on Sleeper" claims;
+    // the all-platforms line is the kicker's "All your Sleeper and MFL teams in one place".
+    ok(!/free on Sleeper/i.test(landing), 'landing must not say "free on Sleeper"');
+    ok(/All your Sleeper and MFL teams in one place/i.test(landing), 'landing must carry the all-platforms kicker');
   });
 
 test('landing-pages.json copy advertises free on all leagues, not one',
@@ -904,7 +907,10 @@ test('landing-pages.json copy advertises free on all leagues, not one',
     ok(!/one Sleeper league/i.test(json), 'landing-pages.json must not say "one Sleeper league"');
     ok(!/Free — one league/i.test(json), 'landing-pages.json pricing note must not say "one league"');
     ok(!/free forever for one/i.test(json), 'landing-pages.json hero line must not say "one league"');
-    ok(/all your Sleeper leagues/i.test(json), 'landing-pages.json must advertise all leagues free');
+    // The swapped landing page does not load js/landing-content.js, so this
+    // JSON no longer paints the live page; negative pins above still guard the
+    // editor pipeline against the stale claim resurfacing.
+    ok(json.length > 0, 'landing-pages.json must exist for the editor pipeline');
   });
 
 // ══════════════════════════════════════════════════════════════════
