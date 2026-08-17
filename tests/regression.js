@@ -192,7 +192,7 @@ test('GM strategy saves through the canonical app storage used by the header', (
 });
 
 test('league format skin loads early and is published to every module surface', () => {
-  sourceHas(indexHtml, '<script src="js/league-skin.js?v=20260702bye1"></script>', 'league skin script must load after core and before modules');
+  sourceHas(indexHtml, '<script src="js/league-skin.js?v=20260817chp1"></script>', 'league skin script must load after core and before modules');
   sourceHas(leagueSkinSrc, 'App.LeagueSkin = api;', 'league skin must expose window.App.LeagueSkin');
   sourceHas(leagueSkinSrc, 'WR.LeagueSkin = api;', 'league skin must expose window.WR.LeagueSkin');
   sourceHas(leagueSkinSrc, "appLabel: 'Dynasty HQ'", 'league skin must preserve the Dynasty HQ brand');
