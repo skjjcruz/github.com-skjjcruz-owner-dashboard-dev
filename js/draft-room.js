@@ -23,6 +23,7 @@
                 ai: b.aiOrder || [],
                 tags: b.tags || {},
                 notes: b.notes || {},
+                plans: b.roundPlans || {},
                 drafted: (b.drafted || []).slice().sort(),
                 lane: b.activeLane || b.boardMode || 'dhq',
             });
@@ -118,6 +119,8 @@
         });
         const [boardNotes, setBoardNotes] = useState({});
         const [boardTags, setBoardTags] = useState({}); // pid -> 'target'|'avoid'|'sleeper'|'must'
+        const [roundPlans, setRoundPlans] = useState({}); // round -> ['RB','WR'] — position targets on the round breaker lines
+        const [openPlanRound, setOpenPlanRound] = useState(null); // which round line has its position picker expanded
         const [boardMode, setBoardMode] = useState('dhq'); // 'dhq' | 'ai' | 'my'
         const [myBoardOrder, setMyBoardOrder] = useState([]); // custom ordered pid array
         const [boardPosFilter, setBoardPosFilter] = useState(''); // '' | 'QB' | 'RB' | 'WR' | 'TE' | 'DL' | 'LB' | 'DB'
@@ -818,6 +821,7 @@
                 setDraftedPids(new Set());
                 setBoardNotes({});
                 setBoardTags({});
+                setRoundPlans({});
                 setMyBoardOrder([]);
                 setBoardMode('dhq');
             }
@@ -828,6 +832,7 @@
             if (boardData) {
                 if (boardData.tags) setBoardTags(boardData.tags);
                 if (boardData.notes) setBoardNotes(boardData.notes);
+                if (boardData.roundPlans) setRoundPlans(boardData.roundPlans);
                 if (boardData.drafted) setDraftedPids(new Set(boardData.drafted));
                 if (boardData.myOrder) setMyBoardOrder(boardData.myOrder);
                 if (['dhq', 'ai', 'my'].includes(boardData.activeLane || boardData.boardMode)) setBoardMode(boardData.activeLane || boardData.boardMode);
@@ -982,6 +987,7 @@
             const payload = {
                 tags: boardTags,
                 notes: boardNotes,
+                roundPlans,
                 drafted: Array.from(draftedPids),
                 aiOrder: aiRecommendedOrder,
                 myOrder: myBoardOrder,
@@ -1019,10 +1025,14 @@
                     try {
                         const lid = currentLeague?.league_id || currentLeague?.id || leagueKey;
                         if (lid) window.OD?.saveLeagueDoc?.(lid, 'bigboard', { key: boardStorageKey, data: stored });
+                        // Big Board cloud vault (owner directive 2026-08-17): this
+                        // effect is the Draft tab's own save path — it bypasses
+                        // context.saveBoardPatch, so the vault must be fed here too.
+                        if (lid) window.OD?.saveBigBoardBackup?.(lid, stored);
                     } catch (e) { /* cloud unavailable — local board still serves */ }
                 }, 1200);
             } catch (e) { /* never let sync break the save */ }
-        }, [boardTags, boardNotes, draftedPids, aiRecommendedOrder, myBoardOrder, boardMode, boardStorageKey]);
+        }, [boardTags, boardNotes, roundPlans, draftedPids, aiRecommendedOrder, myBoardOrder, boardMode, boardStorageKey]);
 
         // Re-hydrate from the shared Big Board store when the live draft room (or
         // another tab) edits the same league's board. Without this, the Draft tab's
@@ -3674,8 +3684,13 @@
                                     });
                                     return next;
                                 });
+                                const bbShowNow = bbRoundSize >= 4 && !boardQuery && !boardPosFilter
+                                    && (boardMode === 'my' || (boardSort.key === 'dhq' && boardSort.dir === -1));
+                                const bbRank = bbRankByPid.get(r.pid);
+                                const bbPrevRank = idx > 0 ? (bbRankByPid.get(players[idx - 1].pid) || 0) : 0;
                                 return (
                                     <React.Fragment key={r.pid}>
+                                    {bbRank ? boardRoundMarkers(bbPrevRank, bbRank, bbShowNow) : null}
                                     <div
                                         data-draft-pid={r.pid}
                                         data-reorder-key={r.pid}
@@ -3715,6 +3730,10 @@
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                                                     <strong style={{ color: 'var(--white)', fontSize: '0.76rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: isDrafted ? 'line-through' : 'none' }}>{pName(r.p)}</strong>
                                                     {chip(pos, posColors[pos] || 'var(--silver)', (posColors[pos] || 'var(--k-666666, #666666)') + '22')}
+                                                    {bbShowNow && bbRank && bbUserPicks.has(bbRank) && (
+                                                        <span title={'Your pick: ' + bbPickLabel(bbRank) + ' (#' + bbRank + ' overall)'}
+                                                            style={{ marginLeft: 8, flexShrink: 0, color: 'var(--gold)', fontSize: '0.7rem', lineHeight: 1 }}>◆</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -3847,6 +3866,109 @@
                     ];
                     const activeBoardInfo = boardModeOptions.find(opt => opt.k === boardMode) || boardModeOptions[0];
                     const allBoardPlayers = boardMode === 'my' ? myBoardPlayers : boardMode === 'ai' ? aiBoardPlayers : dhqBoardPlayers;
+                    // ── ROUND BREAKERS + YOUR-PICK MARKERS (owner feature 2026-08-17) ──
+                    // League-specific round rules every numTeams players, your picks
+                    // marked on the line and at the exact overall rank — driven by
+                    // draftProjectionMeta, so traded picks and snake order are truth.
+                    // Only on the pure board: search, position tabs or a re-sorted
+                    // Default Board make index-based rounds a lie.
+                    const bbMeta = draftProjectionMeta || {};
+                    const bbRoundSize = Math.max(0, Number(bbMeta.numTeams) || 0);
+                    const bbTotalRounds = Math.max(0, Number(bbMeta.rounds) || 0);
+                    const bbMyRid = myRoster?.roster_id;
+                    const bbUserPicks = (() => {
+                        const out = new Set();
+                        if (!bbRoundSize || !bbTotalRounds) return out;
+                        const own = bbMeta.pickOwnership || {};
+                        const snake = (bbMeta.draftType || 'snake') !== 'linear';
+                        for (let rd = 1; rd <= bbTotalRounds; rd++) {
+                            for (let slot = 1; slot <= bbRoundSize; slot++) {
+                                const cell = own[rd + '-' + slot];
+                                const mine = cell && cell.rosterId != null ? sameId(cell.rosterId, bbMyRid) : slot === Number(bbMeta.mySlot);
+                                if (!mine) continue;
+                                const inRound = snake && rd % 2 === 0 ? bbRoundSize + 1 - slot : slot;
+                                out.add((rd - 1) * bbRoundSize + inRound);
+                            }
+                        }
+                        return out;
+                    })();
+                    const bbRankByPid = new Map(allBoardPlayers.map((r, i) => [r.pid, i + 1]));
+                    const bbPickLabel = (o) => (Math.floor((o - 1) / bbRoundSize) + 1) + '.' + String(((o - 1) % bbRoundSize) + 1).padStart(2, '0');
+                    // League-specific position chips for the round lines: tap to declare
+                    // "this round I'm going RB" — saved with the board (and the vault).
+                    const bbPositions = (() => {
+                        const rp = (currentLeague?.roster_positions || []).map(String);
+                        const out = [{ key: 'QB', label: 'QB' }, { key: 'RB', label: 'RB' }, { key: 'WR', label: 'WR' }, { key: 'TE', label: 'TE' }];
+                        if (rp.includes('K')) out.push({ key: 'K', label: 'K' });
+                        if (rp.includes('DEF')) out.push({ key: 'DEF', label: 'D/ST' });
+                        if (rp.some(p => ['DL', 'LB', 'DB', 'IDP_FLEX', 'IDP'].includes(p))) out.push({ key: 'IDP', label: 'IDP' });
+                        return out;
+                    })();
+                    // Single-select (owner call 2026-08-18): one position per round —
+                    // a new pick replaces the old; tapping the current one clears it.
+                    const toggleRoundPlan = (round, key) => setRoundPlans(prev => {
+                        const out = { ...prev };
+                        if ((prev[round] || [])[0] === key) delete out[round]; else out[round] = [key];
+                        return out;
+                    });
+                    const bbMarkerFont = { fontFamily: 'var(--font-body)', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 800 };
+                    const boardRoundMarkers = (prevRank, rank, showBreakersNow) => {
+                        if (!showBreakersNow || !bbRoundSize || rank <= prevRank || rank - prevRank > 500) return null;
+                        const out = [];
+                        const lastRank = bbTotalRounds ? bbTotalRounds * bbRoundSize : Infinity;
+                        for (let n = prevRank + 1; n <= rank; n++) {
+                            if (n > lastRank) {
+                                if (n === lastRank + 1) out.push(
+                                    <div key={'bbend' + n} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 4px', color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', ...bbMarkerFont }}>
+                                        <span style={{ flex: 1, height: 1, background: 'var(--acc-line1, rgba(212,175,55,0.25))' }} />
+                                        <span>END OF DRAFT · {bbTotalRounds} ROUNDS</span>
+                                        <span style={{ flex: 1, height: 1, background: 'var(--acc-line1, rgba(212,175,55,0.25))' }} />
+                                    </div>
+                                );
+                                continue;
+                            }
+                            const round = Math.floor((n - 1) / bbRoundSize) + 1;
+                            if ((n - 1) % bbRoundSize === 0) {
+                                out.push(
+                                    <div key={'bbrd' + n} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, minHeight: 30, padding: round === 1 ? '3px 12px' : '8px 12px 3px', borderBottom: '1px solid var(--gold)', background: 'var(--acc-fill3, rgba(212,175,55,0.06))' }}>
+                                        <span style={{ color: 'var(--gold)', fontSize: '0.78rem', whiteSpace: 'nowrap', ...bbMarkerFont }}>ROUND {round}</span>
+                                        {(() => {
+                                            // Far-right target toggle (owner call 2026-08-18): collapsed it
+                                            // shows ONLY the chosen position; tapping a chip picks AND
+                                            // closes. Reopen to change or add.
+                                            const plan = roundPlans[round] || [];
+                                            const isOpen = openPlanRound === round;
+                                            const planLabels = plan.map(k => (bbPositions.find(ps => ps.key === k) || { label: k }).label);
+                                            return (
+                                                <span style={{ display: 'inline-flex', gap: 6, marginLeft: 'auto', alignSelf: 'center', alignItems: 'center' }}>
+                                                    <span style={{ color: 'var(--silver)', opacity: 0.75, fontSize: 'var(--text-micro, 0.6875rem)', ...bbMarkerFont }}>POSITIONAL TARGET</span>
+                                                    {isOpen && bbPositions.map(ps => {
+                                                        const on = plan.includes(ps.key);
+                                                        return (
+                                                            <button key={ps.key} type="button" onClick={() => { toggleRoundPlan(round, ps.key); setOpenPlanRound(null); }}
+                                                                style={{ padding: '2px 8px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', fontWeight: 800, letterSpacing: '0.06em', borderRadius: 5, cursor: 'pointer', lineHeight: 1.6,
+                                                                    border: '1px solid ' + (on ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.1))'),
+                                                                    background: on ? 'var(--acc-fill2, rgba(212,175,55,0.16))' : 'transparent',
+                                                                    color: on ? 'var(--gold)' : 'var(--silver)' }}>{ps.label}</button>
+                                                        );
+                                                    })}
+                                                    <button type="button" onClick={() => setOpenPlanRound(isOpen ? null : round)}
+                                                        title={plan.length ? 'Round ' + round + ' target: ' + planLabels.join(', ') + ' — tap to change' : 'Pick a position target for round ' + round}
+                                                        style={{ padding: '2px 8px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', fontWeight: 800, letterSpacing: '0.06em', borderRadius: 5, cursor: 'pointer', lineHeight: 1.6,
+                                                            border: '1px solid ' + (plan.length ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.1))'),
+                                                            background: plan.length ? 'var(--acc-fill2, rgba(212,175,55,0.16))' : 'transparent',
+                                                            color: plan.length ? 'var(--gold)' : 'var(--silver)', opacity: plan.length || isOpen ? 1 : 0.7 }}>
+                                                        {plan.length ? planLabels.join(' · ') : 'TARGET'} {isOpen ? '▴' : '▾'}
+                                                    </button>
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
+                                );
+                            }
+                        }
+                        return out.length ? out : null;
+                    };
                     // Combined drafted lookup (manual "Off" set + live-sync drafted map), hoisted
                     // here so the "Hide drafted" toggle can drop rows when building the visible
                     // list — mirrors the per-row isDrafted inside renderCompactBoard (L2565).
