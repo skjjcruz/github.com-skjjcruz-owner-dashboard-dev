@@ -112,10 +112,10 @@ const FIXTURE = `<!DOCTYPE html>
         await page.mouse.move(from.x + 4, from.y + 30, { steps: 4 });
         const mid = await page.evaluate(() => ({
             ghosts: document.querySelectorAll('body > .row').length,
-            srcOpacity: document.querySelector('[data-reorder-key="A"]').style.opacity,
+            srcDisplay: document.querySelector('[data-reorder-key="A"]').style.display,
         }));
         check('mouse: ghost clone during drag', mid.ghosts === 1, 'count=' + mid.ghosts);
-        check('mouse: source row dims', mid.srcOpacity === '0.25', 'opacity=' + mid.srcOpacity);
+        check('mouse: source row collapses', mid.srcDisplay === 'none', 'display=' + mid.srcDisplay);
         const to = await rowCenter(page, 'D', 'bottom');
         await page.mouse.move(to.x, to.y, { steps: 8 });
         const marked = await page.evaluate(() => document.querySelector('[data-reorder-key="D"]').style.boxShadow);
@@ -127,11 +127,12 @@ const FIXTURE = `<!DOCTYPE html>
             ghosts: document.querySelectorAll('body > .row').length,
             shadows: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.boxShadow).filter(Boolean).length,
             dims: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.opacity).filter(o => o && o !== '1').length,
+            hidden: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.display).filter(d => d === 'none').length,
         }));
         check('mouse: A takes D\'s spot', after.order === 'B,C,A,D,E,F,G,H', 'order=' + after.order);
         check('mouse: onDrop(A,D,false)', JSON.stringify(after.drops) === JSON.stringify([['A', 'D', false]]), JSON.stringify(after.drops));
         check('mouse: ghost removed', after.ghosts === 0, 'count=' + after.ghosts);
-        check('mouse: indicator + dim restored', after.shadows === 0 && after.dims === 0, 'shadows=' + after.shadows + ' dims=' + after.dims);
+        check('mouse: indicator + dim + collapse restored', after.shadows === 0 && after.dims === 0 && after.hidden === 0, 'shadows=' + after.shadows + ' dims=' + after.dims + ' hidden=' + after.hidden);
         await ctx.close();
     }
 
