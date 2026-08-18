@@ -101,7 +101,8 @@ const FIXTURE = `<!DOCTYPE html>
         return { x: r.left + r.width / 2, y: half === 'top' ? r.top + r.height * 0.25 : r.top + r.height * 0.75 };
     }, { k: key, half });
 
-    // ── Mouse-pointer drag: A onto D's lower half → after D ──
+    // ── Mouse-pointer drag: A onto D takes D's spot — D shifts DOWN (owner
+    // call 2026-08-18) — even when the pointer sits in D's lower half. ──
     {
         const ctx = await browser.newContext();
         const page = await boot(ctx);
@@ -118,7 +119,7 @@ const FIXTURE = `<!DOCTYPE html>
         const to = await rowCenter(page, 'D', 'bottom');
         await page.mouse.move(to.x, to.y, { steps: 8 });
         const marked = await page.evaluate(() => document.querySelector('[data-reorder-key="D"]').style.boxShadow);
-        check('mouse: insertion line on lower half', /inset 0 -2px/.test(marked), 'boxShadow=' + marked);
+        check('mouse: take-the-spot line on target top', /inset 0 2px/.test(marked), 'boxShadow=' + marked);
         await page.mouse.up();
         const after = await page.evaluate(() => ({
             order: window.__order.join(','),
@@ -127,10 +128,31 @@ const FIXTURE = `<!DOCTYPE html>
             shadows: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.boxShadow).filter(Boolean).length,
             dims: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.opacity).filter(o => o && o !== '1').length,
         }));
-        check('mouse: commits A after D', after.order === 'B,C,D,A,E,F,G,H', 'order=' + after.order);
-        check('mouse: onDrop(A,D,true)', JSON.stringify(after.drops) === JSON.stringify([['A', 'D', true]]), JSON.stringify(after.drops));
+        check('mouse: A takes D\'s spot', after.order === 'B,C,A,D,E,F,G,H', 'order=' + after.order);
+        check('mouse: onDrop(A,D,false)', JSON.stringify(after.drops) === JSON.stringify([['A', 'D', false]]), JSON.stringify(after.drops));
         check('mouse: ghost removed', after.ghosts === 0, 'count=' + after.ghosts);
         check('mouse: indicator + dim restored', after.shadows === 0 && after.dims === 0, 'shadows=' + after.shadows + ' dims=' + after.dims);
+        await ctx.close();
+    }
+
+    // ── Last-row exception: the below-target insert survives only on the
+    // list's final row, so a player can still be sent to the very bottom. ──
+    {
+        const ctx = await browser.newContext();
+        const page = await boot(ctx);
+        await page.evaluate(() => { document.getElementById('list').scrollTop = 999; });
+        const from = await gripCenter(page, 'F');
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(from.x + 4, from.y + 30, { steps: 4 });
+        const to = await rowCenter(page, 'H', 'bottom');
+        await page.mouse.move(to.x, to.y, { steps: 8 });
+        const marked = await page.evaluate(() => document.querySelector('[data-reorder-key="H"]').style.boxShadow);
+        check('mouse: below-insert line on last row', /inset 0 -2px/.test(marked), 'boxShadow=' + marked);
+        await page.mouse.up();
+        const after = await page.evaluate(() => ({ order: window.__order.join(','), drops: window.__drops }));
+        check('mouse: commits F after H (very bottom)', after.order === 'A,B,C,D,E,G,H,F', 'order=' + after.order);
+        check('mouse: onDrop(F,H,true)', JSON.stringify(after.drops) === JSON.stringify([['F', 'H', true]]), JSON.stringify(after.drops));
         await ctx.close();
     }
 
