@@ -112,10 +112,14 @@ const FIXTURE = `<!DOCTYPE html>
         await page.mouse.move(from.x + 4, from.y + 30, { steps: 4 });
         const mid = await page.evaluate(() => ({
             ghosts: document.querySelectorAll('body > .row').length,
-            srcDisplay: document.querySelector('[data-reorder-key="A"]').style.display,
+            srcHeight: document.querySelector('[data-reorder-key="A"]').getBoundingClientRect().height,
+            srcDisplay: getComputedStyle(document.querySelector('[data-reorder-key="A"]')).display,
         }));
         check('mouse: ghost clone during drag', mid.ghosts === 1, 'count=' + mid.ghosts);
-        check('mouse: source row collapses', mid.srcDisplay === 'none', 'display=' + mid.srcDisplay);
+        // Zero HEIGHT, never display:none — WebKit kills a drag whose source
+        // element goes hidden (owner outage 2026-08-18 on iPad).
+        check('mouse: source row folds to zero height', mid.srcHeight === 0, 'height=' + mid.srcHeight);
+        check('mouse: source row stays rendered', mid.srcDisplay !== 'none', 'display=' + mid.srcDisplay);
         const to = await rowCenter(page, 'D', 'bottom');
         await page.mouse.move(to.x, to.y, { steps: 8 });
         const marked = await page.evaluate(() => document.querySelector('[data-reorder-key="D"]').style.boxShadow);
@@ -127,12 +131,12 @@ const FIXTURE = `<!DOCTYPE html>
             ghosts: document.querySelectorAll('body > .row').length,
             shadows: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.boxShadow).filter(Boolean).length,
             dims: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.opacity).filter(o => o && o !== '1').length,
-            hidden: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.display).filter(d => d === 'none').length,
+            folded: Array.from(document.querySelectorAll('[data-reorder-key]')).filter(r => r.getBoundingClientRect().height === 0).length,
         }));
         check('mouse: A takes D\'s spot', after.order === 'B,C,A,D,E,F,G,H', 'order=' + after.order);
         check('mouse: onDrop(A,D,false)', JSON.stringify(after.drops) === JSON.stringify([['A', 'D', false]]), JSON.stringify(after.drops));
         check('mouse: ghost removed', after.ghosts === 0, 'count=' + after.ghosts);
-        check('mouse: indicator + dim + collapse restored', after.shadows === 0 && after.dims === 0 && after.hidden === 0, 'shadows=' + after.shadows + ' dims=' + after.dims + ' hidden=' + after.hidden);
+        check('mouse: indicator + dim + fold restored', after.shadows === 0 && after.dims === 0 && after.folded === 0, 'shadows=' + after.shadows + ' dims=' + after.dims + ' folded=' + after.folded);
         await ctx.close();
     }
 
