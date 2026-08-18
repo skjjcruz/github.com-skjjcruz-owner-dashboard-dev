@@ -114,12 +114,17 @@ const FIXTURE = `<!DOCTYPE html>
             ghosts: document.querySelectorAll('body > .row').length,
             srcHeight: document.querySelector('[data-reorder-key="A"]').getBoundingClientRect().height,
             srcDisplay: getComputedStyle(document.querySelector('[data-reorder-key="A"]')).display,
+            slotMargin: document.querySelector('[data-reorder-key="B"]').style.marginTop,
         }));
         check('mouse: ghost clone during drag', mid.ghosts === 1, 'count=' + mid.ghosts);
         // Zero HEIGHT, never display:none — WebKit kills a drag whose source
         // element goes hidden (owner outage 2026-08-18 on iPad).
         check('mouse: source row folds to zero height', mid.srcHeight === 0, 'height=' + mid.srcHeight);
         check('mouse: source row stays rendered', mid.srcDisplay !== 'none', 'display=' + mid.srcDisplay);
+        // The landing spot is an open row-height SLOT that travels with the
+        // pointer — the displaced row is pushed down, visibly (owner call
+        // 2026-08-18: an inset line alone hides under the ghost).
+        check('mouse: open slot follows the pointer', parseFloat(mid.slotMargin) >= 40, 'marginTop=' + mid.slotMargin);
         const to = await rowCenter(page, 'D', 'bottom');
         await page.mouse.move(to.x, to.y, { steps: 8 });
         const marked = await page.evaluate(() => document.querySelector('[data-reorder-key="D"]').style.boxShadow);
@@ -132,11 +137,12 @@ const FIXTURE = `<!DOCTYPE html>
             shadows: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.boxShadow).filter(Boolean).length,
             dims: Array.from(document.querySelectorAll('[data-reorder-key]')).map(r => r.style.opacity).filter(o => o && o !== '1').length,
             folded: Array.from(document.querySelectorAll('[data-reorder-key]')).filter(r => r.getBoundingClientRect().height === 0).length,
+            slots: Array.from(document.querySelectorAll('[data-reorder-key]')).filter(r => r.style.marginTop || r.style.marginBottom).length,
         }));
         check('mouse: A takes D\'s spot', after.order === 'B,C,A,D,E,F,G,H', 'order=' + after.order);
         check('mouse: onDrop(A,D,false)', JSON.stringify(after.drops) === JSON.stringify([['A', 'D', false]]), JSON.stringify(after.drops));
         check('mouse: ghost removed', after.ghosts === 0, 'count=' + after.ghosts);
-        check('mouse: indicator + dim + fold restored', after.shadows === 0 && after.dims === 0 && after.folded === 0, 'shadows=' + after.shadows + ' dims=' + after.dims + ' folded=' + after.folded);
+        check('mouse: indicator + dim + fold + slot restored', after.shadows === 0 && after.dims === 0 && after.folded === 0 && after.slots === 0, 'shadows=' + after.shadows + ' dims=' + after.dims + ' folded=' + after.folded + ' slots=' + after.slots);
         await ctx.close();
     }
 
