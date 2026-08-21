@@ -191,6 +191,23 @@ async function resolveAISession(req: Request): Promise<AISession | null> {
     return null;
 }
 
+// ── FREE FOR THE 2026 SEASON: AI allowance parity (owner ruling 2026-08-21) ──
+// The client has presented every account as full Pro since 2026-08-17
+// (DHQ_FREE_SEASON in shared tier.js), but this ladder kept new accounts on
+// the 1-call/day free allowance — their 2nd tap of the day was denied while
+// the app said everything was free. This grants every session the Pro
+// allowance until the same end date as the client switch. Costs stay bounded
+// by the untouched guardrails: Gemini-only routing (UNPLUGGED_PROVIDERS),
+// web search hard-off (webSearchFlagOn=false), the per-plan dollar caps, and
+// the global $2/day circuit breaker. Admin stays commissioner. Self-expiring:
+// past ENDS every session resolves to its real plan again.
+const FREE_SEASON_ENDS_UTC = Date.UTC(2027, 2, 1); // lockstep with shared tier.js
+function applyFreeSeasonPlan(session: AISession): AISession {
+    if (Date.now() >= FREE_SEASON_ENDS_UTC) return session;
+    if (session.plan === 'commissioner' || session.plan === 'pro') return session;
+    return { ...session, plan: 'pro', billing: null };
+}
+
 // ── AI model routing and cost telemetry ───────────────────────
 type AIProvider = 'anthropic' | 'gemini' | 'openai';
 type AIWorkloadTier = 'fast' | 'standard' | 'premium' | 'deep';
@@ -200,7 +217,7 @@ interface AIRoute {
     tier: AIWorkloadTier;
 }
 
-const AI_POLICY_VERSION = '2026-06-14.dynasty-read.v1';
+const AI_POLICY_VERSION = '2026-08-21.free-season-pro.v1';
 
 const AI_MODELS = {
     GEMINI_FAST: 'gemini-2.5-flash-lite',
@@ -2558,7 +2575,8 @@ Deno.serve(async (req) => {
     const responseHeaders = corsHeaders(req);
 
     try {
-        const aiSession = await resolveAISession(req);
+        const resolvedSession = await resolveAISession(req);
+        const aiSession = resolvedSession ? applyFreeSeasonPlan(resolvedSession) : null;
         if (!aiSession) {
             return new Response(
                 JSON.stringify({ error: 'Valid session token required.' }),
