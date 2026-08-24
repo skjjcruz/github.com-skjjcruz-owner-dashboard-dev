@@ -666,31 +666,109 @@ function ReportSubView({
 
 // ══════════════════════════════════════════════════════════════════
 // All Players column registry — the single source of truth for the column picker
-// on the combined Players & Picks screen. This is a SUPERSET of every column the
-// Custom Report builder offers for the 'players' data source (getPlayerColumns):
-//   report 'name'->name, 'pos'->pos, 'team'->nflTeam, 'age'->age, 'dhq'->dhq,
-//   'ppg'->ppg, 'peakYrs'->peakYrs, 'owner'->owner, 'tier'->tier, 'acquired'->acq.
-// Plus two extras (yoe, peak bar). Every key here has a renderCell case below and a
-// width (the grid template + min-width math depend on it), so all are toggleable.
-// To add a new report column: add an entry here (with width) AND a renderCell case.
+// on the combined Players & Picks screen. Registry ORDER is display order
+// (activeCols filters this list), so the owner's default reads left-to-right
+// exactly as ruled. Every key here has a renderCell case below and a width
+// (the grid template + min-width math depend on it), so all are toggleable.
+// To add a column: add an entry here (with width) AND a renderCell case; give
+// numeric columns sortable+sortKey AND a comparator case in filtered.sort.
 // ══════════════════════════════════════════════════════════════════
 const ALL_PLAYERS_COLUMNS = [
-    { key: 'name',     label: 'Player',   width: '1fr',   toggleable: false },
-    { key: 'pos',      label: 'Pos',      width: '36px' },
-    { key: 'nflTeam',  label: 'NFL Team', width: '60px' },
-    { key: 'age',      label: 'Age',      width: '32px' },
-    { key: 'yoe',      label: 'YOE',      width: '36px' },
-    { key: 'peak',     label: 'Peak',     width: '60px' },
-    { key: 'peakYrs',  label: 'Peak Yrs', width: '52px' },
-    { key: 'dhq',      label: 'DHQ',      width: '54px', sortable: true, sortKey: 'dhq' },
-    { key: 'ppg',      label: 'PPG',      width: '42px', sortable: true, sortKey: 'ppg' },
-    { key: 'tier',     label: 'Tier',     width: '72px' },
-    { key: 'owner',    label: 'Owner',    width: '100px', sortable: true, sortKey: 'team' },
-    { key: 'acq',      label: 'Acquired', width: '72px' },
+    { key: 'name',       label: 'Player',   width: '1fr',   toggleable: false, group: 'core' },
+    // ── Core ── (Position and NFL Team live INSIDE the player cell — owner
+    // ruling 2026-08-24: fold them into the pinned box to cut scroll width.)
+    { key: 'yoe',        label: 'Yrs',      width: '40px',  group: 'core', center: true },
+    { key: 'age',        label: 'Age',      width: '32px',  group: 'core' },
+    // ── Stats (mirrors the roster tab's stats group; owner ruling 2026-08-24
+    // "completely mirror the roster tab data columns" — same engines/sources) ──
+    { key: 'points',     label: 'Pts',      width: '48px', sortable: true, sortKey: 'points', group: 'stats' },
+    { key: 'gp',         label: 'GP',       width: '36px', sortable: true, sortKey: 'gp', group: 'stats' },
+    { key: 'ppg',        label: 'PPG',      width: '42px', sortable: true, sortKey: 'ppg', group: 'stats' },
+    { key: 'proj',       label: 'Proj',     width: '52px', sortable: true, sortKey: 'proj', group: 'stats' },
+    { key: 'hi',         label: 'Hi',       width: '40px', sortable: true, sortKey: 'hi', group: 'stats' },
+    { key: 'lo',         label: 'Lo',       width: '40px', sortable: true, sortKey: 'lo', group: 'stats' },
+    { key: 'prev',       label: 'Last',     width: '44px', sortable: true, sortKey: 'prev', group: 'stats' },
+    { key: 'durability', label: 'Dur',      width: '40px',  group: 'stats' },
+    { key: 'sos',        label: 'SOS',      width: '44px',  group: 'stats' },
+    // ── Dynasty ──
+    { key: 'dhq',        label: 'DHQ',      width: '54px', sortable: true, sortKey: 'dhq', group: 'dynasty' },
+    { key: 'trend',      label: 'Trend',    width: '52px', sortable: true, sortKey: 'trend', group: 'dynasty' },
+    { key: 'adp',        label: 'ADP',      width: '48px', sortable: true, sortKey: 'adp', group: 'dynasty' },
+    { key: 'peakPhase',  label: 'Peak',     width: '50px',  group: 'dynasty' },
+    { key: 'peak',       label: 'Peak Bar', width: '60px',  group: 'dynasty' },
+    { key: 'peakYrs',    label: 'Peak Yrs', width: '70px',  group: 'dynasty', center: true },
+    { key: 'posRankLg',  label: 'Lg #',     width: '46px',  group: 'dynasty' },
+    { key: 'posRankNfl', label: 'NFL #',    width: '48px',  group: 'dynasty' },
+    { key: 'starterSzn', label: 'Starts',   width: '48px',  group: 'dynasty' },
+    // ── Scout ──
+    { key: 'college',    label: 'School',   width: '82px',  group: 'scout' },
+    { key: 'height',     label: 'Ht',       width: '42px',  group: 'scout' },
+    { key: 'weight',     label: 'Wt',       width: '42px',  group: 'scout' },
+    { key: 'depthChart', label: 'Depth',    width: '48px',  group: 'scout' },
+    { key: 'rkSlot',     label: 'Draft',    width: '54px',  group: 'scout' },
+    { key: 'rkTeam',     label: 'Drafted',  width: '50px',  group: 'scout' },
+    // ── League (All Players-only columns; no roster equivalent) ──
+    { key: 'tier',       label: 'Tier',     width: '72px',  group: 'league' },
+    { key: 'owner',      label: 'Owner',    width: '100px', sortable: true, sortKey: 'team', group: 'league' },
+    { key: 'acq',        label: 'Acquired', width: '72px',  group: 'league' },
 ];
-// Default visible = the report-builder parity set, so the combined screen opens with
-// report-grade columns and users can toggle the extras (YOE, Peak bar) from the picker.
-const ALL_PLAYERS_DEFAULT_VISIBLE = ['name', 'pos', 'nflTeam', 'age', 'dhq', 'ppg', 'peakYrs', 'tier', 'owner', 'acq'];
+// Deliberately NOT mirrored from the roster tab: Move (a trade verdict about
+// YOUR roster — meaningless on another owner's player), Roster Slot, and the
+// separate Date Acquired (the Acquired column here already carries the date).
+const ALL_PLAYERS_COL_BY_KEY = {};
+ALL_PLAYERS_COLUMNS.forEach(c => { ALL_PLAYERS_COL_BY_KEY[c.key] = c; });
+const ALL_PLAYERS_GROUP_LABELS = { core: 'Core', stats: 'Stats', dynasty: 'Dynasty', scout: 'Scout', league: 'League' };
+// Column presets — the roster tab's preset model (Default / Stats / Dynasty /
+// Scout / Deep Data, with Custom auto-detected when no preset matches).
+const ALL_PLAYERS_PRESETS = {
+    default: null, // filled below — the owner-ruled default view
+    stats:   ['name', 'points', 'gp', 'ppg', 'proj', 'hi', 'lo', 'prev', 'trend', 'durability', 'sos'],
+    dynasty: ['name', 'age', 'yoe', 'dhq', 'trend', 'adp', 'peakPhase', 'peakYrs', 'posRankLg', 'posRankNfl', 'starterSzn'],
+    scout:   ['name', 'age', 'yoe', 'college', 'height', 'weight', 'depthChart', 'rkSlot', 'rkTeam'],
+    deep:    ALL_PLAYERS_COLUMNS.map(c => c.key),
+};
+const ALL_PLAYERS_PRESET_LABELS = { default: 'Default', stats: 'Stats', dynasty: 'Dynasty', scout: 'Scout', deep: 'Deep Data', custom: 'Custom' };
+// Default view (owner ruling 2026-08-24): Pos · Team · Years · Points · GP ·
+// PPG · Weekly Proj · DHQ · ADP. Everything else stays in the picker.
+// Owner-set board (2026-08-24, from his live Customize panel): the full
+// scouting ledger minus Dur / SOS / Lg # / NFL # / Starts, in his order.
+const ALL_PLAYERS_DEFAULT_VISIBLE = ['name', 'yoe', 'age', 'points', 'gp', 'ppg', 'proj', 'hi', 'lo', 'prev', 'dhq', 'adp', 'trend', 'peakPhase', 'peak', 'peakYrs', 'height', 'weight', 'college', 'depthChart', 'rkSlot', 'rkTeam', 'tier', 'owner', 'acq'];
+ALL_PLAYERS_PRESETS.default = ALL_PLAYERS_DEFAULT_VISIBLE;
+// Every PREVIOUS default — used ONLY to migrate untouched saved prefs (the
+// persistence effect writes the default on first visit, so nearly every
+// visitor has some old default stored; without this check a new default
+// would never reach them). A stored set matching ANY of these adopts the
+// current default; a customized set is the user's and stays.
+const ALL_PLAYERS_PREV_DEFAULTS = [
+    ['name', 'pos', 'nflTeam', 'age', 'dhq', 'ppg', 'peakYrs', 'tier', 'owner', 'acq'], // pre-b11
+    ['name', 'yoe', 'points', 'gp', 'ppg', 'proj', 'dhq', 'adp'],                        // b11–b20
+];
+// Weekly-projection memo — projectPlayer is pure math but the ledger renders
+// 1,000+ rows with no virtualization, so each (league|season|week|pid) is
+// computed once per page load and reused across re-renders and sorts.
+const _allPlayersProjMemo = {};
+// NFL positional rank across EVERY NFL player by DHQ value (owner ask
+// 2026-08-24: populate NFL # — the market fcRank meta is empty in practice).
+// Built once per session from playersData; rebuilt only while empty so a
+// build that ran before values loaded heals on a later render.
+let _nflRankMap = null;
+function _buildNflRankMap(playersData) {
+    const PV = window.App && window.App.PlayerValue;
+    const getV = PV && PV.getValue ? (pid) => PV.getValue(pid) : (pid) => (window.App?.LI?.playerScores?.[pid] || 0);
+    const norm = window.App && window.App.normPos;
+    const byPos = {};
+    Object.keys(playersData || {}).forEach(pid => {
+        const pl = playersData[pid];
+        if (!pl || !pl.position) return;
+        const v = getV(pid) || 0;
+        if (!(v > 0)) return;
+        const pos = (norm && norm(pl.position)) || pl.position;
+        (byPos[pos] = byPos[pos] || []).push({ pid, v });
+    });
+    const out = {};
+    Object.keys(byPos).forEach(pos => byPos[pos].sort((a, b) => b.v - a.v).forEach((e, i) => { out[e.pid] = pos + (i + 1); }));
+    return out;
+}
 
 // ══════════════════════════════════════════════════════════════════
 // RosterPlayerDossier — the My-Roster-style inline player card, reused in
@@ -938,6 +1016,10 @@ function LeagueMapTab({
   leagueSkin,
   playersData,
   statsData,
+  // Prior-season stats — the roster tab's Last/Trend/Durability columns read
+  // these; threaded here for the mirrored All Players columns (may be
+  // undefined when a consumer pre-dates the prop).
+  stats2025Data,
   sleeperUserId,
   myRoster,
   activeYear,
@@ -1005,12 +1087,47 @@ function LeagueMapTab({
               // dead entries from silently widening the grid vs the row renderer.
               const registryKeys = new Set(ALL_PLAYERS_COLUMNS.map(c => c.key));
               const clean = saved.filter(k => registryKeys.has(k));
-              if (clean.length) return clean;
+              // A stored set identical to the pre-2026-08-24 default is not a
+              // user choice — the persistence effect wrote it on first visit —
+              // so it adopts the new owner-ruled default. A customized set is
+              // the user's and stays.
+              const isOldDefault = ALL_PLAYERS_PREV_DEFAULTS.some(prev => {
+                  const pc = prev.filter(k => registryKeys.has(k));
+                  return clean.length === pc.length && pc.every(k => clean.includes(k));
+              });
+              if (clean.length && !isOldDefault) return clean;
           }
       } catch (_) {}
       return ALL_PLAYERS_DEFAULT_VISIBLE.slice();
   });
   const [allPlayersColPickerOpen, setAllPlayersColPickerOpen] = React.useState(false);
+  // Roster-tab customize model (owner ruling 2026-08-24): the stored array IS
+  // the display order. Move/hide/add mirror my-team.js's helpers; the Player
+  // column is pinned first and never appears in the order list.
+  const apMoveColumn = (key, delta) => setAllPlayersCols(prev => {
+      const idx = prev.indexOf(key);
+      if (idx < 0) return prev;
+      const next = prev.slice();
+      const j = Math.max(0, Math.min(next.length - 1, idx + delta));
+      if (j === idx) return prev;
+      const [it] = next.splice(idx, 1);
+      next.splice(j, 0, it);
+      return next;
+  });
+  const apRemoveColumn = (key) => setAllPlayersCols(prev => prev.filter(k => k !== key));
+  const apAddColumn = (key) => setAllPlayersCols(prev => prev.includes(key) ? prev : [...prev, key]);
+  // Preset detection (roster-tab model): order-insensitive match, else Custom.
+  const apActivePreset = Object.keys(ALL_PLAYERS_PRESETS).find(k => {
+      const set = ALL_PLAYERS_PRESETS[k];
+      return set && set.length === allPlayersCols.length && set.every(c => allPlayersCols.includes(c));
+  }) || 'custom';
+  // Measured visible width of the ledger's scroll container, so the expanded
+  // dossier can pin (sticky left) at viewport width instead of scrolling off
+  // with the stat columns — the roster tab's boardWidth pattern.
+  const [apBoardW, setApBoardW] = React.useState(0);
+  const apScrollRef = React.useCallback(el => {
+      if (el && Math.abs(el.clientWidth - apBoardW) > 1) setApBoardW(el.clientWidth);
+  }, [apBoardW]);
   React.useEffect(() => {
       try { localStorage.setItem(ALL_PLAYERS_COL_KEY, JSON.stringify(allPlayersCols)); } catch (_) {}
   }, [ALL_PLAYERS_COL_KEY, allPlayersCols]);
@@ -1032,8 +1149,29 @@ function LeagueMapTab({
   React.useEffect(() => {
       const h = () => forcePpgRerender(n => n + 1);
       window.addEventListener('wr:weekly-points-loaded', h);
-      return () => window.removeEventListener('wr:weekly-points-loaded', h);
+      // The ADP market map lands after first paint (18h-cached fetch) — the
+      // All Players ADP column re-renders from dashes when it does. LISTENING
+      // is not enough (owner report on b14: ADP never populated): the module's
+      // eager warm-up fires before the supabase client exists, can miss the
+      // MFL proxy, and only retries on the NEXT fetch call — which the draft
+      // surfaces make on mount and this ledger didn't. Ask for the map here
+      // too; cached results resolve instantly, a failed warm-up retries now.
+      try { if (typeof window.App?.fetchRedraftAdp === 'function') window.App.fetchRedraftAdp().catch(() => {}); } catch (e) { /* dashes */ }
+      window.addEventListener('wr:adp-loaded', h);
+      return () => {
+          window.removeEventListener('wr:weekly-points-loaded', h);
+          window.removeEventListener('wr:adp-loaded', h);
+      };
   }, []);
+  // Warm the SOS engine for the mirrored SOS column (same warm-up the player
+  // card's scouting tab does) — re-render when it becomes ready.
+  React.useEffect(() => {
+      const A = window.App || {};
+      if (A.SOS && A.SOS.initialize && !A.SOS.ready && playersData && Object.keys(playersData).length) {
+          const season = (window.S?.nflState && window.S.nflState.season) || window.S?.season || new Date().getFullYear();
+          try { A.SOS.initialize(season, playersData, () => forcePpgRerender(n => n + 1)); } catch (e) { /* neutral column */ }
+      }
+  }, [playersData]);
 
   // ── Report Engine ─────────────────────────────────────────────────
   const REPORT_STORAGE_KEY = 'wr_custom_reports';
@@ -1428,16 +1566,47 @@ function LeagueMapTab({
           the semi-transparent gold tints over the --black (#121217) /
           --off-black (#1B1B22) cards they sit on. ── */}
       <style>{`
+        /* All Players ledger — roster-style frozen player column at EVERY
+           width (owner ruling 2026-08-24: "enable the scrolling feature just
+           like the roster tab"): the # / headshot / Player cells pin while the
+           stat columns scroll under them. Was phone-only; promoted global.
+           The pinned cells must form one OPAQUE pane (owner report on b14:
+           columns visibly slid through the grid gaps / padding strips / the
+           space above and below short cells): each cell stretches to full row
+           height and paints a solid same-color halo (spread-only box-shadow)
+           over the surrounding gap strips. A shade darker than the card so
+           the frozen pane reads as its own surface. */
+        /* All Players ledger — ONE pinned player cell per row (rank + headshot
+           + name with pos · team beneath; owner ruling 2026-08-24). A single
+           sticky element per row scrolls far smoother than the previous three
+           and leaves no internal gaps to patch. The 5px spread halo covers the
+           row's vertical padding + the grid gap; the -10px layer covers the
+           row's left padding strip. A static pseudo-element paints the gold
+           hairline + fade runway where the stats emerge — nothing blurred
+           repaints on scroll. */
+        /* The pane must end EXACTLY at its gold hairline (owner report on
+           b17: an overhanging fade runway sat on top of the first stat
+           column — "the years column is cut off"). Cover layers paint only
+           left/above/below — never to the right — so the resting first
+           column is fully visible and scrolled content clips crisply at
+           the hairline. */
+        .lm-ap-head > :nth-child(1), .lm-ap-row > :nth-child(1) {
+            position: sticky; left: 10px; z-index: 1;
+            align-self: stretch;
+            background: #0d0d12;
+            border-right: 1px solid rgba(212,175,55,0.28);
+            box-shadow: -10px 0 0 0 #0d0d12, 0 -5px 0 0 #0d0d12, 0 5px 0 0 #0d0d12, -10px -5px 0 0 #0d0d12, -10px 5px 0 0 #0d0d12;
+        }
+        .lm-ap-head > :nth-child(1) {
+            background: #221f1a;
+            box-shadow: -10px 0 0 0 #221f1a, 0 -6px 0 0 #221f1a, 0 6px 0 0 #221f1a, -10px -6px 0 0 #221f1a, -10px 6px 0 0 #221f1a;
+            display: flex; align-items: center;
+        }
+        .lm-ap-row.is-hl > :nth-child(1) {
+            background: #191715;
+            box-shadow: -10px 0 0 0 #191715, 0 -5px 0 0 #191715, 0 5px 0 0 #191715, -10px -5px 0 0 #191715, -10px 5px 0 0 #191715;
+        }
         @media (max-width: 767px) {
-            /* All Players ledger (free tier): already a min-width scroll table
-               (iPad pass) — pin the name column (3rd cell: # · avatar · name). */
-            .lm-ap-head > :nth-child(3), .lm-ap-row > :nth-child(3) {
-                position: sticky; left: 0; z-index: 1;
-                background: var(--black, #121217);
-                box-shadow: 6px 0 8px -6px rgba(0,0,0,0.6);
-            }
-            .lm-ap-head > :nth-child(3) { background: #221f1a; }
-            .lm-ap-row.is-hl > :nth-child(3) { background: #1a1818; }
 
             /* Draft Picks ledger (free tier): 240px of fixed columns + two 1fr
                owner columns crush inside an overflow:hidden card at 375 — the
@@ -1654,9 +1823,40 @@ function LeagueMapTab({
           <button className={assetsView === 'players' ? 'is-on' : ''} onClick={() => setAssetsView('players')}>Players</button>
           <button className={assetsView === 'picks' ? 'is-on' : ''} onClick={() => setAssetsView('picks')}>Picks</button>
         </div>
-      ) : <div className="wr-module-nav" style={{ marginBottom: '12px' }}>
+      ) : <div className="wr-module-nav" style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <button className={assetsView === 'players' ? 'is-active' : ''} onClick={() => setAssetsView('players')}>All Players</button>
         <button className={assetsView === 'picks' ? 'is-active' : ''} onClick={() => setAssetsView('picks')}>Draft Picks</button>
+        {/* Roster-tab view controls, relocated beside the tab buttons (owner
+            ruling 2026-08-24): preset select + Customize + saved views. */}
+        {assetsView === 'players' && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>View</span>
+                <select
+                    value={apActivePreset}
+                    onChange={e => { const set = ALL_PLAYERS_PRESETS[e.target.value]; if (set) setAllPlayersCols(set.slice()); }}
+                    title="Column preset"
+                    style={{ background: 'var(--ov-4, rgba(255,255,255,0.06))', border: '1px solid ' + (apActivePreset !== 'default' ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-6, rgba(255,255,255,0.12))'), borderRadius: 'var(--card-radius-xs, 5px)', padding: '6px 8px', color: apActivePreset !== 'default' ? 'var(--gold)' : 'var(--silver)', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', minHeight: '38px', outline: 'none' }}>
+                    {Object.keys(ALL_PLAYERS_PRESETS).map(k => <option key={k} value={k}>{ALL_PLAYERS_PRESET_LABELS[k] || k}</option>)}
+                    {apActivePreset === 'custom' && <option value="custom">{ALL_PLAYERS_PRESET_LABELS.custom}</option>}
+                </select>
+                <button onClick={() => setAllPlayersColPickerOpen(o => !o)} style={{ minHeight: '38px', padding: '6px 12px', borderRadius: 'var(--card-radius-xs, 5px)', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', background: allPlayersColPickerOpen ? 'rgba(212,175,55,0.18)' : 'var(--acc-fill2, rgba(212,175,55,0.1))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', cursor: 'pointer' }}>Customize · {allPlayersCols.length}/{ALL_PLAYERS_COLUMNS.length}</button>
+                {window.WR?.SavedViews?.SavedViewBar && (
+                    React.createElement(window.WR.SavedViews.SavedViewBar, {
+                        surface: 'all_players',
+                        leagueId: currentLeague?.id || currentLeague?.league_id,
+                        currentState: { columns: allPlayersCols, sort: lpSort, filters: { lpFilter, lpSearch: lpSearch || '' } },
+                        onApply: v => {
+                            if (Array.isArray(v.columns) && v.columns.length) setAllPlayersCols(v.columns);
+                            if (v.sort && v.sort.key) setLpSort({ key: v.sort.key, dir: v.sort.dir || -1 });
+                            if (v.filters) {
+                                if (typeof v.filters.lpFilter === 'string') setLpFilter(v.filters.lpFilter);
+                                if (typeof v.filters.lpSearch === 'string' && setLpSearch) setLpSearch(v.filters.lpSearch);
+                            }
+                        },
+                    })
+                )}
+            </div>
+        )}
       </div>)}
       {_activeSubView === 'teams' && (<div>
       <div className="wr-module-toolbar">
@@ -1835,11 +2035,117 @@ function LeagueMapTab({
         }
         if (lpFilter === '__ROOKIE__') filtered = filtered.filter(x => x.p.years_exp === 0);
         else if (lpFilter) filtered = filtered.filter(x => x.pos === lpFilter);
+        // ── Default-view column values (owner ruling 2026-08-24) ──
+        // Shared by renderCell AND the sort comparator so a header sort and the
+        // cell always agree. Points/GP read the same statsData the PPG math
+        // uses; ADP is the display-only redraft market map (null until loaded);
+        // Proj memoizes projectPlayer per (league|season|week|pid) because this
+        // ledger renders every row, every render.
+        const ptsOf = (x) => { const st = statsData[x.pid] || {}; return st.gp > 0 ? +calcRawPts(st).toFixed(1) : 0; };
+        const gpOf = (x) => (statsData[x.pid] || {}).gp || 0;
+        // ── Roster-tab mirrored sources (owner ruling 2026-08-24): same
+        // engines/data my-team.js reads, so the two tables agree per player. ──
+        const metaOf = (x) => window.App?.LI?.playerMeta?.[x.pid];
+        const prevPpgOf = (x) => {
+            const pv = (stats2025Data || {})[x.pid] || {};
+            return pv.gp > 0 ? +(calcRawPts(pv) / pv.gp).toFixed(1) : 0;
+        };
+        const trendOf = (x) => {
+            const m = metaOf(x);
+            if (m && m.trend) return m.trend;
+            const prev = prevPpgOf(x);
+            return prev && x.ppg ? Math.round((x.ppg - prev) / prev * 100) : 0;
+        };
+        const fsOf = (x) => (typeof window.App?.WeeklyProj?.formStats === 'function' ? window.App.WeeklyProj.formStats(x.pid, 'season') : null);
+        const durGpOf = (x) => {
+            const m = metaOf(x);
+            if (m && m.recentGP > 0) return m.recentGP;
+            const cur = gpOf(x), prev = ((stats2025Data || {})[x.pid] || {}).gp || 0;
+            return cur > 0 && prev > 0 ? Math.round((cur + prev) / 2) : (cur || prev);
+        };
+        const peakPhaseOf = (x) => {
+            if (!x.age) return '—';
+            const curve = typeof window.App?.getAgeCurve === 'function'
+                ? window.App.getAgeCurve(x.pos)
+                : { peak: (window.App?.peakWindows || {})[x.pos] || [24, 29], decline: [30, 32] };
+            const [pLo, pHi] = curve.peak || [24, 29];
+            const declineHi = (curve.decline && curve.decline[1]) || (pHi + 3);
+            return x.age < pLo ? 'PRE' : x.age <= pHi ? 'PRIME' : x.age <= declineHi ? 'VET' : 'POST';
+        };
+        // League position rank among ROSTERED players (matches the roster
+        // tab's Lg # semantics) — one map per render, not O(n) per row.
+        const lgRankByPid = (() => {
+            const byPos = {};
+            allPlayers.forEach(x => { if (!x.isPool) (byPos[x.pos] = byPos[x.pos] || []).push(x); });
+            const out = {};
+            Object.keys(byPos).forEach(pos => {
+                byPos[pos].sort((a, b) => b.dhq - a.dhq).forEach((x, i) => { out[x.pid] = pos + (i + 1); });
+            });
+            return out;
+        })();
+        const nflRankOf = (x) => {
+            const m = metaOf(x);
+            if (m && m.fcRank) return x.pos + m.fcRank;
+            if (!_nflRankMap || !Object.keys(_nflRankMap).length) _nflRankMap = _buildNflRankMap(playersData);
+            return _nflRankMap[x.pid] || null;
+        };
+        const sosOf = (x) => {
+            const S2 = window.App?.SOS;
+            if (!S2 || !S2.ready || typeof S2.getPlayerSOS !== 'function') return null;
+            const s = S2.getPlayerSOS(x.pid, x.pos, x.p?.team);
+            return s ? s.avgRank : null;
+        };
+        // NFL draft capital — static vendored dataset, same helper the roster
+        // tab and Free Agency carry ([year, round, OVERALL pick, team]).
+        const draftCapFor = (pid) => {
+            const d = window.WR_DRAFT_PROFILE?.[pid];
+            if (!d) return null;
+            return { year: d[0] || 0, round: d[1] || 0, overall: d[2] || 0, team: d[3] || '' };
+        };
+        const fmtHeight = (h) => { const n = parseInt(h, 10); return n > 40 && n < 90 ? Math.floor(n / 12) + "'" + (n % 12) + '"' : (h || null); };
+        const adpOf = (x) => { const g = typeof window.App?.getRedraftAdp === 'function' ? window.App.getRedraftAdp(String(x.pid)) : null; return g && typeof g.adp === 'number' && g.adp > 0 ? g.adp : null; };
+        const projCtx = (() => {
+            const WP = window.App && window.App.WeeklyProj;
+            const wk = WP && WP.currentWeek ? WP.currentWeek() : (window.S?.currentWeek || 1);
+            const season = (window.S?.nflState && window.S.nflState.season) || window.S?.season || '';
+            const lid = currentLeague?.league_id || currentLeague?.id || '';
+            return { wk, scoring: currentLeague?.scoring_settings || {}, prefix: lid + '|' + season + '|' + wk + '|' };
+        })();
+        const projOf = (x) => {
+            const WP = window.App && window.App.WeeklyProj;
+            if (!WP || !WP.projectPlayer) return null;
+            const k = projCtx.prefix + x.pid;
+            if (k in _allPlayersProjMemo) return _allPlayersProjMemo[k];
+            let v = null;
+            try {
+                const prj = WP.projectPlayer(x.pid, { playersData, statsData, priorData: {}, scoring: projCtx.scoring, week: projCtx.wk });
+                const med = prj && prj.points && prj.points.median;
+                v = (med != null && isFinite(med)) ? +(+med).toFixed(1) : null;
+            } catch (e) { v = null; }
+            _allPlayersProjMemo[k] = v;
+            return v;
+        };
         filtered.sort((a, b) => {
             const { key, dir } = lpSort;
             if (key === 'dhq') return (a.dhq - b.dhq) * dir;
             if (key === 'age') return ((a.age||99) - (b.age||99)) * dir;
             if (key === 'ppg') return (a.ppg - b.ppg) * dir;
+            if (key === 'points') return (ptsOf(a) - ptsOf(b)) * dir;
+            if (key === 'gp') return (gpOf(a) - gpOf(b)) * dir;
+            if (key === 'proj') return ((projOf(a) || 0) - (projOf(b) || 0)) * dir;
+            // Missing ADP sorts to the bottom in BOTH directions — a player the
+            // market isn't drafting must not "win" an ascending sort.
+            if (key === 'adp') {
+                const va = adpOf(a), vb = adpOf(b);
+                if (va == null && vb == null) return 0;
+                if (va == null) return 1;
+                if (vb == null) return -1;
+                return (va - vb) * dir;
+            }
+            if (key === 'hi') { const fa = fsOf(a), fb = fsOf(b); return (((fa && fa.high) || 0) - ((fb && fb.high) || 0)) * dir; }
+            if (key === 'lo') { const fa = fsOf(a), fb = fsOf(b); return (((fa && fa.low) || 0) - ((fb && fb.low) || 0)) * dir; }
+            if (key === 'prev') return (prevPpgOf(a) - prevPpgOf(b)) * dir;
+            if (key === 'trend') return (trendOf(a) - trendOf(b)) * dir;
             if (key === 'name') return (a.p.full_name||'').localeCompare(b.p.full_name||'') * dir;
             if (key === 'team') return a.teamName.localeCompare(b.teamName) * dir;
             return 0;
@@ -1896,29 +2202,8 @@ function LeagueMapTab({
                                 <button key={opt.k} onClick={() => setPpgWindow(opt.k)} title={opt.k === 'season' ? 'Season-to-date PPG' : 'Last ' + (opt.k === 'l5' ? 5 : 3) + ' games'} style={{ minHeight: '38px', padding: '6px 12px', borderRadius: '7px', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', color: ppgWindow === opt.k ? 'var(--gold)' : 'var(--silver)', background: ppgWindow === opt.k ? 'rgba(212,175,55,0.14)' : 'transparent', border: '1px solid ' + (ppgWindow === opt.k ? 'var(--gold)' : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{opt.l}</button>
                             ))}
                             <div style={{ position: 'relative', marginLeft: 'auto' }}>
-                                <button onClick={() => setAllPlayersColPickerOpen(o => !o)} style={{ minHeight: '38px', padding: '6px 12px', borderRadius: '7px', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', cursor: 'pointer' }}>⚙ Columns ({allPlayersCols.length})</button>
-                                {allPlayersColPickerOpen && (
-                                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', padding: '8px', zIndex: 20, minWidth: '200px', boxShadow: '0 6px 20px rgba(0,0,0,0.6)' }}>
-                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '6px' }}>Visible Columns</div>
-                                        {ALL_PLAYERS_COLUMNS.filter(c => isPro || c.key !== 'tier').map(c => {
-                                            const on = allPlayersCols.includes(c.key);
-                                            return (
-                                                <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 0', fontSize: '0.76rem', color: 'var(--silver)', cursor: c.toggleable === false ? 'not-allowed' : 'pointer', opacity: c.toggleable === false ? 0.6 : 1 }}>
-                                                    <input type="checkbox" checked={on} disabled={c.toggleable === false} onChange={() => {
-                                                        if (c.toggleable === false) return;
-                                                        setAllPlayersCols(prev => prev.includes(c.key) ? prev.filter(k => k !== c.key) : [...prev, c.key]);
-                                                    }} />
-                                                    {c.label}
-                                                </label>
-                                            );
-                                        })}
-                                        <div style={{ display: 'flex', gap: '4px', marginTop: '8px', borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))', paddingTop: '6px' }}>
-                                            <button onClick={() => setAllPlayersCols(ALL_PLAYERS_COLUMNS.map(c => c.key))} style={{ flex: 1, padding: '8px 4px', fontSize: 'var(--text-micro, 0.6875rem)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '3px', color: 'var(--silver)', cursor: 'pointer', fontFamily: 'inherit' }}>All</button>
-                                            <button onClick={() => setAllPlayersCols(ALL_PLAYERS_DEFAULT_VISIBLE.slice())} style={{ flex: 1, padding: '8px 4px', fontSize: 'var(--text-micro, 0.6875rem)', background: 'var(--acc-fill3, rgba(212,175,55,0.15))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '3px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'inherit' }}>Reset</button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
+                                <button onClick={() => setAllPlayersColPickerOpen(o => !o)} style={{ minHeight: '38px', padding: '6px 12px', borderRadius: '7px', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', cursor: 'pointer' }}>⚙ Customize ({allPlayersCols.length})</button>
+                                                            </div>
                         </div>
                         {window.WR?.SavedViews?.SavedViewBar && (
                             React.createElement(window.WR.SavedViews.SavedViewBar, {
@@ -1975,54 +2260,77 @@ function LeagueMapTab({
                             borderRadius: '3px', cursor: 'pointer', letterSpacing: '0.03em', minHeight: '44px'
                         }}>{opt.l}</button>
                     ))}
-                    {/* Column picker */}
-                    <div style={{ position: 'relative' }}>
-                        <button onClick={() => setAllPlayersColPickerOpen(o => !o)} style={{
-                            padding: '4px 10px', fontSize: '0.72rem', fontFamily: 'var(--font-body)',
-                            background: 'var(--acc-fill2, rgba(212,175,55,0.1))', color: 'var(--gold)',
-                            border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '3px', cursor: 'pointer',
-                        }}>⚙ Columns ({allPlayersCols.length})</button>
-                        {allPlayersColPickerOpen && (
-                            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', padding: '8px', zIndex: 20, minWidth: '180px', boxShadow: '0 6px 20px rgba(0,0,0,0.6)' }}>
-                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '6px' }}>Visible Columns</div>
-                                {ALL_PLAYERS_COLUMNS.filter(c => isPro || c.key !== 'tier').map(c => {
-                                    const on = allPlayersCols.includes(c.key);
-                                    return (
-                                        <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', fontSize: '0.72rem', color: 'var(--silver)', cursor: c.toggleable === false ? 'not-allowed' : 'pointer', opacity: c.toggleable === false ? 0.6 : 1 }}>
-                                            <input type="checkbox" checked={on} disabled={c.toggleable === false} onChange={() => {
-                                                if (c.toggleable === false) return;
-                                                setAllPlayersCols(prev => prev.includes(c.key) ? prev.filter(k => k !== c.key) : [...prev, c.key]);
-                                            }} />
-                                            {c.label}
-                                        </label>
-                                    );
-                                })}
-                                <div style={{ display: 'flex', gap: '4px', marginTop: '8px', borderTop: '1px solid var(--ov-5, rgba(255,255,255,0.08))', paddingTop: '6px' }}>
-                                    <button onClick={() => setAllPlayersCols(ALL_PLAYERS_COLUMNS.map(c => c.key))} style={{ flex: 1, padding: '4px', fontSize: 'var(--text-micro, 0.6875rem)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '3px', color: 'var(--silver)', cursor: 'pointer', fontFamily: 'inherit' }}>All</button>
-                                    <button onClick={() => setAllPlayersCols(ALL_PLAYERS_DEFAULT_VISIBLE.slice())} style={{ flex: 1, padding: '4px', fontSize: 'var(--text-micro, 0.6875rem)', background: 'var(--acc-fill3, rgba(212,175,55,0.15))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '3px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'inherit' }}>Reset</button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    {window.WR?.SavedViews?.SavedViewBar && (
-                        <div style={{ marginLeft: 'auto' }}>
-                            {React.createElement(window.WR.SavedViews.SavedViewBar, {
-                                surface: 'all_players',
-                                leagueId: currentLeague?.id || currentLeague?.league_id,
-                                currentState: { columns: allPlayersCols, sort: lpSort, filters: { lpFilter, lpSearch: lpSearch || '' } },
-                                onApply: v => {
-                                    if (Array.isArray(v.columns) && v.columns.length) setAllPlayersCols(v.columns);
-                                    if (v.sort && v.sort.key) setLpSort({ key: v.sort.key, dir: v.sort.dir || -1 });
-                                    if (v.filters) {
-                                        if (typeof v.filters.lpFilter === 'string') setLpFilter(v.filters.lpFilter);
-                                        if (typeof v.filters.lpSearch === 'string' && setLpSearch) setLpSearch(v.filters.lpSearch);
-                                    }
-                                },
-                            })}
-                        </div>
-                    )}
+                    {/* Customize + saved views moved beside the Draft Picks tab
+                        button (owner ruling 2026-08-24) — desktop keeps only
+                        search / filters / PPG here. */}
                 </div>
                 )}
+                {/* Roster-tab customize panel (owner ruling 2026-08-24): Active
+                    Order with move/hide + grouped field checkboxes, replacing
+                    the old flat checkbox popover. Same state, same per-league
+                    storage — the stored array is now the display order. */}
+                {allPlayersColPickerOpen && (() => {
+                    const orderKeys = allPlayersCols.filter(k => k !== 'name' && ALL_PLAYERS_COL_BY_KEY[k] && (isPro || k !== 'tier'));
+                    const groups = ['core', 'stats', 'value', 'league']
+                        .map(g => ({ g, cols: ALL_PLAYERS_COLUMNS.filter(c => c.group === g && c.toggleable !== false && (isPro || c.key !== 'tier')) }))
+                        .filter(e => e.cols.length);
+                    const smallBtn = (on) => ({ padding: '6px 12px', minHeight: '32px', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', cursor: 'pointer', borderRadius: 'var(--card-radius-xs, 5px)', fontFamily: 'var(--font-body)', border: '1px solid ' + (on ? 'var(--acc-line2, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.12))'), background: on ? 'rgba(212,175,55,0.12)' : 'transparent', color: on ? 'var(--gold)' : 'var(--silver)' });
+                    return (
+                        <div style={{ background: 'linear-gradient(180deg, var(--surf-solid, rgba(22,22,29,0.98)), var(--surf-solid, rgba(10,10,14,0.98)))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 'var(--card-radius, 10px)', padding: '12px', marginBottom: '10px', boxShadow: '0 10px 28px rgba(0,0,0,0.24)' }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                                <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--white)', fontWeight: 700, letterSpacing: '0.04em' }}>Customize Columns</div>
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58 }}>{orderKeys.length + 1} of {ALL_PLAYERS_COLUMNS.filter(c => isPro || c.key !== 'tier').length} active</div>
+                                <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <button onClick={() => setAllPlayersCols(ALL_PLAYERS_COLUMNS.filter(c => isPro || c.key !== 'tier').map(c => c.key))} style={smallBtn(false)}>All Fields</button>
+                                    <button onClick={() => setAllPlayersCols(ALL_PLAYERS_DEFAULT_VISIBLE.slice())} style={smallBtn(true)}>Reset Default</button>
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px', alignItems: 'start' }}>
+                                <div style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px', minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>Active Order</div>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.54 }}>Player is always first</div>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                        {orderKeys.length === 0 ? (
+                                            <div style={{ padding: '12px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
+                                        ) : orderKeys.map((key, idx) => {
+                                            const col = ALL_PLAYERS_COL_BY_KEY[key];
+                                            const navBtn = (off) => ({ height: '26px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: off ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: off ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: off ? 'default' : 'pointer' });
+                                            return (
+                                                <div key={key} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) 28px 28px 28px', gap: '5px', alignItems: 'center', padding: '5px 6px', borderRadius: 'var(--card-radius-xs, 5px)', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
+                                                    <span style={{ color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>{idx + 1}</span>
+                                                    <span title={col.label} style={{ color: 'var(--white)', fontSize: '0.74rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.label}</span>
+                                                    <button disabled={idx === 0} onClick={() => apMoveColumn(key, -1)} title="Move left" style={navBtn(idx === 0)}>{'‹'}</button>
+                                                    <button disabled={idx === orderKeys.length - 1} onClick={() => apMoveColumn(key, 1)} title="Move right" style={navBtn(idx === orderKeys.length - 1)}>{'›'}</button>
+                                                    <button onClick={() => apRemoveColumn(key)} title="Hide column" style={{ height: '26px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'×'}</button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+                                    {groups.map(({ g, cols }) => (
+                                        <div key={g} style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px' }}>
+                                            <div style={{ marginBottom: '6px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>{ALL_PLAYERS_GROUP_LABELS[g] || g}</div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                {cols.map(c => {
+                                                    const active = allPlayersCols.includes(c.key);
+                                                    return (
+                                                        <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '5px 7px', borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontSize: '0.74rem', background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-1, rgba(255,255,255,0.018))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-fill3, rgba(212,175,55,0.18))' : 'var(--ov-3, rgba(255,255,255,0.04))') }}>
+                                                            <input type="checkbox" checked={active} onChange={() => { if (active) apRemoveColumn(c.key); else apAddColumn(c.key); }} style={{ accentColor: 'var(--gold)' }} />
+                                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}</span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
                 {(() => {
                     // ══ PHONE (≤767) — the All Players ledger re-pours as P1
                     // AssetRows (iPhone program Phase 3, Analytics assets
@@ -2067,12 +2375,22 @@ function LeagueMapTab({
                     // assessment — a competitive-tier read (Q7) → Pro. Filtered at
                     // the render seam so persisted column prefs and saved views
                     // can't resurrect it for free.
-                    const activeCols = ALL_PLAYERS_COLUMNS.filter(c => allPlayersCols.includes(c.key) && (isPro || c.key !== 'tier'));
-                    const gridTpl = ['24px', '28px'].concat(activeCols.map(c => c.width)).join(' ');
-                    // Sum fixed (px) column widths + index/avatar cols + a 140px floor for the 1fr name col,
-                    // so wide column selections scroll horizontally inside the card on iPad instead of crushing the name column.
+                    // The user's stored order drives display order (roster-tab
+                    // customize model); Player stays pinned first. Owner Tier is
+                    // a Pro read, filtered at this seam as before.
+                    const activeCols = allPlayersCols
+                        .filter(k => k !== 'name' && ALL_PLAYERS_COL_BY_KEY[k] && (isPro || k !== 'tier'))
+                        .map(k => ALL_PLAYERS_COL_BY_KEY[k]);
+                    // ONE pinned player cell (rank + headshot + name with pos ·
+                    // team stacked beneath — owner ruling 2026-08-24). A single
+                    // sticky element per row scrolls far smoother than the
+                    // previous three, and the pane has no internal gaps to
+                    // patch. Stat columns keep their width as a floor and
+                    // stretch evenly when there's surplus.
+                    const PLAYER_COL_W = 224;
+                    const gridTpl = [PLAYER_COL_W + 'px'].concat(activeCols.map(c => 'minmax(' + c.width + ', 1fr)')).join(' ');
                     const fixedColPx = activeCols.reduce((sum, c) => sum + (/px$/.test(c.width) ? parseInt(c.width, 10) : 0), 0);
-                    const gridMinWidth = (24 + 28 + 140 + fixedColPx + (activeCols.length + 2) * 4) + 'px';
+                    const gridMinWidth = (PLAYER_COL_W + fixedColPx + (activeCols.length + 1) * 4 + 20) + 'px';
                     const tierOf = (rid) => {
                         const h = window.App?.LI?.teamHealth?.[rid];
                         return h?.tier || '';
@@ -2083,22 +2401,16 @@ function LeagueMapTab({
                         return Math.max(0, pw[1] - x.age);
                     };
                     return (
-                <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <div ref={apScrollRef} style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     <div className="lm-ap-head" style={{ display: 'grid', gridTemplateColumns: gridTpl, gap: '4px', padding: '6px 10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', minWidth: gridMinWidth }}>
-                        <span>#</span><span></span>
+                        <span style={{ cursor: 'pointer', paddingLeft: '27px' }} onClick={() => setLpSort(prev => prev.key === 'name' ? { ...prev, dir: prev.dir * -1 } : { key: 'name', dir: 1 })}>
+                            Player{lpSort.key === 'name' ? (lpSort.dir === -1 ? ' \u25BC' : ' \u25B2') : ''}
+                        </span>
                         {activeCols.map(c => {
                             if (c.sortable && c.sortKey) {
                                 const isActive = lpSort.key === c.sortKey;
                                 return (
-                                    <span key={c.key} style={{ cursor: 'pointer' }} onClick={() => setLpSort(prev => prev.key === c.sortKey ? { ...prev, dir: prev.dir * -1 } : { key: c.sortKey, dir: c.sortKey === 'team' ? 1 : -1 })}>
-                                        {c.label}{isActive ? (lpSort.dir === -1 ? ' \u25BC' : ' \u25B2') : ''}
-                                    </span>
-                                );
-                            }
-                            if (c.key === 'name') {
-                                const isActive = lpSort.key === 'name';
-                                return (
-                                    <span key={c.key} style={{ cursor: 'pointer' }} onClick={() => setLpSort(prev => prev.key === 'name' ? { ...prev, dir: prev.dir * -1 } : { key: 'name', dir: 1 })}>
+                                    <span key={c.key} style={{ cursor: 'pointer', whiteSpace: 'nowrap', textAlign: c.center ? 'center' : undefined }} onClick={() => setLpSort(prev => prev.key === c.sortKey ? { ...prev, dir: prev.dir * -1 } : { key: c.sortKey, dir: (c.sortKey === 'team' || c.sortKey === 'adp') ? 1 : -1 })}>
                                         {c.label}{isActive ? (lpSort.dir === -1 ? ' \u25BC' : ' \u25B2') : ''}
                                     </span>
                                 );
@@ -2111,7 +2423,7 @@ function LeagueMapTab({
                                     </span>
                                 );
                             }
-                            return <span key={c.key}>{c.label}</span>;
+                            return <span key={c.key} style={{ whiteSpace: 'nowrap', textAlign: c.center ? 'center' : undefined }}>{c.label}</span>;
                         })}
                     </div>
                     <div style={_analyticsEmbed ? { minWidth: gridMinWidth } : { maxHeight: '600px', overflowY: 'auto', minWidth: gridMinWidth }}>
@@ -2145,7 +2457,83 @@ function LeagueMapTab({
                                     case 'age':
                                         return <span key={c.key} style={{ color: 'var(--silver)' }}>{x.age || '\u2014'}</span>;
                                     case 'yoe':
-                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{yoe === '' ? '\u2014' : yoe}</span>;
+                                        return <span key={c.key} style={{ color: 'var(--silver)', textAlign: 'center' }}>{yoe === '' ? '\u2014' : yoe}</span>;
+                                    case 'points': {
+                                        const v = ptsOf(x);
+                                        return <span key={c.key} style={{ color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>{v > 0 ? v : '\u2014'}</span>;
+                                    }
+                                    case 'gp': {
+                                        const v = gpOf(x);
+                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{v > 0 ? v : '\u2014'}</span>;
+                                    }
+                                    case 'proj': {
+                                        const v = projOf(x);
+                                        return <span key={c.key} style={{ color: v != null && v > 0 ? 'var(--white)' : 'var(--silver)', fontFamily: 'var(--font-body)' }}>{v != null && v > 0 ? v : '\u2014'}</span>;
+                                    }
+                                    case 'adp': {
+                                        const a = adpOf(x);
+                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{a != null ? a.toFixed(1) : '\u2014'}</span>;
+                                    }
+                                    case 'hi': {
+                                        const fsv = fsOf(x);
+                                        return <span key={c.key} style={{ color: fsv ? 'var(--good)' : 'var(--silver)', opacity: fsv ? 1 : 0.45 }}>{fsv ? fsv.high.toFixed(1) : '\u2014'}</span>;
+                                    }
+                                    case 'lo': {
+                                        const fsv = fsOf(x);
+                                        return <span key={c.key} style={{ color: 'var(--silver)', opacity: fsv ? 0.85 : 0.45 }}>{fsv ? fsv.low.toFixed(1) : '\u2014'}</span>;
+                                    }
+                                    case 'prev': {
+                                        const v = prevPpgOf(x);
+                                        return <span key={c.key} style={{ color: 'var(--silver)', opacity: 0.85 }}>{v > 0 ? v : '\u2014'}</span>;
+                                    }
+                                    case 'trend': {
+                                        const t = trendOf(x);
+                                        return <span key={c.key} style={{ fontWeight: 600, color: t > 0 ? 'var(--good)' : t < 0 ? 'var(--bad)' : 'var(--silver)' }}>{t ? (t > 0 ? '+' : '') + t + '%' : '\u2014'}</span>;
+                                    }
+                                    case 'durability': {
+                                        const g = durGpOf(x) || 0;
+                                        return (
+                                            <span key={c.key} title={'Avg GP: ' + g + '/17'} style={{ display: 'flex', alignItems: 'center' }}>
+                                                {g > 0 ? (
+                                                    <div style={{ width: '24px', height: '4px', borderRadius: '2px', background: 'var(--ov-4, rgba(255,255,255,0.06))', overflow: 'hidden' }}>
+                                                        <div style={{ width: Math.min(100, (g / 17) * 100) + '%', height: '100%', background: g >= 15 ? 'var(--good)' : g >= 10 ? 'var(--silver)' : 'var(--bad)', opacity: 0.8, borderRadius: '2px' }} />
+                                                    </div>
+                                                ) : <span style={{ color: 'var(--ov-7, rgba(255,255,255,0.2))', fontSize: 'var(--text-micro, 0.6875rem)' }}>{'\u2014'}</span>}
+                                            </span>
+                                        );
+                                    }
+                                    case 'sos': {
+                                        const s = sosOf(x);
+                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{s != null ? s : '\u2014'}</span>;
+                                    }
+                                    case 'peakPhase': {
+                                        const ph = peakPhaseOf(x);
+                                        return <span key={c.key} style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.04em', color: ph === 'PRIME' ? 'var(--good)' : ph === 'PRE' ? 'var(--k-3498db, #3498db)' : ph === 'VET' ? 'var(--warn)' : ph === 'POST' ? 'var(--bad)' : 'var(--silver)' }}>{ph}</span>;
+                                    }
+                                    case 'posRankLg':
+                                        return <span key={c.key} style={{ color: 'var(--gold)', fontWeight: 600 }}>{x.isPool ? '\u2014' : (lgRankByPid[x.pid] || '\u2014')}</span>;
+                                    case 'posRankNfl':
+                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{nflRankOf(x) || '\u2014'}</span>;
+                                    case 'starterSzn': {
+                                        const m = metaOf(x);
+                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{m && m.starterSeasons != null ? m.starterSeasons : '\u2014'}</span>;
+                                    }
+                                    case 'college':
+                                        return <span key={c.key} style={{ color: 'var(--silver)', fontSize: '0.7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.p.college || '\u2014'}</span>;
+                                    case 'height':
+                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{fmtHeight(x.p.height) || '\u2014'}</span>;
+                                    case 'weight':
+                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{x.p.weight || '\u2014'}</span>;
+                                    case 'depthChart':
+                                        return <span key={c.key} style={{ color: x.p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: '0.7rem' }}>{x.p.depth_chart_order != null ? x.pos + (x.p.depth_chart_order + 1) : ((!x.p.team || x.p.team === 'FA') ? 'FA' : '\u2014')}</span>;
+                                    case 'rkSlot': {
+                                        const d = draftCapFor(x.pid);
+                                        return <span key={c.key} style={{ color: d ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: '0.7rem' }}>{d ? (d.round > 0 ? 'R' + d.round + ' #' + d.overall : 'UDFA') : '\u2014'}</span>;
+                                    }
+                                    case 'rkTeam': {
+                                        const d = draftCapFor(x.pid);
+                                        return <span key={c.key} style={{ color: 'var(--silver)', fontSize: '0.7rem' }}>{d && d.team ? d.team : '\u2014'}</span>;
+                                    }
                                     case 'peak':
                                         return (
                                             <span key={c.key} style={{ display: 'flex', alignItems: 'center' }}>
@@ -2157,7 +2545,7 @@ function LeagueMapTab({
                                             </span>
                                         );
                                     case 'peakYrs':
-                                        return <span key={c.key} style={{ color: 'var(--silver)' }}>{yrs == null ? '\u2014' : yrs}</span>;
+                                        return <span key={c.key} style={{ color: 'var(--silver)', textAlign: 'center' }}>{yrs == null ? '\u2014' : yrs}</span>;
                                     case 'dhq':
                                         return <span key={c.key} style={{ fontWeight: 700, fontFamily: 'var(--font-body)', color: x.dhq >= 7000 ? 'var(--good)' : x.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : x.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{x.dhq > 0 ? x.dhq.toLocaleString() : '\u2014'}</span>;
                                     case 'ppg': {
@@ -2192,11 +2580,25 @@ function LeagueMapTab({
                                 style={{ display: 'grid', gridTemplateColumns: gridTpl, gap: '4px', padding: '5px 10px', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', cursor: 'pointer', fontSize: '0.72rem', alignItems: 'center', background: rowBg, transition: 'background 0.1s' }}
                                 onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.06))'}
                                 onMouseLeave={e => e.currentTarget.style.background = rowBg}>
-                                <span style={{ fontSize: '0.72rem', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>{idx+1}</span>
-                                <div style={{ width: '22px', height: '22px', flexShrink: 0 }}><img src={'https://sleepercdn.com/content/nfl/players/thumb/'+x.pid+'.jpg'} onError={e=>e.target.style.display='none'} style={{ width:'22px',height:'22px',borderRadius:'50%',objectFit:'cover' }} /></div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
+                                    <span style={{ width: '20px', textAlign: 'right', flexShrink: 0, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, fontFamily: 'var(--font-body)' }}>{idx+1}</span>
+                                    <div style={{ width: '24px', height: '24px', flexShrink: 0 }}><img src={'https://sleepercdn.com/content/nfl/players/thumb/'+x.pid+'.jpg'} onError={e=>e.target.style.display='none'} style={{ width:'24px',height:'24px',borderRadius:'50%',objectFit:'cover' }} /></div>
+                                    <div style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                                        <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontWeight: 600, fontSize: '0.76rem', color: x.isMe ? 'var(--gold)' : 'var(--white)', minWidth: 0 }}>{x.p.full_name || ((x.p.first_name || '') + ' ' + (x.p.last_name || '')).trim()}</div>
+                                        <span style={{ flexShrink: 0, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posColors[x.pos] || 'var(--silver)' }}>{leagueMapPosLabel(x.pos)}</span>
+                                        <span style={{ flexShrink: 0, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.75 }}>{x.p.team || 'FA'}</span>
+                                    </div>
+                                </div>
                                 {activeCols.map(renderCell)}
                             </div>
-                            {isExpanded && <RosterPlayerDossier x={x} playersData={playersData} statsData={statsData} currentLeague={currentLeague} normPos={normPos} onCollapse={() => setAllPlayersExpandedPid(null)} />}
+                            {/* Dossier pins at the visible width (roster boardWidth
+                                pattern) so it doesn't scroll off with the stat
+                                columns when the ledger is scrolled sideways. */}
+                            {isExpanded && (
+                                <div style={{ position: 'sticky', left: 0, zIndex: 2, width: apBoardW ? apBoardW + 'px' : 'auto' }}>
+                                    <RosterPlayerDossier x={x} playersData={playersData} statsData={statsData} currentLeague={currentLeague} normPos={normPos} onCollapse={() => setAllPlayersExpandedPid(null)} />
+                                </div>
+                            )}
                             </React.Fragment>
                             );
                         })}

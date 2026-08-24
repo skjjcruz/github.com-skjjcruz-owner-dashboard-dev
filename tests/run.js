@@ -876,6 +876,60 @@ test('nfl scoreboard: production endpoint + failure backoff (contract)',
     ok(card.includes('Object.keys(map).length) setScoutTick'), 'scouting tab must not re-tick (and re-fetch) on empty loads');
   });
 
+test('all players default view matches the owner ruling (2026-08-24)',
+  () => {
+    // Pos · Team · Years · Points · GP · PPG · Weekly Proj · DHQ · ADP.
+    // Pins the registry entries, the default-visible set, the old-default
+    // migration (nearly every visitor has the old default persisted — the
+    // effect writes it on first visit), and the render/sort seams for the
+    // four new columns.
+    const src = fs.readFileSync(path.join(ROOT, 'js/tabs/league-map.js'), 'utf8');
+    const def = src.match(/ALL_PLAYERS_DEFAULT_VISIBLE = \[([^\]]+)\]/);
+    ok(def, 'default-visible list must exist');
+    const keys = def[1].match(/'[^']+'/g).map(s => s.slice(1, -1));
+    // Pos + NFL Team live inside the pinned player cell (owner ruling
+    // 2026-08-24), not as standalone columns. The default is the owner's
+    // own board set from his live Customize panel (2026-08-24 3:09 PM):
+    // the full scouting ledger minus Dur / SOS / Lg # / NFL # / Starts.
+    const want = ['name', 'yoe', 'age', 'points', 'gp', 'ppg', 'proj', 'hi', 'lo', 'prev', 'dhq', 'adp', 'trend', 'peakPhase', 'peak', 'peakYrs', 'height', 'weight', 'college', 'depthChart', 'rkSlot', 'rkTeam', 'tier', 'owner', 'acq'];
+    ok(JSON.stringify(keys) === JSON.stringify(want), 'default view must be the owner-ruled set, got: ' + keys.join(','));
+    const registryBlock = src.match(/ALL_PLAYERS_COLUMNS = \[[\s\S]*?\n\];/)[0];
+    ok(!registryBlock.includes("key: 'pos'") && !registryBlock.includes("key: 'nflTeam'"), 'pos/team must be folded into the player cell, not standalone columns');
+    ok(src.includes('leagueMapPosLabel(x.pos)') && src.includes("x.p.team || 'FA'"), 'the pinned player cell must carry position and NFL team');
+    ok(src.includes('ALL_PLAYERS_PREV_DEFAULT'), 'untouched old-default prefs must migrate to the new default');
+    for (const c of ["case 'points'", "case 'gp'", "case 'proj'", "case 'adp'"]) {
+        ok(src.includes(c), 'renderCell must handle ' + c);
+    }
+    for (const s of ["key === 'points'", "key === 'gp'", "key === 'proj'", "key === 'adp'"]) {
+        ok(src.includes(s), 'sort comparator must handle ' + s);
+    }
+    ok(src.includes('_allPlayersProjMemo'), 'weekly projections must be memoized — the ledger renders 1,000+ rows');
+    ok(src.includes("addEventListener('wr:adp-loaded'"), 'ADP column must re-render when the market map lands');
+    // Roster-tab customize model (owner ruling 2026-08-24): the stored array
+    // is the display order, with move/hide/add helpers and the grouped panel.
+    ok(src.includes('Customize Columns'), 'All Players must carry the roster-style customize panel');
+    ok(src.includes('apMoveColumn'), 'columns must be reorderable');
+    ok(src.includes('apRemoveColumn') && src.includes('apAddColumn'), 'columns must be hideable and addable');
+    ok(src.includes("filter(k => k !== 'name' && ALL_PLAYERS_COL_BY_KEY[k]"), 'display order must follow the stored array');
+    ok(src.includes('PLAYER_COL_W'), 'the player cell must be a single structural pinned column');
+    ok(src.includes('ALL_PLAYERS_GROUP_LABELS'), 'picker fields must be grouped');
+    // Full roster-tab mirror (owner ruling 2026-08-24): every roster data
+    // column exists here too, reading the SAME engines/sources my-team.js
+    // reads, plus roster-style presets and the frozen player column.
+    for (const k of ["'hi'", "'lo'", "'prev'", "'trend'", "'durability'", "'sos'", "'peakPhase'", "'posRankLg'", "'posRankNfl'", "'starterSzn'", "'college'", "'height'", "'weight'", "'depthChart'", "'rkSlot'", "'rkTeam'"]) {
+        ok(src.includes('key: ' + k), 'mirrored roster column ' + k + ' must be in the registry');
+    }
+    ok(src.includes('WeeklyProj.formStats'), 'Hi/Lo must read the same formStats engine as the roster tab');
+    ok(src.includes('stats2025Data'), 'Last/Trend must read the prior-season stats the roster tab reads');
+    ok(src.includes('ALL_PLAYERS_PRESETS'), 'roster-style presets must exist');
+    ok(src.includes("'Deep Data'"), 'the Deep Data preset must expose every field');
+    ok(src.includes('.lm-ap-row > :nth-child(1)'), 'the single player cell must pin at every width (roster-style scroll)');
+    const analytics = fs.readFileSync(path.join(ROOT, 'js/tabs/analytics.js'), 'utf8');
+    ok(analytics.includes('stats2025Data'), 'the Analytics embed must thread prior-season stats through');
+    const myTeam = fs.readFileSync(path.join(ROOT, 'js/tabs/my-team.js'), 'utf8');
+    ok(myTeam.includes("pts:        { label: 'Total Points"), 'the roster tab must carry the Total Points column (mirror completeness)');
+  });
+
 test('league hub brand icon returns to the app front page, which stays put',
   () => {
     const app = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
