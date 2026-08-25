@@ -686,28 +686,38 @@ async function callAIProvider(args: {
         // wasted round-trip per cold start at most.
         const candidates = [geminiModelPins.get(route.model) || route.model, ...GEMINI_MODEL_FALLBACKS]
             .filter((m, i, a) => a.indexOf(m) === i);
+        const askGemini = (m: string) => fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${googleKey}`,
+            },
+            body: JSON.stringify({
+                model: m,
+                max_tokens: maxTokens,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                ],
+            }),
+        });
         let res: Response | null = null;
         let servedModel = candidates[0];
         for (const m of candidates) {
-            res = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${googleKey}`,
-                },
-                body: JSON.stringify({
-                    model: m,
-                    max_tokens: maxTokens,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt },
-                    ],
-                }),
-            });
+            res = await askGemini(m);
             servedModel = m;
             if (res.status !== 404) break; // 404 = unknown model id — try the next rung
         }
         if (servedModel !== route.model) geminiModelPins.set(route.model, servedModel);
+        // The free Gemini tier sheds load in short 429/503 bursts (a third of
+        // one night's answers died this way, 2026-08-25). A brief wait and a
+        // re-ask usually lands, so retry twice — ~4.5s worst case, well inside
+        // the gateway timeout — before falling through to the error path.
+        for (const delayMs of [1500, 3000]) {
+            if (!res || (res.status !== 429 && res.status !== 503 && res.status !== 529)) break;
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            res = await askGemini(servedModel);
+        }
         if (!res || !res.ok) {
             const err = res ? await res.json().catch(() => ({})) : {};
             throw new Error((err as any).error?.message || `Gemini API error ${res ? res.status : 'unreachable'}`);
