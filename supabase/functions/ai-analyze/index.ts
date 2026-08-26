@@ -209,7 +209,7 @@ function applyFreeSeasonPlan(session: AISession): AISession {
 }
 
 // ── AI model routing and cost telemetry ───────────────────────
-type AIProvider = 'anthropic' | 'gemini' | 'openai';
+type AIProvider = 'anthropic' | 'gemini' | 'openai' | 'groq';
 type AIWorkloadTier = 'fast' | 'standard' | 'premium' | 'deep';
 interface AIRoute {
     provider: AIProvider;
@@ -227,6 +227,12 @@ const AI_MODELS = {
     OPENAI_PREMIUM: 'gpt-5.5',
     CLAUDE_REASONING: 'claude-sonnet-4-6',
     CLAUDE_DEEP: 'claude-opus-4-7',
+    // Groq free tier (owner ruling 2026-08-26): the no-cost overflow lane for
+    // when Gemini rate-limits. "openai/" here is the open-weight gpt-oss model
+    // family served on Groq hardware under the Groq key — it never touches the
+    // OpenAI API or its billing, so the paid-provider unplug is unaffected.
+    GROQ_FAST: 'openai/gpt-oss-20b',
+    GROQ_BALANCED: 'openai/gpt-oss-120b',
 } as const;
 
 const MODEL_COSTS: Record<string, { input: number; output: number; cachedInput?: number }> = {
@@ -241,6 +247,8 @@ const MODEL_COSTS: Record<string, { input: number; output: number; cachedInput?:
     'gpt-5.5': { input: 5.00, output: 30.00, cachedInput: 0.50 },
     'claude-sonnet-4-6': { input: 3.00, output: 15.00, cachedInput: 0.30 },
     'claude-opus-4-7': { input: 5.00, output: 25.00, cachedInput: 0.50 },
+    'openai/gpt-oss-20b': { input: 0, output: 0 },
+    'openai/gpt-oss-120b': { input: 0, output: 0 },
 };
 
 // Ladder of Gemini ids to try when the configured one 404s (newest first,
@@ -253,19 +261,23 @@ const AI_TIER_MODELS: Record<AIWorkloadTier, Partial<Record<AIProvider, string>>
     fast: {
         gemini: AI_MODELS.GEMINI_FAST,
         openai: AI_MODELS.OPENAI_FAST,
+        groq: AI_MODELS.GROQ_FAST,
     },
     standard: {
         gemini: AI_MODELS.GEMINI_BALANCED,
         openai: AI_MODELS.OPENAI_STANDARD,
+        groq: AI_MODELS.GROQ_BALANCED,
     },
     premium: {
         anthropic: AI_MODELS.CLAUDE_REASONING,
         openai: AI_MODELS.OPENAI_PREMIUM,
         gemini: AI_MODELS.GEMINI_BALANCED,
+        groq: AI_MODELS.GROQ_BALANCED,
     },
     deep: {
         anthropic: AI_MODELS.CLAUDE_DEEP,
         gemini: AI_MODELS.GEMINI_BALANCED,
+        groq: AI_MODELS.GROQ_BALANCED,
     },
 };
 
@@ -439,6 +451,7 @@ function allowExpensiveFallback(): boolean {
 function providerSecretName(provider: AIProvider): string {
     if (provider === 'gemini') return 'GOOGLE_AI_KEY';
     if (provider === 'openai') return 'OPENAI_API_KEY';
+    if (provider === 'groq') return 'GROQ_API_KEY';
     return 'ANTHROPIC_API_KEY';
 }
 
@@ -490,7 +503,7 @@ async function isProviderConfigured(provider: AIProvider): Promise<boolean> {
 
 function normalizeProvider(value: string | null | undefined): AIProvider | null {
     const provider = String(value || '').trim().toLowerCase();
-    if (provider === 'gemini' || provider === 'openai' || provider === 'anthropic') return provider;
+    if (provider === 'gemini' || provider === 'openai' || provider === 'anthropic' || provider === 'groq') return provider;
     return null;
 }
 
@@ -609,7 +622,9 @@ async function resolveConfiguredRoute(
     }
 
     const candidates: AIRoute[] = [];
-    (['openai', 'gemini', 'anthropic'] as AIProvider[]).forEach(provider => {
+    // groq first: it's the only free lane, so a Gemini outage should land
+    // there before the ladder even considers the (unplugged) paid providers.
+    (['groq', 'openai', 'gemini', 'anthropic'] as AIProvider[]).forEach(provider => {
         const candidate = routeForProviderTier(route.tier, provider);
         if (candidate) candidates.push(candidate);
     });
@@ -732,6 +747,43 @@ async function callAIProvider(args: {
             stopReason: '',
             inputTokens,
             outputTokens,
+            cachedInputTokens: 0,
+        };
+    }
+
+    if (route.provider === 'groq') {
+        const groqKey = await getProviderSecret('groq');
+        if (!groqKey) throw new Error('GROQ_API_KEY not configured');
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${groqKey}`,
+            },
+            body: JSON.stringify({
+                model: route.model,
+                max_tokens: maxTokens,
+                // gpt-oss spends completion tokens "thinking" before it answers;
+                // low effort keeps that to a handful so the caller's token
+                // budget goes to the visible reply.
+                reasoning_effort: 'low',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                ],
+            }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error((err as any).error?.message || `Groq API error ${res.status}`);
+        }
+        const data = await res.json();
+        const usage = (data as any).usage || {};
+        return {
+            analysis: (data as any).choices?.[0]?.message?.content || '',
+            stopReason: (data as any).choices?.[0]?.finish_reason === 'length' ? 'max_tokens' : '',
+            inputTokens: usage.prompt_tokens || 0,
+            outputTokens: usage.completion_tokens || 0,
             cachedInputTokens: 0,
         };
     }
