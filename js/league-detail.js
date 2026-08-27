@@ -559,6 +559,20 @@
                 .then(rows => {
                     if (cancelled) return;
                     const drafts = Array.isArray(rows) ? rows : [];
+                    // Publish to the shared pocket the calendar engine reads
+                    // (WrCalendar.build: window.S.drafts || currentLeague.drafts)
+                    // and announce — otherwise the calendar falls back to its
+                    // mid-August "date TBD" placeholder while this header
+                    // already knows the real Sleeper draft time (owner report
+                    // 2026-08-27). Empty results never clobber hydrated data.
+                    if (drafts.length) {
+                        window.S = window.S || {};
+                        window.S.drafts = drafts;
+                        // Stamp the owner league so hydration keeps (not wipes)
+                        // this pocket and the calendar can verify provenance.
+                        window.S.draftsLeagueId = String(leagueId);
+                        try { window.dispatchEvent(new CustomEvent('wr:drafts-loaded')); } catch (e) { /* old Safari */ }
+                    }
                     // Draft-of-record rule (draft/state.js selectCurrentDraft):
                     // live > unsuperseded latest complete ('review') > next
                     // pre_draft — so a just-completed draft keeps a header entry
@@ -601,7 +615,10 @@
             const days = Math.floor(diff / 86400000);
             const hours = Math.floor((diff % 86400000) / 3600000);
             const mins = Math.floor((diff % 3600000) / 60000);
-            return { label: 'Draft Upcoming', clock: (days > 0 ? days + 'd ' : '') + hours + 'h ' + mins + 'm' };
+            // Owner ask 2026-08-27: the countdown alone made owners do date
+            // math — show the scheduled date beside the timer.
+            const when = new Date(Number(headerDraftInfo.start_time)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+            return { label: 'Draft Upcoming', clock: (days > 0 ? days + 'd ' : '') + hours + 'h ' + mins + 'm', when };
         }, [headerDraftInfo, headerClockNow]);
 
         // ── SeasonContext state — reactive data shared with tab components ──
@@ -2207,7 +2224,20 @@
                     ? window.App.normalizeTradedPicks(rosters, tradedPicks)
                     : tradedPicks;
                 window.S.matchups = matchupsData;
-                window.S.drafts = hydrated.drafts || [];
+                // Drafts: the Sleeper provider's hydrate bundle never carries
+                // drafts, so unconditionally writing `hydrated.drafts || []`
+                // wiped the pocket the header draft fetch fills — for EVERY
+                // league, on open and on each ~5-min background sync — and the
+                // calendar raced back to 'date TBD' (owner report 2026-08-27).
+                // Only overwrite with real data; on a league SWITCH, clear so
+                // one league's dates can never bleed into another's calendar.
+                if (hydrated.drafts && hydrated.drafts.length) {
+                    window.S.drafts = hydrated.drafts;
+                    window.S.draftsLeagueId = String(currentLeague.id);
+                } else if (String(window.S.draftsLeagueId || '') !== String(currentLeague.id)) {
+                    window.S.drafts = [];
+                    window.S.draftsLeagueId = null;
+                }
                 // MFL: complete future-pick ownership (exact years/rounds) so the
                 // Trade Center shows real future picks, not invented N-round sets.
                 window.S._mflFuturePicks = hydrated._extras?.mflFuturePicks || null;
@@ -3687,7 +3717,7 @@
                                         </div>}
                                         {headerDraftClock && <button style={rowSt} onClick={doDraftJump}>
                                             <span style={rowLbl}>Draft</span>
-                                            <span style={{ ...rowVal, color: 'var(--gold)', fontFamily: "'JetBrains Mono', monospace" }}>{[headerDraftClock.label, headerDraftClock.clock].filter(Boolean).join(' · ')}</span>
+                                            <span style={{ ...rowVal, color: 'var(--gold)', fontFamily: "'JetBrains Mono', monospace" }}>{[headerDraftClock.label, headerDraftClock.clock, headerDraftClock.when].filter(Boolean).join(' · ')}</span>
                                             <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.8rem' }}>›</span>
                                         </button>}
                                     </div>
@@ -3805,7 +3835,8 @@
                             }
                         },
                             headerDraftClock.label ? React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.78 } }, headerDraftClock.label) : null,
-                            React.createElement('strong', { style: { color: 'var(--white)', fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-label, 0.75rem)' } }, headerDraftClock.clock)
+                            React.createElement('strong', { style: { color: 'var(--white)', fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-label, 0.75rem)' } }, headerDraftClock.clock),
+                            headerDraftClock.when ? React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.85, fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-label, 0.75rem)' } }, '· ' + headerDraftClock.when) : null
                         )}
                     </div>
                     )}

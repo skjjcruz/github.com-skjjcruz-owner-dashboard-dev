@@ -2915,7 +2915,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/sync-manager.js?v=20260706sync1"></script>
 <!-- 1a2. Shared viewport seam — WR.useViewport() hook + WR.viewport() snapshot (plain JS; must precede components.js and all tab files) -->
 <script src="js/shared/viewport.js?v=20260826wake1"></script>
-<script src="js/shared/update-sentinel.js?v=20260827upd1"></script>
+<script src="js/shared/update-sentinel.js?v=20260827upd2"></script>
 <!-- 1b. Format/phase skin contract for league-type-aware modules -->
 <script src="js/league-skin.js?v=20260817chp1"></script>
 <!-- 2. Shared components: UpgradeGate, GMMessage, PlayerInlineCard -->
@@ -3044,7 +3044,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- Phase 9: My Trophies widget -->
 <script type="text/babel" src="js/widgets/my-trophies.js?v=20260611kpifix1"></script>
 <!-- League Calendar widget — depends on window.WrCalendar (js/tabs/calendar.js) -->
-<script type="text/babel" src="js/widgets/league-calendar.js?v=20260619cal1"></script>
+<script type="text/babel" src="js/widgets/league-calendar.js?v=20260827cal4"></script>
 <script type="text/babel" src="js/tabs/dashboard.js?v=20260817chp1"></script>
 <script type="text/babel" src="js/tabs/flash-brief.js?v=20260613gm1"></script>
 <!-- Group "analysis": analytics.js embeds LeagueMapTab, so both defer together
@@ -3055,7 +3055,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" data-wr-defer="compare" src="js/tabs/compare.js?v=20260827slot1"></script>
 <script type="text/babel" data-wr-defer="analysis" src="js/tabs/analytics.js?v=20260824prev1"></script>
 <script type="text/babel" data-wr-defer="trophies" src="js/tabs/trophy-room.js?v=20260619cal1"></script>
-<script type="text/babel" src="js/tabs/calendar.js?v=20260619cal1"></script>
+<script type="text/babel" src="js/tabs/calendar.js?v=20260827cal4"></script>
 <!-- Alex Insights (Option A): top-level tab for behavioral analysis + AI settings -->
 <script type="text/babel" data-wr-defer="alex" src="js/tabs/alex-insights.js?v=20260613strip1"></script>
 <!-- Group "empire": hub-level Empire Dashboard (Pro mode), loaded by app.js when
@@ -3067,7 +3067,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
      "alex" lazy group — inert at boot, loaded on first GM's Office / Strategy open. -->
 <script type="text/babel" data-wr-defer="alex" src="js/tabs/strategy-editor.js?v=20260613rec1"></script>
 <!-- 7. League detail: coordinator shell, depends on all above -->
-    <script type="text/babel" src="js/league-detail.js?v=20260824prev1"></script>
+    <script type="text/babel" src="js/league-detail.js?v=20260827cal4"></script>
 <!-- 8. App: OwnerDashboard + ReactDOM.render (loads last) -->
 <script type="text/babel" src="js/app.js?v=20260805club1"></script>
 
@@ -3142,7 +3142,7 @@ window.addEventListener('appinstalled', () => {
 <!-- Deploy tag (owner ask 2026-08-19): a tiny always-visible build code so the
      owner can read back exactly which version his device is running before
      testing — kills the stale-cache guessing game. Bump the code every deploy. -->
-<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b33</div>
+<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b37</div>
 </body>
 </html>
 <!-- build 1774212614 -->
