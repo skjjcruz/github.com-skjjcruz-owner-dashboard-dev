@@ -739,6 +739,33 @@
         const [faSort, setFaSort] = useState({ key: 'dhq', dir: -1 });
         const [faSelectedPid, setFaSelectedPid] = useState(null);
         const [faSearch, setFaSearch] = useState('');
+        // ── Min-points filter (owner ruling 2026-08-28: pared from the five-
+        // criteria prototype to the one window he kept, then tucked inline
+        // into the View toolbar row — no separate Filters panel). Stacks with
+        // the text search and POS chips; season chips pick which year's points.
+        const [faAdv, setFaAdv] = useState({ minPrevPts: '' });
+        // Season default is AUTO — the current season once it has real stats,
+        // last season until then (in August a this-year default would filter
+        // out the entire league at 0 GP).
+        const faSeasonYear = Number(currentLeague?.season) || new Date().getFullYear();
+        const faAutoPtsYear = useMemo(() => {
+            const st = statsData || {};
+            for (const k in st) { if ((st[k]?.gp || 0) > 0) return faSeasonYear; }
+            return faSeasonYear - 1;
+        }, [statsData, faSeasonYear]);
+        const faPtsYearActive = faAutoPtsYear;
+        const faAdvCount = String(faAdv.minPrevPts).trim() !== '' ? 1 : 0;
+        const faAdvPass = (x) => {
+            if (!faAdvCount) return true;
+            const minPts = parseFloat(faAdv.minPrevPts);
+            if (isFinite(minPts)) {
+                const src = faPtsYearActive === faSeasonYear ? (statsData || {}) : (prevStatsData || {});
+                const st = src[x.pid] || {};
+                const pts = st.gp > 0 && typeof calcRawPts === 'function' ? calcRawPts(st) : 0;
+                if (!(pts >= minPts)) return false;
+            }
+            return true;
+        };
         const [visibleFaCols, setVisibleFaCols] = useState(() => {
             const stored = window.App?.WrStorage?.get?.('wr_fa_cols');
             const valid = Array.isArray(stored) ? stored.filter(k => FA_COLUMNS[k]) : [];
@@ -1020,6 +1047,7 @@
                     if (rookieCollegeFilter && rookieCollegeOf(x) !== rookieCollegeFilter) return false;
                     if (rookieSlotFilter && !rookieSlotMatch(x, rookieSlotFilter)) return false;
                 }
+                if (!faAdvPass(x)) return false;
                 if (!q) return true;
                 const name = (x.p.full_name || ((x.p.first_name || '') + ' ' + (x.p.last_name || '')).trim()).toLowerCase();
                 const team = (x.p.team || 'FA').toLowerCase();
@@ -1077,7 +1105,7 @@
                 }
                 return 0;
             }).slice(0, 50);
-        }, [availablePlayers, faFilter, faSearch, faSort, statsData, rookieOnly, isRookiePlayer, rookieTeamFilter, rookieCollegeFilter, rookieSlotFilter, rookieTeamOf, rookieCollegeOf, rookieSlotMatch, prospectFor]);
+        }, [availablePlayers, faFilter, faSearch, faSort, statsData, prevStatsData, faAdv, faPtsYearActive, rookieOnly, isRookiePlayer, rookieTeamFilter, rookieCollegeFilter, rookieSlotFilter, rookieTeamOf, rookieCollegeOf, rookieSlotMatch, prospectFor]);
 
         const faHeaderStyle = { fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
 
@@ -1439,6 +1467,28 @@
             }
             return out.sort((a, b) => b.dhq - a.dhq).slice(0, 4);
         })();
+        // Transaction Ticker (owner ask 2026-08-28): a direct lift of the
+        // home-tab widget — the rows render through the shared
+        // window.WrTxnTickerList (js/widgets/txn-ticker.js), fed by the same
+        // per-week transaction buckets. The home-tab ticker stays as-is.
+        const tickerTxns = (() => {
+            const txnMap = window.S?.transactions || {};
+            const out = [];
+            Object.values(txnMap).forEach(wk => (wk || []).forEach(t => {
+                if (!t || !t.type || t.status === 'failed' || t._fromDHQ) return;
+                out.push(t);
+            }));
+            return out.sort((a, b) => (b.status_updated || b.created || 0) - (a.status_updated || a.created || 0)).slice(0, 8);
+        })();
+        const tickerOwnerName = (rid) => {
+            const r = (currentLeague.rosters || []).find(x => x.roster_id === rid);
+            const u = r ? (currentLeague.users || []).find(x => x.user_id === r.owner_id) : null;
+            return u?.display_name || u?.username || ('Team ' + rid);
+        };
+        const tickerPlayerName = (pid) => {
+            const p = playersData[pid];
+            return p ? playerName(p, pid) : 'Player #' + pid;
+        };
         const positionThreats = Array.from(new Set([...(assess?.needs || []).map(n => n.pos), ...actionBoardPlayers.slice(0, 6).map(x => x.pos)]))
             .slice(0, 6)
             .map(pos => {
@@ -1548,7 +1598,11 @@
                             </div>
                         </main>
 
-                        <aside className="fa-hq-panel">
+                        {/* Right column: Market Leverage and the Transaction Ticker are
+                            two separate boxes (owner ruling 2026-08-28). The wrapper stays
+                            an <aside> so the ≤1280px full-width rule still targets it. */}
+                        <aside style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
+                        <div className="fa-hq-panel">
                             <div className="fa-hq-panel-head">
                                 <span>Market Leverage</span>
                                 <em>{canOutbidRows.length ? canOutbidRows.length + ' teams can outbid you' : 'You control most bids'}</em>
@@ -1582,6 +1636,21 @@
                                     );
                                 })}
                             </div>
+                        </div>
+
+                        {tickerTxns.length && typeof window.WrTxnTickerList === 'function' ? (
+                            <div className="fa-hq-panel">
+                                <div className="fa-hq-panel-head">
+                                    <span>Transaction Ticker</span>
+                                    <em>latest adds and drops</em>
+                                </div>
+                                {React.createElement(window.WrTxnTickerList, {
+                                    transactions: tickerTxns.slice(0, compact ? 3 : 5),
+                                    getOwnerName: tickerOwnerName,
+                                    getPlayerName: tickerPlayerName,
+                                })}
+                            </div>
+                        ) : null}
                         </aside>
                     </div>
                 </section>
@@ -2187,6 +2256,17 @@
                         <button key={opt.k} className={ppgWindow === opt.k ? 'is-active' : ''} onClick={() => setPpgWindow(opt.k)} title={opt.k === 'season' ? 'Season-to-date PPG' : 'Last ' + (opt.k === 'l5' ? 5 : 3) + ' games'}>{opt.l}</button>
                     ))}
                     </div>
+
+                    <span className="wr-module-toolbar-label">Min pts</span>
+                    <input
+                        type="number" inputMode="numeric" value={faAdv.minPrevPts} placeholder="e.g. 100"
+                        title={'Only show players with at least this many ' + faPtsYearActive + ' points'}
+                        onChange={e => { const v = e.target.value; setFaAdv({ minPrevPts: v }); }}
+                        style={{ width: '84px', padding: '3px 8px', minHeight: '44px', boxSizing: 'border-box', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid ' + (faAdvCount ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--white)', fontSize: '0.75rem', fontFamily: 'var(--font-mono)', outline: 'none' }}
+                    />
+                    {faAdvCount ? (
+                        <button type="button" onClick={() => setFaAdv({ minPrevPts: '' })} title="Clear the min points filter" style={{ padding: '3px 8px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' }}>✕</button>
+                    ) : null}
 
                     {window.WR?.SavedViews?.SavedViewBar && (
                         <div style={{ marginLeft: 'auto' }}>
