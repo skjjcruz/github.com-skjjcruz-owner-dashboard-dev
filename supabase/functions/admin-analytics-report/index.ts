@@ -215,6 +215,51 @@ Deno.serve(async (req) => {
       return json(req, { errors, days, since });
     }
 
+    // ── detail=signin: the front door's auth health, with reasons ──
+    // The funnel alone can't distinguish "walked away" from "hit an error",
+    // and an existing user signing in via Google from the signup form reads
+    // as an abandoned signup even though they got in fine (owner ask
+    // 2026-08-28). Group every auth event by method and failure reason.
+    if (url.searchParams.get('detail') === 'signin') {
+      const AUTH_EVENTS = [
+        'signup_started', 'signup_succeeded', 'signup_failed',
+        'signin_started', 'signin_succeeded', 'signin_failed',
+        'oauth_started', 'oauth_succeeded', 'oauth_sync_failed',
+      ];
+      const { data: rows, error } = await admin
+        .from('analytics_events')
+        .select('session_id, username, user_id, event_ts, event_name, metadata')
+        .in('event_name', AUTH_EVENTS)
+        .gte('event_ts', since)
+        .order('event_ts', { ascending: false })
+        .limit(20000);
+      if (error) {
+        console.error('admin-analytics-report signin query error:', error);
+        return json(req, { error: error.message }, 500);
+      }
+      const groups = new Map<string, { event: string; method: string; reason: string | null; times: number; people: Set<string>; lastSeen: string }>();
+      for (const r of rows ?? []) {
+        const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        const method = typeof meta.method === 'string' && meta.method ? meta.method
+          : (typeof meta.provider === 'string' && meta.provider ? meta.provider : 'email');
+        const reason = typeof meta.reason === 'string' && meta.reason ? meta.reason
+          : (meta.status != null ? `status ${meta.status}` : null);
+        const key = `${r.event_name}|${method}|${reason ?? ''}`;
+        const g = groups.get(key) ??
+          { event: r.event_name, method, reason, times: 0, people: new Set<string>(), lastSeen: r.event_ts };
+        g.times++;
+        g.people.add(String(r.username || r.user_id || r.session_id || 'anon'));
+        if (r.event_ts > g.lastSeen) g.lastSeen = r.event_ts;
+        groups.set(key, g);
+      }
+      const signin = [...groups.values()]
+        .map((g) => ({ event: g.event, method: g.method, reason: g.reason, times: g.times, people: g.people.size, lastSeen: g.lastSeen }))
+        .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1))
+        .slice(0, 100);
+      await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'signin' });
+      return json(req, { signin, days, since });
+    }
+
     // ── detail=sessions: anonymous visitors behind the sessions tile ──
     // No identity exists for these (never signed in, nothing personal is
     // collected) — this profiles each session instead: when, platform,
