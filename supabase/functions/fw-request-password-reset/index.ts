@@ -111,7 +111,11 @@ async function sendPasswordResetEmail(
   const apiKey = Deno.env.get('RESEND_API_KEY') || (await getVaultSecret(admin, 'RESEND_API_KEY')) || '';
   if (!apiKey) return { sent: false, provider: 'resend', reason: 'missing_resend_api_key' };
 
-  const from = Deno.env.get('PASSWORD_RESET_FROM_EMAIL') || (await getVaultSecret(admin, 'PASSWORD_RESET_FROM_EMAIL')) || 'Dynasty HQ <onboarding@resend.dev>';
+  // Default sender is the verified domain (dhqfootball.com verified in
+  // Resend 2026-08-31 1:48 PM). The old onboarding@resend.dev sandbox
+  // default could only ever deliver to the Resend account owner's own
+  // inbox — real users silently got nothing.
+  const from = Deno.env.get('PASSWORD_RESET_FROM_EMAIL') || (await getVaultSecret(admin, 'PASSWORD_RESET_FROM_EMAIL')) || 'Dynasty HQ <noreply@dhqfootball.com>';
   const replyTo = Deno.env.get('PASSWORD_RESET_REPLY_TO') || undefined;
   const expiresText = new Date(expiresAt).toLocaleString('en-US', {
     dateStyle: 'medium',

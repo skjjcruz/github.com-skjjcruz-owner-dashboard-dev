@@ -195,7 +195,7 @@ jobs:
       - name: Plan function deploys
         id: plan
         run: |
-          OWNED="admin-analytics-report admin-audit-log admin-billing-summary admin-delete-user admin-grant-pro admin-list-users admin-support-queue ai-analyze ai-feedback fw-billing-portal fw-confirm-password-reset fw-create-checkout fw-delete-account fw-oauth-sync fw-profile fw-refresh-session fw-request-password-reset fw-revenuecat-webhook fw-signin fw-signup fw-stripe-webhook get-session-token nfl-scoreboard set-password"
+          OWNED="ops-email-doctor admin-analytics-report admin-audit-log admin-billing-summary admin-delete-user admin-grant-pro admin-list-users admin-support-queue ai-analyze ai-feedback fw-billing-portal fw-confirm-password-reset fw-create-checkout fw-delete-account fw-oauth-sync fw-profile fw-refresh-session fw-request-password-reset fw-revenuecat-webhook fw-signin fw-signup fw-stripe-webhook get-session-token nfl-scoreboard set-password"
           PLAN=""
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Manual dispatch — full owned set"
