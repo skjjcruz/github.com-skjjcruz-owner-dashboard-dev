@@ -252,6 +252,40 @@ Deno.serve(async (req) => {
         if (r.event_ts > g.lastSeen) g.lastSeen = r.event_ts;
         groups.set(key, g);
       }
+      // Password-reset outcomes live in the server audit trail, not client
+      // analytics — without them a silently-undelivered reset email is
+      // invisible (owner bug report 2026-08-31). Fold them into the same table.
+      const { data: resetRows } = await admin
+        .from('security_events')
+        .select('created_at, event_type, outcome, actor_email, ip_address, metadata')
+        .in('event_type', ['password_reset_requested', 'password_reset_confirmed'])
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      for (const r of resetRows ?? []) {
+        const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        let event: string;
+        let reason: string | null;
+        if (r.event_type === 'password_reset_requested') {
+          if (r.outcome === 'success') {
+            event = meta.emailSent === true ? 'reset_email_sent' : 'reset_email_failed';
+            reason = meta.emailSent === true ? null : String(meta.emailReason || 'not sent');
+          } else {
+            event = 'reset_email_failed';
+            reason = String((meta.reason as string) || r.outcome);
+          }
+        } else {
+          event = r.outcome === 'success' ? 'password_reset_done' : 'password_reset_link_rejected';
+          reason = r.outcome === 'success' ? null : String((meta.reason as string) || r.outcome);
+        }
+        const key = `${event}|email|${reason ?? ''}`;
+        const g = groups.get(key) ??
+          { event, method: 'email', reason, times: 0, people: new Set<string>(), lastSeen: r.created_at };
+        g.times++;
+        g.people.add(String(r.actor_email || r.ip_address || 'anon'));
+        if (r.created_at > g.lastSeen) g.lastSeen = r.created_at;
+        groups.set(key, g);
+      }
       const signin = [...groups.values()]
         .map((g) => ({ event: g.event, method: g.method, reason: g.reason, times: g.times, people: g.people.size, lastSeen: g.lastSeen }))
         .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1))

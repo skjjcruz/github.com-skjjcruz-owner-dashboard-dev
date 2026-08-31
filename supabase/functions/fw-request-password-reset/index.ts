@@ -62,10 +62,13 @@ Deno.serve(async (req) => {
       expires_at: expiresAt,
     });
 
-    const resetBase = Deno.env.get('PASSWORD_RESET_URL') || Deno.env.get('APP_RESET_URL') || 'https://warroom.skjjcruz.com/reset-password.html';
+    // Default goes to the LIVE site — the old warroom.skjjcruz.com domain is
+    // dead (owner bug report 2026-08-31: reset emails never arrived; even if
+    // one had, its link pointed at a domain that no longer resolves).
+    const resetBase = Deno.env.get('PASSWORD_RESET_URL') || Deno.env.get('APP_RESET_URL') || 'https://dhqfootball.com/reset-password.html';
     const resetUrl = resetBase ? `${resetBase}${resetBase.includes('?') ? '&' : '?'}token=${encodeURIComponent(resetToken)}` : null;
     const delivery = resetUrl
-      ? await sendPasswordResetEmail(user.email, resetUrl, expiresAt)
+      ? await sendPasswordResetEmail(admin, user.email, resetUrl, expiresAt)
       : { sent: false, reason: 'missing_reset_url' };
 
     await auditEvent(admin, req, 'password_reset_requested', 'success', { userId: user.id, email: normalizedEmail }, {
@@ -84,15 +87,31 @@ Deno.serve(async (req) => {
   }
 });
 
+// Secrets resolve env-first, then the app Vault (same get_app_secret RPC the
+// AI dispatcher uses) — so the key can be installed by a Vault insert without
+// touching function env config.
+// deno-lint-ignore no-explicit-any
+async function getVaultSecret(admin: any, name: string): Promise<string | null> {
+  try {
+    const { data } = await admin.rpc('get_app_secret', { secret_name: name });
+    const value = typeof data === 'string' ? data.trim() : '';
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
 async function sendPasswordResetEmail(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
   to: string,
   resetUrl: string,
   expiresAt: string,
 ): Promise<{ sent: boolean; provider?: string; reason?: string }> {
-  const apiKey = Deno.env.get('RESEND_API_KEY') || '';
+  const apiKey = Deno.env.get('RESEND_API_KEY') || (await getVaultSecret(admin, 'RESEND_API_KEY')) || '';
   if (!apiKey) return { sent: false, provider: 'resend', reason: 'missing_resend_api_key' };
 
-  const from = Deno.env.get('PASSWORD_RESET_FROM_EMAIL') || 'Dynasty HQ <onboarding@resend.dev>';
+  const from = Deno.env.get('PASSWORD_RESET_FROM_EMAIL') || (await getVaultSecret(admin, 'PASSWORD_RESET_FROM_EMAIL')) || 'Dynasty HQ <onboarding@resend.dev>';
   const replyTo = Deno.env.get('PASSWORD_RESET_REPLY_TO') || undefined;
   const expiresText = new Date(expiresAt).toLocaleString('en-US', {
     dateStyle: 'medium',
