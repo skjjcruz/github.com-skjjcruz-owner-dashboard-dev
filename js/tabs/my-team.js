@@ -464,12 +464,123 @@ function MyTeamTab({
   const trendBg = () => 'transparent';
   const posColors = window.App.POS_COLORS;
 
-  // Drop candidate PIDs: non-starters with lowest DHQ (bottom 3 bench players)
-  const dropCandidatePids = React.useMemo(() => {
-    const benchPlayers = rows.filter(r => !r.isStarter && !r.isIR && !r.isTaxi)
-      .sort((a, b) => a.dhq - b.dhq).slice(0, 3);
-    return new Set(benchPlayers.map(r => r.pid));
-  }, [rows]);
+  // DROP? candidates — owner rules 2026-08-31 (replaces "bottom 3 bench by
+  // value", which flagged rising rookies while missing NFL cuts):
+  //   A. Cut and unsigned (NFL team = FA) → automatic drop candidate.
+  //   B. Otherwise, ALL of: the waiver wire offers a better player at his
+  //      position for free, he isn't trending up, and the engine isn't
+  //      calling him a Stash/Core/Buy.
+  //   NEVER flagged: rookie first-round picks, GM untouchables, your only
+  //   player at a position, starters, IR, or taxi.
+  // dropCandidateReasons carries the WHY for each flag (chip tooltip).
+  // Sleeper's 24h trending-adds list — the market's situation signal. A player
+  // thousands of managers are racing to claim is not a cut, whatever his value
+  // number says (owner ask 2026-08-31: Kolar/Holani). Best-effort: an empty
+  // set simply skips that guard.
+  const [trendingAddPids, setTrendingAddPids] = React.useState(() => new Set());
+  const [sitTick, setSitTick] = React.useState(0); // bumps when ADP / NFL roles land
+  React.useEffect(() => {
+    let alive = true;
+    try { window.App?.fetchRedraftAdp?.().then(() => { if (alive) setSitTick(t => t + 1); }).catch(() => {}); } catch (e) {}
+    // Fresh ESPN depth charts (owner rule 2026-08-31): checked on open; a
+    // player listed with a starting-caliber role never gets a drop flag.
+    try { window.App?.NflRoles?.load?.().then(() => { if (alive) setSitTick(t => t + 1); }).catch(() => {}); } catch (e) {}
+    const onRoles = () => { if (alive) setSitTick(t => t + 1); };
+    window.addEventListener('wr:roles-loaded', onRoles);
+    try {
+      if (window.Sleeper?.fetchTrending) {
+        window.Sleeper.fetchTrending('add', 24, 25).then(list => {
+          if (!alive || !Array.isArray(list)) return;
+          setTrendingAddPids(new Set(list.map(t => String(t && (t.player_id != null ? t.player_id : t))).filter(Boolean)));
+        }).catch(() => {});
+      }
+    } catch (e) { /* trending optional */ }
+    return () => { alive = false; window.removeEventListener('wr:roles-loaded', onRoles); };
+  }, []);
+  const [dropCandidatePids, dropCandidateReasons] = React.useMemo(() => {
+    const out = new Set();
+    const reasons = new Map();
+    const posCounts = {};
+    rows.forEach(r => { posCounts[r.pos] = (posCounts[r.pos] || 0) + 1; });
+    // Best unrostered value per position = what the wire hands you for free.
+    const wireBest = {};
+    try {
+      const scores = window.App?.LI?.playerScores || {};
+      const rostered = new Set();
+      (currentLeague?.rosters || []).forEach(rr => (rr.players || []).forEach(pid => rostered.add(String(pid))));
+      for (const pid in scores) {
+        if (rostered.has(String(pid))) continue;
+        const p = playersData?.[pid];
+        // Employed players only set the replacement bar — a teamless player's
+        // stale value number is not an upgrade (the Elijah Moore case: the
+        // 'better WR on the wire' had no NFL team).
+        if (!p || !p.team || p.team === 'FA') continue;
+        const pos = (window.App?.normPos?.(p.position) || p.position);
+        if (!pos) continue;
+        if (!(wireBest[pos] >= scores[pid])) wireBest[pos] = scores[pid];
+      }
+    } catch (e) { /* wire read is best-effort — rule B just goes quiet */ }
+    // Owner conviction: a manual verdict (other than Cut/Drop) set on the
+    // player silences the chip — the human already made this call.
+    let manualVerdicts = {};
+    try {
+      const lid = currentLeague?.id || currentLeague?.league_id || '';
+      manualVerdicts = JSON.parse(localStorage.getItem('dhq_roster_verdict_v1:' + lid) || '{}') || {};
+    } catch (e) {}
+    // Roster pressure (owner rule 2026-08-31): with open active spots, you
+    // can add without dropping anyone — wire-comparison flags stay quiet.
+    const activeCap = (currentLeague?.roster_positions || []).filter(s => s !== 'IR').length;
+    const activeCount = rows.filter(r => !r.isIR && !r.isTaxi).length;
+    const rosterFull = activeCap > 0 && activeCount >= activeCap;
+    rows.forEach(r => {
+      if (r.gmIsUntouchable) return;
+      // Rookie first-round picks are development capital — never auto-drop.
+      const pr = prospectForRow(r);
+      const cap = draftCapFor(r.pid);
+      const rookieR1 = (pr && Number(pr.draftRound) === 1)
+        || (cap && cap.round === 1 && Number(r.p?.years_exp ?? 1) === 0);
+      if (rookieR1) return;
+      const mv = manualVerdicts[r.pid];
+      if (mv && !/^(cut|drop)$/i.test(String(mv))) return;
+      // Rule A — cut and unsigned. Applies to EVERY roster section: a taxi
+      // stash the NFL let go (owner report 2026-08-31: Will Levis) deserves
+      // the flag as much as a bench body.
+      const isFA = !r.p?.team || r.p.team === 'FA';
+      if (isFA) {
+        out.add(r.pid);
+        reasons.set(r.pid, 'Cut by his NFL team — currently an unsigned free agent');
+        return;
+      }
+      if (r.isStarter || r.isIR || r.isTaxi) return; // rule B judges bench only
+      if ((posCounts[r.pos] || 0) <= 1) return;   // only body at the position
+      if (r.trend >= 10) return;                   // trending up — protected
+      if (/^(STASH|CORE|BUY)/.test(r.recAction || '')) return; // engine wants him kept
+      // Situation guards (owner ask 2026-08-31): a low value number is not a
+      // cut when his real-world role says otherwise. ESPN's editorial depth
+      // chart is the primary source (Sleeper's lags by days); Sleeper's own
+      // depth field stays as the fallback when the feed hasn't loaded.
+      if (window.App?.NflRoles?.starterRole?.(r.p)) return; // fresh chart: starting-caliber role
+      if (r.p?.depth_chart_order === 1) return;    // #1 on his NFL depth chart (fallback)
+      const wproj = projFor(r.pid);
+      const projPts = wproj && wproj.available ? ((wproj.points && (wproj.points.median != null ? wproj.points.median : wproj.points.mean)) || 0) : 0;
+      if (projPts >= 6) return;                    // projected for real points this week
+      if (trendingAddPids.has(String(r.pid))) return; // hot add across all of Sleeper
+      // Still being taken in real drafts right now — the market says he's
+      // rosterable, whatever his value number reads (catches role-change
+      // players like Kolar whose value model runs behind the news).
+      const adpE = window.App?.getRedraftAdp?.(r.pid);
+      if (adpE && adpE.rank > 0 && adpE.rank <= 240) return;
+      if (!rosterFull) return; // open roster spots — nothing needs dropping
+      // Meaningful upgrade only: at least double his value AND +500 — never
+      // sideways churn on model noise.
+      const wire = wireBest[r.pos] || 0;
+      if (wire >= r.dhq * 2 && (wire - r.dhq) >= 500) {
+        out.add(r.pid);
+        reasons.set(r.pid, 'Roster is full and the wire has a clearly better ' + r.pos + ' available free');
+      }
+    });
+    return [out, reasons];
+  }, [rows, currentLeague, playersData, prospectForRow, trendingAddPids, weeklyLineup, sitTick]);
 
   // Dismissed drop alerts (persisted in localStorage per league)
   const [dismissedDrops, setDismissedDrops] = React.useState(() => {
@@ -591,7 +702,7 @@ function MyTeamTab({
   ].filter(g => isPro || g.key !== 'action'); // Action lens = verdict grouping → Pro
   const activeGroupModeLabel = GROUP_MODES.find(g => g.key === rosterGroupMode)?.label || 'Position';
   const slotOrder = { starter: 0, bench: 1, taxi: 2, ir: 3 };
-  const recGroup = (rec) => /sell/i.test(rec || '') ? 'Sell'
+  const recGroup = (rec) => /sell|drop/i.test(rec || '') ? 'Sell'
     : /buy|build|core/i.test(rec || '') ? 'Build'
     : /stash/i.test(rec || '') ? 'Stash'
     : 'Hold';
@@ -776,6 +887,19 @@ function MyTeamTab({
     const manual = _manualCall(r);
     return !(manual && !/drop|cut/i.test(manual));
   };
+
+  // One voice (owner rule 2026-08-31): when the app itself flags a player as
+  // a drop candidate, its Move verdict says Drop too — the app never shows
+  // its own 'Hold' beside its own red DROP? chip. A manual YOU verdict is
+  // different: the owner's call stands and the chip remains, the app politely
+  // asking a question. Dismissing the chip restores the engine verdict.
+  rows.forEach(r => {
+    if (_isActiveDrop(r) && !_manualCall(r) && !/^drop/i.test(r.rec || '')) {
+      r.rec = 'Drop';
+      r.recAction = 'DROP';
+      r.recDropReason = dropCandidateReasons.get(r.pid) || 'Drop candidate';
+    }
+  });
   // Call → accent color, shared by chip + badge + picker + desktop action col.
   const _recColor = (rec) => {
     const s = String(rec || '');
@@ -948,7 +1072,7 @@ function MyTeamTab({
         }
         const _ar = _effRec(r);
         const _amanual = !!(verdictOverrides[r.pid] || (window._playerTags && window._playerTags[r.pid]));
-        return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={_amanual ? 'Your call — set in the player card' : (gmNudgeTitle || ann?.text || '')}>
+        return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={_amanual ? 'Your call — set in the player card' : (r.recDropReason || gmNudgeTitle || ann?.text || '')}>
           <span style={{ fontSize:'var(--text-micro, 0.6875rem)',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.03em',color: _recColor(_ar) }}>{_ar}</span>
           {_amanual ? <span style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.05em', opacity: 0.85, lineHeight: 1 }}>YOU</span> : (r.gmSellNudge && <span style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--warn)', letterSpacing: '0.05em', opacity: 0.85, lineHeight: 1 }}>GM</span>)}
         </div>;
@@ -973,7 +1097,7 @@ function MyTeamTab({
         return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.72rem' }}>{h ? Math.floor(h/12)+"'"+h%12+'"' : '\u2014'}</span></div>;
       }
       case 'weight': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.72rem' }}>{r.p.weight || '\u2014'}</span></div>;
-      case 'depthChart': return <div key={colKey} style={{...base}}><span style={{ color: r.p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: '0.72rem' }}>{r.p.depth_chart_order != null ? r.pos + (r.p.depth_chart_order + 1) : (r.section === 'ir' ? 'IR' : (!r.p.team || r.p.team === 'FA') ? 'FA' : 'N/A')}</span></div>;
+      case 'depthChart': return <div key={colKey} style={{...base}}><span style={{ color: r.p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: '0.72rem' }}>{r.p.depth_chart_order != null ? r.pos + r.p.depth_chart_order : (r.section === 'ir' ? 'IR' : (!r.p.team || r.p.team === 'FA') ? 'FA' : 'N/A')}</span></div>;
       case 'slot': return <div key={colKey} style={{...base}}><span style={{ fontSize:'0.76rem',color:'var(--silver)',opacity:0.65,textTransform:'uppercase' }}>{r.section==='starter'?'STR':r.section==='ir'?'IR':r.section==='taxi'?'TAX':'BN'}</span></div>;
       case 'acquired': {
         const acq = getAcquisitionInfo(r.pid, myRoster?.roster_id);
@@ -1063,7 +1187,7 @@ function MyTeamTab({
                     const primeEnd = r.peakYrsLeft > 0 && r.age ? r.age + r.peakYrsLeft : null;
                     const sigWindow = (r.peakPhase || '—') + (primeEnd ? ' · thru ' + primeEnd : r.valueYrsLeft > 0 ? ' · ~' + r.valueYrsLeft + 'yr value' : '');
                     const sigRisk = r.injury ? r.injury : (r.durabilityGP && r.durabilityGP < 13 ? '~' + r.durabilityGP + ' GP/yr' : 'no current flags');
-                    const sigFloor = r.isStarter ? 'weekly starter' : (r.p.depth_chart_order != null && r.p.depth_chart_order <= 1 ? 'rotation role' : 'bench / depth');
+                    const sigFloor = r.isStarter ? 'weekly starter' : (r.p.depth_chart_order != null && r.p.depth_chart_order <= 2 ? 'rotation role' : 'bench / depth');
                     const sigCeiling = r.trend >= 10 ? 'trending up' : (tier === 'Elite' || tier === 'Starter') ? 'proven ' + tier.toLowerCase() : r.peakPhase === 'PRE' ? 'developing' : 'limited upside';
                     const sigRow = (label, val, last) =>(<div style={{ display: 'flex', gap: '9px', alignItems: 'baseline', padding: '6px 0', borderBottom: last ? 'none' : '1px solid rgba(255,255,255,0.05)', fontSize: '0.74rem' }}><span style={{ minWidth: '52px', color: 'var(--silver)', opacity: 0.65 }}>{label}</span><span style={{ color: 'var(--white)', fontWeight: 600 }}>{val}</span></div>);
                     return (<React.Fragment>
@@ -1597,7 +1721,7 @@ function MyTeamTab({
                       {/* GM Strategy: acquisition-focus / sell-candidate position accents */}
                       {!r.gmIsUntouchable && r.gmIsTarget && <span title="GM Strategy: acquisition-focus position" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.28))', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>TGT</span>}
                       {!r.gmIsUntouchable && r.gmIsSellPos && <span title="GM Strategy: sell-candidate position" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'rgba(240,165,0,0.13)', color: 'var(--warn)', border: '1px solid rgba(240,165,0,0.32)', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>SELL</span>}
-                      {isPro && dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span className="wr-drop-chip" onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title="Drop candidate (click to dismiss)" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
+                      {isPro && dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span className="wr-drop-chip" onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title={(dropCandidateReasons.get(r.pid) || 'Drop candidate') + ' (click to dismiss)'} style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
                       </React.Fragment>}
                     </div>
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, marginTop: '1px' }}>{r.p.team || 'FA'}{!_phone && r.injury ? ' \u00B7 '+r.injury : ''}</div>
