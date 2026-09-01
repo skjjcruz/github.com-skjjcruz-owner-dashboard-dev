@@ -785,6 +785,25 @@ function MyTeamTab({
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   });
+  // Amber jump to the GM's Office → My Strategy — deliberately off-palette
+  // (warn amber, not gold/silver) so the door to the plan behind the
+  // TGT/SELL accents stands out from the view controls around it.
+  const gmStrategyBtnStyle = {
+    padding: '6px 11px',
+    minHeight: '44px',
+    fontSize: '0.72rem',
+    fontWeight: 800,
+    fontFamily: 'var(--font-body)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    background: 'rgba(240,165,0,0.14)',
+    color: 'var(--warn)',
+    border: '1px solid rgba(240,165,0,0.4)',
+    borderRadius: 'var(--card-radius-sm, 8px)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  };
+  const openGmStrategy = () => { try { window.wrNavigateTab?.('strategy'); } catch (_) {} };
   // Compact dropdown used across the roster toolbar (mirrors free-agency's rkSelectStyle).
   const rosterSelectStyle = (active) => ({
     padding: '4px 6px',
@@ -1519,6 +1538,9 @@ function MyTeamTab({
             {GROUP_MODES.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
           </select>
         ) },
+        { label: 'GM plan', node: (
+          <button onClick={() => { setFiltersOpen(false); openGmStrategy(); }} style={{ ...gmStrategyBtnStyle, width: '100%' }} title="Open the GM's Office — My Strategy (targets, sell positions, untouchables)">GM Strategy</button>
+        ) },
         { label: 'Saved views', node: (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, whiteSpace: 'nowrap' }}>{filtered.length} / {allPlayers.length} shown</span>
@@ -1696,7 +1718,11 @@ function MyTeamTab({
 	                    <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.84rem', color: getRowGroupColor(r), fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{getRowGroupLabel(r)}</span>
 	                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{filteredPosCounts[rowGroupKey]} players</span>
                   </div>
-                  <div style={{ flex: 1, borderLeft: '1px solid var(--ov-2, rgba(255,255,255,0.025))' }} />
+                  <div style={{ flex: 1, borderLeft: '1px solid var(--ov-2, rgba(255,255,255,0.025))', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                    {rosterGroupMode === 'position' && gmTargetPositions.has(String(rowGroupKey)) && (
+                      <span title="GM Strategy: your plan marks this position as an acquisition target" style={{ position: 'sticky', left: (playerColWidth + 10) + 'px', marginLeft: '10px', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '2px 7px', borderRadius: 'var(--card-radius-xs, 5px)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.28))', letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap', lineHeight: 1 }}>{_phone ? 'GM TGT Group' : 'GM Target Acquisition Group Strategy'}</span>
+                    )}
+                  </div>
                 </div>
               )}
               {/* Normal row */}
@@ -1718,8 +1744,7 @@ function MyTeamTab({
                       {inlineTag(rosterTagMeta[window._playerTags?.[r.pid]], 'tag-' + r.pid)}
                       {/* GM Strategy: untouchable lock — distinct from manual tag system */}
                       {r.gmIsUntouchable && <span title="GM Strategy: untouchable — locked from sell flags" style={{ fontSize: 'var(--text-micro, 0.6875rem)', flexShrink: 0, lineHeight: 1, color: 'var(--good)' }}>{'🛡'}</span>}
-                      {/* GM Strategy: acquisition-focus / sell-candidate position accents */}
-                      {!r.gmIsUntouchable && r.gmIsTarget && <span title="GM Strategy: acquisition-focus position" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.28))', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>TGT</span>}
+                      {/* GM Strategy: sell-candidate position accent (acquisition-target moved to the position group header) */}
                       {!r.gmIsUntouchable && r.gmIsSellPos && <span title="GM Strategy: sell-candidate position" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'rgba(240,165,0,0.13)', color: 'var(--warn)', border: '1px solid rgba(240,165,0,0.32)', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>SELL</span>}
                       {isPro && dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span className="wr-drop-chip" onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title={(dropCandidateReasons.get(r.pid) || 'Drop candidate') + ' (click to dismiss)'} style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
                       </React.Fragment>}
@@ -1845,6 +1870,8 @@ function MyTeamTab({
         <select value={rosterGroupMode} onChange={e => setRosterGroupMode(e.target.value)} style={rosterSelectStyle(rosterGroupMode !== 'position')} title="Group rows by">
           {GROUP_MODES.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
         </select>
+
+        <button onClick={openGmStrategy} style={gmStrategyBtnStyle} title="Open the GM's Office — My Strategy (targets, sell positions, untouchables)">GM Strategy</button>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
           <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, whiteSpace: 'nowrap' }}>{filtered.length} / {allPlayers.length} shown</span>
