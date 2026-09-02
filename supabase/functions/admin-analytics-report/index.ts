@@ -225,6 +225,10 @@ Deno.serve(async (req) => {
         'signup_started', 'signup_succeeded', 'signup_failed',
         'signin_started', 'signin_succeeded', 'signin_failed',
         'oauth_started', 'oauth_succeeded', 'oauth_sync_failed',
+        // The three previously-silent OAuth trapdoors (owner deep dive
+        // 2026-09-02): provider bounced back with an error in the URL, the
+        // return carried no session, or the callback itself threw.
+        'oauth_returned_error', 'oauth_no_session', 'oauth_callback_error',
       ];
       const { data: rows, error } = await admin
         .from('analytics_events')
