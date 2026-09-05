@@ -557,6 +557,10 @@ const AI_ROUTES: Record<string, AIWorkloadTier> = {
     'memory-summary':    'fast',
     'power-posts':       'fast',
     'recon-chat':        'fast',
+    // Lineup tab's ambient start/sit note (was unregistered → standard;
+    // registered 2026-09-05: it's a one-liner, cheap-first like the other
+    // ambient surfaces).
+    'start-sit':         'fast',
     general:             'standard',
     'deep-analysis':     'deep',
     'league-report':     'deep',
@@ -754,14 +758,14 @@ async function callAIProvider(args: {
     if (route.provider === 'groq') {
         const groqKey = await getProviderSecret('groq');
         if (!groqKey) throw new Error('GROQ_API_KEY not configured');
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const askGroq = (model: string) => fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${groqKey}`,
             },
             body: JSON.stringify({
-                model: route.model,
+                model,
                 max_tokens: maxTokens,
                 // gpt-oss spends completion tokens "thinking" before it answers;
                 // low effort keeps that to a handful so the caller's token
@@ -773,6 +777,21 @@ async function callAIProvider(args: {
                 ],
             }),
         });
+        let servedModel = route.model;
+        let res = await askGroq(servedModel);
+        // Groq's free tier rate-limits per model in short bursts — the
+        // 2026-09-05 morning receipts were one message repeated: "Rate limit
+        // reached for openai/gpt-oss-120b". One brief re-ask, then drop to
+        // the 20b model (same free lane, its own separate limit bucket)
+        // before the error path hands the request to the provider ladder.
+        if (res.status === 429) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            res = await askGroq(servedModel);
+        }
+        if (res.status === 429 && servedModel !== AI_MODELS.GROQ_FAST) {
+            servedModel = AI_MODELS.GROQ_FAST;
+            res = await askGroq(servedModel);
+        }
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error((err as any).error?.message || `Groq API error ${res.status}`);
@@ -2984,6 +3003,7 @@ Deno.serve(async (req) => {
                 throw providerError;
             }
             const failedProvider = route.provider;
+            const primaryRoute = route;
             const fallback = await resolveConfiguredRoute(route, planLimits, false, failedProvider);
             if (!fallback.route || fallback.route.provider === route.provider) {
                 await recordProviderFailure(providerError);
@@ -3002,8 +3022,30 @@ Deno.serve(async (req) => {
                 outputTokens = providerResult.outputTokens;
                 cachedInputTokens = providerResult.cachedInputTokens;
             } catch (fallbackError) {
-                await recordProviderFailure(fallbackError);
-                throw fallbackError;
+                // Third rung (owner-authorized 2026-09-05). The 09-04 morning
+                // loss was a dual throttle: the primary burst-shed, the free
+                // fallback rate-limited, and the request died even though both
+                // lanes were healthy again within minutes. When the fallback
+                // ALSO fails on availability, give the original provider one
+                // final, delayed re-ask before declaring failure.
+                if (!isProviderAvailabilityError(fallbackError) || primaryRoute.provider === route.provider) {
+                    await recordProviderFailure(fallbackError);
+                    throw fallbackError;
+                }
+                try {
+                    await new Promise((resolve) => setTimeout(resolve, 2500));
+                    const lastResult = await callAIProvider({ route: primaryRoute, systemPrompt, userPrompt, maxTokens, useWebSearch: false });
+                    route = primaryRoute;
+                    providerFallbackReason = `${providerFallbackReason || 'provider_error'}+primary_retry`;
+                    analysis = lastResult.analysis;
+                    stopReason = lastResult.stopReason;
+                    inputTokens = lastResult.inputTokens;
+                    outputTokens = lastResult.outputTokens;
+                    cachedInputTokens = lastResult.cachedInputTokens;
+                } catch (finalError) {
+                    await recordProviderFailure(finalError);
+                    throw finalError;
+                }
             }
         }
 
