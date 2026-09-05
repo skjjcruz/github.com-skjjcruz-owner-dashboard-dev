@@ -73,7 +73,7 @@
     "@capacitor/android": "^8.5.0",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
-    "@capacitor/ios": "^8.5.0",
+    "@capacitor/ios": "^8.5.1",
     "@revenuecat/purchases-capacitor": "^13.4.2",
     "esbuild": "^0.28.2",
     "terser": "^5.50.0"
