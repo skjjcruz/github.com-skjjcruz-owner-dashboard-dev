@@ -71,7 +71,7 @@
   "dependencies": {
     "@babel/standalone": "^7.29.7",
     "@capacitor/android": "^8.5.0",
-    "@capacitor/cli": "^8.5.0",
+    "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.0",
     "@capacitor/ios": "^8.5.0",
     "@revenuecat/purchases-capacitor": "^13.4.2",
