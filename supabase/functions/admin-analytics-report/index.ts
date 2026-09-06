@@ -25,6 +25,22 @@ function clampDays(value: string | null): number {
   return Math.min(90, Math.max(1, parsed));
 }
 
+// Production fence (owner ask 2026-09-06): Mission Control reports only the
+// real website (dhqfootball.com) and the native app (surface ios_app). The
+// C2 sandbox, local dev machines, GitHub Pages previews, and the trade lab
+// write to the same analytics table but carry different host/surface stamps
+// — those rows are counted separately, never mixed into production numbers.
+// Server-logged AI events (session 'edge_app:…') are neither: they are the
+// AI service's own ledger, not a visitor.
+type FenceRow = { metadata?: unknown; session_id?: string | null };
+function isProdRow(r: FenceRow): boolean {
+  const meta = (r.metadata ?? {}) as Record<string, unknown>;
+  return meta.host === 'dhqfootball.com' || meta.surface === 'ios_app';
+}
+function isServerRow(r: FenceRow): boolean {
+  return typeof r.session_id === 'string' && r.session_id.startsWith('edge_app:');
+}
+
 Deno.serve(async (req) => {
   const options = handleOptions(req);
   if (options) return options;
@@ -51,9 +67,9 @@ Deno.serve(async (req) => {
     // person_key in admin_analytics_report (owner ask 2026-08-03: members
     // signed in without a Sleeper username were invisible here).
     if (url.searchParams.get('detail') === 'users') {
-      const { data: rows, error } = await admin
+      const { data: allRows, error } = await admin
         .from('analytics_events')
-        .select('username, user_id, session_id, event_ts, module, widget')
+        .select('username, user_id, session_id, event_ts, module, widget, metadata')
         .gte('event_ts', since)
         .or('username.not.is.null,user_id.not.is.null')
         .order('event_ts', { ascending: false })
@@ -62,6 +78,7 @@ Deno.serve(async (req) => {
         console.error('admin-analytics-report users query error:', error);
         return json(req, { error: error.message }, 500);
       }
+      const rows = (allRows ?? []).filter(isProdRow);
       // username -> account bridge from events that carry both.
       const links = new Map<string, string>();
       for (const r of rows ?? []) {
@@ -141,7 +158,15 @@ Deno.serve(async (req) => {
       // can't be classified and simply don't count here).
       const signups: Record<string, number> = {};
       const guests: Array<{ when: string; event: string; username: string | null; guest: boolean; surface: string }> = [];
+      const devSandbox = { events: 0, sessions: new Set<string>() };
+      let serverEvents = 0;
       for (const r of rows ?? []) {
+        if (!isProdRow(r)) {
+          if (isServerRow(r)) { serverEvents++; continue; }
+          devSandbox.events++;
+          if (r.session_id) devSandbox.sessions.add(r.session_id);
+          continue;
+        }
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         const surface = typeof meta.surface === 'string' && meta.surface ? meta.surface : 'unknown';
         const s = surfaces[surface] ?? (surfaces[surface] = { events: 0, sessions: new Set() });
@@ -164,7 +189,15 @@ Deno.serve(async (req) => {
         Object.entries(surfaces).map(([k, v]) => [k, { events: v.events, sessions: v.sessions.size }]),
       );
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'doors' });
-      return json(req, { surfaces: split, signups, guests, days, since });
+      return json(req, {
+        surfaces: split,
+        signups,
+        guests,
+        devSandbox: { events: devSandbox.events, sessions: devSandbox.sessions.size },
+        serverEvents,
+        days,
+        since,
+      });
     }
 
     // ── detail=errors: client errors with their context ──
@@ -184,7 +217,9 @@ Deno.serve(async (req) => {
         return json(req, { error: error.message }, 500);
       }
       const groups = new Map<string, { source: string; errorName: string; context: string | null; detail: string | null; times: number; people: Set<string>; lastSeen: string }>();
+      let devSandboxErrors = 0;
       for (const r of rows ?? []) {
+        if (!isProdRow(r)) { devSandboxErrors++; continue; }
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         const source = typeof meta.source === 'string' && meta.source ? meta.source : 'unknown';
         const errorName = typeof meta.errorName === 'string' && meta.errorName ? meta.errorName : 'Error';
@@ -212,7 +247,7 @@ Deno.serve(async (req) => {
         .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1))
         .slice(0, 100);
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'errors' });
-      return json(req, { errors, days, since });
+      return json(req, { errors, devSandboxErrors, days, since });
     }
 
     // ── detail=signin: the front door's auth health, with reasons ──
@@ -243,6 +278,7 @@ Deno.serve(async (req) => {
       }
       const groups = new Map<string, { event: string; method: string; reason: string | null; times: number; people: Set<string>; lastSeen: string }>();
       for (const r of rows ?? []) {
+        if (!isProdRow(r)) continue;
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         const method = typeof meta.method === 'string' && meta.method ? meta.method
           : (typeof meta.provider === 'string' && meta.provider ? meta.provider : 'email');
@@ -318,8 +354,15 @@ Deno.serve(async (req) => {
       const named = new Set<string>();
       for (const r of rows ?? []) if ((r.username || r.user_id) && r.session_id) named.add(r.session_id);
       const bySession = new Map<string, { first: string; last: string; events: number; platform: string | null; surface: string | null; pages: Map<string, number>; ref: string | null }>();
+      let devSandboxSessions = 0;
+      const seenNoise = new Set<string>();
       for (const r of rows ?? []) {
         if (!r.session_id || named.has(r.session_id)) continue;
+        if (isServerRow(r)) continue;
+        if (!isProdRow(r)) {
+          if (!seenNoise.has(r.session_id)) { seenNoise.add(r.session_id); devSandboxSessions++; }
+          continue;
+        }
         const s = bySession.get(r.session_id) ??
           { first: r.event_ts, last: r.event_ts, events: 0, platform: null, surface: null, pages: new Map(), ref: null };
         s.events++;
@@ -349,7 +392,7 @@ Deno.serve(async (req) => {
         .sort((a, b) => (a.started < b.started ? 1 : -1))
         .slice(0, 150);
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'sessions' });
-      return json(req, { sessions, anonymousTotal: bySession.size, days, since });
+      return json(req, { sessions, anonymousTotal: bySession.size, devSandboxSessions, days, since });
     }
 
     const { data, error } = await admin.rpc('admin_analytics_report', { p_since: since });
