@@ -547,7 +547,13 @@ const AI_ROUTES: Record<string, AIWorkloadTier> = {
     'trade-chat':        'premium',
     'trade-scout':       'premium',
     'draft-scout':       'premium',
-    'pick-analysis':     'premium',
+    // Draft-night burst valve (owner go 2026-09-07): pick reactions are
+    // 1-2 sentence blurbs that fire on every qualifying pick — the premium
+    // tier put that burst on the tightest free lanes (gemini-2.5-flash, then
+    // the Groq 120b bucket everything else falls to). The fast tier rides
+    // flash-lite (the roomiest free quota) and falls to Groq's SEPARATE 20b
+    // bucket, so a busy draft can't starve the rest of the AI.
+    'pick-analysis':     'fast',
     'player-scout':      'premium',
     'waiver-chat':       'standard',
     'waiver-agent':      'standard',
