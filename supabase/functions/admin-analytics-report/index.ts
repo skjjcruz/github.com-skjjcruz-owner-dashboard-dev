@@ -137,64 +137,90 @@ Deno.serve(async (req) => {
       return json(req, { users, days, since });
     }
 
+    // ── detail=accounts: every account and what happened after signup ──
+    // The owner's find (2026-09-09): 62 accounts exist, exactly ONE has ever
+    // connected a Sleeper league. Someone who signs up and stalls at the
+    // connect wall produces no league activity, so the people view never
+    // showed them. This lists them by name regardless of activity.
+    if (url.searchParams.get('detail') === 'accounts') {
+      const { data: roster, error } = await admin
+        .rpc('admin_account_roster', { p_limit: 200 });
+      if (error) {
+        console.error('admin-analytics-report accounts rpc error:', error);
+        return json(req, { error: error.message }, 500);
+      }
+      const rows = (roster ?? []) as Array<Record<string, unknown>>;
+      const accounts = rows.map((r) => ({
+        email: String(r.email ?? ''),
+        name: String(r.display_name ?? '') || String(r.email ?? '').split('@')[0],
+        createdAt: r.created_at,
+        connected: r.connected_platform === true,
+        lastActivity: r.last_activity ?? null,
+        events: Number(r.events ?? 0),
+      }));
+      await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'accounts' });
+      return json(req, {
+        accounts,
+        total: accounts.length,
+        connected: accounts.filter((a) => a.connected).length,
+        neverOpened: accounts.filter((a) => !a.events).length,
+        days,
+        since,
+      });
+    }
+
     // ── detail=doors: which door (native app vs browser) + guest sign-ins ──
     // surface comes from metadata stamped client-side: 'ios_app' when the UA
     // is a bare WKWebView (the shell), 'web' for real browsers. Events older
     // than the stamp's ship date carry no surface and count as 'unknown'.
     if (url.searchParams.get('detail') === 'doors') {
+      // Surface counts are aggregated IN SQL (admin_doors_surfaces). Counting
+      // them here from a row pull silently undercounted: the pull is capped
+      // and ordered newest-first, and rig/test traffic — 8,600 of 8,900 events
+      // in one window — occupies the newest rows, pushing real users out of
+      // the sample entirely. The Native App tile read 2 events against a true
+      // 162; Browser Website read 0 against 127 (owner report 2026-09-09).
+      const { data: agg, error: aggErr } = await admin
+        .rpc('admin_doors_surfaces', { p_since: since });
+      if (aggErr) {
+        console.error('admin-analytics-report doors rpc error:', aggErr);
+        return json(req, { error: aggErr.message }, 500);
+      }
+      // The guest list still needs rows, but only connect-module ones — a
+      // small, bounded slice that no amount of rig noise can crowd out.
       const { data: rows, error } = await admin
         .from('analytics_events')
         .select('session_id, username, event_ts, event_name, module, metadata')
         .gte('event_ts', since)
+        .eq('module', 'connect')
         .order('event_ts', { ascending: false })
-        .limit(20000);
+        .limit(500);
       if (error) {
         console.error('admin-analytics-report doors query error:', error);
         return json(req, { error: error.message }, 500);
       }
-      const surfaces: Record<string, { events: number; sessions: Set<string> }> = {};
-      // New accounts by door: email signups + first-ever OAuth sign-ins
-      // (oauth_succeeded stamps isNew as of 2026-08-12; older OAuth events
-      // can't be classified and simply don't count here).
-      const signups: Record<string, number> = {};
+      // Counts (surfaces, signups, sandbox split) all come from SQL above.
+      // This loop only builds the guest list off the connect-module slice.
       const guests: Array<{ when: string; event: string; username: string | null; guest: boolean; surface: string }> = [];
-      const devSandbox = { events: 0, sessions: new Set<string>() };
-      let serverEvents = 0;
       for (const r of rows ?? []) {
-        if (!isProdRow(r)) {
-          if (isServerRow(r)) { serverEvents++; continue; }
-          devSandbox.events++;
-          if (r.session_id) devSandbox.sessions.add(r.session_id);
-          continue;
-        }
+        if (!isProdRow(r) || guests.length >= 200) continue;
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
-        const surface = typeof meta.surface === 'string' && meta.surface ? meta.surface : 'unknown';
-        const s = surfaces[surface] ?? (surfaces[surface] = { events: 0, sessions: new Set() });
-        s.events++;
-        if (r.session_id) s.sessions.add(r.session_id);
-        if (r.event_name === 'signup_succeeded' || (r.event_name === 'oauth_succeeded' && meta.isNew === true)) {
-          signups[surface] = (signups[surface] ?? 0) + 1;
-        }
-        if (r.module === 'connect' && guests.length < 200) {
-          guests.push({
-            when: r.event_ts,
-            event: String(r.event_name || ''),
-            username: (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || r.username || null,
-            guest: meta.guest === true,
-            surface,
-          });
-        }
+        guests.push({
+          when: r.event_ts,
+          event: String(r.event_name || ''),
+          username: (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || r.username || null,
+          guest: meta.guest === true,
+          surface: typeof meta.surface === 'string' && meta.surface ? meta.surface : 'unknown',
+        });
       }
-      const split = Object.fromEntries(
-        Object.entries(surfaces).map(([k, v]) => [k, { events: v.events, sessions: v.sessions.size }]),
-      );
+      const a = (agg ?? {}) as Record<string, unknown>;
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'doors' });
       return json(req, {
-        surfaces: split,
-        signups,
+        surfaces: a.surfaces ?? {},
+        signups: a.signups ?? {},
         guests,
-        devSandbox: { events: devSandbox.events, sessions: devSandbox.sessions.size },
-        serverEvents,
+        devSandbox: a.devSandbox ?? { events: 0, sessions: 0 },
+        serverEvents: a.serverEvents ?? 0,
         days,
         since,
       });
