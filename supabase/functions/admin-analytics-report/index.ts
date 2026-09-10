@@ -138,10 +138,13 @@ Deno.serve(async (req) => {
     }
 
     // ── detail=accounts: every account and what happened after signup ──
-    // The owner's find (2026-09-09): 62 accounts exist, exactly ONE has ever
-    // connected a Sleeper league. Someone who signs up and stalls at the
-    // connect wall produces no league activity, so the people view never
-    // showed them. This lists them by name regardless of activity.
+    // Someone who signs up and stalls at the connect wall produces no league
+    // activity, so the people view never showed them. This lists everyone by
+    // name regardless of activity.
+    // "Connected" comes from admin_account_roster, which judges it by whether
+    // the account ever reached a league-only screen. It used to read
+    // app_users.platform_usernames — a column nothing wrote until the connect
+    // form started reporting — which under-counted 32 real connects as 1.
     if (url.searchParams.get('detail') === 'accounts') {
       const { data: roster, error } = await admin
         .rpc('admin_account_roster', { p_limit: 200 });
