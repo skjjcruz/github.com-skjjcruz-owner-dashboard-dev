@@ -1123,6 +1123,253 @@ group('account surface (billing + legal requirements)');
 }
 
 // ══════════════════════════════════════════════════════════════════
+// QB trade composition rules (owner ruling 2026-09-02) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const g = {};
+  new Function('window', fs.readFileSync('js/shared/qb-trade-rules.js', 'utf8'))(g);
+  const scores = { qb1: 5000, qb2: 3300, te1: 2600, bqb: 1400, wr1: 4300, dl1: 3500, rb1: 2400 };
+  for (let i = 0; i < 28; i++) scores['fq' + i] = 5200 - i * 110;
+  const P = (pos) => ({ position: pos });
+  const playersData = { qb1: P('QB'), qb2: P('QB'), bqb: P('QB'), te1: P('TE'), wr1: P('WR'), dl1: P('DE'), rb1: P('RB') };
+  for (let i = 0; i < 28; i++) playersData['fq' + i] = P('QB');
+  const rules = g.WrQbTradeRules.build({
+    scores, playersData, rosterPositions: ['QB', 'SUPER_FLEX', 'RB', 'WR', 'TE'], teams: 16,
+    isElite: (pid) => pid === 'wr1' || pid === 'dl1' || pid === 'fq0', starterRole: () => null,
+    normPos: (x) => ({ DE: 'DL' }[String(x || '').toUpperCase()] || String(x || '').toUpperCase()),
+  });
+  const A = (pid) => ({ pid, pos: ({ QB: 'QB', TE: 'TE', WR: 'WR', DE: 'DL', RB: 'RB' })[playersData[pid].position], value: scores[pid] });
+  const D = (o) => ({ receivePlayers: [], givePlayers: [], givePicks: [], receivePicks: [], ...o });
+  test('QB trade rules: elite/mid QB package requirements', () => {
+    ok(rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('te1'), A('bqb')] })), 'a mid QB for a TE + backup QB must be rejected');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePicks: [{ round: 1 }] })), 'a 1st pays for an elite/mid QB');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('wr1')] })), 'an elite offensive player pays');
+    ok(rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('dl1')] })), 'an elite IDP alone does NOT pay');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('dl1')], receivePicks: [{ round: 3 }] })), 'elite IDP + a pick pays');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('te1'), A('rb1')] })), 'two starter-quality players pay');
+    ok(rules.violates(D({ receivePlayers: [A('qb1')] })), 'FAAB-only never pays for a startable QB');
+  });
+  test('QB trade rules: swaps, low tier, and exemptions', () => {
+    ok(rules.violates(D({ receivePlayers: [A('qb2')], givePlayers: [A('qb1')] })), 'a bare unequal QB swap violates — the better QB side got no extras');
+    ok(!rules.violates(D({ receivePlayers: [A('qb2')], givePlayers: [A('qb1')], receivePicks: [{ round: 4 }] })), 'lesser QB + a pick balances the swap');
+    ok(!rules.violates(D({ receivePlayers: [A('qb1')], givePlayers: [A('qb2'), A('te1')] })), 'lesser QB + a starter-quality player pays');
+    ok(!rules.violates(D({ receivePlayers: [A('fq26')], givePicks: [{ round: 2 }] })), 'a 2nd pays for a low-tier QB');
+    ok(rules.violates(D({ receivePlayers: [A('fq26')], givePicks: [{ round: 3 }] })), 'a 3rd alone does not pay for a low-tier QB');
+    ok(!rules.violates(D({ receivePlayers: [A('fq26')], givePlayers: [A('rb1')] })), 'a starter-quality skill player pays for a low-tier QB');
+    ok(!rules.violates(D({ receivePlayers: [A('bqb')], givePlayers: [] })), 'true backups are exempt from all rules');
+  });
+  test('QB trade rules: elite-badge QBs never move for a single bare 1st', () => {
+    ok(rules.violates(D({ givePlayers: [A('fq0')], receivePicks: [{ round: 1 }] })), 'a single bare 1st for an elite-badge QB is always rejected');
+    ok(!rules.violates(D({ givePlayers: [A('fq0')], receivePicks: [{ round: 1 }, { round: 1 }] })), 'two 1sts pay for an elite-badge QB');
+    ok(!rules.violates(D({ givePlayers: [A('fq0')], receivePicks: [{ round: 1 }], receivePlayers: [A('te1')] })), 'a 1st + a starter-quality player pays for an elite-badge QB');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePicks: [{ round: 1 }] })), 'a mid (non-badge) QB still moves for a single 1st');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Elite RB/WR/TE package rules (owner ruling 2026-09-02) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const g = {};
+  new Function('window', fs.readFileSync('js/shared/elite-skill-trade-rules.js', 'utf8'))(g);
+  const scores = { jt: 8200, wr9: 7500, db20: 2100, dl5: 4000, wrsq: 3100, rbsq: 2500, rbmid: 4500, telow: 900 };
+  const P = (pos) => ({ position: pos });
+  const playersData = { jt: P('RB'), wr9: P('WR'), db20: P('DB'), dl5: P('DE'), wrsq: P('WR'), rbsq: P('RB'), rbmid: P('RB'), telow: P('TE') };
+  const rules = g.WrEliteSkillRules.build({
+    scores, playersData,
+    isElite: (pid) => pid === 'jt' || pid === 'wr9' || pid === 'dl5',
+    starterRole: () => null,
+  });
+  const A = (pid) => ({ pid, pos: ({ RB: 'RB', WR: 'WR', DB: 'DB', DE: 'DL', TE: 'TE' })[playersData[pid].position], value: scores[pid] });
+  const D = (o) => ({ receivePlayers: [], givePlayers: [], givePicks: [], receivePicks: [], ...o });
+  test('elite skill rules: top dollar or no deal', () => {
+    ok(rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }] })), 'a single bare 1st for an elite RB is always rejected');
+    ok(rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }], receivePlayers: [A('db20')] })), 'a 1st + a non-elite DB is rejected — junk IDP is decoration, not payment');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }, { round: 1 }] })), 'two 1sts pay for an elite RB');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }], receivePlayers: [A('wrsq')] })), 'a 1st + a starter-quality offensive player pays');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }], receivePlayers: [A('dl5')] })), 'a 1st + an elite IDP pays');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePlayers: [A('wr9')] })), 'an elite offensive player pays outright — star-for-star');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePlayers: [A('wrsq'), A('rbsq')], receivePicks: [{ round: 3 }] })), 'two starter-quality offensive players + a pick pay');
+    ok(rules.violates(D({ givePlayers: [A('jt')], receivePlayers: [A('wrsq'), A('rbsq')] })), 'two starter-quality players WITHOUT a pick do not pay');
+    ok(rules.violates(D({ givePlayers: [A('jt')] })), 'an empty/FAAB-only return never pays for an elite player');
+  });
+  test('elite skill rules: scope and directions', () => {
+    ok(!rules.violates(D({ givePlayers: [A('rbmid')], receivePicks: [{ round: 2 }] })), 'non-elite players are not gated — plain value trading stands');
+    ok(rules.violates(D({ receivePlayers: [A('jt')], givePicks: [{ round: 1 }], givePlayers: [A('db20')] })), 'acquiring an elite RB is gated the same as selling one');
+    ok(!rules.violates(D({ receivePlayers: [A('jt')], givePicks: [{ round: 1 }], givePlayers: [A('rbsq')] })), 'acquiring with a 1st + starter-quality RB passes');
+    ok(!rules.violates(null), 'rules fail open on missing input');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Six-tier QB rules v2 (owner rulings 2026-09-02/03) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const g = {};
+  new Function('window', fs.readFileSync('js/shared/qb-trade-rules-v2.js', 'utf8'))(g);
+  const scores = {}, pd = {};
+  for (let i = 0; i < 33; i++) { scores['q' + i] = 8000 - i * 190; pd['q' + i] = { position: 'QB', age: 26 }; }
+  pd.q1.age = 41;                       // rank 2 but 41 — the age rule
+  scores.q32 = 1900;                    // rank 33 — outside the 32 pool
+  const roleFlags = { q32: true };      // ...but holds a live NFL starting job
+  scores.wr1 = 7500; pd.wr1 = { position: 'WR', age: 25 };   // elite off (via isElite)
+  scores.wr2 = 2600; pd.wr2 = { position: 'WR', age: 25 };   // starter-quality off
+  scores.dl1 = 4200; pd.dl1 = { position: 'DL', age: 25 };   // elite IDP
+  const R = g.WrQbTradeRulesV2.build({
+    scores, playersData: pd, rosterPositions: ['QB', 'SUPER_FLEX', 'RB', 'WR'], teams: 16,
+    isElite: pid => pid === 'wr1' || pid === 'dl1',
+    starterRole: p => (p && roleFlags[Object.keys(pd).find(k => pd[k] === p)]) ? 'S1' : null,
+    normPos: x => String(x || '').toUpperCase(),
+    ageOf: pid => pd[pid] ? pd[pid].age : null,
+  });
+  const A = pid => ({ pid, pos: pd[pid].position, value: scores[pid] });
+  const D = o => ({ receivePlayers: [], givePlayers: [], givePicks: [], receivePicks: [], ...o });
+  const P1 = { round: 1 }, P2 = { round: 2 }, P3 = { round: 3 };
+  test('QB v2: tier ladder boundaries', () => {
+    eq(R.tierOf('q0'), 'elite+', 'rank 1 is Elite+');
+    eq(R.tierOf('q5'), 'elite', 'rank 6 is Elite');
+    eq(R.tierOf('q10'), 'mid+', 'rank 11 is Mid+');
+    eq(R.tierOf('q15'), 'mid', 'rank 16 is Mid');
+    eq(R.tierOf('q25'), 'low', 'rank 26 is Low');
+    eq(R.tierOf('q30'), 'bottom', 'rank 31 is Bottom');
+    eq(R.tierOf('q1'), 'mid', 'a 41-year-old ranked #2 prices at Mid (age rule)');
+    eq(R.tierOf('q32'), 'bottom', 'a live NFL starter outside the pool enters at Bottom (Rodgers rule)');
+  });
+  test('QB v2: graduated price floors', () => {
+    ok(R.violates(D({ givePlayers: [A('q0')], receivePicks: [P1] })), 'Elite+ for a single 1st is rejected');
+    ok(R.violates(D({ givePlayers: [A('q0')], receivePicks: [P1, P1] })), 'Elite+ for two bare 1sts is rejected — needs a player too');
+    ok(!R.violates(D({ givePlayers: [A('q0')], receivePicks: [P1, P1], receivePlayers: [A('wr2')] })), 'Elite+ for two 1sts + a starter pays');
+    ok(!R.violates(D({ givePlayers: [A('q5')], receivePicks: [P1, P1] })), 'Elite for two 1sts pays');
+    ok(R.violates(D({ givePlayers: [A('q5')], receivePicks: [P1], receivePlayers: [A('dl1')] })), 'Elite for 1st + elite IDP needs an ADDITIONAL pick');
+    ok(!R.violates(D({ givePlayers: [A('q5')], receivePicks: [P1, P3], receivePlayers: [A('dl1')] })), 'Elite for 1st + elite IDP + extra pick pays');
+    ok(R.violates(D({ givePlayers: [A('q10')], receivePicks: [P1] })), 'Mid+ for a single 1st is rejected');
+    ok(!R.violates(D({ givePlayers: [A('q10')], receivePicks: [P1, P2] })), 'Mid+ for 1st + 2nd pays');
+    ok(!R.violates(D({ givePlayers: [A('q15')], receivePicks: [P1] })), 'Mid for a single 1st pays');
+    ok(R.violates(D({ givePlayers: [A('q25')], receivePicks: [P2] })), 'Low for a bare 2nd is rejected');
+    ok(!R.violates(D({ givePlayers: [A('q25')], receivePicks: [P2], receivePlayers: [A('dl1')] })), 'Low for 2nd + a starter (defense counts) pays');
+    ok(!R.violates(D({ givePlayers: [A('q30')], receivePicks: [P2], receivePlayers: [A('wr2')] })), 'Bottom for 2nd + starter pays');
+    ok(R.violates(D({ givePlayers: [A('q32')], receivePicks: [P3] })), 'the Rodgers-rule QB never moves for a bare 3rd');
+  });
+  test('QB v2: scarcity bump — an irreplaceable QB prices one tier up', () => {
+    const R2 = g.WrQbTradeRulesV2.build({
+      scores, playersData: pd, rosterPositions: ['QB', 'SUPER_FLEX', 'RB', 'WR'], teams: 16,
+      isElite: pid => pid === 'wr1' || pid === 'dl1',
+      starterRole: p => (p && roleFlags[Object.keys(pd).find(k => pd[k] === p)]) ? 'S1' : null,
+      normPos: x => String(x || '').toUpperCase(),
+      ageOf: pid => pd[pid] ? pd[pid].age : null,
+      isScarce: pid => pid === 'q15',
+    });
+    eq(R2.tierOf('q15'), 'mid+', 'a protected Mid QB prices at Mid+');
+    ok(R2.violates(D({ givePlayers: [A('q15')], receivePicks: [P1] })), 'a bare 1st no longer buys an irreplaceable QB');
+    ok(!R2.violates(D({ givePlayers: [A('q15')], receivePicks: [P1, P2] })), '1st + 2nd pays the bumped price');
+  });
+  test('QB v2: swap bridges by tier distance', () => {
+    ok(!R.violates(D({ givePlayers: [A('q5')], receivePlayers: [A('q6')] })), 'same-tier swap passes even');
+    ok(R.violates(D({ givePlayers: [A('q5')], receivePlayers: [A('q10')] })), 'one tier down bare is rejected');
+    ok(!R.violates(D({ givePlayers: [A('q5')], receivePlayers: [A('q10')], receivePicks: [P1] })), 'one tier down + a 1st bridges');
+    ok(R.violates(D({ givePlayers: [A('q5')], receivePlayers: [A('q15')], receivePicks: [P1] })), 'two tiers down + a 1st is NOT enough');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// GM trade engine (owner surgery 2026-09-03) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const g = {};
+  new Function('window', fs.readFileSync('js/shared/gm-trade-engine.js', 'utf8'))(g);
+  const P = (pid, pos, value) => ({ type: 'player', pid, name: pid, pos, value });
+  const teams = [
+    { rosterId: 1, ownerId: 'u1', teamName: 'Me', assessment: {
+        needs: [{ pos: 'RB', urgency: 'thin' }],
+        posAssessment: { QB: { status: 'ok' }, RB: { status: 'deficit', minQuality: 1 }, WR: { status: 'surplus', minQuality: 1, nflStarters: 3 } },
+        window: 'CONTENDING' },
+      players: [P('myqb', 'QB', 5000), P('mywr1', 'WR', 4000), P('mywr2', 'WR', 2500), P('myrb', 'RB', 900)],
+      picks: [{ type: 'pick', id: 'pk1', year: 2027, round: 1, label: '2027 R1', value: 5000 }] },
+    { rosterId: 2, ownerId: 'u2', teamName: 'Them', assessment: {
+        needs: [{ pos: 'WR', urgency: 'thin' }],
+        posAssessment: { RB: { status: 'surplus', minQuality: 1, nflStarters: 3 }, WR: { status: 'deficit' } },
+        window: 'CONTENDING' },
+      players: [P('theirrb1', 'RB', 3200), P('theirrb2', 'RB', 2800), P('theirwr', 'WR', 800), P('theirdb', 'DB', 2100)],
+      picks: [] },
+  ];
+  const eng = g.WrGmTradeEngine.build({
+    myRosterId: 1, rosterPositions: ['QB', 'RB', 'WR', 'FLEX', 'BN'],
+    teams, liquidity: a => (a.pos === 'DB' ? 0.6 : 1), isElite: () => false,
+  });
+  const led = eng.ledger(1);
+  test('GM engine: the ledger protects and frees the right players', () => {
+    ok(led.protectedPids.myqb, 'the only QB is protected');
+    ok(led.protectedPids.mywr1, 'the top WR (weekly requirement) is protected');
+    ok(led.excess.some(p => p.pid === 'mywr2'), 'the spare WR above the bar is tradeable excess');
+    ok(!led.excess.some(p => p.pid === 'myrb'), 'a sub-$1500 bench piece is not a market chip');
+  });
+  test('GM engine: recommendations are purposeful and protected men never pay', () => {
+    const recs = eng.recommend();
+    ok(recs.length >= 1, 'the needs-mirror produces at least one deal');
+    ok(recs.every(d => !d.givePlayers.some(p => led.protectedPids[p.pid])), 'no protected player appears as payment');
+    ok(recs.some(d => d.receivePlayers.some(p => p.pos === 'RB')), 'the deal addresses the flagged RB need');
+    ok(recs.every(d => d.lineupDelta >= 150 || d.capitalDelta > 0), 'every deal clears the benefit gate');
+    const led2 = eng.ledger(2);
+    ok(recs.every(d => d.receivePlayers.every(p => !led2.protectedPids[p.pid])), 'seller-side scarcity: the partner\'s protected players are never proposed as acquisitions');
+    const eng2 = g.WrGmTradeEngine.build({ myRosterId: 2, rosterPositions: ['QB', 'RB', 'WR', 'FLEX', 'BN'], teams, liquidity: () => 1, isElite: () => false });
+    ok(Array.isArray(eng2.recommend()), 'the partner board runs clean too');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Rank history contamination guard (bug 2026-09-04) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const store = {};
+  const g = {
+    localStorage: {
+      getItem: k => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: k => { delete store[k]; },
+    },
+  };
+  new Function('window', 'localStorage', fs.readFileSync('js/shared/rank-history.js', 'utf8'))(g, g.localStorage);
+  const RH = g.WR.RankHistory;
+  const LID = 'L16';
+  // Reproduce the owner's exact 2026-09-04 corruption: two days of a 12-team
+  // league's table filed under the 16-team league, then today's real table.
+  const alien = { date: '2026-09-03', names: { 1: 'The Benghazi Bullies' }, ranks: {} };
+  for (let i = 1; i <= 12; i++) alien.ranks[String(i)] = i === 1 ? 1 : (i <= 9 ? i + 3 : i - 8);
+  const real = { date: '2026-09-04', names: { 1: 'Pontiac Aztek Racing Club', 13: 'Dirty Mike and the Boys' }, ranks: {} };
+  const realOrder = [15, 11, 8, 2, 6, 7, 4, 13, 9, 12, 16, 3, 10, 5, 1, 14];
+  for (let i = 1; i <= 16; i++) real.ranks[String(i)] = realOrder[i - 1];
+  store['dhq_rank_hist_v1:' + LID] = JSON.stringify({ days: [alien, real] });
+
+  test('mismatched days are never compared — no fabricated 14-spot slide', () => {
+    ok(RH.movers(LID).length === 0, 'movers stays silent across a cross-league day pair');
+    ok(RH.myDelta(LID, 13) === null, 'myDelta refuses the cross-league comparison too');
+  });
+
+  const mkAssessments = (n, bump) => Array.from({ length: n }, (_, i) => ({
+    rosterId: i + 1, powerRank: ((i + (bump || 0)) % n) + 1, teamName: 'T' + (i + 1),
+  }));
+  test('record refuses a table from the wrong league', () => {
+    const expected16 = Array.from({ length: 16 }, (_, i) => String(i + 1));
+    RH.record(LID, mkAssessments(12), { expectedRosterIds: expected16 });
+    const days = JSON.parse(store['dhq_rank_hist_v1:' + LID]).days;
+    ok(days.every(d => Object.keys(d.ranks).length !== 12 || d.date === '2026-09-03'),
+      'a 12-team table never lands under the 16-team league');
+  });
+  test('a legitimate record self-prunes alien days and history heals', () => {
+    RH.record(LID, mkAssessments(16), { expectedRosterIds: Array.from({ length: 16 }, (_, i) => String(i + 1)) });
+    const days = JSON.parse(store['dhq_rank_hist_v1:' + LID]).days;
+    ok(days.every(d => Object.keys(d.ranks).length === 16), 'the poisoned 12-team days are pruned on the next real record');
+    // Simulate tomorrow: a second same-set day makes comparisons honest again.
+    days[days.length - 1].date = '2026-09-05';
+    store['dhq_rank_hist_v1:' + LID] = JSON.stringify({ days });
+    RH.record(LID, mkAssessments(16, 2), { expectedRosterIds: Array.from({ length: 16 }, (_, i) => String(i + 1)) });
+    ok(RH.movers(LID).length > 0, 'same-league day pairs still produce movers');
+    const md = RH.myDelta(LID, 3);
+    ok(md && typeof md.delta === 'number', 'myDelta works again on clean same-league history');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
 // Summary
 // ══════════════════════════════════════════════════════════════════
 console.log('\n');
