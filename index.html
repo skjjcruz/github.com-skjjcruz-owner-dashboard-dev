@@ -2925,7 +2925,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- 0. Theme engine — must load before any widget/component (plain JS, no Babel needed) -->
 <script src="js/theme.js?v=20260526lightgate1"></script>
 <!-- 0b. Alex voice helper — seeded phrase variation + template-first AI upgrade (plain JS) -->
-<script src="js/shared/alex-voice.js?v=20260531voice2"></script>
+<script src="js/shared/alex-voice.js?v=20260916burst1"></script>
 <!-- (removed unused 'Press Start 2P' web font — it was a render-blocking request but referenced by no font-family) -->
 
 <!-- War Room modules — loaded in dependency order by Babel standalone -->
@@ -2951,7 +2951,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- 2d. GM Mode helper (Phase 1) — window.WR.GmMode — canonical mode/preset source of truth -->
 <script type="text/babel" src="js/shared/gm-mode.js?v=20260613gm3"></script>
 <script src="js/shared/startsit-engine.js?v=20260701gdc4"></script>
-<script src="js/shared/weekly-proj.js?v=20260701gdc1"></script>
+<script src="js/shared/weekly-proj.js?v=20260915truth2"></script>
 <script src="js/shared/sleeper-proj.js?v=20260717proj1"></script>
 <script src="js/shared/nfl-context.js?v=20260824wx2"></script>
 <script src="js/shared/matchup.js?v=20260701gdc1"></script>
@@ -2999,7 +2999,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/txn-store.js?v=20260601a"></script>
 <!-- 3. Shared utilities: player valuation constants + projection engine -->
 <script type="text/babel" src="js/utils/sos-engine.js?v=20260702scout1"></script>
-<script type="text/babel" src="js/utils/player-value.js?v=20260817chp1"></script>
+<script type="text/babel" src="js/utils/player-value.js?v=20260915truth1"></script>
 <!-- 4. Feature modules (no internal dependencies between these) -->
 <!-- data-wr-defer scripts are DEFERRED: emitted INERT (type="text/wr-deferred" by
      every build/serve pipeline) so the browser does NOT parse/execute them at app
@@ -3012,7 +3012,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/settings.js?v=20260902intel1"></script>
 <script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20260906b106a"></script>
 <script type="text/babel" src="js/post-draft.js?v=20260907b112a"></script>
-<script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260828tick4"></script>
+<script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260915truth1"></script>
 <!-- Season Odds panel loads with Game Day (owner ruling 2026-07-30) — must
      precede lineup.js in the group so window.WrSeasonOdds exists on first render. -->
 <script type="text/babel" data-wr-defer="lineup" src="js/components/season-odds-panel.js?v=20260817chp1"></script>
@@ -3165,7 +3165,7 @@ window.addEventListener('appinstalled', () => {
 <!-- Deploy tag (owner ask 2026-08-19): a tiny always-visible build code so the
      owner can read back exactly which version his device is running before
      testing — kills the stale-cache guessing game. Bump the code every deploy. -->
-<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b120a</div>
+<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b124a</div>
 </body>
 </html>
 <!-- build 1774212614 -->

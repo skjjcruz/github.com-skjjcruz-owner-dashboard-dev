@@ -349,17 +349,32 @@ window.App.PlayerValue = (function () {
 
     // Healthy, neutral-matchup per-week median for a player, league-scored.
     // Ignores transient injury_status — ROS is a season-long estimate.
+    // Per-week points for rest-of-season value — Sleeper's PUBLISHED line only.
+    //
+    // This used to rebuild a line from last season's totals divided by games
+    // played and treat that as a projection. For a player who appeared once and
+    // scored in that appearance, the divisor was 1, so a single box score became
+    // a season-long per-week average and rode all the way to the top of the
+    // waiver board. Sleeper publishing nothing for a player is not a gap to
+    // fill — it is Sleeper saying he is not in a role worth projecting. No
+    // published line, no value.
+    //
+    // Scored neutral (no matchup/Vegas): this is a rest-of-season number, so a
+    // single week's opponent must not tilt it.
     function _perWeekMedian(pid, ctx) {
-        const WP = window.App?.WeeklyProj, SS = window.App?.StartSit;
-        if (!WP || !SS || !WP.buildBaseline) return 0;
-        const player = ctx.playersData?.[pid];
-        if (!player) return 0;
-        const baseline = WP.buildBaseline(pid, ctx.statsData?.[pid] || null, ctx.priorData?.[pid] || null, ctx.scoring, ctx.week);
-        if (!baseline) return 0;
-        const pos = (window.App?.normPos?.(player.position)) || player.position || '';
-        const proj = SS.projectPlayerWeek({ pid, week: ctx.week, position: pos, baseline, dvpMult: 1, vegas: null, injuryStatus: '' });
-        const scored = SS.scoreProjection(proj, ctx.scoring);
-        return (scored && scored.points && scored.points.median) || 0;
+        const WP = window.App?.WeeklyProj;
+        const calc = window.App?.calcRawPts;
+        if (!WP?.projLine || typeof calc !== 'function') return 0;
+        const line = WP.projLine(pid, ctx.week);
+        if (!line) return 0;
+        let pts = calc(line, ctx.scoring);
+        if (!Number.isFinite(pts)) return 0;
+        // calcRawPts is position-blind, so TE-premium has to be applied here —
+        // mirrors the same correction in weekly-proj's Sleeper path.
+        const pos = (window.App?.normPos?.(ctx.playersData?.[pid]?.position)) || '';
+        const teBonus = (pos === 'TE' && Number(ctx.scoring?.bonus_rec_te)) || 0;
+        if (teBonus && Number.isFinite(line.rec)) pts += teBonus * line.rec;
+        return Math.max(0, pts);
     }
 
     // Replacement-rank (1-indexed) for a position = the last startable player at that
@@ -385,7 +400,14 @@ window.App.PlayerValue = (function () {
         const leagueId = String(ctx.leagueId || league.league_id || league.id || _currentLeagueId());
         const WP = window.App?.WeeklyProj;
         const week = WP && WP.currentWeek ? WP.currentWeek() : 1;
-        if (_ros && _ros.leagueId === leagueId && _ros.week === week) return _ros; // cached
+        // Value rests entirely on Sleeper's published lines, so build against
+        // the week we actually hold them for — asking for a week Sleeper has
+        // not published would zero every player. Until they load there is no
+        // honest value to compute, so stay null and rebuild when they arrive
+        // (callers re-run on the wr:proj-updated event).
+        const publishedWeek = WP && WP.loadedProjWeek ? WP.loadedProjWeek() : 0;
+        if (!(publishedWeek > 0)) { _ros = null; return null; }
+        if (_ros && _ros.leagueId === leagueId && _ros.week === publishedWeek) return _ros; // cached
 
         const playerScores = window.App?.LI?.playerScores || null;
         if (!playerScores) return null; // DHQ is the scale anchor — need it loaded
@@ -403,7 +425,7 @@ window.App.PlayerValue = (function () {
         const remainingWeeks = (survival > 0 && survival < calendarWeeks) ? survival : calendarWeeks;
         if (remainingWeeks <= 0) { _ros = null; return null; } // season over → DHQ
 
-        const projWeek = week + 1;
+        const projWeek = publishedWeek;
         const totalTeams = Number(league.total_rosters) || (window.S?.rosters?.length) || 12;
 
         // ── Pass 1: project each player's healthy per-week points + record position ──
@@ -461,7 +483,7 @@ window.App.PlayerValue = (function () {
         if (bestDHQ <= 0 || maxVor <= 0) { _ros = null; return null; }
         const scale = bestDHQ / maxVor;   // anchor the top VOR asset to the dynasty-scale ceiling
         for (const pid in vor) values[pid] = Math.min(10000, Math.round(vor[pid] * scale));
-        _ros = { leagueId, week, remainingWeeks, points, values, scale, bestDHQ, maxVor, replacementPerWk };
+        _ros = { leagueId, week: publishedWeek, calendarWeek: week, remainingWeeks, points, values, scale, bestDHQ, maxVor, replacementPerWk };
         return _ros;
     }
 

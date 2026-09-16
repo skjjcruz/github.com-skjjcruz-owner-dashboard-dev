@@ -282,12 +282,16 @@
             if ((pos === 'DEF' || pos === 'DST') && (p.team || pid)) return (p.team || pid) + ' D/ST';
             return pid ? 'Player ' + pid : 'Unknown';
         }
+        // THIS season's points per game, or null when he has not played this
+        // season. It used to fall back to last season, which quietly presented
+        // an old year's number as the current one — and because the divisor is
+        // games PLAYED, a back who dressed 17 times and touched the ball once
+        // came out at 11.4 a game off a single box score. Last season is history
+        // you can look up; it is not this season's average.
         function seasonPpgFor(pid) {
             const st = statsData[pid] || {};
-            const prevSt = (prevStatsData || {})[pid] || {};
-            if (st.gp > 0) return +(calcRawPtsFor(st) / st.gp).toFixed(1);
-            if (prevSt.gp > 0) return +(calcRawPtsFor(prevSt) / prevSt.gp).toFixed(1);
-            return 0;
+            if (!(st.gp > 0)) return null;
+            return +(calcRawPtsFor(st) / st.gp).toFixed(1);
         }
         function ageCurveFor(pos) {
             return typeof window.App?.getAgeCurve === 'function'
@@ -718,6 +722,25 @@
         const _faVp = _faUseVp ? _faUseVp() : { isPhone: false };
         const [faPanel, setFaPanel] = useState(null);   // inline chooser: null|'filters'|'sort'|'view'
         const _faPhone = !!_faVp.isPhone && !!(window.WR && window.WR.HeroCard && window.WR.AssetRow && window.WR.CardList && window.WR.FilterPill && window.WR.FilterSheet && window.WR.Sheet);
+        // Sleeper's published weekly projections are THE source for every number
+        // on this screen. Only Lineup and My Team used to load them, so opening
+        // Free Agency directly left the board with nothing published and every
+        // projection fell through to the home-grown estimate — which is how a
+        // back with one career appearance came to lead the waiver board. Load
+        // them here too, and recompute when they land.
+        const [projTick, setProjTick] = useState(0);
+        React.useEffect(() => {
+            const SP = window.App && window.App.SleeperProj;
+            if (!SP || !SP.loadCurrent) return;
+            let alive = true;
+            SP.loadCurrent(currentLeague && currentLeague.season)
+                .then(wk => { if (alive && wk) setProjTick(t => t + 1); })
+                .catch(() => {});
+            const onProj = () => { if (alive) setProjTick(t => t + 1); };
+            window.addEventListener('wr:proj-updated', onProj);
+            return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
+        }, [currentLeague?.league_id, currentLeague?.season]);
+
         // Redraft → build rest-of-season values so waiver/FA targets rank by ROS
         // production instead of dynasty DHQ. No-op (DHQ) for dynasty/keeper.
         React.useMemo(() => {
@@ -729,7 +752,7 @@
                 });
             } catch (e) { if (window.wrLog) window.wrLog('fa.ensureRos', e); }
             return null;
-        }, [currentLeague, playersData, statsData, prevStatsData, timeRecomputeTs]);
+        }, [currentLeague, playersData, statsData, prevStatsData, timeRecomputeTs, projTick]);
         const valueLabel = skinVocabulary.valueLabel || FA_COLUMNS.dhq.label;
         const valueShortLabel = skinVocabulary.valueShortLabel || FA_COLUMNS.dhq.shortLabel;
         const valueKpiLabel = (valueShortLabel === 'DHQ' ? 'DHQ VALUE' : valueShortLabel.toUpperCase());
@@ -905,16 +928,34 @@
                     && (!leaguePosSet || leaguePosSet.has(normPos(p.position) || p.position)))
                 .map(([pid, p]) => {
                     const dhq = (window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid, { skin: resolvedLeagueSkin }) : (window.App?.LI?.playerScores?.[pid] || 0));
-                    let proj = 0;
+                    // requireSleeper: this column only ever shows a number Sleeper
+                    // published. When Sleeper has no line the projection is null —
+                    // not zero — so the board can show a blank and know the
+                    // difference between "projected to score nothing" and "not
+                    // projected at all".
+                    let proj = null;
                     const WP = window.App && window.App.WeeklyProj;
                     if (WP && WP.projectPlayer) {
-                        try { const pr = WP.projectPlayer(pid, { playersData, statsData, priorData: prevStatsData, scoring: currentLeague?.scoring_settings || {}, week: WP.currentWeek ? WP.currentWeek() : (window.S?.currentWeek || 1) }); proj = (pr && pr.points) ? (pr.points.median || 0) : 0; } catch (e) { proj = 0; }
+                        try {
+                            const pr = WP.projectPlayer(pid, {
+                                playersData, statsData, priorData: prevStatsData,
+                                scoring: currentLeague?.scoring_settings || {},
+                                week: WP.loadedProjWeek ? (WP.loadedProjWeek() || (WP.currentWeek ? WP.currentWeek() : 1)) : (window.S?.currentWeek || 1),
+                                requireSleeper: true,
+                            });
+                            proj = (pr && pr.points && Number.isFinite(pr.points.median)) ? pr.points.median : null;
+                        } catch (e) { proj = null; }
                     }
-                    return { pid, p, dhq, proj, pos: normPos(p.position) || p.position };
+                    // Sleeper's depth chart: a player with no slot is not in an
+                    // NFL role. We already download this — it is the difference
+                    // between a back who might play and one who will not.
+                    const depthSlot = Number.isFinite(Number(p.depth_chart_order)) && Number(p.depth_chart_order) > 0
+                        ? Number(p.depth_chart_order) : null;
+                    return { pid, p, dhq, proj, projected: proj != null, depthSlot, pos: normPos(p.position) || p.position };
                 })
                 .sort((a, b) => b.dhq - a.dhq)
                 .slice(0, 300);
-        }, [rosterState.isUsable, playersData, statsData, prevStatsData, currentLeague, rostered, timeRecomputeTs, isDraftProspect, leaguePosSet]);
+        }, [rosterState.isUsable, playersData, statsData, prevStatsData, currentLeague, rostered, timeRecomputeTs, isDraftProspect, leaguePosSet, projTick]);
 
         // Streaming opportunities: the best available FA per position that
         // out-projects the user's WEAKEST current starter at that position this week.
@@ -927,7 +968,9 @@
             if (!WP || !WP.projectPlayer || !myRoster) return [];
             const scoring = currentLeague?.scoring_settings || {};
             const week = WP.currentWeek ? WP.currentWeek() : (window.S?.currentWeek || 1);
-            const pmed = pid => { try { const pr = WP.projectPlayer(pid, { playersData, statsData, priorData: prevStatsData, scoring, week }); return pr && pr.points ? (pr.points.median || 0) : 0; } catch (e) { return 0; } };
+            // "Start X over your worst starter" is a recommendation, so it rides
+            // Sleeper's published line only — never an estimate.
+            const pmed = pid => { try { const pr = WP.projectPlayer(pid, { playersData, statsData, priorData: prevStatsData, scoring, week, requireSleeper: true }); return pr && pr.points ? (pr.points.median || 0) : 0; } catch (e) { return 0; } };
             const mineByPos = {};
             (myRoster.starters || []).filter(Boolean).forEach(pid => { const pos = normPos((playersData[pid] || {}).position); if (!pos) return; (mineByPos[pos] = mineByPos[pos] || []).push({ pid, m: pmed(pid) }); });
             const bestFa = {};
@@ -1219,6 +1262,18 @@
             return recPool
                 .filter(x => {
                     if (!needPositions.includes(x.pos)) return false;
+                    // THE TRUTH GATE. We only tell an owner to go get a player
+                    // when the platform itself says he is playing. Two reads,
+                    // both straight from Sleeper, neither of them ours:
+                    //   • a published weekly projection — Sleeper declining to
+                    //     publish one means he is not in a role worth projecting
+                    //   • a depth chart slot — no slot, no NFL job
+                    // Without these the board recommended a back who had one
+                    // career appearance, priced him at $11-21, and ranked him
+                    // first. He is still findable in Market Explorer; he just
+                    // cannot be a recommendation.
+                    if (!x.projected) return false;
+                    if (x.depthSlot == null) return false;
                     if (x.dhq < dynamicFloor) return false;
                     if (isRebuilding && (x.p.age || 30) > faAgeGate && x.dhq < 2000) return false; // Rebuilders skip old low-value
                     return true;
@@ -1241,9 +1296,9 @@
         // Selected player detail
         const selPlayer = faSelectedPid ? playersData[faSelectedPid] : null;
         const selStats = faSelectedPid ? statsData[faSelectedPid] || {} : {};
-        const selPrevStats = faSelectedPid ? (prevStatsData || {})[faSelectedPid] || {} : {};
         const selDhq = faSelectedPid ? (window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(faSelectedPid, { skin: resolvedLeagueSkin }) : (window.App?.LI?.playerScores?.[faSelectedPid] || 0)) : 0;
-        const selPpg = selStats.gp > 0 ? +(calcRawPts(selStats) / selStats.gp).toFixed(1) : (selPrevStats.gp > 0 ? +(calcRawPts(selPrevStats) / selPrevStats.gp).toFixed(1) : 0);
+        // This season only — see seasonPpgFor. Last season is not this season.
+        const selPpg = selStats.gp > 0 ? +(calcRawPts(selStats) / selStats.gp).toFixed(1) : null;
         const selPos = selPlayer ? normPos(selPlayer.position) : '';
         const selPeakYrs = selPlayer ? peakYearsFor(selPos, selPlayer.age) : 0;
         const selValueYrs = selPlayer ? valueYearsFor(selPos, selPlayer.age) : 0;
@@ -1270,12 +1325,16 @@
             return pid ? 'Player ' + pid : 'Unknown';
         }
 
+        // See the note on the sibling in buildFreeAgencyActionBoard: this season
+        // only, null when he has not played, never last season wearing this
+        // season's label.
         function seasonPpgFor(pid) {
             const st = statsData[pid] || {};
-            const prevSt = (prevStatsData || {})[pid] || {};
-            if (st.gp > 0) return +(calcRawPts(st) / st.gp).toFixed(1);
-            if (prevSt.gp > 0) return +(calcRawPts(prevSt) / prevSt.gp).toFixed(1);
-            return 0;
+            if (!(st.gp > 0)) return null;
+            return +(calcRawPts(st) / st.gp).toFixed(1);
+        }
+        function seasonGamesFor(pid) {
+            return Number((statsData[pid] || {}).gp) || 0;
         }
 
         function windowRead(pos, age) {
@@ -1416,7 +1475,11 @@
             if (gmEff.marketPosture === 'sell_high' || gmEff.marketPosture === 'hold') return x.dhq < 1500 ? -1200 : 0;
             return 0;
         };
+        // The ranked waiver board obeys the same truth gate as the priority
+        // adds: Sleeper has to be projecting him and he has to hold a depth
+        // chart slot. A ranked list IS a recommendation.
         const actionBoardPlayers = !isPro ? [] : recPool
+            .filter(x => x.projected && x.depthSlot != null)
             .map(decorateFaCandidate)
             .sort((a, b) => (b.fitScore * 5000 + b.dhq + (b.ppg || 0) * 35 + postureBias(b)) - (a.fitScore * 5000 + a.dhq + (a.ppg || 0) * 35 + postureBias(a)));
         const priorityAdds = (recommendations.length ? recommendations : actionBoardPlayers)
@@ -1819,7 +1882,10 @@
                         // Same rolling-window override + seasonal fallback as
                         // renderCell; the window rides the LABEL (L5/L3).
                         let shown = seasonPpgFor(x.pid);
-                        let lbl = 'PPG';
+                        const games = seasonGamesFor(x.pid);
+                        // Thin sample rides the label, so "11.4 PPG" can never
+                        // pass for a season when it came from one afternoon.
+                        let lbl = (shown != null && games > 0 && games < 3) ? games + 'g PPG' : 'PPG';
                         if (ppgWindow !== 'season') {
                             const n = ppgWindow === 'l3' ? 3 : 5;
                             const rolling = typeof window.App?.computeRollingPPG === 'function' ? window.App.computeRollingPPG(x.pid, n) : 0;
@@ -2375,13 +2441,20 @@
                             {sortedPlayers.map(({ pid, p, dhq, proj }) => {
                                 const pos = normPos(p.position) || p.position;
                                 const st = statsData[pid] || {};
-                                const prevSt = (prevStatsData || {})[pid] || {};
-                                const seasonPpg = st.gp > 0 ? +(calcRawPts(st) / st.gp).toFixed(1) : (prevSt.gp > 0 ? +(calcRawPts(prevSt) / prevSt.gp).toFixed(1) : 0);
+                                // This season only. The old last-season fallback is what
+                                // printed 11.4 PPG beside a back who had not played a
+                                // down this year — last season's one-game average
+                                // wearing this season's label.
+                                const seasonPpg = st.gp > 0 ? +(calcRawPts(st) / st.gp).toFixed(1) : null;
+                                const seasonGames = Number(st.gp) || 0;
                                 // Rolling PPG — swap in when user toggled L5/L3 and weekly data is loaded.
                                 // If a window is active but the player has no weekly data yet, annotate
                                 // the cell with "· Szn" so the user knows the shown value is seasonal.
                                 let ppg = seasonPpg;
-                                let ppgMarker = '';
+                                // A one- or two-game average is a box score, not a
+                                // season. Carry the sample so the reader can tell.
+                                let ppgMarker = (ppgWindow === 'season' && seasonPpg != null && seasonGames > 0 && seasonGames < 3)
+                                    ? ' · ' + seasonGames + 'g' : '';
                                 if (ppgWindow !== 'season') {
                                     const n = ppgWindow === 'l3' ? 3 : 5;
                                     const rolling = typeof window.App?.computeRollingPPG === 'function'
