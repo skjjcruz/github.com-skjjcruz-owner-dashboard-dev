@@ -71,13 +71,21 @@ Deno.serve(async (req) => {
         .from('analytics_events')
         .select('username, user_id, session_id, event_ts, module, widget, metadata')
         .gte('event_ts', since)
-        .or('username.not.is.null,user_id.not.is.null')
+        // Guests (owner ask 2026-09-17): no login, but their events carry the
+        // Sleeper handle they connected with in metadata.sleeper. They list
+        // here as "<handle> (guest)".
+        .or('username.not.is.null,user_id.not.is.null,metadata->>sleeper.not.is.null')
         .order('event_ts', { ascending: false })
         .limit(20000);
       if (error) {
         console.error('admin-analytics-report users query error:', error);
         return json(req, { error: error.message }, 500);
       }
+      const guestHandle = (r: { username: string | null; user_id: string | null; metadata?: unknown }): string | null => {
+        if (r.username || r.user_id) return null;
+        const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        return typeof meta.sleeper === 'string' && meta.sleeper ? meta.sleeper : null;
+      };
       const rows = (allRows ?? []).filter(isProdRow);
       // username -> account bridge from events that carry both.
       const links = new Map<string, string>();
@@ -87,8 +95,10 @@ Deno.serve(async (req) => {
           if (!links.has(uname)) links.set(uname, String(r.user_id));
         }
       }
-      const personKey = (r: { username: string | null; user_id: string | null }) => {
+      const personKey = (r: { username: string | null; user_id: string | null; metadata?: unknown }) => {
         if (r.user_id) return String(r.user_id);
+        const g = guestHandle(r);
+        if (g) return 'guest:' + g.toLowerCase();
         const uname = String(r.username).toLowerCase();
         return links.get(uname) ?? uname;
       };
@@ -98,8 +108,9 @@ Deno.serve(async (req) => {
       const byUser = new Map<string, { display: string | null; accountId: string | null; events: number; sessions: Set<string>; lastSeen: string; modules: Map<string, number> }>();
       for (const r of rows ?? []) {
         const key = personKey(r);
+        const g = guestHandle(r);
         const u = byUser.get(key) ??
-          { display: r.username, accountId: r.user_id ? String(r.user_id) : null, events: 0, sessions: new Set(), lastSeen: r.event_ts, modules: new Map() };
+          { display: g ? g + ' (guest)' : r.username, accountId: r.user_id ? String(r.user_id) : null, events: 0, sessions: new Set(), lastSeen: r.event_ts, modules: new Map() };
         u.events++;
         if (r.session_id) u.sessions.add(r.session_id);
         if (r.user_id && !u.accountId) u.accountId = String(r.user_id);
@@ -211,7 +222,7 @@ Deno.serve(async (req) => {
         guests.push({
           when: r.event_ts,
           event: String(r.event_name || ''),
-          username: (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || r.username || null,
+          username: (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || (typeof meta.sleeper === 'string' && meta.sleeper) || r.username || null,
           guest: meta.guest === true,
           surface: typeof meta.surface === 'string' && meta.surface ? meta.surface : 'unknown',
         });
@@ -382,7 +393,7 @@ Deno.serve(async (req) => {
       // (owner ask 2026-08-03 — Google members were listed as anonymous).
       const named = new Set<string>();
       for (const r of rows ?? []) if ((r.username || r.user_id) && r.session_id) named.add(r.session_id);
-      const bySession = new Map<string, { first: string; last: string; events: number; platform: string | null; surface: string | null; pages: Map<string, number>; ref: string | null }>();
+      const bySession = new Map<string, { first: string; last: string; events: number; platform: string | null; surface: string | null; pages: Map<string, number>; ref: string | null; sleeper: string | null }>();
       let devSandboxSessions = 0;
       const seenNoise = new Set<string>();
       for (const r of rows ?? []) {
@@ -393,8 +404,10 @@ Deno.serve(async (req) => {
           continue;
         }
         const s = bySession.get(r.session_id) ??
-          { first: r.event_ts, last: r.event_ts, events: 0, platform: null, surface: null, pages: new Map(), ref: null };
+          { first: r.event_ts, last: r.event_ts, events: 0, platform: null, surface: null, pages: new Map(), ref: null, sleeper: null as string | null };
         s.events++;
+        // Guest sessions carry the Sleeper handle they connected with (owner ask 2026-09-17).
+        { const gm = (r.metadata ?? {}) as Record<string, unknown>; if (!s.sleeper && typeof gm.sleeper === 'string' && gm.sleeper) s.sleeper = gm.sleeper; }
         if (r.event_ts < s.first) s.first = r.event_ts;
         if (r.event_ts > s.last) s.last = r.event_ts;
         if (!s.platform && r.platform) s.platform = r.platform;
@@ -417,6 +430,7 @@ Deno.serve(async (req) => {
           surface: s.surface || 'unknown',
           pages: [...s.pages.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map((p) => p[0]),
           ref: s.ref,
+          sleeper: s.sleeper,
         }))
         .sort((a, b) => (a.started < b.started ? 1 : -1))
         .slice(0, 150);
