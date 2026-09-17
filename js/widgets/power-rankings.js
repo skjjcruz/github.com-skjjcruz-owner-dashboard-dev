@@ -81,16 +81,36 @@
                 if ((b.totalDHQ || 0) !== (a.totalDHQ || 0)) return (b.totalDHQ || 0) - (a.totalDHQ || 0);
                 return String(a.rosterId).localeCompare(String(b.rosterId));
             });
+            // In season the engine's power score is (wins × 10,000 + points
+            // for) — a sort key, not a number to print (owner report
+            // 2026-09-17: "223 score, −4987 vs avg"). Once games have been
+            // played every surface prints the record and points for, bars
+            // scale on points for, and a gap reads as games or points. The
+            // ORDER is untouched: still the ruled record-then-points rank.
+            const inSeason = assessments.some(a => ((a.wins || 0) + (a.losses || 0) + (a.ties || 0)) > 0);
+            const pfOf = t => Number((t && t.pf) || 0);
+            const recordOf = t => (t.wins || 0) + '-' + (t.losses || 0) + ((t.ties || 0) ? '-' + t.ties : '');
+            const gapInSeason = v => {
+                const games = Math.round(Math.abs(v || 0) / 10000);
+                if (games >= 1) return games + (games === 1 ? ' gm' : ' gms');
+                return Math.abs(v || 0).toFixed(1) + ' pts';
+            };
             return {
                 blended: {
-                    label: 'Power', data: blended, valFn: t => t.powerScore || 0,
+                    label: 'Power', data: blended, inSeason, valFn: t => t.powerScore || 0,
+                    // showFn: what a team's number cell prints. barFn: what its bar scales on.
+                    showFn: t => inSeason ? recordOf(t) : String(Math.round(t.powerScore || 0)),
+                    pfFn: t => inSeason ? pfOf(t).toFixed(1) + ' PF' : '',
+                    barFn: t => inSeason ? pfOf(t) : (t.powerScore || 0),
                     fmtFn: v => String(Math.round(v || 0)),
-                    gapFmt: v => String(Math.round(v || 0)),
+                    gapFmt: v => inSeason ? gapInSeason(v) : String(Math.round(v || 0)),
+                    caption: inSeason ? 'by record · points for' : 'by Power Score',
                 },
             };
         }, [assessments]);
 
         const cur = views[view] || views.blended;
+        const inSeason = !!cur.inSeason;
         const total = cur.data.length || 0;
         const myIndex = cur.data.findIndex(t => t.ownerId === sleeperUserId);
         const myRank = myIndex >= 0 ? myIndex + 1 : null;
@@ -98,11 +118,17 @@
         const leader = cur.data[0];
         const leaderVal = leader ? cur.valFn(leader) : 0;
         const myVal = myTeam ? cur.valFn(myTeam) : 0;
-        const maxVal = Math.max(leaderVal, 1);
-        const minVal = Math.min(...cur.data.map(t => cur.valFn(t)).filter(v => v > 0), maxVal);
+        const barVals = cur.data.map(t => cur.barFn(t));
+        const maxVal = Math.max(...barVals, 1);
+        const minVal = Math.min(...barVals.filter(v => v > 0), maxVal);
         const spread = Math.max(1, maxVal - minVal);
-        const avgVal = average(cur.data.map(t => cur.valFn(t)));
-        const gapToAvg = myTeam ? myVal - avgVal : 0;
+        // In season the "average" tile compares points for, the only part of
+        // the score that is a quantity; the raw score's mean means nothing.
+        const avgVal = average(barVals);
+        const gapToAvg = myTeam ? cur.barFn(myTeam) - avgVal : 0;
+        const avgFmt = v => inSeason ? Number(v || 0).toFixed(1) : cur.fmtFn(v);
+        const avgLabel = inSeason ? 'Avg PF' : 'Average';
+        const mySub = myTeam ? (inSeason ? cur.showFn(myTeam) + ' · ' + cur.pfFn(myTeam) : cur.fmtFn(myVal) + ' score') : null;
         const rankByView = { blended: {} };
         cur.data.forEach((t, i) => { rankByView.blended[t.rosterId] = i + 1; });
         const aboveMe = myIndex > 0 ? cur.data[myIndex - 1] : null;
@@ -202,10 +228,11 @@
                 }, 'Power Rankings'),
                 // One lens only — a quiet caption instead of the old view tabs.
                 React.createElement('div', {
-                    style: { marginLeft: 'auto', flex: '0 0 auto', fontFamily: 'var(--font-body)', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' } }, 'by Power Score'));
+                    style: { marginLeft: 'auto', flex: '0 0 auto', fontFamily: 'var(--font-body)', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' } }, cur.caption));
         }
 
-        function Bar({ val, rank, totalTeams, width = 70, height = 6 }) {
+        function Bar({ t, rank, totalTeams, width = 70, height = 6 }) {
+            const val = cur.barFn(t);
             const pct = clamp(((val - minVal) / spread) * 74 + 22, 8, 100);
             const color = teamTone(val, rank, totalTeams);
             return React.createElement('div', {
@@ -300,18 +327,20 @@
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                         }
-                    }, rank === 1 ? 'League leader' : (gapToLead > 0 ? cur.gapFmt(gapToLead) + ' off lead' : metricLabel(view))) : null
+                    }, (inSeason ? cur.pfFn(t) + ' · ' : '') + (rank === 1 ? 'League leader' : (gapToLead > 0 ? cur.gapFmt(gapToLead) + ' off lead' : metricLabel(view)))) : null
                 ),
-                React.createElement(Bar, { val, rank, totalTeams: total, width: micro ? 46 : dense ? 58 : 74, height: micro ? 4 : dense ? 5 : 6 }),
+                React.createElement(Bar, { t, rank, totalTeams: total, width: micro ? 46 : dense ? 58 : 74, height: micro ? 4 : dense ? 5 : 6 }),
                 React.createElement('div', {
+                    title: inSeason ? cur.pfFn(t) : undefined,
                     style: {
                         fontFamily: 'Rajdhani, sans-serif',
                         fontSize: micro ? '0.72rem' : dense ? '0.82rem' : '0.94rem',
                         fontWeight: 800,
                         color,
                         textAlign: 'right',
+                        whiteSpace: 'nowrap',
                     }
-                }, cur.fmtFn(val))
+                }, cur.showFn(t))
             );
         }
 
@@ -397,7 +426,7 @@
                     },
                         React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.72 } }, 'You'),
                         React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.8rem', lineHeight: 1, fontWeight: 900, color, marginTop: '4px' } }, myRank ? '#' + myRank : '\u2014', myRank ? rankArrow('0.45em') : null),
-                        React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, marginTop: '5px' } }, cur.fmtFn(myVal) + ' ' + metricLabel(view).toLowerCase())
+                        React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, marginTop: '5px' } }, mySub || metricLabel(view).toLowerCase())
                     ),
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', minWidth: 0 } },
                         React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' } },
@@ -413,17 +442,17 @@
                         React.createElement('div', { style: { display: 'flex', height: '12px', borderRadius: '7px', overflow: 'hidden', background: 'var(--ov-4, rgba(255,255,255,0.07))' } },
                             ...cur.data.map((t, i) => React.createElement('div', {
                                 key: t.rosterId || i,
-                                title: (i + 1) + '. ' + getTeamName(t) + ' - ' + cur.fmtFn(cur.valFn(t)),
+                                title: (i + 1) + '. ' + getTeamName(t) + ' - ' + cur.showFn(t) + (inSeason ? ' · ' + cur.pfFn(t) : ''),
                                 style: {
                                     flex: 1,
-                                    background: t.ownerId === sleeperUserId ? TONE.gold : teamTone(cur.valFn(t), i + 1, total),
+                                    background: t.ownerId === sleeperUserId ? TONE.gold : teamTone(cur.barFn(t), i + 1, total),
                                     opacity: t.ownerId === sleeperUserId ? 1 : 0.56,
                                     borderRight: i < total - 1 ? '1px solid rgba(0,0,0,0.35)' : 'none',
                                 }
                             }))
                         ),
                         React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
-                            leader ? 'Leader: ' + getTeamName(leader) + ' · ' + cur.fmtFn(leaderVal) : metricLabel(view)
+                            leader ? 'Leader: ' + getTeamName(leader) + ' · ' + cur.showFn(leader) + (inSeason ? ' · ' + cur.pfFn(leader) : '') : metricLabel(view)
                         )
                     )
                 )
@@ -454,10 +483,10 @@
                         },
                             React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' } },
                                 React.createElement('span', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', fontWeight: 900, color: rank === 1 ? TONE.gold : rankTone(rank) } }, '#' + rank),
-                                React.createElement('span', { style: { fontSize: '0.7rem', color: teamTone(val, rank, total), fontWeight: 800 } }, cur.fmtFn(val))
+                                React.createElement('span', { title: inSeason ? cur.pfFn(t) : undefined, style: { fontSize: '0.7rem', color: teamTone(val, rank, total), fontWeight: 800, whiteSpace: 'nowrap' } }, cur.showFn(t))
                             ),
                             React.createElement('div', { style: { marginTop: '7px', color: isMe ? TONE.gold : 'var(--white)', fontWeight: 750, fontSize: '0.72rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, getTeamName(t) + (isMe ? ' ★' : '')),
-                            React.createElement('div', { style: { marginTop: '7px' } }, React.createElement(Bar, { val, rank, totalTeams: total, width: '100%', height: 6 }))
+                            React.createElement('div', { style: { marginTop: '7px' } }, React.createElement(Bar, { t, rank, totalTeams: total, width: '100%', height: 6 }))
                         );
                     })
                 ),
@@ -504,15 +533,15 @@
                         inline: true,
                         label: 'Your Rank',
                         value: myRank ? React.createElement('span', null, '#' + myRank, rankArrow('0.6em')) : '\u2014',
-                        sub: myTeam ? cur.fmtFn(myVal) + ' ' + tallUnit : 'not found',
+                        sub: myTeam ? (inSeason ? mySub : cur.fmtFn(myVal) + ' ' + tallUnit) : 'not found',
                         // Owner wants the personal rank called out in red.
                         tone: TONE.weak,
                     }),
                     React.createElement(StatTile, {
                         compact: true,
                         inline: true,
-                        label: 'Average',
-                        value: cur.fmtFn(avgVal),
+                        label: avgLabel,
+                        value: avgFmt(avgVal),
                         sub: myTeam ? (gapToAvg >= 0 ? '+' + cur.gapFmt(gapToAvg) + ' vs avg' : '\u2212' + cur.gapFmt(Math.abs(gapToAvg)) + ' vs avg') : 'league mean',
                         tone: gapToAvg >= 0 ? TONE.elite : TONE.weak,
                     })
@@ -602,10 +631,10 @@
                     React.createElement(StatTile, {
                         label: 'Your Board Position',
                         value: myRank ? '#' + myRank + ' of ' + total : '\u2014',
-                        sub: myTeam ? cur.fmtFn(myVal) + ' · ' + (gapToAvg >= 0 ? '+' : '-') + cur.gapFmt(Math.abs(gapToAvg)) + ' vs avg' : 'no roster match',
+                        sub: myTeam ? (inSeason ? mySub + ' · ' + (gapToAvg >= 0 ? '+' : '-') + Math.abs(gapToAvg).toFixed(1) + ' vs avg' : cur.fmtFn(myVal) + ' · ' + (gapToAvg >= 0 ? '+' : '-') + cur.gapFmt(Math.abs(gapToAvg)) + ' vs avg') : 'no roster match',
                         tone: myRank ? rankTone(myRank) : TONE.middle,
                     }),
-                    React.createElement(StatTile, { label: 'Leader', value: leader ? getTeamName(leader) : '\u2014', sub: leader ? cur.fmtFn(leaderVal) + ' ' + metricLabel(view).toLowerCase() : '', tone: TONE.elite }),
+                    React.createElement(StatTile, { label: 'Leader', value: leader ? getTeamName(leader) : '\u2014', sub: leader ? (inSeason ? cur.showFn(leader) + ' · ' + cur.pfFn(leader) : cur.fmtFn(leaderVal) + ' ' + metricLabel(view).toLowerCase()) : '', tone: TONE.elite }),
                     React.createElement(StatTile, { label: 'Catch Target', value: aboveMe ? getTeamName(aboveMe) : 'Top spot', sub: aboveMe ? cur.gapFmt(Math.max(0, cur.valFn(aboveMe) - myVal)) + ' away' : 'protect the lead', tone: aboveMe ? TONE.gold : TONE.elite }),
                     React.createElement(StatTile, { label: 'Pressure', value: belowMe ? getTeamName(belowMe) : 'None', sub: belowMe ? cur.gapFmt(Math.max(0, myVal - cur.valFn(belowMe))) + ' cushion' : 'bottom of board', tone: belowMe ? TONE.middle : TONE.weak })
                 ),
@@ -652,11 +681,11 @@
                             },
                                 React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' } },
                                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.35rem', lineHeight: 1, fontWeight: 900, color: rank === 1 ? TONE.gold : rankTone(rank) } }, '#' + rank),
-                                    React.createElement('div', { style: { color: teamTone(val, rank, total), fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', fontWeight: 900 } }, cur.fmtFn(val))
+                                    React.createElement('div', { title: inSeason ? cur.pfFn(t) : undefined, style: { color: teamTone(val, rank, total), fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', fontWeight: 900, whiteSpace: 'nowrap' } }, cur.showFn(t))
                                 ),
                                 React.createElement('div', { style: { marginTop: '9px', color: isMe ? TONE.gold : 'var(--white)', fontSize: '0.84rem', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, getTeamName(t) + (isMe ? ' ★' : '')),
-                                React.createElement('div', { style: { marginTop: '8px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62 } }, rank === 1 ? 'League leader' : cur.gapFmt(Math.max(0, leaderVal - val)) + ' off lead'),
-                                React.createElement('div', { style: { marginTop: '8px' } }, React.createElement(Bar, { val, rank, totalTeams: total, width: '100%', height: 7 }))
+                                React.createElement('div', { style: { marginTop: '8px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62 } }, (inSeason ? cur.pfFn(t) + ' · ' : '') + (rank === 1 ? 'League leader' : cur.gapFmt(Math.max(0, leaderVal - val)) + ' off lead')),
+                                React.createElement('div', { style: { marginTop: '8px' } }, React.createElement(Bar, { t, rank, totalTeams: total, width: '100%', height: 7 }))
                             );
                         })),
                         React.createElement('div', {
@@ -706,8 +735,9 @@
                     React.createElement('div', { style: { fontSize: '0.78rem', fontWeight: 750, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, leader ? getTeamName(leader) : '\u2014')
                 ),
                 React.createElement('div', { style: { background: TONE.panel, borderRadius: '8px', padding: '8px 10px' } },
-                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase' } }, metricLabel(view)),
-                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 900, color: TONE.gold } }, cur.fmtFn(myVal))
+                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase' } }, inSeason ? 'Record' : metricLabel(view)),
+                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 900, color: TONE.gold, whiteSpace: 'nowrap' } }, myTeam ? cur.showFn(myTeam) : '—'),
+                    inSeason && myTeam ? React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62 } }, cur.pfFn(myTeam)) : null
                 )
             ),
             React.createElement('div', { style: { overflow: 'hidden', minHeight: 0, flex: 1 } },

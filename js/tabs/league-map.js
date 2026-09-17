@@ -1761,8 +1761,15 @@ function LeagueMapTab({
                 if ((b.totalDHQ || 0) !== (a.totalDHQ || 0)) return (b.totalDHQ || 0) - (a.totalDHQ || 0);
                 return String(a.rosterId).localeCompare(String(b.rosterId));
               });
+              // In season the power score is a sort key (wins × 10,000 + points
+              // for), so the Blended column prints the record and scales its bar
+              // on points for — same read as the Power Rankings widget.
+              const prInSeason = allAssessments.some(a => ((a.wins || 0) + (a.losses || 0) + (a.ties || 0)) > 0);
+              const prRecord = t => (t.wins || 0) + '-' + (t.losses || 0) + ((t.ties || 0) ? '-' + t.ties : '');
               const views = [
-                { key: 'blended', label: 'Blended', data: blendedRanked, valFn: t => t.powerScore, fmtFn: v => v, colFn: v => v >= 90 ? 'var(--gold)' : v >= 80 ? 'var(--good)' : v >= 70 ? 'var(--warn)' : 'var(--bad)', subFn: t => t.tier },
+                prInSeason
+                  ? { key: 'blended', label: 'Blended', data: blendedRanked, valFn: t => Number(t.pf || 0), fmtFn: (v, i, t) => t ? prRecord(t) : '', colFn: (v, i) => i < 3 ? 'var(--gold)' : i < 8 ? 'var(--good)' : 'var(--bad)', subFn: t => t.tier }
+                  : { key: 'blended', label: 'Blended', data: blendedRanked, valFn: t => t.powerScore, fmtFn: v => v, colFn: v => v >= 90 ? 'var(--gold)' : v >= 80 ? 'var(--good)' : v >= 70 ? 'var(--warn)' : 'var(--bad)', subFn: t => t.tier },
                 { key: 'contender', label: 'Contender', data: contenderRanked, valFn: t => t.ppg, fmtFn: v => v > 0 ? v.toFixed(1) : '\u2014', colFn: (v, i) => i < 3 ? 'var(--good)' : i < 8 ? 'var(--silver)' : 'var(--bad)', subFn: t => (t.ppg > 0 ? t.ppg.toFixed(1) + ' PPG' : '') },
                 { key: 'dynasty', label: 'Dynasty', data: dynastyRanked, valFn: t => t.totalDhq, fmtFn: v => v > 0 ? (v/1000).toFixed(1)+'K' : '\u2014', colFn: (v, i) => i < 3 ? 'var(--good)' : i < 8 ? 'var(--silver)' : 'var(--bad)', subFn: t => (t.totalDhq > 0 ? t.totalDhq.toLocaleString() + ' DHQ' : '') },
               ];
@@ -1801,7 +1808,7 @@ function LeagueMapTab({
                             <div style={{ width: '60px', height: '5px', borderRadius: '3px', background: 'var(--ov-4, rgba(255,255,255,0.06))', overflow: 'hidden', flexShrink: 0 }}>
                               <div style={{ width: pct + '%', height: '100%', borderRadius: '3px', background: view.colFn(val, i) }}></div>
                             </div>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-body)', color: view.colFn(val, i), width: '36px', textAlign: 'right' }}>{view.fmtFn(val)}</span>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-body)', color: view.colFn(val, i), width: '36px', textAlign: 'right', whiteSpace: 'nowrap' }}>{view.fmtFn(val, i, t)}</span>
                           </div>
                         );
                       })}
