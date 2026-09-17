@@ -589,25 +589,49 @@ function IntelligenceBriefWidget({
         return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', minHeight: 0, flexShrink: 0 } }, ...kids);
     }
 
-    // ── Countdown to NFL Opening Day / fantasy kickoff (owner's Sep 9) ──
+    // ── Season strip: countdown in the offseason, the week once it's on ──
     // Pinned to the very bottom of the brief (marginTop: auto in the flex
-    // column). Recomputes every render, rolls to next year once Sep 9 passes.
+    // column). Reads Sleeper's NFL state: during the regular season and
+    // playoffs it names the current week (the countdown used to keep ticking
+    // toward NEXT September all season long — owner report 2026-09-17). In
+    // the offseason it counts down to Sleeper's season_start_date, falling
+    // back to Sep 9 only when the state has no date.
+    const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    function stampOf(d) { return MONTHS[d.getMonth()] + ' ' + d.getDate(); }
     function renderCountdown() {
-        let days = null;
+        let big = null, text = null, tag = null;
         try {
+            const st = (window.S && window.S.nflState) || {};
+            const type = String(st.season_type || '');
+            const week = Number(st.display_week || st.week || 0);
             const now = new Date();
-            let t = new Date(now.getFullYear(), 8, 9);
-            if (t.getTime() - now.getTime() < 0) t = new Date(now.getFullYear() + 1, 8, 9);
-            days = Math.max(0, Math.ceil((t.getTime() - now.getTime()) / 86400000));
+            if ((type === 'regular' || type === 'post') && week > 0) {
+                const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ((7 - now.getDay()) % 7));
+                big = type === 'post' ? 'PLAYOFFS' : 'WK ' + week;
+                text = (type === 'post' ? 'NFL postseason · week ' : 'NFL regular season · week ') + week;
+                tag = '· ' + (sunday.getTime() === new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() ? 'SUNDAY' : 'SUN ' + stampOf(sunday));
+            } else {
+                let t = null;
+                const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(st.season_start_date || ''));
+                if (m) t = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+                if (!t || isNaN(t.getTime()) || t.getTime() - now.getTime() < -86400000 * 7) {
+                    t = new Date(now.getFullYear(), 8, 9);
+                    if (t.getTime() - now.getTime() < 0) t = new Date(now.getFullYear() + 1, 8, 9);
+                }
+                const days = Math.max(0, Math.ceil((t.getTime() - now.getTime()) / 86400000));
+                big = days === 0 ? 'KICKOFF' : String(days);
+                text = days === 0 ? 'NFL Opening Day is here!' : ((days === 1 ? 'day' : 'days') + ' to NFL Opening Day & fantasy kickoff');
+                tag = '· ' + stampOf(t);
+            }
         } catch (e) { return null; }
-        if (days == null) return null;
+        if (big == null) return null;
         return React.createElement('div', {
             style: { display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '9px', flexShrink: 0, marginTop: 'auto', padding: '11px 4px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
         },
             React.createElement('span', { style: { fontSize: '1.15rem' } }, '🏈'),
-            React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1.1rem', color: 'var(--gold)' } }, days === 0 ? 'KICKOFF' : String(days)),
-            React.createElement('span', { style: { fontSize: '0.8rem', color: 'var(--silver)' } }, days === 0 ? 'NFL Opening Day is here!' : ((days === 1 ? 'day' : 'days') + ' to NFL Opening Day & fantasy kickoff')),
-            React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', color: 'var(--gold-dim, #b8912f)', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, '· SEP 9'),
+            React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1.1rem', color: 'var(--gold)' } }, big),
+            React.createElement('span', { style: { fontSize: '0.8rem', color: 'var(--silver)' } }, text),
+            React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', color: 'var(--gold-dim, #b8912f)', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, tag),
         );
     }
 
