@@ -300,11 +300,13 @@
         return out;
     }
 
-    // GM mode → optimization objective. win_now plays it safe (floor),
-    // rebuild chases upside (ceiling), everyone else optimizes the median.
-    function objectiveForMode(mode) {
-        if (mode === 'win_now') return 'floor';
-        if (mode === 'rebuild') return 'ceiling';
+    // Optimization objective: Sleeper's number, always (owner ruling
+    // 2026-09-16, the truth law). The optimizer used to tilt by GM mode —
+    // win_now optimized the FLOOR (three-quarters of Sleeper's projection),
+    // rebuild the CEILING (a quarter above it) — so the Proj column and the
+    // optimal lineup stopped matching what the owner saw in Sleeper. The
+    // floor/ceiling band still renders as context; it never picks the lineup.
+    function objectiveForMode() {
         return 'median';
     }
     function modeFor(leagueId) {
@@ -319,7 +321,15 @@
         opts = opts || {};
         const scoring = (currentLeague && currentLeague.scoring_settings) || {};
         const rosterPositions = (currentLeague && currentLeague.roster_positions) || [];
-        const week = opts.week || currentWeek();
+        // sleeperOnly (owner ruling 2026-09-17, the truth law): this-week
+        // surfaces — Game Day, My Team, the lineup widgets — price ONLY
+        // Sleeper's published line for the week those lines cover. A player
+        // Sleeper has not projected gets no number and cannot be optimized
+        // in. Season simulations (schedule engine, season odds) still pass
+        // explicit future weeks and keep the estimate path: Sleeper publishes
+        // one week at a time.
+        const sleeperOnly = !!opts.sleeperOnly;
+        const week = opts.week || (sleeperOnly && loadedProjWeek()) || currentWeek();
         const leagueId = (currentLeague && (currentLeague.league_id || currentLeague.id)) || '';
         const mode = opts.mode || modeFor(leagueId);
         const objective = opts.objective || objectiveForMode(mode);
@@ -328,7 +338,7 @@
         const taxiSet = new Set((roster && roster.taxi) || []);
         const ids = ((roster && roster.players) || []).filter(id => id && !resSet.has(id) && !taxiSet.has(id));
 
-        const projections = projectRoster(ids, { playersData: opts.playersData, statsData: opts.statsData, priorData: opts.priorData, scoring, week });
+        const projections = projectRoster(ids, { playersData: opts.playersData, statsData: opts.statsData, priorData: opts.priorData, scoring, week, requireSleeper: sleeperOnly });
         const scoreOf = pid => { const p = projections[pid]; return p && p.available ? (p.points[objective] || 0) : 0; };
 
         const players = ids.map(pid => {
@@ -339,7 +349,8 @@
 
         const optimal = ss.optimalLineupWeekly(players, rosterPositions);
         const delta = ss.lineupDelta((roster && roster.starters) || [], optimal, scoreOf);
-        return { week, mode, objective, scoring, projections, optimal, delta };
+        const sleeperLines = Object.keys(projections).filter(pid => projections[pid] && projections[pid].projSource === 'sleeper').length;
+        return { week, mode, objective, scoring, projections, optimal, delta, sleeperOnly, sleeperLines, rosterSize: ids.length };
     }
 
     App.WeeklyProj = App.WeeklyProj || {

@@ -33,6 +33,7 @@ function LineupTab({
         try {
             return WP.optimalForRoster(myRoster, currentLeague, {
                 playersData, statsData, priorData: stats2025Data,
+                sleeperOnly: true, // the truth law: Sleeper's published line or nothing
             });
         } catch (e) { if (window.wrLog) window.wrLog('lineup.compute', e); return null; }
     }, [myRoster, currentLeague, playersData, statsData, timeRecomputeTs, ctxTick]);
@@ -43,6 +44,7 @@ function LineupTab({
     const [applyOpen, setApplyOpen] = React.useState(false);      // phone-only: WR.ActionBar apply/push sheet (inert off-phone)
     const [phoneView, setPhoneView] = React.useState('week');     // phone Game Day: 'week' (matchup + lineup) | 'season' (outlook + schedule)
     const [appliedMoves, setAppliedMoves] = React.useState(null); // phone: swap list shown after Apply Optimal ({sl,cur,opt,gain}[])
+    const [swapShade, setSwapShade] = React.useState(null);       // {in:Set, out:Set} — the players the last Apply Optimal moved (green shading)
     // Game Day view (owner ruling 2026-07-30: Season Odds belongs here, not in
     // Analytics). Phone: This Week | Season | Odds. Desktop already shows the
     // season rail alongside the lineup, so it only needs This Week | Odds.
@@ -111,7 +113,7 @@ function LineupTab({
     // the platform starters actually change — keyed on a stable string so an
     // incidental re-render never wipes the user's in-progress edits / open slot.
     const lineupKey = (currentLeague && (currentLeague.league_id || currentLeague.id) || '') + '|' + ((myRoster && myRoster.starters) || []).join(',');
-    React.useEffect(() => { setWorkingAssign(currentAssign); setOpenSlot(null); }, [lineupKey]);
+    React.useEffect(() => { setWorkingAssign(currentAssign); setOpenSlot(null); setSwapShade(null); }, [lineupKey]);
 
     // Load real NFL matchup context (opponent + Vegas implied total/spread +
     // weather) for the current week, then recompute projections once it lands.
@@ -142,7 +144,7 @@ function LineupTab({
         if (!WP || !oppRosterId || !currentLeague) return null;
         const oppRoster = (currentLeague.rosters || []).find(r => String(r.roster_id) === String(oppRosterId));
         if (!oppRoster) return null;
-        try { return { roster: oppRoster, res: WP.optimalForRoster(oppRoster, currentLeague, { playersData, statsData, priorData: stats2025Data, objective: 'median' }) }; }
+        try { return { roster: oppRoster, res: WP.optimalForRoster(oppRoster, currentLeague, { playersData, statsData, priorData: stats2025Data, objective: 'median', sleeperOnly: true }) }; }
         catch (e) { if (window.wrLog) window.wrLog('lineup.oppProject', e); return null; }
     }, [oppRosterId, currentLeague, playersData, statsData, timeRecomputeTs, ctxTick]);
 
@@ -426,13 +428,81 @@ function LineupTab({
     const isOptimal = benchPts <= 0.05;
     const _scaleMax = Math.max(1, ...result.optimal.starters.map(s => { const p = projOf(s.pid); return (p && p.points && p.points.ceiling) || 0; }));
 
-    function applyOptimal() {
+    // The optimizer's per-slot assignment (the same walk on every tier).
+    function optimalAssign() {
         const byName = {};
         result.optimal.starters.forEach(s => { (byName[s.slot] = byName[s.slot] || []).push(s.pid); });
         const next = {};
         startingSlots.forEach(sl => { const arr = byName[sl.slotName]; if (arr && arr.length) next[sl.idx] = String(arr.shift()); });
+        return next;
+    }
+    // Who actually changes between two assignments — by PLAYER, not by slot.
+    // Two backs trading RB1/RB2, or a receiver sliding WR→FLEX to open a
+    // slot, is a reshuffle, not a swap: the player is still starting. Only a
+    // player who leaves the lineup is "out"; only one who enters is "in".
+    function lineupDiff(fromAssign, toAssign) {
+        const fromSet = new Set(Object.values(fromAssign).filter(Boolean).map(String));
+        const toSet = new Set(Object.values(toAssign).filter(Boolean).map(String));
+        const out = [...fromSet].filter(pid => !toSet.has(pid)).sort((a, b) => objPts(b) - objPts(a));
+        const inn = [...toSet].filter(pid => !fromSet.has(pid)).sort((a, b) => objPts(b) - objPts(a));
+        // Pair them up for the "X → Y" facts: best incoming against best outgoing.
+        const slotOf = pid => startingSlots.find(sl => String(toAssign[sl.idx] || '') === pid) || null;
+        const swaps = [];
+        for (let i = 0; i < Math.max(out.length, inn.length); i++) {
+            const cur = out[i] || '', opt = inn[i] || '';
+            swaps.push({ sl: slotOf(opt) || startingSlots.find(sl => String(fromAssign[sl.idx] || '') === cur) || startingSlots[0], cur, opt, gain: objPts(opt) - objPts(cur) });
+        }
+        return { out, inn, swaps };
+    }
+    function applyOptimal() {
+        const next = optimalAssign();
+        // Remember who moved, so the swapped players shade green afterwards.
+        const d = lineupDiff(workingAssign, next);
+        setSwapShade(d.out.length || d.inn.length ? { in: new Set(d.inn), out: new Set(d.out) } : null);
         setWorkingAssign(next); setOpenSlot(null);
     }
+
+    // Recommended swaps (Pro): the optimizer's lineup diffed against the
+    // working lineup. Until the owner applies them, the starters it would
+    // pull shade RED and so do the bench players it would put in; once
+    // applied, the players that moved shade GREEN (owner ask 2026-09-16:
+    // "tell me who comes out and who goes in").
+    const recDiff = pro ? lineupDiff(workingAssign, optimalAssign()) : { out: [], inn: [], swaps: [] };
+    const recSwaps = recDiff.swaps;
+    const recOut = new Set(recDiff.out);
+    const recIn = new Set(recDiff.inn);
+    const RED_BG = 'color-mix(in srgb, ' + RED + ' 16%, transparent)';
+    const GREEN_BG = 'color-mix(in srgb, ' + GREEN + ' 16%, transparent)';
+    // starter row: 'out' = the optimizer wants him out (red); 'in' = Apply Optimal just put him in (green)
+    const starterShade = (pid) => {
+        if (!pid) return null;
+        const id = String(pid);
+        if (swapShade && swapShade.in.has(id)) return 'in';
+        if (!isOptimal && recOut.has(id)) return 'out';
+        return null;
+    };
+    // bench / eligible row: 'rec' = the optimizer wants him in (red); 'moved' = Apply Optimal just benched him (green)
+    const benchShade = (pid) => {
+        if (!pid) return null;
+        const id = String(pid);
+        if (swapShade && swapShade.out.has(id)) return 'moved';
+        if (!isOptimal && recIn.has(id)) return 'rec';
+        return null;
+    };
+    // The verdict pill beside the name (desktop table). Starters: red
+    // "recommend replacing" / green "swapped in". Bench rows: red
+    // "recommended" / green "benched".
+    const starterChip = (shade) => shade === 'out' ? { label: 'Recommend replacing', color: RED }
+        : shade === 'in' ? { label: 'Swapped in', color: GREEN } : null;
+    const benchChip = (shade) => shade === 'rec' ? { label: 'Recommended', color: RED }
+        : shade === 'moved' ? { label: 'Benched', color: GREEN } : null;
+    // Phone cards: AssetRow forwards `style` to its root, so a shaded card
+    // restates the root look with the tint and a matching border.
+    const shadeCardStyle = (shade) => shade === 'out'
+        ? { background: RED_BG, border: '1px solid ' + RED, borderRadius: '9px', overflow: 'hidden' }
+        : shade === 'in'
+            ? { background: GREEN_BG, border: '1px solid ' + GREEN, borderRadius: '9px', overflow: 'hidden' }
+            : undefined;
 
     const formWinLabel = formWindow === 'season' ? 'SZN' : 'L' + formWindow;
     // Phone: hit-padding, not bigger glyphs (plan D7) — action buttons hit 44px.
@@ -454,7 +524,11 @@ function LineupTab({
     }
 
     // ── Player field cells (shared by slot rows, picker rows, bench rows) ──
-    function PlayerCells({ pid }) {
+    // chip: an optional verdict pill rendered right after the player's name
+    // ({ label, color }) — the optimizer's "recommend replacing" / "swapped in"
+    // reads beside the name, never in the narrow slot column where it collided
+    // with long slot labels (owner ask 2026-09-17).
+    function PlayerCells({ pid, chip }) {
         if (!pid) {
             return (<React.Fragment>
                 <span style={{ color: SILVER, opacity: 0.6, fontStyle: 'italic' }}>Empty — tap to set</span>
@@ -474,6 +548,7 @@ function LineupTab({
         return (<React.Fragment>
             <span style={{ minWidth: 0, overflow: 'hidden' }}>
                 <span style={{ color: unavail ? SILVER : TEXT, fontWeight: 500, textDecoration: unavail ? 'line-through' : 'none' }}>{meta.name}</span>
+                {chip && chip.label ? <span style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: '8px', padding: '1px 7px', borderRadius: '4px', border: '1px solid ' + chip.color, color: chip.color, fontSize: fz('0.56rem'), fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{chip.label}</span> : null}
                 <span style={{ color: SILVER, fontSize: '0.7rem', marginLeft: '6px' }}>{meta.pos}{meta.team ? ' · ' + meta.team : ''}</span>
                 {opp && opp.abbr ? <span style={{ color: SILVER, fontSize: '0.66rem', marginLeft: '6px', opacity: 0.85 }}>{opp.home ? 'vs ' : '@ '}{opp.abbr}</span> : null}
                 {wxTag(weather)}
@@ -719,20 +794,9 @@ function LineupTab({
         // Optimal swap summary for the hero facts — the same per-slot
         // assignment walk as applyOptimal(), diffed against the working
         // lineup. Pro only (the optimizer layer).
-        let swaps = [], topSwap = null;
-        if (pro) {
-            const byName = {};
-            result.optimal.starters.forEach(s => { (byName[s.slot] = byName[s.slot] || []).push(s.pid); });
-            const optAssign = {};
-            startingSlots.forEach(sl => { const arr = byName[sl.slotName]; if (arr && arr.length) optAssign[sl.idx] = String(arr.shift()); });
-            startingSlots.forEach(sl => {
-                const cur = String(workingAssign[sl.idx] || ''), opt = String(optAssign[sl.idx] || '');
-                if (cur === opt) return;
-                const sw = { sl, cur, opt, gain: objPts(opt) - objPts(cur) };
-                swaps.push(sw);
-                if (!topSwap || sw.gain > topSwap.gain) topSwap = sw;
-            });
-        }
+        const swaps = recSwaps.slice();
+        let topSwap = null;
+        swaps.forEach(sw => { if (!topSwap || sw.gain > topSwap.gain) topSwap = sw; });
         const swapFacts = topSwap
             ? swaps.length + ' swap' + (swaps.length === 1 ? '' : 's') + ': ' + (topSwap.cur ? pmeta(topSwap.cur).name : 'Empty') + ' → ' + (topSwap.opt ? pmeta(topSwap.opt).name : 'Empty') + ' · ' + topSwap.sl.slotName.replace('_', ' ') + ' slot'
             : 'No swaps — your best lineup is in';
@@ -768,10 +832,12 @@ function LineupTab({
             const opp = proj && proj.opponent;
             const tag = [slotLabel, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, status || null].filter(Boolean).join(' · ');
             const atRisk = !!status || (proj && proj.available === false);
-            return <AssetRow key={sl.idx} pos={meta.pos || '?'} name={meta.name} tag={tag}
+            const shade = starterShade(pid);
+            return <AssetRow key={sl.idx} pos={meta.pos || '?'} name={meta.name} tag={(shade === 'out' ? 'RECOMMEND REPLACING · ' : shade === 'in' ? 'SWAPPED IN · ' : '') + tag}
                 slots={[{ label: 'PROJ', value: pts ? (pts[objective] || 0).toFixed(1) : '—' }]}
                 verdict={pro ? gradeChip((proj && proj.matchupGrade) || '—') : null}
                 accent={open ? 'gold' : atRisk ? 'risk' : undefined}
+                style={shadeCardStyle(shade)}
                 onClick={() => setOpenSlot(open ? null : sl.idx)} />;
         };
 
@@ -789,11 +855,13 @@ function LineupTab({
             const status = (proj && proj.injuryStatus) || '';
             const opp = proj && proj.opponent;
             const fs = formOf(epid);
+            const bshade = isCur ? null : benchShade(epid);
             return <AssetRow key={epid} pos={meta.pos || '?'} name={meta.name}
-                tag={[isCur ? 'IN' : null, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, status || null].filter(Boolean).join(' · ')}
+                tag={[isCur ? 'IN' : bshade === 'rec' ? 'RECOMMENDED' : bshade === 'moved' ? 'BENCHED' : null, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, status || null].filter(Boolean).join(' · ')}
                 slots={[{ label: 'PROJ', value: pts ? (pts[objective] || 0).toFixed(1) : '—' }, { label: formWinLabel, value: fs ? fs.rollingPPG.toFixed(1) : '—', tone: 'mute' }]}
                 verdict={pro ? gradeChip((proj && proj.matchupGrade) || '—') : null}
                 accent={isCur ? 'gold' : undefined}
+                style={shadeCardStyle(bshade === 'rec' ? 'out' : bshade === 'moved' ? 'in' : null)}
                 onClick={() => { setWorkingAssign(w => ({ ...w, [openSl.idx]: epid })); setOpenSlot(null); }} />;
         };
 
@@ -933,7 +1001,7 @@ function LineupTab({
                         </div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             {pro ? <button onClick={applyOptimal} style={{ ...actBtn, color: GOLD, borderColor: 'var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.12)' }}>Apply Optimal</button> : null}
-                            <button onClick={() => { setWorkingAssign(currentAssign); setOpenSlot(null); }} style={actBtn}>Reset</button>
+                            <button onClick={() => { setWorkingAssign(currentAssign); setOpenSlot(null); setSwapShade(null); }} style={actBtn}>Reset</button>
                         </div>
                         {renderMflPush()}
                         {!isMfl ? <div style={{ fontSize: '0.72rem', color: SILVER, lineHeight: 1.5 }}>Your platform has no public lineup-write API — build and compare here, then set the final lineup on your platform.</div> : null}
@@ -1057,7 +1125,7 @@ function LineupTab({
                         ) : null}
                         <div style={{ display: 'flex', gap: '6px', marginTop: '10px', justifyContent: 'flex-end' }}>
                             {pro ? <button onClick={applyOptimal} style={{ ...actBtn, color: GOLD, borderColor: 'var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.12)' }}>Apply Optimal</button> : null}
-                            <button onClick={() => { setWorkingAssign(currentAssign); setOpenSlot(null); }} style={actBtn}>Reset</button>
+                            <button onClick={() => { setWorkingAssign(currentAssign); setOpenSlot(null); setSwapShade(null); }} style={actBtn}>Reset</button>
                         </div>
                     </div>
                 </div>
@@ -1154,7 +1222,11 @@ function LineupTab({
             {/* Unified interactive lineup table */}
             <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', overflow: 'hidden' }}>
                 <div style={{ padding: '10px 14px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.7rem', letterSpacing: '0.08em', color: SILVER, fontWeight: 600 }}>STARTING LINEUP · tap a slot to set it</span>
+                    <span style={{ fontSize: '0.7rem', letterSpacing: '0.08em', color: SILVER, fontWeight: 600 }}>STARTING LINEUP · tap a slot to set it
+                        <span style={{ marginLeft: '10px', color: result.sleeperLines ? GREEN : AMBER, fontWeight: 600, letterSpacing: '0.04em' }}>
+                            {result.sleeperLines ? `· Sleeper week ${result.week} projections` : `· waiting on Sleeper's week ${result.week} projections`}
+                        </span>
+                    </span>
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                         <span style={{ fontSize: fz('0.58rem'), color: SILVER, letterSpacing: '0.05em', marginRight: '2px' }}>FORM</span>
                         {[['L3', 3], ['L5', 5], ['L8', 8], ['SZN', 'season']].map(opt => (
@@ -1170,9 +1242,9 @@ function LineupTab({
                     return (
                         <div key={sl.idx} style={{ borderBottom: `1px solid ${LINE}` }}>
                             <div onClick={() => setOpenSlot(open ? null : sl.idx)}
-                                style={{ display: 'grid', gridTemplateColumns: GRID, gap: '8px', padding: isPhone ? '11px 14px' : '9px 14px', minHeight: isPhone ? '44px' : undefined, alignItems: 'center', cursor: 'pointer', background: open ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'transparent' }}>
+                                style={{ display: 'grid', gridTemplateColumns: GRID, gap: '8px', padding: isPhone ? '11px 14px' : '9px 14px', minHeight: isPhone ? '44px' : undefined, alignItems: 'center', cursor: 'pointer', background: open ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : starterShade(pid) === 'out' ? RED_BG : starterShade(pid) === 'in' ? GREEN_BG : 'transparent' }}>
                                 <span style={{ fontSize: '0.68rem', fontWeight: 700, color: GOLD, letterSpacing: '0.04em' }}>{sl.slotName.replace('_', ' ')}<span style={{ color: SILVER, marginLeft: '4px', fontSize: fz('0.6rem') }}>{open ? '▾' : '▸'}</span></span>
-                                <PlayerCells pid={pid} />
+                                <PlayerCells pid={pid} chip={starterChip(starterShade(pid))} />
                             </div>
                             {open ? (
                                 <div style={{ background: 'var(--ov-2, rgba(255,255,255,0.03))', borderTop: `1px solid ${LINE}`, padding: '4px 0' }}>
@@ -1193,9 +1265,9 @@ function LineupTab({
                                         const isCur = String(pid) === String(epid);
                                         return (
                                             <div key={epid} onClick={() => { setWorkingAssign(w => ({ ...w, [sl.idx]: epid })); setOpenSlot(null); }}
-                                                style={{ display: 'grid', gridTemplateColumns: GRID, gap: '8px', padding: isPhone ? '10px 14px' : '7px 14px', minHeight: isPhone ? '44px' : undefined, alignItems: 'center', cursor: 'pointer', background: isCur ? 'rgba(212,175,55,0.10)' : 'transparent', borderLeft: isCur ? `3px solid ${GOLD}` : '3px solid transparent' }}>
+                                                style={{ display: 'grid', gridTemplateColumns: GRID, gap: '8px', padding: isPhone ? '10px 14px' : '7px 14px', minHeight: isPhone ? '44px' : undefined, alignItems: 'center', cursor: 'pointer', background: isCur ? 'rgba(212,175,55,0.10)' : benchShade(epid) === 'rec' ? RED_BG : benchShade(epid) === 'moved' ? GREEN_BG : 'transparent', borderLeft: isCur ? `3px solid ${GOLD}` : benchShade(epid) === 'rec' ? `3px solid ${RED}` : benchShade(epid) === 'moved' ? `3px solid ${GREEN}` : '3px solid transparent' }}>
                                                 <span style={{ fontSize: fz('0.6rem'), color: isCur ? GOLD : SILVER, fontWeight: 700 }}>{isCur ? 'IN' : ''}</span>
-                                                <PlayerCells pid={epid} />
+                                                <PlayerCells pid={epid} chip={isCur ? null : benchChip(benchShade(epid))} />
                                             </div>
                                         );
                                     })}

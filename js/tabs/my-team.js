@@ -155,7 +155,7 @@ function MyTeamTab({
     const WP = window.App && window.App.WeeklyProj;
     if (!WP || !myRoster || !currentLeague) return null;
     try {
-      const res = WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: stats2025Data });
+      const res = WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: stats2025Data, sleeperOnly: true });
       return { res, starterSet: new Set((res.optimal.starters || []).map(s => String(s.pid))), objective: res.objective };
     } catch (e) { if (window.wrLog) window.wrLog('myteam.weeklyProj', e); return null; }
   }, [myRoster, currentLeague, playersData, statsData, stats2025Data, timeRecomputeTs, projTick]);
@@ -1793,6 +1793,20 @@ function MyTeamTab({
   );
 
   // ── Draft-pick inventory (owned future picks) — shown under the roster ──
+  // Spent seasons: once every draft of a season is complete, that season's
+  // picks are gone and must not be listed (owner report 2026-09-16 — the
+  // roster still showed this year's picks after the draft). Read straight
+  // from Sleeper's drafts list, the same rule the Trade Center uses to
+  // retire spent picks. No list (ESPN/Yahoo, or offline) retires nothing.
+  const [spentPickSeasons, setSpentPickSeasons] = React.useState(() => new Set());
+  React.useEffect(() => {
+    let alive = true;
+    const load = window.App?.loadSpentPickSeasons;
+    if (typeof load !== 'function' || !currentLeague) return undefined;
+    load(currentLeague).then(spent => { if (alive && spent) setSpentPickSeasons(spent); }).catch(() => {});
+    return () => { alive = false; };
+  }, [currentLeague && (currentLeague.league_id || currentLeague.id), currentLeague && currentLeague.season]);
+
   // Mirrors the draft-capital widget: a pick is yours unless you traded it
   // away; picks acquired via trade show who they came from.
   const myDraftPicks = (() => {
@@ -1805,7 +1819,11 @@ function MyTeamTab({
       const rosters = currentLeague.rosters || [];
       const users = window.S?.leagueUsers || currentLeague.users || [];
       const out = [];
-      for (let yr = season; yr <= season + 2; yr++) {
+      // Rolling three-year window: once a season's draft has run, those picks
+      // are gone and the window slides forward (2026 drafted → 2027-2029).
+      let firstYear = season;
+      while (spentPickSeasons.has(firstYear)) firstYear++;
+      for (let yr = firstYear; yr <= firstYear + 2; yr++) {
         for (let rd = 1; rd <= draftRounds; rd++) {
           const tradedAway = tradedPicks.find(p => parseInt(p.season, 10) === yr && p.round === rd && p.roster_id === myRid && p.owner_id !== myRid);
           const acquired = tradedPicks.filter(p => parseInt(p.season, 10) === yr && p.round === rd && p.owner_id === myRid && p.roster_id !== myRid);

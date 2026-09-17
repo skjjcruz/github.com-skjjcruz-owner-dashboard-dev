@@ -1820,15 +1820,25 @@ function DashboardPanel({
     // Pro-only at the exact wrPro boundary that already gates the
     // lineup-check widget (pro: true / startsit_depth) — zero gate drift.
     // Hook runs unconditionally (order safety); short-circuits off-phone.
+    // Sleeper-only projections: recompute when the week's lines land.
+    const [_projTick, _setProjTick] = React.useState(0);
+    React.useEffect(() => {
+        let alive = true;
+        const SP = window.App && window.App.SleeperProj;
+        if (_phone && SP && SP.loadCurrent) SP.loadCurrent(currentLeague && currentLeague.season).then(wk => { if (alive && wk) _setProjTick(t => t + 1); }).catch(() => {});
+        const onProj = () => { if (alive) _setProjTick(t => t + 1); };
+        window.addEventListener('wr:proj-updated', onProj);
+        return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
+    }, [_phone, currentLeague && (currentLeague.league_id || currentLeague.id)]);
     const _phoneLineup = React.useMemo(() => {
         if (!_phone || !wrPro) return null;
         const WP = window.App && window.App.WeeklyProj;
         if (!WP || typeof WP.optimalForRoster !== 'function' || !myRoster || !currentLeague) return null;
         const platformStarters = (myRoster.starters || []).filter(pid => pid && String(pid) !== '0');
         if (!platformStarters.length) return null;
-        try { return WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: prevStatsData }); }
+        try { return WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: prevStatsData, sleeperOnly: true }); }
         catch (e) { if (window.wrLog) window.wrLog('dashboard.phoneHero', e); return null; }
-    }, [_phone, wrPro, myRoster, currentLeague, playersData, statsData, prevStatsData]);
+    }, [_phone, wrPro, myRoster, currentLeague, playersData, statsData, prevStatsData, _projTick]);
 
     if (_phone) {
         // ── Hero: latest pinned insight only. The old rung-1 "lineup alert"

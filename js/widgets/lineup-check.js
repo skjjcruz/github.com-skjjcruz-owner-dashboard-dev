@@ -17,12 +17,24 @@
         const cardStyle = window.WrTheme?.cardStyle?.() || { background: 'var(--black)', border: 'var(--card-border)', borderRadius: 'var(--card-radius)' };
         const go = () => { if (navigateWidget) navigateWidget('lineup'); else if (setActiveTab) setActiveTab('lineup'); };
 
+        // Sleeper-only projections: load the week's lines and recompute when
+        // they land (this widget can render before Game Day ever loads them).
+        const [projTick, setProjTick] = React.useState(0);
+        React.useEffect(() => {
+            let alive = true;
+            const SP = window.App && window.App.SleeperProj;
+            if (SP && SP.loadCurrent) SP.loadCurrent(currentLeague && currentLeague.season).then(wk => { if (alive && wk) setProjTick(t => t + 1); }).catch(() => {});
+            const onProj = () => { if (alive) setProjTick(t => t + 1); };
+            window.addEventListener('wr:proj-updated', onProj);
+            return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
+        }, [currentLeague && (currentLeague.league_id || currentLeague.id)]);
+
         const result = React.useMemo(() => {
             const WP = window.App && window.App.WeeklyProj;
             if (!WP || !myRoster || !currentLeague) return null;
-            try { return WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: prevStatsData }); }
+            try { return WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: prevStatsData, sleeperOnly: true }); }
             catch (e) { if (window.wrLog) window.wrLog('lineupCheck.widget', e); return null; }
-        }, [myRoster, currentLeague, playersData, statsData, prevStatsData]);
+        }, [myRoster, currentLeague, playersData, statsData, prevStatsData, projTick]);
 
         const GOLD = 'var(--gold, #d4af37)', SILVER = 'var(--silver, #bdb8ad)', GREEN = 'var(--good, #2ecc71)', WHITE = 'var(--white, #f5f2ea)';
         const monoFont = 'var(--font-mono, monospace)';

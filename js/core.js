@@ -987,6 +987,39 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         }
     }
 
+    // Spent draft seasons: once every draft of a season is complete, that
+    // season's picks are gone and must not be listed or counted as capital
+    // (owner report 2026-09-16 — the roster still showed this year's picks
+    // months after the draft). Read straight from Sleeper's drafts list, the
+    // same rule the Trade Center uses to retire spent picks. One fetch per
+    // league, shared by the roster tab and the draft-capital widget; MFL
+    // drafts are already hydrated; ESPN/Yahoo have no list → nothing retired.
+    const _spentSeasonsCache = {};
+    function loadSpentPickSeasons(league) {
+        const lid = league?.league_id || league?.id;
+        if (!lid) return Promise.resolve(new Set());
+        const hit = _spentSeasonsCache[lid];
+        if (hit && Date.now() - hit.ts < 10 * 60 * 1000) return hit.p;
+        const isMfl = !!(league?._mfl || String(lid).startsWith('mfl_'));
+        const draftsP = isMfl
+            ? Promise.resolve((window.S?.drafts && window.S.drafts.length) ? window.S.drafts : (league?.drafts || []))
+            : fetch(`${SLEEPER_BASE_URL}/league/${lid}/drafts`).then(r => (r.ok ? r.json() : [])).catch(() => []);
+        const p = draftsP.then(drafts => {
+            const bySeason = {};
+            (Array.isArray(drafts) ? drafts : []).forEach(d => {
+                const s = Number(d?.season); if (!s) return;
+                (bySeason[s] = bySeason[s] || []).push(String(d.status || '').toLowerCase());
+            });
+            // .length > 0 so "no drafts yet" never reads as complete; .every so a
+            // rookie + supplemental pair keeps the year until both are done.
+            return new Set(Object.keys(bySeason).filter(s => bySeason[s].length > 0 && bySeason[s].every(st => st === 'complete')).map(Number));
+        }).catch(() => { delete _spentSeasonsCache[lid]; return new Set(); });
+        _spentSeasonsCache[lid] = { p, ts: Date.now() };
+        return p;
+    }
+    window.App = window.App || {};
+    window.App.loadSpentPickSeasons = loadSpentPickSeasons;
+
     let _projectionsCache = {};
     async function fetchSeasonProjections(season) {
         try {

@@ -27,6 +27,17 @@
         const draftRounds = currentLeague?.settings?.draft_rounds || 5;
         const totalTeams = currentLeague?.rosters?.length || 12;
         const tradedPicks = window.S?.tradedPicks || [];
+        // Spent seasons: once a season's draft has run, its picks are gone and
+        // must not count as capital (owner report 2026-09-16). Same Sleeper
+        // drafts-list rule the roster tab and the Trade Center use.
+        const [spentSeasons, setSpentSeasons] = React.useState(() => new Set());
+        React.useEffect(() => {
+            let alive = true;
+            const load = window.App?.loadSpentPickSeasons;
+            if (typeof load !== 'function' || !currentLeague) return undefined;
+            load(currentLeague).then(spent => { if (alive && spent) setSpentSeasons(spent); }).catch(() => {});
+            return () => { alive = false; };
+        }, [currentLeague && (currentLeague.league_id || currentLeague.id), season]);
 
         // ── GM Strategy: tilt how we read/order pick capital ──
         const gm = window.WR.GmMode.useGmEffects(currentLeague);
@@ -79,7 +90,11 @@
         const picks = React.useMemo(() => {
             const inv = [];
             const pvFn = window.App?.PlayerValue?.getPickValue;
-            for (let yr = parseInt(season); yr <= parseInt(season) + 2; yr++) {
+            // Rolling three-year window: a drafted season's picks are gone and
+            // the window slides forward (2026 drafted → 2027-2029).
+            let firstYear = parseInt(season);
+            while (spentSeasons.has(firstYear)) firstYear++;
+            for (let yr = firstYear; yr <= firstYear + 2; yr++) {
                 for (let rd = 1; rd <= draftRounds; rd++) {
                     // tradedAway and acquired are independent — dealing your own
                     // pick in a round must NOT drop picks acquired in that same
@@ -100,7 +115,7 @@
                 }
             }
             return inv;
-        }, [myRid, season, draftRounds, totalTeams, tradedPicks]);
+        }, [myRid, season, draftRounds, totalTeams, tradedPicks, spentSeasons]);
 
         const totalValue = picks.reduce((s, p) => s + (p.value || 0), 0);
         const pickCount = picks.length;
@@ -157,7 +172,9 @@
             const leagueSeason = parseInt(currentLeague?.season) || new Date().getFullYear();
             return allRosters.map(r => {
                 let cap = 0;
-                for (let yr = leagueSeason; yr <= leagueSeason + 2; yr++) {
+                let firstYear = leagueSeason;
+                while (spentSeasons.has(firstYear)) firstYear++; // spent picks are nobody's capital; the window slides
+                for (let yr = firstYear; yr <= firstYear + 2; yr++) {
                     for (let rd = 1; rd <= draftRounds; rd++) {
                         const pv = typeof window.getIndustryPickValue === 'function'
                             ? window.getIndustryPickValue((rd - 1) * totalTeams + Math.ceil(totalTeams / 2), totalTeams, draftRounds)
@@ -171,7 +188,7 @@
                 const user = (currentLeague?.users || window.S?.leagueUsers || []).find(u => u.user_id === r.owner_id);
                 return { rid: r.roster_id, name: user?.metadata?.team_name || user?.display_name || ('Team ' + r.roster_id), cap, isMe: r.roster_id === myRid };
             }).sort((a, b) => b.cap - a.cap);
-        }, [currentLeague, draftRounds, totalTeams, tradedPicks, myRid]);
+        }, [currentLeague, draftRounds, totalTeams, tradedPicks, myRid, spentSeasons]);
         const leagueCapitalRank = {
             rank: (leagueCapital.findIndex(t => t.rid === myRid) + 1) || '—',
             total: leagueCapital.length,
