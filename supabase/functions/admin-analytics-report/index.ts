@@ -148,6 +148,114 @@ Deno.serve(async (req) => {
       return json(req, { users, days, since });
     }
 
+    // ── detail=guests: the Guest Tracker — every Sleeper handle seen with no
+    // account behind it (owner ask 2026-09-18: "a Guest Tracker just like the
+    // User Tracker"). A guest row is an event with no account id that carries
+    // the handle: metadata.sleeper (shared client, guest: true), the connect
+    // page's metadata.sleeperUsername, or a bare username from before the
+    // guest stamp shipped. Bare-username handles that any account links to
+    // are members with an old stamp, not guests, and are dropped; handles
+    // with an explicit guest stamp that later signed up stay listed with the
+    // account they became — that is the conversion the owner wants to see.
+    if (url.searchParams.get('detail') === 'guests') {
+      const { data: allRows, error } = await admin
+        .from('analytics_events')
+        .select('username, user_id, session_id, event_ts, event_name, platform, module, widget, metadata')
+        .gte('event_ts', since)
+        .or('username.not.is.null,user_id.not.is.null,metadata->>sleeper.not.is.null,metadata->>sleeperUsername.not.is.null')
+        .order('event_ts', { ascending: false })
+        .limit(20000);
+      if (error) {
+        console.error('admin-analytics-report guests query error:', error);
+        return json(req, { error: error.message }, 500);
+      }
+      const rows = (allRows ?? []).filter((r) => isProdRow(r) && !isServerRow(r));
+      // Handles any account owns: events that carry both a username and an
+      // account id, plus app_users' linked Sleeper name.
+      const linked = new Map<string, string>(); // handle -> account id
+      for (const r of rows) {
+        if (r.username && r.user_id) linked.set(String(r.username).toLowerCase(), String(r.user_id));
+      }
+      const accountByHandle = new Map<string, { id: string; email: string }>();
+      try {
+        const { data: accounts } = await admin
+          .from('app_users')
+          .select('id, email, platform_usernames')
+          .limit(2000);
+        for (const a of (accounts ?? []) as Array<Record<string, any>>) {
+          const h = String(a.platform_usernames?.sleeper || '').toLowerCase();
+          if (h) accountByHandle.set(h, { id: String(a.id), email: String(a.email || '') });
+        }
+        if (linked.size) {
+          const ids = [...new Set(linked.values())].slice(0, 500);
+          const { data: linkedAccounts } = await admin.from('app_users').select('id, email').in('id', ids);
+          const emailById = new Map((linkedAccounts ?? []).map((a) => [String(a.id), String(a.email || '')]));
+          for (const [h, id] of linked) if (!accountByHandle.has(h)) accountByHandle.set(h, { id, email: emailById.get(id) || '' });
+        }
+      } catch (accErr) {
+        console.error('admin-analytics-report guests account scan error:', accErr);
+      }
+      type Guest = {
+        display: string; explicit: boolean; firstSeen: string; lastSeen: string; events: number;
+        sessions: Set<string>; modules: Map<string, number>; surfaces: Map<string, number>; connects: number; aiCalls: number; lastEvent: string;
+      };
+      const byHandle = new Map<string, Guest>();
+      for (const r of rows) {
+        if (r.user_id) continue;
+        const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        const stamped = (typeof meta.sleeper === 'string' && meta.sleeper) || (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || null;
+        const handle = stamped || (r.username ? String(r.username) : null);
+        if (!handle) continue;
+        const key = handle.toLowerCase();
+        const explicit = !!stamped || meta.guest === true;
+        const g = byHandle.get(key) ??
+          { display: handle, explicit: false, firstSeen: r.event_ts, lastSeen: r.event_ts, events: 0, sessions: new Set(), modules: new Map(), surfaces: new Map(), connects: 0, aiCalls: 0, lastEvent: '' };
+        g.explicit = g.explicit || explicit;
+        g.events++;
+        if (r.session_id) g.sessions.add(r.session_id);
+        if (r.event_ts < g.firstSeen) g.firstSeen = r.event_ts;
+        if (r.event_ts > g.lastSeen) { g.lastSeen = r.event_ts; g.display = handle; g.lastEvent = String(r.event_name || ''); }
+        if (!g.lastEvent) g.lastEvent = String(r.event_name || '');
+        const m = r.module || r.widget;
+        if (m) g.modules.set(String(m), (g.modules.get(String(m)) ?? 0) + 1);
+        const surface = meta.surface === 'ios_app' ? 'app' : 'web';
+        g.surfaces.set(surface, (g.surfaces.get(surface) ?? 0) + 1);
+        if (/connected/i.test(String(r.event_name || ''))) g.connects++;
+        if (String(r.module || '') === 'ai' || /^ai_/.test(String(r.event_name || ''))) g.aiCalls++;
+        byHandle.set(key, g);
+      }
+      const dayMs = 24 * 60 * 60 * 1000;
+      const weekAgo = new Date(Date.now() - 7 * dayMs).toISOString();
+      const guests = [...byHandle.entries()]
+        .filter(([key, g]) => g.explicit || !accountByHandle.has(key))
+        .map(([key, g]) => {
+          const account = accountByHandle.get(key) || null;
+          const surfaces = [...g.surfaces.entries()].sort((a, b) => b[1] - a[1]);
+          return {
+            username: g.display,
+            firstSeen: g.firstSeen,
+            lastSeen: g.lastSeen,
+            sessions: g.sessions.size,
+            events: g.events,
+            device: surfaces.length === 1 ? surfaces[0][0] : surfaces.length ? 'both' : '—',
+            topModules: [...g.modules.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([m]) => m),
+            connects: g.connects,
+            aiCalls: g.aiCalls,
+            activeDays: Math.max(1, Math.round((new Date(g.lastSeen).getTime() - new Date(g.firstSeen).getTime()) / dayMs) + 1),
+            account: account ? (account.email || 'account ' + account.id.slice(0, 8)) : null,
+          };
+        })
+        .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1));
+      const summary = {
+        total: guests.length,
+        activeWeek: guests.filter((g) => g.lastSeen >= weekAgo).length,
+        becameMembers: guests.filter((g) => !!g.account).length,
+        returning: guests.filter((g) => g.sessions > 1).length,
+      };
+      await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'guests' });
+      return json(req, { guests, summary, days, since });
+    }
+
     // ── detail=accounts: every account and what happened after signup ──
     // Someone who signs up and stalls at the connect wall produces no league
     // activity, so the people view never showed them. This lists everyone by
