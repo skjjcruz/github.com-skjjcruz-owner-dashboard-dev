@@ -1472,12 +1472,14 @@ function MyTeamTab({
   };
   const _phoneStatusChip = (r) => {
     const label = r.injury ? String(r.injury) : _slotLabel(r);
+    // Owner palette (2026-09-19): green starter · amber bench · red IR or
+    // injury · blue taxi. Smaller than the verdict pill it replaced.
     const col = r.injury || r.section === 'ir' ? 'var(--bad, #e74c3c)'
-      : r.section === 'starter' ? 'var(--gold)'
+      : r.section === 'starter' ? 'var(--good, #2ecc71)'
       : r.section === 'taxi' ? 'var(--info, #4aa3ff)'
-      : 'var(--text-muted, #8B8B96)';
+      : 'var(--warn, #f0a500)';
     return (
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', border: '1px solid ' + wrAlpha(col, '80'), color: col, letterSpacing: '0.02em', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', fontWeight: 600, lineHeight: 1.3, padding: '1px 5px', borderRadius: '3px', border: '1px solid ' + wrAlpha(col, '80'), color: col, letterSpacing: '0.03em', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>
         {label}
       </span>
     );
