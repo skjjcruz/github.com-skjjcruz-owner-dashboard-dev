@@ -139,6 +139,21 @@ export function normalizeEmail(value: unknown): string {
   return String(value || '').trim().toLowerCase();
 }
 
+// Reserved test addresses can never receive mail, so they can never be a real
+// member (owner ruling 2026-09-19: production refuses them). Readiness and QA
+// scripts that sign up "someone@example.invalid" get a clear 400 instead of a
+// ghost account in User Command. RFC 2606 / 6761 reserved names only — real
+// providers are never on this list.
+const RESERVED_TEST_TLDS = new Set(['invalid', 'test', 'example', 'localhost']);
+const RESERVED_TEST_DOMAINS = new Set(['example.com', 'example.net', 'example.org']);
+export function isReservedTestEmail(email: string): boolean {
+  const at = email.lastIndexOf('@');
+  if (at < 0) return false;
+  const domain = email.slice(at + 1);
+  const tld = domain.slice(domain.lastIndexOf('.') + 1);
+  return RESERVED_TEST_TLDS.has(tld) || RESERVED_TEST_DOMAINS.has(domain) || domain.endsWith('.example.com');
+}
+
 export async function sha256Hex(value: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');

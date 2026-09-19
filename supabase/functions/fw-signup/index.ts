@@ -17,6 +17,7 @@ import {
   clientIp,
   handleOptions,
   json,
+  isReservedTestEmail,
   normalizeEmail,
 } from '../_shared/security.ts';
 import { expandProductSlugs, mintAppSessionJWT } from '../_shared/entitlements.ts';
@@ -53,6 +54,13 @@ Deno.serve(async (req) => {
     // so they skip the abuse limits. Exposure is bounded: the exemption only
     // ever creates/resets the listed accounts themselves.
     const isTestReset = testResetEmails().has(normalizedEmail);
+    // Reserved test domains (example.invalid and friends) can never receive
+    // mail, so they can never be a real member. Production refuses them
+    // (owner ruling 2026-09-19) unless the address is a designated QA account.
+    if (!isTestReset && isReservedTestEmail(normalizedEmail)) {
+      await auditEvent(admin, req, 'fw_signup', 'blocked', { email: normalizedEmail }, { reason: 'reserved_test_domain' });
+      return json(req, { error: 'That email domain is reserved for testing and cannot receive mail. Use a real address.' }, 400);
+    }
     if (!isTestReset) {
       const ipLimit = await checkRateLimit(admin, 'fw-signup:ip', clientIp(req), { limit: 10, windowSeconds: 3600, lockoutSeconds: 3600 });
       const emailLimit = await checkRateLimit(admin, 'fw-signup:email', normalizedEmail, { limit: 3, windowSeconds: 3600, lockoutSeconds: 3600 });
