@@ -1461,6 +1461,28 @@ function MyTeamTab({
     );
   };
 
+  // Board rows (phone): the status rides the chip slot and the verdict pill
+  // stays inside the expanded card. The HOLD / TRADE BLOCK pill was eating
+  // the tag line, truncating the status to "St…" (owner ask 2026-09-17:
+  // "would rather see the status"). Injury wins the chip when present.
+  const _phoneBoardTagFor = (r) => {
+    const bits = [r.p.team || 'FA'];
+    if (r.age) bits.push(String(r.age));
+    return bits.join(' · ');
+  };
+  const _phoneStatusChip = (r) => {
+    const label = r.injury ? String(r.injury) : _slotLabel(r);
+    const col = r.injury || r.section === 'ir' ? 'var(--bad, #e74c3c)'
+      : r.section === 'starter' ? 'var(--gold)'
+      : r.section === 'taxi' ? 'var(--info, #4aa3ff)'
+      : 'var(--text-muted, #8B8B96)';
+    return (
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', border: '1px solid ' + wrAlpha(col, '80'), color: col, letterSpacing: '0.02em', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>
+        {label}
+      </span>
+    );
+  };
+
   // Hero + pill strip + filter sheet (P5/P3) — computed only on phone.
   let _phoneHeroEl = null, _phonePillsEl = null, _phoneSheetEl = null, _reviewSheetEl = null;
   if (_phone) {
@@ -1630,12 +1652,12 @@ function MyTeamTab({
         key: r.pid,
         pos: r.pos,
         name: getPlayerName(r.pid),
-        tag: _phoneTagFor(r),
+        tag: _phoneBoardTagFor(r),
         slots: _phoneSlotKeys.map(k => _phoneSlotFor(k, r)),
-        verdict: _phoneVerdictChip(r),
-        // No colored row accent — the verdict chip + injury tag already carry
-        // the status; the outline read as ambiguous (owner call). Rows keep
-        // AssetRow's default faint border.
+        verdict: _phoneStatusChip(r),
+        // No colored row accent — the status chip already carries it; the
+        // outline read as ambiguous (owner call). Rows keep AssetRow's
+        // default faint border. The verdict pill lives in the expanded card.
         expanded: isExpanded,
         onClick: () => setExpandedPid(prev => prev === r.pid ? null : r.pid),
         title: 'Open roster player detail',
