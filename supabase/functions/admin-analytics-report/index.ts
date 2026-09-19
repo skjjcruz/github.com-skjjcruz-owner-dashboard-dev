@@ -365,13 +365,19 @@ Deno.serve(async (req) => {
         return json(req, { error: error.message }, 500);
       }
       const groups = new Map<string, { source: string; errorName: string; context: string | null; detail: string | null; times: number; people: Set<string>; lastSeen: string }>();
+      // Diagnostics the client files through the error channel that are not
+      // failures: viewport.nudge is the phone layout self-correcting (owner ask
+      // 2026-09-19: keep it out of the "what actually broke" table).
+      const INFORMATIONAL_CONTEXTS = new Set(['viewport.nudge']);
       let devSandboxErrors = 0;
+      let informational = 0;
       for (const r of rows ?? []) {
         if (!isProdRow(r)) { devSandboxErrors++; continue; }
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         const source = typeof meta.source === 'string' && meta.source ? meta.source : 'unknown';
         const errorName = typeof meta.errorName === 'string' && meta.errorName ? meta.errorName : 'Error';
         const context = typeof meta.context === 'string' && meta.context ? meta.context : null;
+        if (context && INFORMATIONAL_CONTEXTS.has(context)) { informational++; continue; }
         const detail = typeof meta.errorDetail === 'string' && meta.errorDetail ? meta.errorDetail : null;
         const key = `${source}|${errorName}|${context ?? ''}`;
         const g = groups.get(key) ??
@@ -395,7 +401,7 @@ Deno.serve(async (req) => {
         .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1))
         .slice(0, 100);
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'errors' });
-      return json(req, { errors, devSandboxErrors, days, since });
+      return json(req, { errors, devSandboxErrors, informational, days, since });
     }
 
     // ── detail=signin: the front door's auth health, with reasons ──
