@@ -41,6 +41,15 @@ function isServerRow(r: FenceRow): boolean {
   return typeof r.session_id === 'string' && r.session_id.startsWith('edge_app:');
 }
 
+// The owner testing the product as a guest is not a guest (owner ask
+// 2026-09-20: "remove me from the guest stats"). Handles here never appear
+// as guests in the Guest Tracker, Known Users, or the visitor list; the
+// owner's signed-in account rows are untouched.
+const OWNER_HANDLES = new Set(['skjjcruz']);
+function isOwnerHandle(handle: unknown): boolean {
+  return typeof handle === 'string' && OWNER_HANDLES.has(handle.toLowerCase());
+}
+
 Deno.serve(async (req) => {
   const options = handleOptions(req);
   if (options) return options;
@@ -86,7 +95,7 @@ Deno.serve(async (req) => {
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         return typeof meta.sleeper === 'string' && meta.sleeper ? meta.sleeper : null;
       };
-      const rows = (allRows ?? []).filter(isProdRow);
+      const rows = (allRows ?? []).filter((r) => isProdRow(r) && !isOwnerHandle(guestHandle(r)));
       // username -> account bridge from events that carry both.
       const links = new Map<string, string>();
       for (const r of rows ?? []) {
@@ -205,7 +214,7 @@ Deno.serve(async (req) => {
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         const stamped = (typeof meta.sleeper === 'string' && meta.sleeper) || (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || null;
         const handle = stamped || (r.username ? String(r.username) : null);
-        if (!handle) continue;
+        if (!handle || isOwnerHandle(handle)) continue;
         const key = handle.toLowerCase();
         const explicit = !!stamped || meta.guest === true;
         const g = byHandle.get(key) ??
@@ -327,10 +336,12 @@ Deno.serve(async (req) => {
       for (const r of rows ?? []) {
         if (!isProdRow(r) || guests.length >= 200) continue;
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
+        const doorName = (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || (typeof meta.sleeper === 'string' && meta.sleeper) || r.username || null;
+        if (meta.guest === true && isOwnerHandle(doorName)) continue;
         guests.push({
           when: r.event_ts,
           event: String(r.event_name || ''),
-          username: (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || (typeof meta.sleeper === 'string' && meta.sleeper) || r.username || null,
+          username: doorName,
           guest: meta.guest === true,
           surface: typeof meta.surface === 'string' && meta.surface ? meta.surface : 'unknown',
         });
@@ -521,7 +532,7 @@ Deno.serve(async (req) => {
           { first: r.event_ts, last: r.event_ts, events: 0, platform: null, surface: null, pages: new Map(), ref: null, sleeper: null as string | null };
         s.events++;
         // Guest sessions carry the Sleeper handle they connected with (owner ask 2026-09-17).
-        { const gm = (r.metadata ?? {}) as Record<string, unknown>; if (!s.sleeper && typeof gm.sleeper === 'string' && gm.sleeper) s.sleeper = gm.sleeper; }
+        { const gm = (r.metadata ?? {}) as Record<string, unknown>; if (!s.sleeper && typeof gm.sleeper === 'string' && gm.sleeper && !isOwnerHandle(gm.sleeper)) s.sleeper = gm.sleeper; }
         if (r.event_ts < s.first) s.first = r.event_ts;
         if (r.event_ts > s.last) s.last = r.event_ts;
         if (!s.platform && r.platform) s.platform = r.platform;
