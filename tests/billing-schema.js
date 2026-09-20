@@ -339,12 +339,12 @@ test('google oauth stores the full user record and re-syncs on fresh returns', (
 test('upgrade page requests the live dhq product with a billing period', () => {
   hasEvery(upgradeSource, [
     "productSlug: 'dhq'",
-    "billing: selectedBilling === 'annual' ? 'annual' : 'monthly'",
+    "billing: plan",
   ], 'upgrade checkout payload');
   ok(!upgradeSource.includes("productSlug: 'bundle'"), 'upgrade page must not sell the legacy bundle product');
   // Tiers come from server entitlements, never a client-side stamp: the page
   // re-mints the session after checkout instead of writing tier locally.
-  ok(upgradeSource.includes('fw-refresh-session'), 'upgrade page must re-mint the session after payment');
+  ok(upgradeSource.includes('DHQBilling.remintSession(context)'), 'upgrade page must use the account-bound server refresh helper after payment');
   ok(!upgradeSource.includes('patchProfile'), 'upgrade page must not stamp tiers into the local profile');
 });
 

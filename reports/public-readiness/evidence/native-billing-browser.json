@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-20",
+  "browser": "Chromium through Playwright CLI",
+  "environment": "localhost3167; all Supabase requests intercepted; synthetic native receipt fixture; no provider writes",
+  "observed": {
+    "narrowPortrait": {
+      "width": 320,
+      "height": 740,
+      "scrollWidth": 320,
+      "storePurchaseCalls": 1,
+      "pending": true,
+      "retryEnabled": true,
+      "restoreVisible": true
+    },
+    "typicalPortraitReload": {
+      "width": 390,
+      "height": 844,
+      "scrollWidth": 390,
+      "pending": true,
+      "chooser": "none",
+      "newPurchaseCalls": 0,
+      "restoreHeight": 44
+    },
+    "shortLandscape": {
+      "width": 844,
+      "height": 390,
+      "scrollWidth": 844,
+      "restoreTop": 338.6953125,
+      "restoreBottom": 382.6953125
+    },
+    "retry": {
+      "trigger": "real Check my plan again click",
+      "fixtureEntitlement": "pro",
+      "destination": "/index.html"
+    },
+    "delayedAccountSwitch": {
+      "responseOwner": "fixture-account-a",
+      "currentOwner": "fixture-account-b",
+      "preservedOwner": "fixture-account-b",
+      "destination": "/upgrade.html",
+      "message": "The signed-in account changed. Reopen billing for the current account."
+    }
+  },
+  "limits": [
+    "No physical device, StoreKit, real purchase or provider transfer proof",
+    "Destination index network is intentionally fixture-blocked",
+    "Known preexisting meta frame-ancestors warning"
+  ]
+}

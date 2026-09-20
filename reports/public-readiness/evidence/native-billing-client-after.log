@@ -1,0 +1,49 @@
+
+> fantasy-war-room@1.0.0 test:billing
+> node tests/billing-schema.js && node tests/native-billing-client.cjs
+
+
+War Room billing schema contract tests
+
+  app_users  .
+  products  ...
+  subscriptions  ....
+  dynasty hq pro (live product line)  ..........
+  security  .
+
+PASS 19 tests - 19 passed, 0 failed
+PASS noFalseSuccess
+PASS staleResponse
+PASS identifiedBeforePurchase
+PASS truthfulUncertainCharge
+PASS pendingRestoreSurvivesReload
+PASS restoreWithoutReceiptDoesNotErasePriorUnknown
+PASS shellReceiptAlsoRequiresServer
+PASS shellTimeoutRemainsUncertain
+PASS shellTimeoutCannotReidentifyUntilLateCompletion
+PASS shellReloadRetainsNativeFence
+PASS shellReloadBeforeTimeoutRetainsFence
+PASS shellRecoveryStorageRequired
+PASS shellCallbackAfterAccountChange
+PASS shellMissingEntitlementIsUnconfirmed
+PASS refreshTimeoutPreservesSavedCredential
+PASS restoreRequiresServer
+PASS staleJson
+PASS rejectWrongOwner
+PASS malformedEntitlementCannotRetainOldProAsFresh
+PASS rejectedSessionStopsRetry
+PASS quotaNotSuccess
+PASS queueKeepsSdkIdentity
+PASS doublePurchaseAndRetainedPending
+PASS pendingStorageRequired
+[billing] request failed: { message: 'Connection cancelled before receipt confirmation' }
+PASS onlyExplicitCancel
+PASS upgradeReturnIsNotProof
+PASS upgradePendingThenRetry
+PASS annualCheckoutRetainsSelectedPlan
+PASS checkoutRetryKeepsExactUrls
+PASS existingCheckoutShowsRecovery
+PASS staleCheckoutCannotRedirect
+PASS unconfiguredNativeCannotUseStripe
+PASS nativePendingRecoveryVisible
+PASS priorAccountReturnCannotActivateCurrent

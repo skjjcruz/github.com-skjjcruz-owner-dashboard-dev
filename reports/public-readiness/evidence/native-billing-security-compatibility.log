@@ -1,0 +1,14 @@
+
+> fantasy-war-room@1.0.0 test:security
+> node tests/security-contract.js
+
+
+War Room security contract tests
+
+  schema  ...
+  shared helper  .
+  auth functions  .......
+  deploy  ..
+  password reset  .
+
+PASS 14 tests - 14 passed, 0 failed
