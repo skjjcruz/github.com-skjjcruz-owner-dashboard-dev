@@ -49,3 +49,7 @@ npm run test:core
 5. Resolve the suite-level native Vault/Duat coverage gap from established product scope. This source's absent game implementation is not a passing game journey and was not hidden to make staging pass.
 
 Root continues suite integration and holds live billing/deletion until their lifecycle dependencies are reviewed. The next bounded agent task is to include durable checkout attempts in deletion inventory and expire open provider checkout sessions before final account deletion.
+
+## Independent review disposition
+
+Root independently reviewed commit `4e11942`, including the staging/compiler/hooks and actual Pages overlay order, and reran the eight native guard checks against the actual shared pin. Review found no material issue in the bounded staging delta. The independent run again staged 215 public assets; it made no native-binary or device claim. Evidence: [independent native run](evidence/actual-native-independent-20260920.log). The remaining integration/toolchain/journey gates above remain open.
