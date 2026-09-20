@@ -31,15 +31,13 @@ export function corsHeaders(req: Request): HeadersInit {
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
-  // Union the built-in defaults with any env-configured origins, so the known
-  // production origins (e.g. the GitHub Pages site) are always allowed even when
-  // APP_ALLOWED_ORIGINS is set to a narrower list.
+  // Preserve supported public/native origins alongside explicit configuration.
   const allowed = [...new Set([...DEFAULT_ALLOWED_ORIGINS, ...configured])];
   const allowOrigin = allowed.includes(origin) ? origin : allowed[0] || origin || '';
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Vary': 'Origin',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ai-provider, x-ai-key, x-ai-model',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
   };
 }
@@ -74,7 +72,7 @@ export function decodeJwtPayload(authHeader: string | null): Record<string, any>
   const payload = token.split('.')[1];
   if (!payload) return null;
   try {
-    return JSON.parse(atob(payload));
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
   } catch {
     return null;
   }
@@ -139,11 +137,6 @@ export function normalizeEmail(value: unknown): string {
   return String(value || '').trim().toLowerCase();
 }
 
-// Reserved test addresses can never receive mail, so they can never be a real
-// member (owner ruling 2026-09-19: production refuses them). Readiness and QA
-// scripts that sign up "someone@example.invalid" get a clear 400 instead of a
-// ghost account in User Command. RFC 2606 / 6761 reserved names only — real
-// providers are never on this list.
 const RESERVED_TEST_TLDS = new Set(['invalid', 'test', 'example', 'localhost']);
 const RESERVED_TEST_DOMAINS = new Set(['example.com', 'example.net', 'example.org']);
 export function isReservedTestEmail(email: string): boolean {
@@ -189,50 +182,21 @@ export async function checkRateLimit(
   identifier: string,
   options: { limit: number; windowSeconds: number; lockoutSeconds?: number },
 ): Promise<{ allowed: boolean; retryAfterSeconds?: number; count: number }> {
-  const now = Date.now();
-  const key = String(identifier || 'unknown').slice(0, 300);
-  const { data: row } = await admin
-    .from('auth_rate_limits')
-    .select('window_start, attempt_count, locked_until')
-    .eq('scope', scope)
-    .eq('identifier', key)
-    .maybeSingle();
-
-  const lockedUntil = row?.locked_until ? Date.parse(row.locked_until) : 0;
-  if (lockedUntil && lockedUntil > now) {
-    return {
-      allowed: false,
-      retryAfterSeconds: Math.ceil((lockedUntil - now) / 1000),
-      count: row?.attempt_count || 0,
-    };
+  try {
+    const { data, error } = await admin.rpc('consume_auth_rate_limit', {
+      p_scope: scope, p_identifier: String(identifier || 'unknown').slice(0, 300),
+      p_limit: options.limit, p_window_seconds: options.windowSeconds,
+      p_lockout_seconds: options.lockoutSeconds || 0,
+    });
+    if (error || !data || typeof data.allowed !== 'boolean' || !Number.isFinite(data.count)) {
+      throw new Error('Rate limit storage unavailable');
+    }
+    return data;
+  } catch {
+    // Authentication and paid provider calls must not bypass limits when the
+    // database is unavailable or the migration has not yet been installed.
+    return { allowed: false, retryAfterSeconds: 60, count: 0 };
   }
-
-  const windowStart = row?.window_start ? Date.parse(row.window_start) : 0;
-  const resetWindow = !windowStart || now - windowStart > options.windowSeconds * 1000;
-  const count = resetWindow ? 1 : (row?.attempt_count || 0) + 1;
-  const shouldLock = count > options.limit;
-  const lockedIso = shouldLock && options.lockoutSeconds
-    ? new Date(now + options.lockoutSeconds * 1000).toISOString()
-    : null;
-
-  await admin.from('auth_rate_limits').upsert({
-    scope,
-    identifier: key,
-    window_start: resetWindow ? new Date(now).toISOString() : row?.window_start,
-    attempt_count: count,
-    locked_until: lockedIso,
-    updated_at: new Date(now).toISOString(),
-  }, { onConflict: 'scope,identifier' });
-
-  if (shouldLock) {
-    return {
-      allowed: false,
-      retryAfterSeconds: options.lockoutSeconds || options.windowSeconds,
-      count,
-    };
-  }
-
-  return { allowed: true, count };
 }
 
 export async function clearRateLimit(admin: SupabaseClient, scope: string, identifier: string): Promise<void> {
@@ -241,13 +205,7 @@ export async function clearRateLimit(admin: SupabaseClient, scope: string, ident
   } catch {}
 }
 
-/**
- * Resolve the acting app user from either auth scheme:
- *   1) a Dynasty HQ app JWT (email/password or fw-oauth-sync), or
- *   2) a raw Supabase OAuth (Google) access token — validated via auth.getUser
- *      and mapped to an app_users row by email.
- * Lets admin endpoints work for Google sign-ins without a separate exchange.
- */
+// Compatibility for callers that accept verified Supabase OAuth sessions.
 export async function resolveAppUserId(
   admin: SupabaseClient,
   req: Request,
@@ -257,10 +215,14 @@ export async function resolveAppUserId(
 
   const token = bearerToken(req);
   if (!token) return null;
+  // A rejected app token must never regain authority through OAuth fallback.
+  // Decoding is used only to deny; Auth still verifies every accepted token.
+  const metadata = decodeJwtPayload(token)?.app_metadata;
+  if (metadata && ['user_id', 'session_version'].some(key => Object.prototype.hasOwnProperty.call(metadata, key))) return null;
   try {
     const { data, error } = await admin.auth.getUser(token);
     const email = normalizeEmail(data?.user?.email);
-    if (error || !email) return null;
+    if (error || !email || !data?.user?.email_confirmed_at) return null;
     const { data: u } = await admin
       .from('app_users')
       .select('id, email')

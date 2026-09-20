@@ -26,6 +26,7 @@ import {
   bearerToken,
   checkRateLimit,
   clientIp,
+  decodeJwtPayload,
   handleOptions,
   json,
   normalizeEmail,
@@ -54,6 +55,14 @@ Deno.serve(async (req) => {
       return json(req, { error: 'Too many attempts. Try again later.' }, 429);
     }
 
+    // App tokens must use the version-checked app-session path. Never let an
+    // old or malformed app JWT regain authority via an OAuth exchange.
+    // The unverified decode only denies; Auth still verifies every accepted token.
+    const metadata = decodeJwtPayload(accessToken)?.app_metadata;
+    if (metadata && ['user_id', 'session_version'].some(key => Object.prototype.hasOwnProperty.call(metadata, key))) {
+      return json(req, { error: 'Use provider sign-in to start a new session.' }, 401);
+    }
+
     // auth.getUser verifies the token against GoTrue regardless of signing scheme.
     const { data: gotUser, error: getUserErr } = await admin.auth.getUser(accessToken);
     const authUser = gotUser?.user;
@@ -63,9 +72,9 @@ Deno.serve(async (req) => {
     }
 
     const normalizedEmail = normalizeEmail(authUser.email);
-    if (!normalizedEmail) {
-      await auditEvent(admin, req, 'fw_oauth_sync', 'failure', {}, { reason: 'no_email' });
-      return json(req, { error: 'This account has no email address.' }, 400);
+    if (!normalizedEmail || !authUser.email_confirmed_at) {
+      await auditEvent(admin, req, 'fw_oauth_sync', 'failure', {}, { reason: 'unconfirmed_email' });
+      return json(req, { error: 'A confirmed email address is required for provider sign-in.' }, 401);
     }
 
     const provider = String((authUser.app_metadata as any)?.provider || 'oauth');
@@ -79,53 +88,41 @@ Deno.serve(async (req) => {
     if (!VALID_PRODUCT_SLUGS.has(productSlug)) return json(req, { error: 'Unknown product.' }, 400);
 
     // ── Upsert app_users row, keyed by email ──────────────────
-    let { data: appUser } = await admin
+    let { data: appUser, error: lookupErr } = await admin
       .from('app_users')
       .select('id, email, display_name, session_version')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
-    // Designated QA accounts (TEST_RESET_EMAILS secret) reset to a blank
-    // slate on every OAuth sign-in so the full new-user funnel can be
-    // exercised repeatedly. Unset secret = feature off.
-    if (appUser && testResetEmails().has(normalizedEmail)) {
-      await admin.from('app_users').delete().eq('id', appUser.id);
-      await auditEvent(admin, req, 'fw_oauth_sync', 'success', { userId: appUser.id, email: normalizedEmail }, { reason: 'test_account_reset' });
-      appUser = null;
-    }
+    if (lookupErr) return json(req, { error: 'Account lookup is temporarily unavailable. Try again.' }, 503);
+    // Sign-in always resumes the same account. Resetting QA data is an explicit
+    // administrator action; an ordinary provider login must never erase it.
 
     let isNew = false;
     if (!appUser) {
-      isNew = true;
-      const { data: created, error: insertErr } = await admin
-        .from('app_users')
-        .insert({
-          email:         normalizedEmail,
-          // Sentinel: never matches a real PBKDF2 "salt:hash", so an OAuth-only
-          // account can never be logged into via the password path.
-          password_hash: `oauth:${provider}`,
-          display_name:  String(metaName || normalizedEmail.split('@')[0]).slice(0, 120),
-        })
-        .select('id, email, display_name, session_version')
-        .single();
-      if (insertErr || !created) {
-        console.error('app_users insert error:', insertErr);
-        await auditEvent(admin, req, 'fw_oauth_sync', 'failure', { email: normalizedEmail }, { reason: 'user_insert_failed' });
-        return json(req, { error: 'Could not create account.' }, 500);
-      }
-      appUser = created;
-
-      const { error: subErr } = await admin.from('subscriptions').insert({
-        user_id:      created.id,
-        product_slug: productSlug,
-        tier:         'free',
-        status:       'active',
+      const { data: created, error: provisionErr } = await admin.rpc('create_app_account', {
+        p_email: normalizedEmail,
+        // Never matches a PBKDF2 credential; provider-only accounts keep the
+        // existing explicit sign-in-method guidance.
+        p_password_hash: `oauth:${provider}`,
+        p_display_name: String(metaName || normalizedEmail.split('@')[0]).slice(0, 120),
+        p_product_slug: productSlug,
       });
-      if (subErr) {
-        console.error('subscription insert error:', subErr);
-        await admin.from('app_users').delete().eq('id', created.id);
-        await auditEvent(admin, req, 'fw_oauth_sync', 'failure', { userId: created.id, email: normalizedEmail }, { reason: 'subscription_insert_failed' });
-        return json(req, { error: 'Could not provision product access.' }, 500);
+      if (provisionErr?.code === '23505') {
+        // A competing signup/exchange committed first. Resume that committed
+        // identity; never erase it or overwrite its password/subscriptions.
+        const { data: winner, error: winnerErr } = await admin.from('app_users')
+          .select('id, email, display_name, session_version').eq('email', normalizedEmail).maybeSingle();
+        if (winnerErr || !winner) return json(req, { error: 'Account setup is temporarily unavailable. Try again.' }, 503);
+        appUser = winner;
+      } else {
+        appUser = Array.isArray(created) ? created[0] : null;
+        if (provisionErr || !appUser) {
+          console.error('Account provisioning error:', provisionErr);
+          await auditEvent(admin, req, 'fw_oauth_sync', 'failure', { email: normalizedEmail }, { reason: 'account_provisioning_failed' });
+          return json(req, { error: 'Could not create account. Try again.' }, 503);
+        }
+        isNew = true;
       }
     } else if (metaName && !appUser.display_name) {
       // Backfill a display name for a pre-existing row that lacked one.
@@ -165,17 +162,6 @@ Deno.serve(async (req) => {
 });
 
 // ── Helpers (mirrors fw-signup) ───────────────────────────────
-
-// QA accounts that reset to a blank slate on every OAuth sign-in.
-// Comma-separated emails in TEST_RESET_EMAILS; empty/unset disables.
-function testResetEmails(): Set<string> {
-  return new Set(
-    (Deno.env.get('TEST_RESET_EMAILS') || '')
-      .split(',')
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
 
 function normalizeProductSlug(value: unknown): string {
   const raw = String(value || 'war_room').trim().toLowerCase();

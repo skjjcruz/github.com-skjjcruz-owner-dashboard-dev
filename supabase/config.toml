@@ -69,3 +69,9 @@ verify_jwt = false
 
 [functions.feature-requests]
 verify_jwt = false
+
+[functions.fw-change-password]
+verify_jwt = false
+
+[functions.fw-oauth-sync]
+verify_jwt = false

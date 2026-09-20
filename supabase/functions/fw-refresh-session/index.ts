@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
       .select('id, email, display_name, session_version')
       .eq('id', session.userId)
       .maybeSingle();
-    if (!user) {
+    if (!user || Number(user.session_version || 1) !== session.sessionVersion) {
       await auditEvent(admin, req, 'fw_refresh_session', 'failure', { userId: session.userId }, { reason: 'user_missing' });
       return json(req, { error: 'Account not found.' }, 401);
     }
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
       email: user.email,
       tier,
       products,
-      sessionVersion: Number(user.session_version || 1),
+      sessionVersion: session.sessionVersion,
     });
 
     await auditEvent(admin, req, 'fw_refresh_session', 'success', { userId: user.id, email: user.email }, { tier, products });

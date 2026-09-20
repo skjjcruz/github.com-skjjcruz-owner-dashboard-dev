@@ -1,0 +1,14 @@
+
+> fantasy-war-room@1.0.0 test:billing
+> node tests/billing-schema.js
+
+
+War Room billing schema contract tests
+
+  app_users  .
+  products  ...
+  subscriptions  ....
+  dynasty hq pro (live product line)  ..........
+  security  .
+
+PASS 19 tests - 19 passed, 0 failed

@@ -26,6 +26,7 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 Deno.serve(async (req) => {
   const options = handleOptions(req);
   if (options) return options;
+  if (req.method !== 'POST') return json(req, { error: 'Method not allowed.' }, 405);
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   try {
@@ -40,11 +41,12 @@ Deno.serve(async (req) => {
 
     if (!normalizedEmail) return json(req, { ok: true }, 200);
 
-    const { data: user } = await admin
+    const { data: user, error: userError } = await admin
       .from('app_users')
       .select('id, email')
       .eq('email', normalizedEmail)
       .maybeSingle();
+    if (userError) throw userError;
 
     if (!user) {
       await auditEvent(admin, req, 'password_reset_requested', 'ignored', { email: normalizedEmail }, { reason: 'unknown_email' });
@@ -54,24 +56,25 @@ Deno.serve(async (req) => {
     const resetToken = crypto.randomUUID() + '.' + crypto.randomUUID();
     const tokenHash = await sha256Hex(resetToken);
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    await admin.from('password_reset_tokens').insert({
+    const { error: tokenError } = await admin.from('password_reset_tokens').insert({
       user_id: user.id,
       token_hash: tokenHash,
       requested_ip: clientIp(req),
       requested_user_agent: req.headers.get('User-Agent') || null,
       expires_at: expiresAt,
     });
+    if (tokenError) {
+      await auditEvent(admin, req, 'password_reset_requested', 'failure', { userId: user.id, email: normalizedEmail }, { reason: 'token_storage_failed' });
+      throw tokenError;
+    }
 
-    // Default goes to the LIVE site — the old warroom.skjjcruz.com domain is
-    // dead (owner bug report 2026-08-31: reset emails never arrived; even if
-    // one had, its link pointed at a domain that no longer resolves).
     const resetBase = Deno.env.get('PASSWORD_RESET_URL') || Deno.env.get('APP_RESET_URL') || 'https://dhqfootball.com/reset-password.html';
     const resetUrl = resetBase ? `${resetBase}${resetBase.includes('?') ? '&' : '?'}token=${encodeURIComponent(resetToken)}` : null;
     const delivery = resetUrl
       ? await sendPasswordResetEmail(admin, user.email, resetUrl, expiresAt)
       : { sent: false, reason: 'missing_reset_url' };
 
-    await auditEvent(admin, req, 'password_reset_requested', 'success', { userId: user.id, email: normalizedEmail }, {
+    await auditEvent(admin, req, 'password_reset_requested', delivery.sent ? 'success' : 'failure', { userId: user.id, email: normalizedEmail }, {
       emailSent: delivery.sent,
       emailProvider: delivery.provider || null,
       emailReason: delivery.reason || null,
@@ -87,9 +90,7 @@ Deno.serve(async (req) => {
   }
 });
 
-// Secrets resolve env-first, then the app Vault (same get_app_secret RPC the
-// AI dispatcher uses) — so the key can be installed by a Vault insert without
-// touching function env config.
+// Retain the established env-first Vault fallback without exposing its values.
 // deno-lint-ignore no-explicit-any
 async function getVaultSecret(admin: any, name: string): Promise<string | null> {
   try {
@@ -102,7 +103,6 @@ async function getVaultSecret(admin: any, name: string): Promise<string | null> 
 }
 
 async function sendPasswordResetEmail(
-  // deno-lint-ignore no-explicit-any
   admin: any,
   to: string,
   resetUrl: string,
@@ -111,10 +111,6 @@ async function sendPasswordResetEmail(
   const apiKey = Deno.env.get('RESEND_API_KEY') || (await getVaultSecret(admin, 'RESEND_API_KEY')) || '';
   if (!apiKey) return { sent: false, provider: 'resend', reason: 'missing_resend_api_key' };
 
-  // Default sender is the verified domain (dhqfootball.com verified in
-  // Resend 2026-08-31 1:48 PM). The old onboarding@resend.dev sandbox
-  // default could only ever deliver to the Resend account owner's own
-  // inbox — real users silently got nothing.
   const from = Deno.env.get('PASSWORD_RESET_FROM_EMAIL') || (await getVaultSecret(admin, 'PASSWORD_RESET_FROM_EMAIL')) || 'Dynasty HQ <noreply@dhqfootball.com>';
   const replyTo = Deno.env.get('PASSWORD_RESET_REPLY_TO') || undefined;
   const expiresText = new Date(expiresAt).toLocaleString('en-US', {

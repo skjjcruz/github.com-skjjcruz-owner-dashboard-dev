@@ -1,0 +1,67 @@
+
+> fantasy-war-room@1.0.0 test:security
+> node tests/security-contract.js && npm run test:auth-release
+
+
+War Room security contract tests
+
+  schema  ...
+  shared helper  .
+  auth functions  .......
+  deploy  ..
+  password reset  .
+
+PASS 14 tests - 14 passed, 0 failed
+
+> fantasy-war-room@1.0.0 test:auth-release
+> node tests/hosted-auth-reconciliation.cjs && node tests/account-provisioning-atomic.cjs && node tests/password-reset-atomic.cjs && node tests/account-session-rls.cjs && node tests/reset-operational-compat.cjs && node tests/account-password-backend.cjs && python3 tests/scoped-edge-release.py
+
+(node:45843) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+fw-signup entitlements error: Error: Subscriptions query failed: unavailable (undefined)
+    at resolveEntitlements (evalmachine.<anonymous>:27:11)
+    at async evalmachine.<anonymous>:149:11
+    at async signup (/Users/jacobc/Projects/warroom-readiness-native-auth/tests/hosted-auth-reconciliation.cjs:72:71)
+    at async /Users/jacobc/Projects/warroom-readiness-native-auth/tests/hosted-auth-reconciliation.cjs:118:169
+PASS actual signup preserves existing QA accounts, enforces limits/input bounds, keeps reserved-address policy and DHQ expansion
+PASS actual OAuth exchange preserves account/data, requires confirmed identity, rejects custom app tokens, retains first-user onboarding and entitlement behavior
+PASS actual session refresh preserves live entitlements and refuses reset/revocation races
+PASS actual entitlements keep active/trialing/gift/bundle expiry semantics and fail on database errors
+fw-profile error: Error: Subscriptions query failed: offline (undefined)
+    at resolveEntitlements (evalmachine.<anonymous>:27:11)
+    at async evalmachine.<anonymous>:41:11
+    at async signinAndProfile (/Users/jacobc/Projects/warroom-readiness-native-auth/tests/hosted-auth-reconciliation.cjs:114:12)
+    at async /Users/jacobc/Projects/warroom-readiness-native-auth/tests/hosted-auth-reconciliation.cjs:118:169
+PASS actual password sign-in and profile agree on trial entitlement, and failed profile lookup never downgrades the account
+(node:45844) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS actual SQL creates account/access/gift atomically, rolls back failed access, preserves existing saves/passwords, replays safely and only grants service access
+PASS actual OAuth handler failed first setup cannot erase a concurrent successful account/session/save; retry resumes winner
+PASS actual competing OAuth requests resume one committed identity and one initial subscription (PGlite serial SQL, independent connection contention unproven)
+PASS actual competing signup returns conflict without overwriting/deleting OAuth winner or unrelated saves
+(node:45855) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS actual SQL migration/replay preserves accounts and links; PBKDF password, old-session revocation, one-time and sibling-link use, and account isolation
+PASS actual handlers submit competing token uses with one winner (PGlite serializes SQL; independent-connection contention still requires hosted proof)
+PASS token-consumption failure rolls back password/session mutation; RPC outages never report success; retry recovers
+PASS browser roles cannot call trusted reset mutation; malformed inputs and unsupported methods rejected; emailed-link redirect retained
+PASS actual request handler persists hashed tokens before delivery; storage/provider outages produce honest audit outcomes without account enumeration or live email
+PASS reproduced revoked-token direct read/write with old SQL, then blocked account/private/ownership/raw-claim paths after additive replay-safe migration
+PASS current sessions keep own reads/writes, other accounts remain isolated, malformed/missing/overflowed version claims fail closed
+PASS legacy owner policy unchanged, no new OAuth access, service role retains server access
+PASS actual atomic password reset revokes direct SQL immediately; refreshed session recovers retained data and unrelated account stays active
+PASS actual account shared CORS preserve supported web/native origins plus configured origins without wildcard; reserved-address helper retained
+(node:45912) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS actual reset request preserves env-first/Vault-fallback delivery, current sender/domain and configured URL override without real mail
+PASS actual identity helper preserves confirmed OAuth mapping while rejecting revoked/malformed app tokens, unverified email and invalid Auth
+PASS operational reconciliation retains atomic fail-closed authentication limits
+(node:45913) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS actual endpoint/SQL changes only signed account, accepts signin PBKDF, invalidates old app sessions/reset links and preserves both accounts games; replay, input, method and rate guards
+PASS transaction rollback/retry, competing actual handlers with one winner, stale snapshots and service-only grants; PGlite serializes connections, separate hosted contention remains required
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 2.780s
+
+OK

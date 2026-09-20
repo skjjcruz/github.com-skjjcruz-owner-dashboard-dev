@@ -14,6 +14,7 @@ import {
   json,
   requireActiveAppSession,
 } from '../_shared/security.ts';
+import { resolveEntitlements } from '../_shared/entitlements.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -40,8 +41,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (error) return json(req, { error: error.message }, 500);
       if (!user) return json(req, { error: 'Profile not found' }, 404);
-      const products = await loadActiveProducts(admin, session.userId);
-      const tier = products.some((p: any) => p.tier === 'pro') ? 'pro' : 'free';
+      const { tier, products } = await resolveEntitlements(admin, session.userId);
       await auditEvent(admin, req, 'fw_profile_read', 'success', { userId: session.userId, email: session.email }, {});
       return json(req, {
         user: {
@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
           email: user.email,
           displayName: user.display_name,
           tier,
-          products: expandProducts(products.map((p: any) => String(p.product_slug || ''))),
+          products,
         },
         tutorialState: sanitizeTutorialState(user.tutorial_state || {}),
         platformUsernames: sanitizePlatformUsernames(user.platform_usernames || {}),
@@ -84,26 +84,6 @@ Deno.serve(async (req) => {
     return json(req, { error: 'Internal server error' }, 500);
   }
 });
-
-async function loadActiveProducts(admin: any, userId: string): Promise<Array<{ product_slug: string; tier: string }>> {
-  const { data } = await admin
-    .from('subscriptions')
-    .select('product_slug, tier, status, expires_at')
-    .eq('user_id', userId)
-    .in('status', ['active', 'trialing']);
-  // expires_at (promotional/gift subs) bounds entitlement here exactly as in
-  // _shared/entitlements.ts — the profile and the JWT must never disagree.
-  return (data || []).filter((s: any) => !s.expires_at || Date.parse(s.expires_at) > Date.now());
-}
-
-// Mirrors _shared/entitlements.ts expandProductSlugs: 'dhq' (the live Pro
-// line), owner-granted 'dhq_gift', and legacy 'bundle' all mean full access
-// to both apps. fw-profile previously only knew 'bundle', so dhq-line
-// subscribers' profiles carried a raw slug the clients don't recognize and
-// tier chrome fell back to the minimum paid level (owner report 2026-07-27).
-function expandProducts(products: string[]): string[] {
-  return [...new Set(products.flatMap((slug) => (slug === 'bundle' || slug === 'dhq' || slug === 'dhq_gift') ? ['war_room', 'dynast_hq'] : [slug]))];
-}
 
 function sanitizeTutorialState(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};

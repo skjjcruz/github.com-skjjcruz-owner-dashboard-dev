@@ -1,0 +1,31 @@
+# Actual native source: compatible auth reconciliation
+
+Prepared on `codex/upstream-auth-native-20260920`, directly from native source `aa13193b28c552f977fa36a4683bb3a688d3da4f` in `skjjcruz/github.com-skjjcruz-owner-dashboard-dev`. This is a local upstream candidate. The current GitHub identity cannot push or merge that repository. No upstream release or frontend/native build is claimed.
+
+## Exact compatible scope
+
+The eight account entrypoints are byte-identical to the independently downloaded hosted sources from September 20: `fw-signup`, `fw-signin`, `fw-profile`, `fw-oauth-sync`, `fw-refresh-session`, `fw-change-password`, `fw-request-password-reset`, and `fw-confirm-password-reset`. Their local shared dependencies match too. Root's prior selective account/reset deployments supplied those hosted versions; this patch reconciles the actual owning repository with that reviewed implementation.
+
+The candidate preserves the native DHQ/gift bundle expansion, active/trialing/expiry semantics, provider onboarding, reserved-address signup policy, current custom domain, env-first/Vault-fallback sender configuration and confirmed OAuth compatibility. It removes signup-side account deletion, makes account/initial access creation atomic, prevents revoked app-token exchange and refresh races, uses atomic rate limits, makes profile query failures truthful, and retains the atomic password reset/change and direct-table session-revocation fixes.
+
+All five dependency migrations are imported unchanged from the reviewed integrated C2 source: `20260909000000`, `20260918010000`, `20260918020000`, `20260918030000`, `20260920030000`. The first includes the preexisting service-only gift/password and Yahoo state history along with the required rate-limit RPC; it is not a new product expansion. The owning native repository already contains the July billing/gift migrations. The shared backend already has these five reviewed security migrations installed and recorded. The one-time workflow verifies records and deliberately performs no DDL application. A fresh read-only [hosted migration check](evidence/native-auth-migration-presence.json) returned all five records.
+
+## One-time release protection
+
+[The release manifest](../../.github/releases/auth-reconciliation-20260920.json) pins the exact pre-push native base, eight function names, every candidate patch file, all local imported dependencies and each observed hosted source file. The planner runs before database operations. An unavailable/stale base, changed file or dependency, unlisted function, missing download, or changed hosted source fails the run before deployment. It rechecks hosted source immediately before deployment and downloads the resulting bundles afterward to compare against candidate bytes.
+
+The manifest applies only when it changes in that push. A manual rerun at this candidate uses the same reviewed first-parent scope. It cannot silently turn this shared-helper change into a deployment of every owned function. A subsequent unrelated commit with an unchanged manifest uses the repository's established selective planner; later shared/workflow changes and manual runs retain the full owned set. This is a reviewed one-time scope, not a permanent skip list.
+
+Merge as one reviewed commit on the exact recorded base. If upstream advances, rebase/review, refresh the source observations and manifest, and rerun verification; do not bypass a stale-scope failure. GitHub workflow concurrency serializes runs in this repository. Cross-repository/operator releases still need coordination because the Supabase deployment API has no source-hash compare-and-swap operation.
+
+## Evidence and remaining gates
+
+- Native billing compatibility: [19 existing contracts pass](evidence/native-auth-billing.log). Three deployment-list assertions now read the actual planner ownership set instead of the removed inline shell list; the native workflow runs billing before auth security.
+- Isolated `npm ci --ignore-scripts` with the native lockfile plus exact PGlite `0.5.8`; [security/actual-handler/SQL output](evidence/native-auth-security.log) passes. The former delete-on-provisioning-failure source contract is replaced by a transaction contract plus executed failure/race regressions. The native RLS fixture is an exact copy of the existing shared-schema identity helper/policy installer, never deployment SQL.
+- Nine disposable-Git-history planner regressions pass for valid push/manual scope, stale or unknown base, committed/uncommitted hash drift, unlisted function, omitted unchanged dependency, changed/missing/extra hosted files, manifest deletion, and preserved later normal release behavior. Independent review reproduced an unavailable-base fallback after a second documentation commit; the corrected planner rejects every push whose pre-push commit cannot be resolved, including that exact case. Explicit manual runs remain distinct.
+- [Deno checks](evidence/native-auth-deno.log) pass for every native function entrypoint with Deno 2.9.6. No frontend or native packaging source was changed.
+- Fresh downloads under `/tmp/readiness-native-auth-hosted-20260920` match all eight candidate entrypoints/dependencies exactly; committed manifest contains only source hashes, no credentials or user data. No emails or account mutations were performed by this lane.
+
+Independent review by the product-inventory agent reran all nine planner tests and found no remaining material issue after the unknown-base correction. It checked preflight/DDL/deploy/postflight order and the preserved later-release behavior. These are local Git and source-fixture checks, not a hosted GitHub workflow execution.
+
+This establishes compatible backend source and a fail-closed deployment candidate, not whole-product public readiness. Parent owns the hosted migration/auth/journey evidence. Public signup with deliverable email, real OAuth delivery, real email reset delivery, current frontend account-password UI integration, physical-device and store distribution remain separate gates. Billing, account deletion, AI policy, operational endpoints and provider reconciliations are not deployed by this scope. A failed or partial release requires a reviewed forward fix or an exact source-compatible recovery; the old account-deleting implementation is not a safe fallback.

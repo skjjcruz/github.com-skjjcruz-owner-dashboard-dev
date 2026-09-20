@@ -1,7 +1,7 @@
 {
   "name": "fantasy-war-room",
   "version": "1.0.0",
-  "description": "Fantasy football owner dashboard — draft war room, earnings tracking, free agent targets",
+  "description": "Fantasy football owner dashboard \u2014 draft war room, earnings tracking, free agent targets",
   "main": "index.html",
   "scripts": {
     "test": "node tests/run.js && npm run test:landing-content && npm run test:regression && npm run test:power-score && npm run test:click-paths && npm run test:intelligence-surfaces && npm run test:situation-room && npm run test:brief-pulse && npm run test:surface-read && npm run test:player-brief && npm run test:player-wire && npm run test:draft-context && npm run test:draft-analyst-mock && npm run test:draft-trade-simulator && npm run test:draft-live-sync && npm run test:draft-live-decision && npm run test:draft-recap && npm run test:post-draft-craze && npm run test:draft-strategy-studio && npm run test:ai && npm run test:ai-scale && npm run test:billing && npm run test:security && npm run test:bug-capture && npm run test:analytics && npm run test:tutorial && npm run test:rookies && npm run test:rookie-capital && npm run test:rookie-fields && npm run test:season-odds-engines && npm run test:faab-engine && npm run test:chopped && npm run test:chop-odds",
@@ -27,7 +27,7 @@
     "test:ai": "node tests/ai-routing.js",
     "test:ai-scale": "node scripts/ai-scale-load-model.cjs",
     "test:billing": "node tests/billing-schema.js",
-    "test:security": "node tests/security-contract.js",
+    "test:security": "node tests/security-contract.js && npm run test:auth-release",
     "test:bug-capture": "node tests/bug-capture.js",
     "test:analytics": "node tests/analytics-report.js",
     "test:tutorial": "node tests/tutorial-contract.js",
@@ -59,7 +59,8 @@
     "test:season-odds-engines": "node tests/season-odds-engines.js",
     "test:faab-engine": "node tests/faab-engine.js",
     "test:chopped": "node tests/chopped.js",
-    "test:chop-odds": "node tests/chop-odds.js"
+    "test:chop-odds": "node tests/chop-odds.js",
+    "test:auth-release": "node tests/hosted-auth-reconciliation.cjs && node tests/account-provisioning-atomic.cjs && node tests/password-reset-atomic.cjs && node tests/account-session-rls.cjs && node tests/reset-operational-compat.cjs && node tests/account-password-backend.cjs && python3 tests/scoped-edge-release.py"
   },
   "keywords": [
     "fantasy",
@@ -83,7 +84,8 @@
     "@playwright/test": "^1.60.0",
     "eslint": "^10.5.0",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.7"
+    "lint-staged": "^17.0.7",
+    "@electric-sql/pglite": "0.5.8"
   },
   "lint-staged": {
     "*.js": [
