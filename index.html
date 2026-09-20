@@ -111,12 +111,14 @@ if (_isLocalDev) {
     },
   };
 }
-// ═══ GRAFT PHASE 5 (owner-approved, 2026-09-06): the behavioral-model
-// engine is ON for the native app, mirroring website b103/b104. Sleeper
-// leagues price through values-v2 and assess through the one brain;
-// non-Sleeper leagues stay on the original engine (per-provider switch
-// inside dhq-engine.js). Rollback: set this to false — one line.
-window.__DHQ_ENGINE_V2 = true;
+// ═══ Value engine switch ═══
+// true  = the v2 points-over-waiver formula (values-v2.js), live 2026-09-06
+//         to 2026-09-20.
+// false = the original market-blended engine inside dhq-engine.js.
+// Owner ruling 2026-09-20: the original engine returns, mirroring website
+// b132. The one-brain assessments (health, tiers, record-first power
+// rank) run either way.
+window.__DHQ_ENGINE_V2 = false;
 const WR_SHARED_FILES = [
   'app-config.js',
   'bug-capture.js',
@@ -3166,7 +3168,7 @@ window.addEventListener('appinstalled', () => {
 <!-- Deploy tag (owner ask 2026-08-19): a tiny always-visible build code so the
      owner can read back exactly which version his device is running before
      testing — kills the stale-cache guessing game. Bump the code every deploy. -->
-<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b131a</div>
+<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b132a</div>
 </body>
 </html>
 <!-- build 1774212614 -->
