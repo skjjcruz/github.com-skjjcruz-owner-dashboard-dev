@@ -42,13 +42,13 @@ npm run test:core
 
 ## Integration and next executable steps
 
-1. Independently review this separate packaging commit, then integrate with the actual-native auth candidate `5e355b64ed66e3e483d3bd533418b185514085f6` and the prepared billing/account-deletion corrections. Preserve both package-script changes; do not reuse the auth candidate's whole-patch manifest after changing its inputs. Regenerate and review the intended release manifest.
+1. Independent review is complete; integrate this separate packaging commit with the actual-native auth candidate `618c613ac4e0658653b536f076c4c240c939b82a` and the prepared billing/account-deletion corrections. Preserve both package-script changes; do not reuse the auth candidate's whole-patch manifest after changing its inputs. Regenerate and review the intended release manifest.
 2. When canonical shared fixes are accepted upstream, deliberately update `native-build.json` to their reviewed revision and rebuild. Do not update the pin from an uncommitted or floating source.
 3. Run the actual-native integrated browser/security/billing gates, including narrow and landscape navigation, authentication and reconnect, deletion failure/retry, purchase activation, restore, and cross-account completion races. Packaging checks do not prove these journeys.
 4. With the authorized native toolchains available, create or locate the intended platform projects, synchronize the verified bundle, and build each supported platform. Record platform source/revision, signing configuration, build results, install/device evidence, and store state separately. Existing external CDN dependencies also require actual runtime/network recovery checks; staging is not an offline-use promise.
 5. Resolve the suite-level native Vault/Duat coverage gap from established product scope. This source's absent game implementation is not a passing game journey and was not hidden to make staging pass.
 
-Root continues suite integration and holds live billing/deletion until their lifecycle dependencies are reviewed. The next bounded agent task is to include durable checkout attempts in deletion inventory and expire open provider checkout sessions before final account deletion.
+Root continues suite integration and holds live billing/deletion until their lifecycle dependencies are reviewed. Checkout-aware deletion is now separately reviewed in the C2 integration but remains held with the billing cutover. The native billing client is proposed independently in PR322; account-source publication remains blocked by the configured credential workflow scope. None of those statuses establish a native build.
 
 ## Independent review disposition
 
