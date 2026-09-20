@@ -24,7 +24,11 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'dist-deploy');
 
 // Every HTML entry point that loads @babel/standalone + type="text/babel" scripts.
-const ENTRIES = ['index.html', 'draft-warroom.html', 'free-agency.html', 'trade-calculator.html'];
+const ENTRIES = ['index.html', 'admin.html', 'landing.html', 'connect-sleeper.html',
+  'upgrade.html', 'ai-setup.html', 'login.html', 'reset-password.html', 'gift.html',
+  'draft-warroom.html', 'free-agency.html', 'trade-calculator.html',
+  'draft-war-room/index.html', 'draft-war-room/player-detail.html',
+  'legal/privacy-policy.html', 'legal/terms-of-service.html'];
 
 const compiled = new Set(); // source pathnames already compiled (dedupe across entries)
 const assetHash = new Map(); // pathname -> content hash of the compiled output
@@ -60,8 +64,15 @@ function transform(code, filename) {
   }).code;
 }
 
-function compileExternal(src) {
-  const pathname = src.split('?')[0];
+function localPath(src, entry) {
+  const url = src.split(/[?#]/)[0];
+  const pathname = path.posix.normalize(path.posix.join(path.posix.dirname(entry), url));
+  if (pathname.startsWith('../') || path.isAbsolute(pathname)) throw new Error(`Asset escapes public root: ${entry} -> ${src}`);
+  return pathname;
+}
+
+function compileExternal(src, entry) {
+  const pathname = localPath(src, entry);
   const inputPath = path.join(ROOT, pathname);
   if (!fs.existsSync(inputPath)) throw new Error(`Missing Babel source: ${src} (${inputPath})`);
   if (compiled.has(pathname)) return;
@@ -94,7 +105,7 @@ function processEntry(entry) {
     const attrs = (before + after).replace(/\s+/g, ' ').trim();
     const srcMatch = attrs.match(/\bsrc=["']([^"']+)["']/i);
     if (srcMatch) {
-      compileExternal(srcMatch[1]);
+      compileExternal(srcMatch[1], entry);
       entryExternal++;
       // data-wr-defer scripts are kept INERT (non-executing type) so the browser
       // doesn't run them at boot; the module loader injects executable copies on
@@ -125,14 +136,15 @@ function processEntry(entry) {
   //    module after a deploy. External / CDN URLs are left untouched.
   html = html.replace(/<script\b([^>]*?)\bsrc=(["'])([^"']+)\2([^>]*)>/gi, (m, before, q, src, after) => {
     if (/^(https?:)?\/\//i.test(src)) return m; // external/CDN — leave as-is
-    const pathname = src.split('?')[0];
+    const urlPath = src.split(/[?#]/)[0];
+    const pathname = localPath(src, entry);
     let hash = assetHash.get(pathname); // compiled JSX module → hash of emitted output
     if (!hash) {
       const rawPath = path.join(ROOT, pathname);
       if (!fs.existsSync(rawPath)) return m; // unknown local asset — leave as-is
       hash = contentHash(fs.readFileSync(rawPath));
     }
-    return `<script${before}src=${q}${pathname}?v=${hash}${q}${after}>`;
+    return `<script${before}src=${q}${urlPath}?v=${hash}${q}${after}>`;
   });
 
   // Safety net: the deploy must ship NO in-browser Babel (match real script tags,
@@ -144,7 +156,7 @@ function processEntry(entry) {
     throw new Error(`${entry}: @babel/standalone reference survived`);
   }
 
-  ensureDir(OUT_DIR);
+  ensureDir(path.dirname(path.join(OUT_DIR, entry)));
   fs.writeFileSync(path.join(OUT_DIR, entry), html, 'utf8');
   console.log(`[build-deploy]   ${entry}: rewrote ${entryExternal} external babel scripts`);
 }
@@ -155,8 +167,7 @@ function processEntry(entry) {
 // js/shared/shared-loader.js — NOT by <script> tags — so step 4's ?v=
 // hashing never covered them: a hardcoded stamp pinned week-old tier code
 // in every returning browser while the files underneath kept changing.
-// Rewrites the loader IN PLACE (the deploy artifact copies js/ afterwards);
-// its own <script> tag hash then updates too since step 4 hashes the source.
+// Writes only the compiled overlay. Builds must not mutate tracked source.
 function stampSharedLoaderVersion() {
   const loaderPath = path.join(ROOT, 'js', 'shared', 'shared-loader.js');
   const sharedDir = path.join(ROOT, 'reconai-shared');
@@ -175,7 +186,10 @@ function stampSharedLoaderVersion() {
   if (next === src && !src.includes(`'${stamp}'`)) {
     throw new Error('shared-loader.js: DEFAULT_VERSION line not found — cache stamping broken');
   }
-  fs.writeFileSync(loaderPath, next, 'utf8');
+  const output = path.join(OUT_DIR, 'js/shared/shared-loader.js');
+  ensureDir(path.dirname(output));
+  fs.writeFileSync(output, next, 'utf8');
+  assetHash.set('js/shared/shared-loader.js', contentHash(next));
   console.log(`[build-deploy] shared-loader DEFAULT_VERSION stamped -> ${stamp}`);
 }
 
