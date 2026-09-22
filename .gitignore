@@ -24,3 +24,6 @@ rank-consistency-pass*.png
 surface-read-analytics.png
 tall-*.png
 pr-*.png
+
+# Generated public assets for Capacitor packaging
+dist-native/

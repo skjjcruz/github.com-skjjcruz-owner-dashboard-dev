@@ -1,0 +1,39 @@
+
+> fantasy-war-room@1.0.0 test:native
+> npm run build:native && node tests/native-packaging.cjs
+
+
+> fantasy-war-room@1.0.0 build:native
+> node scripts/build-native.cjs
+
+[sync-reconai-shared] Vendored 44 modules into reconai-shared/ and refreshed 3 data files from /Users/jacobc/Projects/dhq-shared-current-public
+[build-deploy] shared-loader DEFAULT_VERSION stamped -> 9036b432f4
+[build-deploy]   index.html: rewrote 70 external babel scripts
+[build-deploy]   admin.html: rewrote 0 external babel scripts
+[build-deploy]   landing.html: rewrote 0 external babel scripts
+[build-deploy]   connect-sleeper.html: rewrote 0 external babel scripts
+[build-deploy]   upgrade.html: rewrote 0 external babel scripts
+[build-deploy]   ai-setup.html: rewrote 0 external babel scripts
+[build-deploy]   login.html: rewrote 0 external babel scripts
+[build-deploy]   reset-password.html: rewrote 0 external babel scripts
+[build-deploy]   gift.html: rewrote 0 external babel scripts
+[build-deploy]   draft-warroom.html: rewrote 1 external babel scripts
+[build-deploy]   free-agency.html: rewrote 0 external babel scripts
+[build-deploy]   trade-calculator.html: rewrote 0 external babel scripts
+[build-deploy]   draft-war-room/index.html: rewrote 0 external babel scripts
+[build-deploy]   draft-war-room/player-detail.html: rewrote 0 external babel scripts
+[build-deploy]   legal/privacy-policy.html: rewrote 0 external babel scripts
+[build-deploy]   legal/terms-of-service.html: rewrote 0 external babel scripts
+[build-deploy] compiled 71 unique Babel sources across 16 entries -> dist-deploy/
+(node:48056) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+[build-native] Verified 215 public assets (10.72MiB). This is web-asset staging, not a native build, installation or store approval.
+PASS built actual entries, canonical shared assets and every shipped script parse
+PASS untracked source is not silently packaged
+PASS changed compiled bytes fail inspection
+PASS changed source fails inspection before native copy
+PASS unknown private output fails actual installed Capacitor sync hook
+PASS symlinked public output is rejected
+PASS future web-only Vault archive fails closed instead of disappearing
+PASS root-directory and remote-web workarounds are rejected
+8 native packaging checks passed. No native build/install/device/store claim.

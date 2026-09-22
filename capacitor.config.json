@@ -1,7 +1,7 @@
 {
   "appId": "com.dhqfootball.app",
   "appName": "Dynasty HQ",
-  "webDir": ".",
+  "webDir": "dist-native",
   "server": {
     "androidScheme": "https"
   },

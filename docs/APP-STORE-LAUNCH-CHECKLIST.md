@@ -1,5 +1,16 @@
 # App Store Launch Checklist — Dynasty HQ (plain-English version)
 
+> **Current technical status, 2026-09-20:** The earlier completion language below
+> is historical and does not establish submission readiness. This checkout now
+> stages and verifies a public web bundle, but has no tracked iOS or Android
+> platform project. Native compilation, installation, physical-device journeys,
+> purchases/restores, and store distribution have not been verified. The available
+> Mac has Command Line Tools rather than a usable Xcode installation, and no Java
+> runtime was found. Authentication, billing, and account-deletion corrections are
+> separate pending integration work. See the
+> [current native evidence and next steps](../reports/public-readiness/actual-native-packaging-20260920.md).
+> Treat the older “ALL CLEARED” and “all owner/admin steps” statements as superseded.
+
 *Written for the owner, not engineers. No jargon — and where a technical word is
 unavoidable, it's explained.*
 
