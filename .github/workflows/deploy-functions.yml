@@ -6,7 +6,15 @@ on:
     paths:
       - "supabase/functions/**"
       - "supabase/migrations/**"
+      - "supabase/config.toml"
+      - ".github/releases/**"
+      - ".github/workflows/deploy-functions.yml"
+      - "scripts/scoped-edge-release.py"
   workflow_dispatch:
+
+concurrency:
+  group: supabase-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -38,10 +46,29 @@ jobs:
         with:
           deno-version: v2.x
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install backend test dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify auth and scoped release regressions
+        run: npm run test:billing && npm run test:security
+
+      - name: Plan and verify function release before any database writes
+        id: plan
+        env:
+          RELEASE_BEFORE: ${{ github.event.before }}
+          RELEASE_HEAD: ${{ github.sha }}
+          RELEASE_EVENT: ${{ github.event_name }}
+        run: python3 scripts/scoped-edge-release.py --before "$RELEASE_BEFORE" --head "$RELEASE_HEAD" --event "$RELEASE_EVENT"
+
       - name: Type check Edge Functions
         run: |
           for fn in supabase/functions/*/index.ts; do
-            deno check --node-modules-dir=auto "$fn"
+            deno check --node-modules-dir=none --no-lock "$fn"
           done
 
       # Idempotent apply of allowlisted migrations through the Management API.
@@ -50,7 +77,11 @@ jobs:
       # Only add migrations that are safe to re-run (if not exists / or
       # replace), because the query endpoint does not guarantee atomicity
       # across statements.
+      # This one-time auth reconciliation uses migrations already rehearsed,
+      # installed and recorded on the shared backend. Fail in verification if
+      # any prerequisite is absent; do not turn the scope into a DDL rollout.
       - name: Apply pending database migrations
+        if: steps.plan.outputs.manifest == ''
         run: |
           python3 - <<'PYEOF'
           import json, urllib.request, os, sys
@@ -59,6 +90,11 @@ jobs:
           endpoint = 'https://api.supabase.com/v1/projects/sxshiqyxhhifvtfqawbq/database/query'
 
           pending = {
+              '20260909000000': 'supabase/migrations/20260909000000_security_audit_fixes.sql',
+              '20260918010000': 'supabase/migrations/20260918010000_atomic_password_reset.sql',
+              '20260918020000': 'supabase/migrations/20260918020000_account_session_rls.sql',
+              '20260918030000': 'supabase/migrations/20260918030000_account_password_change.sql',
+              '20260920030000': 'supabase/migrations/20260920030000_atomic_account_provisioning.sql',
               '20260610000000': 'supabase/migrations/20260610000000_ai_response_cache.sql',
               '20260610010000': 'supabase/migrations/20260610010000_ai_feedback.sql',
               '20260615000000': 'supabase/migrations/20260615000000_mfl_connection.sql',
@@ -126,6 +162,11 @@ jobs:
           import json, urllib.request, os, sys
           token = os.environ.get('SUPABASE_ACCESS_TOKEN', '')
           expected = {
+              '20260909000000': 'supabase/migrations/20260909000000_security_audit_fixes.sql',
+              '20260918010000': 'supabase/migrations/20260918010000_atomic_password_reset.sql',
+              '20260918020000': 'supabase/migrations/20260918020000_account_session_rls.sql',
+              '20260918030000': 'supabase/migrations/20260918030000_account_password_change.sql',
+              '20260920030000': 'supabase/migrations/20260920030000_atomic_account_provisioning.sql',
               '20260317000000': 'supabase/migrations/20260317000000_app_users_and_subscriptions.sql',
               '20260503000000': 'supabase/migrations/20260503000000_ai_usage_controls.sql',
               '20260503010000': 'supabase/migrations/20260503010000_tutorial_state.sql',
@@ -183,44 +224,15 @@ jobs:
           print('Recorded migrations:', ', '.join(sorted(found & set(expected))))
           PYEOF
 
-      # ── Selective function deploys ──────────────────────────────────
-      # Only functions whose source changed in this push redeploy — a push
-      # touching one function no longer ripples sign-in and every other
-      # endpoint through a fresh rollout (owner ruling 2026-07-27, after a
-      # rollout window briefly failed live sign-ins). _shared/** or changes
-      # to this workflow redeploy the full owned set, as does a manual
-      # workflow_dispatch. OWNED is this repo's set only: the espn/yahoo/mfl
-      # proxies deploy from ReconAI (SHARED-CODE.md "Backend Ownership");
-      # report-bug / feature-requests remain hand-managed.
-      - name: Plan function deploys
-        id: plan
-        run: |
-          OWNED="nfl-depth-charts ops-board-vault ops-email-doctor admin-analytics-report admin-audit-log admin-billing-summary admin-delete-user admin-grant-pro admin-list-users admin-support-queue ai-analyze ai-feedback fw-billing-portal fw-confirm-password-reset fw-create-checkout fw-delete-account fw-oauth-sync fw-profile fw-refresh-session fw-request-password-reset fw-revenuecat-webhook fw-signin fw-signup fw-stripe-webhook get-session-token nfl-scoreboard set-password"
-          PLAN=""
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Manual dispatch — full owned set"
-            PLAN="$OWNED"
-          else
-            BEFORE="${{ github.event.before }}"
-            if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-              echo "No usable pre-push commit — full owned set"
-              PLAN="$OWNED"
-            else
-              DIFF=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
-              if echo "$DIFF" | grep -qE '^supabase/functions/_shared/|^\.github/workflows/deploy-functions\.yml$'; then
-                echo "Shared code or this workflow changed — full owned set"
-                PLAN="$OWNED"
-              else
-                TOUCHED=$(echo "$DIFF" | sed -n 's|^supabase/functions/\([^/]*\)/.*|\1|p' | sort -u)
-                for fn in $OWNED; do
-                  case " $TOUCHED " in *" $fn "*) PLAN="$PLAN $fn";; esac
-                done
-              fi
-            fi
-          fi
-          PLAN=$(echo $PLAN | xargs)
-          echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
-          echo "Will deploy: ${PLAN:-nothing (no owned function changed)}"
+      # The reviewed reconciliation scope is one-time. Later commits retain
+      # the native repository's normal changed-function/shared-code behavior.
+      - name: Recheck scoped hosted source immediately before deployment
+        if: steps.plan.outputs.manifest != ''
+        env:
+          RELEASE_BEFORE: ${{ github.event.before }}
+          RELEASE_HEAD: ${{ github.sha }}
+          RELEASE_EVENT: ${{ github.event_name }}
+        run: python3 scripts/scoped-edge-release.py --before "$RELEASE_BEFORE" --head "$RELEASE_HEAD" --event "$RELEASE_EVENT"
 
       - name: Deploy changed functions
         if: steps.plan.outputs.plan != ''
@@ -229,6 +241,14 @@ jobs:
             echo "── deploying $fn"
             supabase functions deploy "$fn" --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
           done
+
+      - name: Verify scoped deployed source matches reviewed candidate
+        if: steps.plan.outputs.manifest != ''
+        env:
+          RELEASE_BEFORE: ${{ github.event.before }}
+          RELEASE_HEAD: ${{ github.sha }}
+          RELEASE_EVENT: ${{ github.event_name }}
+        run: python3 scripts/scoped-edge-release.py --verify-deployed --before "$RELEASE_BEFORE" --head "$RELEASE_HEAD" --event "$RELEASE_EVENT"
 
       # NOTE: mfl-proxy is deliberately NOT deployed here. Both apps share the
       # sxshiqyxhhifvtfqawbq project, so mfl-proxy has a single owning repo —

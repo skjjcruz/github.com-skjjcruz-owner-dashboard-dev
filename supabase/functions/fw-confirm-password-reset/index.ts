@@ -24,10 +24,11 @@ Deno.serve(async (req) => {
 
   if (req.method === 'GET') {
     const token = new URL(req.url).searchParams.get('token') || '';
-    const resetBase = Deno.env.get('PASSWORD_RESET_URL') || Deno.env.get('APP_RESET_URL') || 'https://warroom.skjjcruz.com/reset-password.html';
+    const resetBase = Deno.env.get('PASSWORD_RESET_URL') || Deno.env.get('APP_RESET_URL') || 'https://dhqfootball.com/reset-password.html';
     const redirectUrl = `${resetBase}${resetBase.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
     return Response.redirect(redirectUrl, 302);
   }
+  if (req.method !== 'POST') return json(req, { error: 'Method not allowed.' }, 405);
 
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   try {
@@ -38,42 +39,25 @@ Deno.serve(async (req) => {
     }
 
     const { token, password } = await req.json();
-    if (!token || !password) return json(req, { error: 'Token and password are required.' }, 400);
-    if (String(password).length < 8) return json(req, { error: 'Password must be at least 8 characters.' }, 400);
+    if (typeof token !== 'string' || !token || token.length > 512 || typeof password !== 'string') {
+      return json(req, { error: 'Token and password are required.' }, 400);
+    }
+    if (password.length < 8 || password.length > 1024) return json(req, { error: 'Password must be between 8 and 1024 characters.' }, 400);
 
     const tokenHash = await sha256Hex(String(token));
-    const { data: reset } = await admin
-      .from('password_reset_tokens')
-      .select('id, user_id, expires_at, used_at')
-      .eq('token_hash', tokenHash)
-      .maybeSingle();
-
-    if (!reset || reset.used_at || Date.parse(reset.expires_at) < Date.now()) {
+    const passwordHash = await hashPassword(password);
+    const { data, error } = await admin.rpc('confirm_app_password_reset', {
+      p_token_hash: tokenHash,
+      p_password_hash: passwordHash,
+    });
+    if (error) throw error;
+    const reset = data?.[0];
+    if (!reset) {
       await auditEvent(admin, req, 'password_reset_confirmed', 'failure', {}, { reason: 'invalid_or_expired' });
       return json(req, { error: 'Invalid or expired reset token.' }, 400);
     }
 
-    const { data: user } = await admin
-      .from('app_users')
-      .select('id, email')
-      .eq('id', reset.user_id)
-      .single();
-    if (!user) throw new Error('Reset user not found');
-
-    const passwordHash = await hashPassword(String(password));
-    const now = new Date().toISOString();
-    const { error } = await admin
-      .from('app_users')
-      .update({
-        password_hash: passwordHash,
-        password_changed_at: now,
-      })
-      .eq('id', reset.user_id);
-    if (error) throw error;
-
-    await admin.rpc('increment_app_user_session_version', { p_user_id: reset.user_id });
-    await admin.from('password_reset_tokens').update({ used_at: now }).eq('id', reset.id);
-    await auditEvent(admin, req, 'password_reset_confirmed', 'success', { userId: reset.user_id, email: user.email }, {});
+    await auditEvent(admin, req, 'password_reset_confirmed', 'success', { userId: reset.user_id, email: reset.email }, {});
 
     return json(req, { ok: true });
   } catch (err) {

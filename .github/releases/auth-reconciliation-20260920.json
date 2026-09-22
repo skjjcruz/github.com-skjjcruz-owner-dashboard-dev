@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "project": "sxshiqyxhhifvtfqawbq",
+  "base": "aa13193b28c552f977fa36a4683bb3a688d3da4f",
+  "observedUtc": "2026-09-20",
+  "sourceRevision": "0a704ac3010b14daf3c29a3c1e222ce57c7a1d2f",
+  "functions": [
+    "fw-signup",
+    "fw-signin",
+    "fw-profile",
+    "fw-oauth-sync",
+    "fw-refresh-session",
+    "fw-change-password",
+    "fw-request-password-reset",
+    "fw-confirm-password-reset"
+  ],
+  "candidate": {
+    ".github/workflows/deploy-functions.yml": "e6ed15a6ffd2e2f71a7c3ceb8952a5756d6e658fc8d65235d2e83624483b47fe",
+    "package-lock.json": "3430ccd905503a8c3ac36987f1b114cddaf472e5cd143ad633df80938961a6ff",
+    "package.json": "3bfa4e65a0dbf1131d93b113613bf1a1c388977c314971178395516464ea65fb",
+    "reports/public-readiness/evidence/native-auth-deno.log": "03f8a14ae56904741918f669d68f24f18040be3a30a9210cd1d47e7c6e3bfb92",
+    "reports/public-readiness/evidence/native-auth-migration-presence.json": "b6d6b70b6da8a4b659be14cac5d22f4f11aee2674962eb85f303820de923d783",
+    "reports/public-readiness/evidence/native-auth-security.log": "f8457d68cee58a8ea5c502d22d303db1ee8f1fa6b9e38fdebe999681333cd981",
+    "reports/public-readiness/native-auth-upstream-20260920.md": "69fbefe3184e5bc24aeea6a6bd0dfc98576a3abcdbfa9e4571ddb6d631559faf",
+    "scripts/scoped-edge-release.py": "9db12c22134acd9237872148632c11f6648ee668eee718514f43effd02131c68",
+    "supabase/config.toml": "77b2dd4cfbe3aefbae11d2e0b224e9a9cf78647fa3dab798575e5041cd85c37b",
+    "supabase/functions/_shared/entitlements.ts": "5e6919d0eb73ba62a009749e90ec0a78ae0d0b18c2b6c197d923c365e1d1f7df",
+    "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+    "supabase/functions/fw-change-password/index.ts": "f8ddfdf77bf5066a05150ce287c101980370589d70f18f9cb6624b3535269988",
+    "supabase/functions/fw-confirm-password-reset/index.ts": "263260d8d46c3916de47a89c238a5b5e3d81eff3079b8d239b52bc3801294767",
+    "supabase/functions/fw-oauth-sync/index.ts": "a2e2235685cadd69d719519b387f507e1257a2f9784eeceabb4c29c1a3cd8eec",
+    "supabase/functions/fw-profile/index.ts": "4829a022ad4315a3666dfe0c9520bc225c6db50ea8dc78394883c2fa412dcaf1",
+    "supabase/functions/fw-refresh-session/index.ts": "84d892431ef112cdbdb6695f3baca8452d280b50fd596d549fad3015dd3aaa4b",
+    "supabase/functions/fw-request-password-reset/index.ts": "1e1bfb33bbbac1ee2891d9f6b04c4f13e89953070e8e2e83dbba5206dc32d69d",
+    "supabase/functions/fw-signin/index.ts": "8814d2778fb2249f58e7717f5acf85db8641fa6c1a49a866eda4b8890b261f21",
+    "supabase/functions/fw-signup/index.ts": "654f766e0f0f678542f4b9a0d096c09aeddfdcb8cb6cf2f08f0ba1ac92354a07",
+    "supabase/migrations/20260909000000_security_audit_fixes.sql": "5bfcf1a0b214d020bfd2b73fe8ae6e9ad4197c826aa274fbdf2f4ac7318ea6f0",
+    "supabase/migrations/20260918010000_atomic_password_reset.sql": "56ec2ae88eee3d76e589401c2963703c3bf559a434c3cac3ab0d2825cb16a42a",
+    "supabase/migrations/20260918020000_account_session_rls.sql": "5dc455ed10a6407a8bb00b78f96909b01f7ade7e37b36f090c5cf68b9279f34a",
+    "supabase/migrations/20260918030000_account_password_change.sql": "56fe62441989f5f288d2a3cca16317c519d9806cd3b571f7d6a7f853646c940c",
+    "supabase/migrations/20260920030000_atomic_account_provisioning.sql": "b5c9929e336829f1924e81bd73dcbb7c23e0c13a9644d1ff566f0da9985a3fbb",
+    "tests/account-password-backend.cjs": "2cf2bcb50dcd7d7253ba2e597cba7b3e7f4efa697f15037d574da65a9a67fafe",
+    "tests/account-provisioning-atomic.cjs": "8f8ec9c6b924eab7a24b69e99691f178597ca9cf135ee9d76ea7823b20eae884",
+    "tests/account-session-rls.cjs": "7c782d068323acaabf7b204f4568bfef9c6e05d390fefb92a0241828f318f5b8",
+    "tests/fixtures/account-identity-before-session-gate.sql": "f7de42ff10e3eaf3ad8914c286cbd07e238ee634789571021c667501178caefa",
+    "tests/helpers/security-ts-loader.cjs": "db648d4788126e6d789771db7d0a1c46db4676441c21f2e8bb9d7a7e9b1ad8d2",
+    "tests/hosted-auth-reconciliation.cjs": "dd00c06ff689b979d5c70048f79352846d705ffce68f4999fc18513afa54453e",
+    "tests/password-reset-atomic.cjs": "ce15ca294b27b3302c9fb5085334cffb111d3697c231c1fa8a421b7ccb57033f",
+    "tests/reset-operational-compat.cjs": "0d920de226b03747b0b2904fb9a579ffe25251689e8b65bed8f2a3a0be21a16f",
+    "tests/scoped-edge-release.py": "ee5c2605e0b6288da00f9b79235cb031c3637517b4216ccda2624b4b120d79fa",
+    "tests/security-contract.js": "42b59a829452d2629bba4478dc2efe8360b41814e1e962ff2cc55994276b41f6",
+    "tests/billing-schema.js": "e04b257eee6fd3a851e3ba7ab7d993f6734eded4d1f5938dc120105c1240cbd7",
+    "reports/public-readiness/evidence/native-auth-billing.log": "c9cf339aa924f0ecd9df0d518de3268bcca941d42ceb143301c84890a22fad56"
+  },
+  "hosted": {
+    "fw-signup": {
+      "supabase/functions/_shared/entitlements.ts": "5e6919d0eb73ba62a009749e90ec0a78ae0d0b18c2b6c197d923c365e1d1f7df",
+      "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+      "supabase/functions/fw-signup/index.ts": "654f766e0f0f678542f4b9a0d096c09aeddfdcb8cb6cf2f08f0ba1ac92354a07"
+    },
+    "fw-signin": {
+      "supabase/functions/_shared/entitlements.ts": "5e6919d0eb73ba62a009749e90ec0a78ae0d0b18c2b6c197d923c365e1d1f7df",
+      "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+      "supabase/functions/fw-signin/index.ts": "8814d2778fb2249f58e7717f5acf85db8641fa6c1a49a866eda4b8890b261f21"
+    },
+    "fw-profile": {
+      "supabase/functions/_shared/entitlements.ts": "5e6919d0eb73ba62a009749e90ec0a78ae0d0b18c2b6c197d923c365e1d1f7df",
+      "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+      "supabase/functions/fw-profile/index.ts": "4829a022ad4315a3666dfe0c9520bc225c6db50ea8dc78394883c2fa412dcaf1"
+    },
+    "fw-oauth-sync": {
+      "supabase/functions/_shared/entitlements.ts": "5e6919d0eb73ba62a009749e90ec0a78ae0d0b18c2b6c197d923c365e1d1f7df",
+      "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+      "supabase/functions/fw-oauth-sync/index.ts": "a2e2235685cadd69d719519b387f507e1257a2f9784eeceabb4c29c1a3cd8eec"
+    },
+    "fw-refresh-session": {
+      "supabase/functions/_shared/entitlements.ts": "5e6919d0eb73ba62a009749e90ec0a78ae0d0b18c2b6c197d923c365e1d1f7df",
+      "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+      "supabase/functions/fw-refresh-session/index.ts": "84d892431ef112cdbdb6695f3baca8452d280b50fd596d549fad3015dd3aaa4b"
+    },
+    "fw-change-password": {
+      "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+      "supabase/functions/fw-change-password/index.ts": "f8ddfdf77bf5066a05150ce287c101980370589d70f18f9cb6624b3535269988"
+    },
+    "fw-request-password-reset": {
+      "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+      "supabase/functions/fw-request-password-reset/index.ts": "1e1bfb33bbbac1ee2891d9f6b04c4f13e89953070e8e2e83dbba5206dc32d69d"
+    },
+    "fw-confirm-password-reset": {
+      "supabase/functions/_shared/security.ts": "2f28faa792a51696c892e920f9d670b2c18c96ce880e05dbb5ef1eb9c075fc2b",
+      "supabase/functions/fw-confirm-password-reset/index.ts": "263260d8d46c3916de47a89c238a5b5e3d81eff3079b8d239b52bc3801294767"
+    }
+  }
+}

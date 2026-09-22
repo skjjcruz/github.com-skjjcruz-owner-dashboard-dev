@@ -28,12 +28,13 @@ const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 Deno.serve(async (req) => {
   const options = handleOptions(req);
   if (options) return options;
+  if (req.method !== 'POST') return json(req, { error: 'Method not allowed.' }, 405);
 
   try {
     const { email, password } = await req.json();
     const normalizedEmail = normalizeEmail(email);
 
-    if (!normalizedEmail || !password) {
+    if (!normalizedEmail || typeof password !== 'string' || !password || password.length > 1024) {
       return json(req, { error: 'Email and password are required.' }, 400);
     }
 
@@ -131,4 +132,3 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
     return false;
   }
 }
-
