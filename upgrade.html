@@ -52,7 +52,7 @@
     .btn:hover{box-shadow:0 6px 20px rgba(212,175,55,.3)}
     .btn:disabled{opacity:.6;cursor:not-allowed;box-shadow:none}
     .hint{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6}
-    .back{margin-top:18px;background:none;border:none;color:var(--muted);font-size:12px;text-decoration:underline;cursor:pointer;font-family:inherit}
+    .back{margin-top:10px;min-height:44px;padding:8px;background:none;border:none;color:var(--silver);font-size:14px;text-decoration:underline;cursor:pointer;font-family:inherit}
     .back:hover{color:var(--gold)}
   </style>
 </head>
@@ -63,7 +63,7 @@
     <h1 id="title">Unlock the full engine</h1>
     <p class="sub" id="subtitle">7-day free trial on either plan. Cancel anytime.</p>
 
-    <div class="alert" id="alertPayment"></div>
+    <div class="alert" id="alertPayment" role="status" aria-live="polite"></div>
 
     <div id="chooser">
       <div class="plans" role="group" aria-label="Billing period">
@@ -93,149 +93,164 @@
       <button class="back" id="restoreBtn" style="display:none" onclick="restorePurchases()">Restore Purchases</button>
     </div>
 
+    <div id="recovery" hidden>
+      <button class="btn" id="checkPlanBtn" onclick="onPaymentConfirmed()">Check my plan again</button>
+      <button class="back" id="recoveryRestoreBtn" style="display:none" onclick="restorePurchases()">Restore Purchases</button>
+      <p class="hint">You can return to your leagues while access is being checked. Check or restore an existing purchase before starting another.</p>
+    </div>
+
     <p class="hint" style="margin-top:16px"><a href="legal/terms-of-service.html" style="color:rgba(255,255,255,.5)">Terms of Use</a> &nbsp;&middot;&nbsp; <a href="legal/privacy-policy.html" style="color:rgba(255,255,255,.5)">Privacy Policy</a></p>
 
     <button class="back" onclick="window.location.href='index.html'">&larr; Back to my leagues</button>
   </main>
 
-  <script src="js/billing.js?v=20260714wkbridge1"></script>
+  <script src="js/billing.js?v=20260920recovery1"></script>
   <script>
     const SUPABASE_URL = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
     const SESSION_KEY = 'fw_session_v1';
+    const RETURN_KEY = 'dhq_checkout_return_v1';
     let selectedBilling = 'monthly';
-
+    let activeOperation = null;
     function pickBilling(which) {
+      if (activeOperation) return;
       selectedBilling = which === 'annual' ? 'annual' : 'monthly';
       document.getElementById('planMonthly').classList.toggle('on', selectedBilling === 'monthly');
       document.getElementById('planAnnual').classList.toggle('on', selectedBilling === 'annual');
     }
-
-    // Restore Purchases — surfaced only in the native iOS app, where App
-    // Store review requires a reachable restore control.
-    document.addEventListener('DOMContentLoaded', () => {
-      if (window.DHQBilling?.available()) document.getElementById('restoreBtn').style.display = '';
-    });
-    async function restorePurchases() {
-      const btn = document.getElementById('restoreBtn');
-      btn.disabled = true; btn.textContent = 'Restoring…';
-      const result = await window.DHQBilling.restore();
-      btn.disabled = false; btn.textContent = 'Restore Purchases';
-      if (result.ok) {
-        showAlert('success', 'Purchases restored — reloading your plan…');
-        onPaymentConfirmed();
-      } else {
-        showAlert('error', result.error || 'No purchases found to restore.');
-      }
-    }
-
     function showAlert(type, message) {
       const el = document.getElementById('alertPayment');
-      el.className = 'alert alert-' + type + ' show';
-      el.textContent = message;
+      el.className = 'alert alert-' + type + ' show'; el.textContent = message;
     }
-
     function getSession() {
       try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
     }
-
-    async function goToStripe() {
-      const btn = document.getElementById('stripeBtn');
-      const session = getSession();
-      const token = session?.token;
-      if (!token) { showAlert('error', 'Session expired. Please sign in again.'); return; }
-
-      // iOS app: digital subscriptions must go through Apple In-App Purchase
-      // (App Store guideline 3.1.1) — the RevenueCat purchase is what the
-      // fw-revenuecat-webhook mirrors into subscriptions. Web keeps Stripe.
-      if (window.DHQBilling?.available()) {
-        btn.disabled = true;
-        btn.textContent = 'Opening App Store purchase…';
-        const result = await window.DHQBilling.purchase(selectedBilling === 'annual' ? 'annual' : 'monthly');
-        if (result.ok) {
-          onPaymentConfirmed();
-          return;
-        }
-        btn.disabled = false;
-        btn.textContent = 'Proceed to Secure Checkout →';
-        if (!result.cancelled) {
-          showAlert('error', result.error || 'Purchase failed. You have not been charged.');
-        }
-        return;
-      }
-
-      btn.disabled = true;
-      btn.textContent = 'Redirecting to Checkout…';
-      try {
-        const resp = await fetch(`${SUPABASE_URL}/functions/v1/fw-create-checkout`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            productSlug: 'dhq',
-            billing: selectedBilling === 'annual' ? 'annual' : 'monthly',
-            successUrl: window.location.origin + window.location.pathname + '?payment=success',
-            cancelUrl: window.location.origin + window.location.pathname + '?payment=cancel',
-          }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || !data.checkoutUrl) throw new Error(data.error || 'Failed to create checkout session.');
-        window.location.href = data.checkoutUrl;
-      } catch (err) {
-        showAlert('error', err.message || 'Something went wrong. Please try again.');
-        btn.disabled = false;
-        btn.textContent = 'Proceed to Secure Checkout →';
-      }
+    function setBusy(value) {
+      for (const id of ['stripeBtn', 'restoreBtn', 'recoveryRestoreBtn', 'checkPlanBtn']) document.getElementById(id).disabled = value;
     }
-
-    // After a confirmed payment: re-mint the session so the fresh Pro
-    // entitlement lands immediately (the JWT would otherwise stay Scout-tier
-    // for up to a day), then head into the app. Retries briefly because
-    // Stripe's webhook can land a few seconds after the redirect.
-    async function onPaymentConfirmed() {
+    function beginOperation() {
+      if (activeOperation) return null;
+      const context = window.DHQBilling?.captureSession();
+      if (!context) { showAlert('error', 'Session expired. Please sign in again.'); return null; }
+      activeOperation = context; setBusy(true); return context;
+    }
+    function finishOperation(context) {
+      if (activeOperation === context) { activeOperation = null; setBusy(false); }
+    }
+    function current(context) {
+      if (window.DHQBilling.isCurrentSession(context)) return true;
+      showAlert('error', 'The signed-in account changed. Reopen billing for the current account.');
+      return false;
+    }
+    function showRecovery(message) {
       document.getElementById('chooser').style.display = 'none';
-      document.getElementById('eyebrow').textContent = 'Payment confirmed';
-      document.getElementById('title').textContent = 'Welcome to Pro';
-      document.getElementById('subtitle').textContent = 'Activating your upgrade…';
-      showAlert('success', 'Payment confirmed — unlocking the full engine…');
-      for (const delayMs of [0, 4000, 10000]) {
-        if (delayMs) await new Promise(r => setTimeout(r, delayMs));
-        try {
-          const cur = getSession();
-          if (!cur?.token) break;
-          const resp = await fetch(`${SUPABASE_URL}/functions/v1/fw-refresh-session`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${cur.token}` },
-          });
-          if (!resp.ok) continue;
-          const data = await resp.json();
-          if (data?.token && data?.user?.id) {
-            localStorage.setItem(SESSION_KEY, JSON.stringify(
-              Object.assign({}, cur, { token: data.token, user: Object.assign({}, cur.user || {}, data.user) })
-            ));
-            if (data.user.tier === 'pro') break; // entitlement landed
-          }
-        } catch { /* transient — next attempt */ }
-      }
+      document.getElementById('recovery').hidden = false;
+      document.getElementById('eyebrow').textContent = 'Checking access';
+      document.getElementById('title').textContent = 'Your Pro access is not confirmed yet';
+      document.getElementById('subtitle').textContent = 'Check again after the billing update arrives.';
+      showAlert('error', message || 'We could not confirm current Pro access. You can retry this check without starting another purchase.');
+    }
+    function completePro(context) {
+      if (!current(context)) return;
+      try { const prior = JSON.parse(sessionStorage.getItem(RETURN_KEY) || 'null'); if (prior?.userId === context.userId) sessionStorage.removeItem(RETURN_KEY); } catch { /* confirmed access remains authoritative */ }
+      showAlert('success', 'Pro access is active for this account.');
       window.location.href = 'index.html';
     }
-
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.DHQBilling?.available()) { document.getElementById('restoreBtn').style.display = ''; document.getElementById('recoveryRestoreBtn').style.display = ''; }
+    });
+    async function restorePurchases() {
+      const context = beginOperation(); if (!context) return;
+      const btn = document.getElementById('restoreBtn'); btn.textContent = 'Restoring…';
+      try {
+        const result = await window.DHQBilling.restore(context);
+        if (!current(context)) return;
+        if (result.ok) completePro(context);
+        else if (result.pending) showRecovery(result.error);
+        else showAlert('error', result.error || 'Restored access could not be confirmed.');
+      } catch { if (current(context)) showRecovery('The restore result could not be confirmed. Check your plan again.'); }
+      finally { btn.textContent = 'Restore Purchases'; finishOperation(context); }
+    }
+    async function goToStripe() {
+      const context = beginOperation(); if (!context) return;
+      const btn = document.getElementById('stripeBtn');
+      const plan = selectedBilling;
+      try {
+        if (window.DHQBilling.isNative()) {
+          if (!window.DHQBilling.available()) {
+            showAlert('error', 'In-app billing is unavailable in this build. Reopen a supported app build to manage an App Store purchase.'); return;
+          }
+          btn.textContent = 'Opening App Store purchase…';
+          const result = await window.DHQBilling.purchase(plan, context);
+          if (!current(context)) return;
+          if (result.ok) completePro(context);
+          else if (result.pending) showRecovery(result.error);
+          else if (!result.cancelled) showAlert('error', result.error || 'The billing result could not be confirmed.');
+          return;
+        }
+        btn.textContent = 'Opening Checkout…';
+        let prior = null;
+        try { prior = JSON.parse(sessionStorage.getItem(RETURN_KEY) || 'null'); } catch { /* create a recoverable request */ }
+        const nonce = prior?.userId === context.userId && prior?.billing === plan && typeof prior?.nonce === 'string' ? prior.nonce : crypto.randomUUID();
+        sessionStorage.setItem(RETURN_KEY, JSON.stringify({ userId: context.userId, billing: plan, nonce }));
+        const url = window.location.origin + window.location.pathname;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try {
+          const resp = await fetch(`${SUPABASE_URL}/functions/v1/fw-create-checkout`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${context.token}`, 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({ productSlug: 'dhq', billing: plan,
+              successUrl: url + '?payment=success&billing_return=' + encodeURIComponent(nonce),
+              cancelUrl: url + '?payment=cancel&billing_return=' + encodeURIComponent(nonce) }),
+          });
+          if (!current(context)) return;
+          const data = await resp.json();
+          if (!current(context)) return;
+          if (!resp.ok || !data.checkoutUrl) {
+            if (resp.status === 409 && ['checkout_complete', 'subscription_exists'].includes(data.code)) { showRecovery(data.error || 'A checkout or subscription already exists. Check your plan or manage billing from Settings.'); return; }
+            throw new Error(data.error || 'Checkout is not ready. Please try again.');
+          }
+          const checkout = new URL(data.checkoutUrl);
+          if (checkout.protocol !== 'https:') throw new Error('The checkout destination could not be verified.');
+          window.location.href = checkout.href;
+        } finally { clearTimeout(timer); }
+      } catch (error) {
+        if (current(context)) showAlert('error', error?.message || 'Checkout could not be confirmed. Please try again.');
+      } finally { btn.textContent = 'Proceed to Secure Checkout →'; finishOperation(context); }
+    }
+    // A return query or native receipt is a reason to check access, not proof
+    // of payment. Only the current account's server entitlement can finish.
+    async function onPaymentConfirmed() {
+      const context = beginOperation(); if (!context) return;
+      document.getElementById('chooser').style.display = 'none';
+      document.getElementById('recovery').hidden = false;
+      document.getElementById('eyebrow').textContent = 'Checking access';
+      document.getElementById('title').textContent = 'Checking your plan';
+      document.getElementById('subtitle').textContent = 'Waiting for your account’s current billing status…';
+      showAlert('success', 'Checking current Pro access…');
+      try {
+        const confirmed = await window.DHQBilling.remintSession(context);
+        if (!current(context)) return;
+        if (confirmed) completePro(context); else showRecovery();
+      } catch { if (current(context)) showRecovery(); }
+      finally { finishOperation(context); }
+    }
     (function handleReturn() {
+      try { const prior = JSON.parse(sessionStorage.getItem(RETURN_KEY) || 'null'); if (prior?.userId === getSession()?.user?.id && ['monthly', 'annual'].includes(prior.billing)) pickBilling(prior.billing); } catch { /* keep the default plan */ }
       const params = new URLSearchParams(window.location.search);
-      if (params.get('payment') === 'success') { onPaymentConfirmed(); return; }
-      if (params.get('payment') === 'cancel') {
-        showAlert('error', 'Checkout cancelled — you have not been charged. Pick a plan whenever you’re ready.');
-        return;
+      if (params.has('payment')) {
+        let prior = null;
+        try { prior = JSON.parse(sessionStorage.getItem(RETURN_KEY) || 'null'); } catch { /* unconfirmed return */ }
+        if (prior && (prior.userId !== getSession()?.user?.id || (params.get('billing_return') && prior.nonce !== params.get('billing_return')))) {
+          showRecovery('This checkout was opened for a different sign-in or an older request. Sign in to the account that opened it to check its plan.'); return;
+        }
+        if (params.get('payment') === 'success') { onPaymentConfirmed(); return; }
+        if (params.get('payment') === 'cancel') {
+          showAlert('error', 'You returned from Checkout. Check your plan or payment history if you are unsure whether a purchase completed.'); return;
+        }
       }
-      // Already Pro? Say so instead of selling again.
-      const tier = getSession()?.user?.tier;
-      if (tier === 'pro') {
-        document.getElementById('eyebrow').textContent = 'Your plan';
-        document.getElementById('title').textContent = 'You’re on Pro';
-        document.getElementById('subtitle').textContent = 'The full engine is already unlocked on this account.';
-        document.getElementById('chooser').style.display = 'none';
-      }
+      if (window.DHQBilling.hasPendingPurchase()) { showRecovery(); return; }
+      if (getSession()?.user?.tier === 'pro') onPaymentConfirmed();
     })();
   </script>
 </body>
