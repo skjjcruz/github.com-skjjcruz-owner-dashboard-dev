@@ -19,6 +19,23 @@ import {
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+// The API returns at most 1,000 rows per request no matter what .limit()
+// asks for. A week of owner testing (1,500+ events) filled that first page
+// and pushed every real guest off the Guest Tracker (owner report
+// 2026-09-25: 0 guests while four had visited). Page through in 1,000-row
+// steps up to the cap so every detail view sees the whole window.
+const PAGE_ROWS = 1000;
+async function fetchAllRows(build: () => any, cap = 20000): Promise<{ data: any[]; error: any }> {
+  const out: any[] = [];
+  for (let from = 0; from < cap; from += PAGE_ROWS) {
+    const { data, error } = await build().range(from, Math.min(from + PAGE_ROWS, cap) - 1);
+    if (error) return { data: out, error };
+    out.push(...(data ?? []));
+    if (!data || data.length < PAGE_ROWS) break;
+  }
+  return { data: out, error: null };
+}
+
 function clampDays(value: string | null): number {
   const parsed = Number.parseInt(value || '7', 10);
   if (!Number.isFinite(parsed)) return 7;
@@ -76,7 +93,7 @@ Deno.serve(async (req) => {
     // person_key in admin_analytics_report (owner ask 2026-08-03: members
     // signed in without a Sleeper username were invisible here).
     if (url.searchParams.get('detail') === 'users') {
-      const { data: allRows, error } = await admin
+      const { data: allRows, error } = await fetchAllRows(() => admin
         .from('analytics_events')
         .select('username, user_id, session_id, event_ts, module, widget, metadata')
         .gte('event_ts', since)
@@ -84,8 +101,7 @@ Deno.serve(async (req) => {
         // Sleeper handle they connected with in metadata.sleeper. They list
         // here as "<handle> (guest)".
         .or('username.not.is.null,user_id.not.is.null,metadata->>sleeper.not.is.null')
-        .order('event_ts', { ascending: false })
-        .limit(20000);
+        .order('event_ts', { ascending: false }));
       if (error) {
         console.error('admin-analytics-report users query error:', error);
         return json(req, { error: error.message }, 500);
@@ -167,13 +183,12 @@ Deno.serve(async (req) => {
     // with an explicit guest stamp that later signed up stay listed with the
     // account they became — that is the conversion the owner wants to see.
     if (url.searchParams.get('detail') === 'guests') {
-      const { data: allRows, error } = await admin
+      const { data: allRows, error } = await fetchAllRows(() => admin
         .from('analytics_events')
         .select('username, user_id, session_id, event_ts, event_name, platform, module, widget, metadata')
         .gte('event_ts', since)
         .or('username.not.is.null,user_id.not.is.null,metadata->>sleeper.not.is.null,metadata->>sleeperUsername.not.is.null')
-        .order('event_ts', { ascending: false })
-        .limit(20000);
+        .order('event_ts', { ascending: false }));
       if (error) {
         console.error('admin-analytics-report guests query error:', error);
         return json(req, { error: error.message }, 500);
@@ -364,13 +379,12 @@ Deno.serve(async (req) => {
     // This branch reads the raw events and groups by the context/detail the
     // client started stamping on 2026-08-09 — older events show '—'.
     if (url.searchParams.get('detail') === 'errors') {
-      const { data: rows, error } = await admin
+      const { data: rows, error } = await fetchAllRows(() => admin
         .from('analytics_events')
         .select('session_id, username, user_id, event_ts, metadata')
         .eq('event_name', 'client_error')
         .gte('event_ts', since)
-        .order('event_ts', { ascending: false })
-        .limit(20000);
+        .order('event_ts', { ascending: false }));
       if (error) {
         console.error('admin-analytics-report errors query error:', error);
         return json(req, { error: error.message }, 500);
@@ -430,13 +444,12 @@ Deno.serve(async (req) => {
         // return carried no session, or the callback itself threw.
         'oauth_returned_error', 'oauth_no_session', 'oauth_callback_error',
       ];
-      const { data: rows, error } = await admin
+      const { data: rows, error } = await fetchAllRows(() => admin
         .from('analytics_events')
         .select('session_id, username, user_id, event_ts, event_name, metadata')
         .in('event_name', AUTH_EVENTS)
         .gte('event_ts', since)
-        .order('event_ts', { ascending: false })
-        .limit(20000);
+        .order('event_ts', { ascending: false }));
       if (error) {
         console.error('admin-analytics-report signin query error:', error);
         return json(req, { error: error.message }, 500);
@@ -504,12 +517,11 @@ Deno.serve(async (req) => {
     // collected) — this profiles each session instead: when, platform,
     // pages touched, dwell, and the external referrer when one was captured.
     if (url.searchParams.get('detail') === 'sessions') {
-      const { data: rows, error } = await admin
+      const { data: rows, error } = await fetchAllRows(() => admin
         .from('analytics_events')
         .select('session_id, username, user_id, event_ts, platform, module, event_name, metadata')
         .gte('event_ts', since)
-        .order('event_ts', { ascending: false })
-        .limit(20000);
+        .order('event_ts', { ascending: false }));
       if (error) {
         console.error('admin-analytics-report sessions query error:', error);
         return json(req, { error: error.message }, 500);
