@@ -1061,6 +1061,9 @@
         const [welcomeMode, setWelcomeMode] = useState(false); // centered modal for first-time welcome
         const [showCornerToast, setShowCornerToast] = useState(false); // "I'll be down here" toast
         const [transactions, setTransactions] = useState([]);
+        // null until this league's transactions have been fetched once, so an
+        // empty ticker can say 'none yet' instead of showing placeholders forever.
+        const [txnsLoadedFor, setTxnsLoadedFor] = useState(null);
         const [rankedTeams, setRankedTeams] = useState([]);
         const [dhqStatus, setDhqStatus] = useState({ loading: false, step: '', progress: 0 });
         // Phone-only × on the DHQ loading strip (the button is display:none
@@ -1256,7 +1259,8 @@
                     return { value: total.toLocaleString(), sub: 'Total DHQ', color: 'var(--gold)', sparkData: allTotals };
                 }
                 case 'health-score': {
-                    const ranked = rankedTeams.find(t => t.userId === sleeperUserId);
+                    // By roster, not Sleeper user id — ESPN / MFL have no Sleeper owner.
+                    const ranked = myRoster?.roster_id != null ? rankedTeams.find(t => String(t.rosterId) === String(myRoster.roster_id)) : null;
                     const hs = ranked?.healthScore || 0;
                     const allHS = rankedTeams.map(t => t.healthScore || 0).sort((a,b) => a-b);
                     return { value: hs || '\u2014', sub: 'Score', color: hs >= 90 ? 'var(--k-d4af37, #d4af37)' : hs >= 80 ? 'var(--k-2ecc71, #2ecc71)' : hs >= 70 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)', sparkData: allHS };
@@ -1292,7 +1296,10 @@
                     return { value: rate + '%', sub: 'Win/fair rate', color: rate >= 60 ? 'var(--k-2ecc71, #2ecc71)' : rate >= 40 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
                 case 'faab-efficiency': {
-                    const budget = myRoster?.settings?.waiver_budget || 0;
+                    // The FAAB budget is a LEAGUE setting (waiver_budget, FAAB when
+                    // waiver_type === 2); only the spend lives on the roster.
+                    const _ls = currentLeague?.settings || {};
+                    const budget = (_ls.waiver_type === 2 ? Number(_ls.waiver_budget) || 0 : 0) || myRoster?.settings?.waiver_budget || 0;
                     const spent = myRoster?.settings?.waiver_budget_used || 0;
                     if (!budget) return { value: '\u2014', sub: 'No FAAB', color: 'var(--silver)' };
                     const remaining = budget - spent;
@@ -2395,6 +2402,7 @@
                 if (firstTrade) visibleTxns = [...visibleTxns.slice(0, 49), firstTrade];
             }
             setTransactions(visibleTxns);
+            setTxnsLoadedFor(currentLeague?.id || currentLeague?.league_id || 'loaded');
 
             // Trending — if the provider supplied it (Sleeper), use that;
             // otherwise fall back to Sleeper's global trending endpoint
@@ -2578,9 +2586,12 @@
         }
 
         function getOwnerName(rosterId) {
-            const roster = currentLeague.rosters?.find(r => r.roster_id === rosterId);
-            const user = currentLeague.users?.find(u => u.user_id === roster?.owner_id);
-            return user?.display_name || user?.username || 'Unknown';
+            // Ids compared as strings: MFL franchise ids ('0006') and ESPN team
+            // ids arrive as strings from some feeds and numbers from others.
+            const roster = rosterId == null ? null : currentLeague.rosters?.find(r => String(r.roster_id) === String(rosterId));
+            const user = roster ? currentLeague.users?.find(u => String(u.user_id) === String(roster.owner_id)) : null;
+            // MFL / ESPN: the platform's own team name when there is no user row.
+            return user?.display_name || user?.username || roster?._owner_name || roster?.metadata?.team_name || 'Unknown';
         }
 
         // GM Onboarding wizard — conversational strategy setup
@@ -4120,6 +4131,7 @@
                     sleeperUserId={sleeperUserId}
                     setActiveTab={setActiveTab}
                     transactions={transactions}
+                    transactionsLoaded={!!txnsLoadedFor && txnsLoadedFor === (currentLeague?.id || currentLeague?.league_id || 'loaded')}
                     standings={standings}
                     currentLeague={currentLeague}
                     leagueSkin={leagueSkin}

@@ -749,6 +749,7 @@ function DashboardPanel({
     sleeperUserId,
     setActiveTab,
     transactions,
+    transactionsLoaded,
     standings,
     currentLeague,
     leagueSkin,
@@ -1025,13 +1026,15 @@ function DashboardPanel({
         const ann = kpiAnn(primaryKey, primaryVal.value);
 
         // League context for bar chart — find roster value for comparison
+        // My team on every platform (MFL/ESPN have no Sleeper owner id).
+        const _dashMyRid = window.App?.resolveMyRosterId ? window.App.resolveMyRosterId(currentLeague, sleeperUserId) : null;
         const allDHQs = (() => {
             const LI = window.App?.LI || {};
             const scores = window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : (LI.playerScores || {});
             return (currentLeague?.rosters || []).map(r => ({
                 rid: r.roster_id,
                 dhq: (r.players || []).reduce((s, pid) => s + (scores[pid] || 0), 0),
-                isMe: r.owner_id === sleeperUserId,
+                isMe: _dashMyRid != null ? String(r.roster_id) === _dashMyRid : r.owner_id === sleeperUserId,
             })).sort((a, b) => b.dhq - a.dhq);
         })();
         const maxDHQ = allDHQs[0]?.dhq || 1;
@@ -1136,7 +1139,32 @@ function DashboardPanel({
     // ══════════════════════════════════════════════════════════════
     // TRANSACTION TICKER
     // ══════════════════════════════════════════════════════════════
+    // Never print a raw id (owner report 2026-09-26: MFL rows read "+Player
+    // mfl_17107"). A player with no name in the league's player data (Sleeper
+    // DB + the platform's own export, merged in league-detail) is left off
+    // its row; a row left with nothing to show is dropped.
+    function tickerTransactions() {
+        const hasName = pid => {
+            const p = playersData && playersData[pid];
+            return !!(p && (p.full_name || p.first_name || p.last_name));
+        };
+        const keep = o => {
+            const out = {};
+            Object.keys(o || {}).forEach(pid => { if (hasName(pid)) out[pid] = o[pid]; });
+            return out;
+        };
+        return (transactions || []).map(t => {
+            const had = Object.keys(t.adds || {}).length + Object.keys(t.drops || {}).length;
+            const adds = keep(t.adds), drops = keep(t.drops);
+            const has = Object.keys(adds).length + Object.keys(drops).length;
+            if (has === had) return t;
+            if (!has && !(t.draft_picks || []).length) return null;
+            return { ...t, adds, drops };
+        }).filter(Boolean);
+    }
+
     function renderTransactionTicker(size) {
+        const transactions = tickerTransactions();
         // Row budget per size: each entry is ~46px (2 lines). md = 1 grid row
         // (160px) fits 2 entries after the header; lg (2 rows, ~330px) fits 5;
         // slim (2 rows) ~4. Narrow is the deep-feed view: its card is capped
@@ -1173,7 +1201,9 @@ function DashboardPanel({
                     )}
                 </div>
                 <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-                {(!transactions || transactions.length === 0) ? (
+                {(!transactions || transactions.length === 0) && transactionsLoaded ? (
+                    <div style={{ padding: '10px 2px', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.8 }}>No league transactions yet this season.</div>
+                ) : (!transactions || transactions.length === 0) ? (
                     <SkeletonRows count={size === 'narrow' ? 8 : size === 'lg' ? 5 : size === 'slim' ? 4 : 2} />
                 ) : typeof window.WrTxnTickerList === 'function' ? (
                     /* Rows live in the shared widget (js/widgets/txn-ticker.js) so the
@@ -1196,7 +1226,7 @@ function DashboardPanel({
     // a trade BOTH sides — each owner and exactly what they received (players +
     // picks). Players are tappable into the player card. Backdrop / ✕ / Esc close.
     function renderTransactionDetailModal() {
-        const all = transactions || [];
+        const all = tickerTransactions();
         // A specific tapped transaction opens focused (just that deal); the
         // header / "See all" chip open the full list. true = show all.
         const focused = (txnDetail && txnDetail !== true) ? txnDetail : null;
@@ -1289,6 +1319,8 @@ function DashboardPanel({
     // LEAGUE STANDINGS
     // ══════════════════════════════════════════════════════════════
     function renderStandings(size) {
+        // My team on every platform (MFL/ESPN have no Sleeper owner id).
+        const _dashMyRid = window.App?.resolveMyRosterId ? window.App.resolveMyRosterId(currentLeague, sleeperUserId) : null;
         const isOffseason = currentLeague?.status === 'complete' || currentLeague?.status === 'pre_draft';
         // md and the skinny narrow/slim column use the tight 4-column layout.
         const isCompact = size === 'md' || size === 'narrow' || size === 'slim';
@@ -1332,7 +1364,7 @@ function DashboardPanel({
                             if (a.losses !== b.losses) return a.losses - b.losses;
                             return b.pointsFor - a.pointsFor;
                         }).slice(0, showAll ? 999 : isCompact ? 5 : 8).map((team, idx) => {
-                            const isMe = team.userId === sleeperUserId;
+                            const isMe = _dashMyRid != null ? String(team.rosterId) === _dashMyRid : team.userId === sleeperUserId;
                             const roster = currentLeague?.rosters?.find(r => r.owner_id === team.userId);
                             const totalDHQ = roster?.players?.reduce((s, pid) => s + ((window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid) : (window.App?.LI?.playerScores?.[pid] || 0))), 0) || 0;
                             const user = (currentLeague?.users || []).find(u => u.user_id === team.userId);
@@ -1685,6 +1717,7 @@ function DashboardPanel({
             return React.createElement(RPW, {
                 size, primaryMetric, myRoster, rankedTeams, sleeperUserId, currentLeague,
                 playersData, computeKpiValue, setActiveTab, navigateWidget,
+                leagueSkin: resolvedLeagueSkin,
             });
         }
         // Lineup Check → LineupCheckWidget (js/widgets/lineup-check.js)

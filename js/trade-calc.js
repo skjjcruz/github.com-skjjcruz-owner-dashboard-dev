@@ -241,7 +241,7 @@
     // Tier split (Phase 2, owner ruling): grade/label/diff/side totals + raw roster-impact
     // values stay free; acceptance %, psych taxes, posture/DNA/behavior chips are Pro
     // (wrIsPro() only — never canAccess).
-    function TcVerdictPanel({ verdictColor, diffDisplay, grade, totalA, totalB, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta, FAAB_RATE, likelihoodColor, likelihood, netTaxTotal, manualBehaviorFit, otherOwnerId, theirPosture, otherDnaKey, otherDna, manualBehaviorProfile, psychTaxes, grudgeTax, gmFloor, gmModeLabel, gmViability, gmWarnings }) {
+    function TcVerdictPanel({ leagueHasPicks, valueLabel, verdictColor, diffDisplay, grade, totalA, totalB, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta, FAAB_RATE, likelihoodColor, likelihood, netTaxTotal, manualBehaviorFit, otherOwnerId, theirPosture, otherDnaKey, otherDna, manualBehaviorProfile, psychTaxes, grudgeTax, gmFloor, gmModeLabel, gmViability, gmWarnings }) {
         const _pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
         // Owner ruling (restored): the 8-factor psych-tax table + approach line render
         // ALWAYS-VISIBLE at the bottom of the panel — the old collapsed 'Why? ▾'
@@ -257,30 +257,33 @@
                     <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.05rem', fontWeight:600, color: verdictColor }}>{diffDisplay}</span>
                     <span style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.655 }}>(gave {totalA.toLocaleString()} / received {totalB.toLocaleString()})</span>
                 </div>
+                {/* No-picks league: Pick Capital is gone, so Acceptance spans two
+                    tracks — a full row on the 2-col phone grid, the last half of
+                    the 4-col desktop grid — and no slot is left empty. */}
                 <div className="tc-ta-impact-grid">
                     <div>
                         <span>Roster Impact</span>
                         <strong>{rosterImpactLabel}</strong>
-                        <em>{starterValueDelta >= 0 ? '+' : ''}{Math.round(starterValueDelta).toLocaleString()} player DHQ</em>
+                        <em>{starterValueDelta >= 0 ? '+' : ''}{Math.round(starterValueDelta).toLocaleString()} player {valueLabel || 'DHQ'}</em>
                     </div>
-                    <div>
+                    {leagueHasPicks !== false && <div>
                         <span>Pick Capital</span>
                         <strong>{pickCapitalDelta >= 0 ? '+' : ''}{Math.round(pickCapitalDelta).toLocaleString()}</strong>
                         <em>{pickQuantityDelta >= 0 ? '+' : ''}{pickQuantityDelta} picks</em>
-                    </div>
+                    </div>}
                     <div>
                         <span>FAAB</span>
                         <strong>{faabDelta >= 0 ? '+' : ''}${faabDelta}</strong>
-                        <em>{Math.round(faabDelta * FAAB_RATE).toLocaleString()} DHQ equiv.</em>
+                        <em>{Math.round(faabDelta * FAAB_RATE).toLocaleString()} {valueLabel || 'DHQ'} equiv.</em>
                     </div>
                     {_pro ? (
-                        <div>
+                        <div style={leagueHasPicks === false ? { gridColumn: 'span 2' } : undefined}>
                             <span>Acceptance</span>
                             <strong style={{ color: likelihoodColor }}>{likelihood}%</strong>
                             <em>{netTaxTotal >= 0 ? '+' : ''}{netTaxTotal}% psych · {manualBehaviorFit ? `${manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}${manualBehaviorFit.acceptanceDelta}% behavior` : '0% behavior'}</em>
                         </div>
                     ) : (
-                        <div>
+                        <div style={leagueHasPicks === false ? { gridColumn: 'span 2' } : undefined}>
                             <span>Acceptance</span>
                             <strong style={{ color: 'var(--gold)' }}>{'🔒'} Pro</strong>
                             <em>psych-modeled odds</em>
@@ -574,7 +577,7 @@
                         {/* Roster picker */}
                         {tradeOwner[side] && rosterPlayers !== null ? (
                             <div>
-                                <input className="tc-ta-roster-filter" placeholder={tsPhone ? 'Search roster…' : `Filter ${rosterPlayers.length} players & ${ownerPicksList.length} picks...`} value={searchText[side]} onChange={e => setSearchText(prev => ({ ...prev, [side]: e.target.value }))} />
+                                <input className="tc-ta-roster-filter" placeholder={tsPhone ? 'Search roster…' : `Filter ${rosterPlayers.length} players${ownerPicksList.length ? ` & ${ownerPicksList.length} picks` : ''}...`} value={searchText[side]} onChange={e => setSearchText(prev => ({ ...prev, [side]: e.target.value }))} />
                                 <div className="tc-ta-roster-list-tall">
                                     {rosterPlayers.length > 0 && (() => {
                                         const grouped = {};
@@ -660,6 +663,11 @@
         }, [currentLeague, playersData, statsData, timeRecomputeTs]);
         const skinVocabulary = resolvedLeagueSkin?.vocabulary || {};
         const valueSourceLabel = resolvedLeagueSkin?.features?.showDynastyValue === false ? 'format-adjusted values' : 'dynasty valuations';
+        // Column label for player values — says what getPlayerValue actually
+        // returned: rest-of-season value (ROS) in redraft/chopped once the ROS
+        // map is built for this league, dynasty DHQ everywhere else. The finder
+        // used to print "DHQ" over ROS numbers in redraft leagues.
+        const valueColLabel = (skinVocabulary.valueShortLabel === 'ROS' && window.App?.PlayerValue?.rosState?.()) ? 'ROS' : 'DHQ';
         let WEEKLY_TARGET = 243;
         // Shared roster-construction constants from window.App.PlayerValue
         const { IDEAL_ROSTER, DRAFT_ROUNDS, PICK_HORIZON,
@@ -874,10 +882,37 @@
             return Array.from({ length: PICK_HORIZON }, (_, i) => start + i);
         }
 
-        function buildPicksByOwner(rosters, tradedPicks, leagueSeason, draftRounds, skipCurrentSeason) {
+        // Seasons whose picks exist on the platform, or null for the generic
+        // dynasty/keeper window. See the picksByOwner memo for the rule.
+        const SEASONAL_PICK_TYPES = new Set(['redraft', 'chopped', 'best_ball', 'dfs']);
+        function sleeperPickYears(leagueSeason, tradedPicksList, draftDone) {
+            const settings = currentLeague?.settings || {};
+            // Only Sleeper league objects carry pick_trading; an explicit 0 is
+            // Sleeper saying picks can't be traded in this league.
+            if (settings.pick_trading != null && Number(settings.pick_trading) === 0) return [];
+            const skinType = resolvedLeagueSkin?.type
+                || ({ 0: 'redraft', 3: 'chopped' })[Number(settings.type)] || '';
+            if (!SEASONAL_PICK_TYPES.has(skinType)) return null;
+            const years = new Set();
+            const status = String(currentLeague?.status || '').toLowerCase();
+            const draftPending = (status === 'pre_draft' || status === 'drafting') && !draftDone;
+            if (draftPending) years.add(Number(leagueSeason));
+            for (const tp of tradedPicksList || []) {
+                const y = Number(tp.season);
+                if (!Number.isFinite(y) || y < Number(leagueSeason)) continue;
+                if (y === Number(leagueSeason) && !draftPending) continue; // this season's picks are spent
+                years.add(y);
+            }
+            return [...years].sort((a, b) => a - b);
+        }
+
+        function buildPicksByOwner(rosters, tradedPicks, leagueSeason, draftRounds, skipCurrentSeason, yearsOverride) {
             // League-specific round count (falls back to the constant only if unknown).
             const rounds = Math.max(1, Number(draftRounds) || DRAFT_ROUNDS);
-            const PICK_YEARS_INT = pickWindowYears(leagueSeason, skipCurrentSeason);
+            // yearsOverride: the exact seasons whose picks exist on the platform
+            // (seasonal leagues — see sleeperPickYears). [] ⇒ no picks at all.
+            const PICK_YEARS_INT = Array.isArray(yearsOverride) ? yearsOverride : pickWindowYears(leagueSeason, skipCurrentSeason);
+            if (!PICK_YEARS_INT.length) return {};
             const mode = detectPickIdMode(rosters, tradedPicks);
             const rosterById = {};
             for (const r of rosters) rosterById[String(r.roster_id)] = r;
@@ -1472,8 +1507,28 @@
                 }
                 return out;
             }
-            return buildPicksByOwner(allRosters, tradedPicks, leagueSeason, tcDraftRounds, currentDraftComplete);
-        }, [allRosters, tradedPicks, tcDraftRounds, currentDraftComplete]);
+            // Product law: if it's not in Sleeper, it's not there. The generic
+            // window below (every roster × every round × PICK_HORIZON future
+            // years) is the DYNASTY/KEEPER shape, where Sleeper really does carry
+            // tradable future picks. It was also applied to redraft/chopped
+            // leagues, so the finder offered a redraft owner "2027 R2" — a pick
+            // that league does not have. Resolve the seasons that actually exist:
+            //   • pick trading switched off in Sleeper (settings.pick_trading 0)
+            //     ⇒ no picks, any format;
+            //   • seasonal formats ⇒ only this season's draft while it has not
+            //     happened yet, plus any season Sleeper's traded_picks ledger
+            //     actually lists — never an invented future year.
+            const pickYears = sleeperPickYears(leagueSeason, tradedPicks, currentDraftComplete);
+            return buildPicksByOwner(allRosters, tradedPicks, leagueSeason, tcDraftRounds, currentDraftComplete, pickYears);
+        }, [allRosters, tradedPicks, tcDraftRounds, currentDraftComplete, currentLeague, resolvedLeagueSkin?.type]);
+
+        // Does this league have ANY tradable pick? Drives the pick-only UI (the
+        // finder's Picks intent, Pick Capital readouts) so nothing implies picks
+        // a league doesn't have.
+        const leagueHasPicks = useMemo(() => Object.values(picksByOwner).some(list => (list || []).length > 0), [picksByOwner]);
+        useEffect(() => {
+            if (!leagueHasPicks && finderQuery.intent === 'picks') setFinderQuery(q => ({ ...q, intent: 'best' }));
+        }, [leagueHasPicks, finderQuery.intent]);
 
         // ── LAB one brain (ratified spec 2026-09-04) ────────────────────
         // The ledger loads here (moved above the assessments memo it feeds);
@@ -3623,9 +3678,9 @@
                         </div>
                     )}
 
-                    <div className="tc-owner-signal-grid">
+                    <div className="tc-owner-signal-grid" style={leagueHasPicks ? undefined : { gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
                         <div><span>Starter Coverage</span><strong>{starterCoverage}%</strong><em>{starterNeed ? `Watch ${starterNeed.pos}` : 'No urgent room'}</em></div>
-                        <div><span>Pick Capital</span><strong>{Math.round(pickCapital).toLocaleString()}</strong><em>{ownerPickAssets.length} picks · {earlyPickCount} early</em></div>
+                        {leagueHasPicks && <div><span>Pick Capital</span><strong>{Math.round(pickCapital).toLocaleString()}</strong><em>{ownerPickAssets.length} picks · {earlyPickCount} early</em></div>}
                         <div><span>Trade Bias</span><strong>{tradeBias}</strong><em>{profile.picksAcquired || 0} picks in / {profile.picksSold || 0} out</em></div>
                         <div><span>Timing</span><strong>{timingRead}</strong><em>{favoritePartnerName}{favoritePartner ? ` (${favoritePartner[1]})` : ''}</em></div>
                     </div>
@@ -4049,7 +4104,8 @@
                 { key: 'best', label: 'Best Moves' },
                 { key: 'help', label: 'Get Help' },
                 { key: 'shop', label: 'Shop Target' },
-                { key: 'picks', label: 'Picks' },
+                // Picks intent only where the league actually has tradable picks.
+                ...(leagueHasPicks ? [{ key: 'picks', label: 'Picks' }] : []),
             ];
             const intentLabel = (finderIntents.find(i => i.key === finderQuery.intent) || finderIntents[0]).label;
             const modeDescriptor = (finderDualBest && finderPoolOn) ? 'best moves league-wide (buy + sell)'
@@ -4062,7 +4118,7 @@
                 ? (finderPool.done ? 'league-wide scan' : `scanning ${finderPool.scanned}/${finderPool.total}…`)
                 : selectedPartner ? `vs ${selectedPartner.ownerName}` : 'no partner scored yet';
             const assetBrowserSorts = [
-                { key:'dhq', label:'DHQ' },
+                { key:'dhq', label: valueColLabel },
                 { key:'age', label:'Age' },
                 { key:'owner', label:'Owned Team' },
                 { key:'points', label:'Last FP' },
@@ -4224,7 +4280,7 @@
                     </div>
                     <div className="tc-dhq-breakdown">
                         <span>Players {totals.playerValue.toLocaleString()}</span>
-                        <span>Picks {totals.pickValue.toLocaleString()} / {totals.pickCount}</span>
+                        {leagueHasPicks && <span>Picks {totals.pickValue.toLocaleString()} / {totals.pickCount}</span>}
                         <span>FAAB ${faab || 0}</span>
                     </div>
                     <div className="tc-dhq-assets">
@@ -4279,7 +4335,7 @@
                                     else if (e.key === 'ArrowUp') { e.preventDefault(); setFinderTypeaheadIdx(i => Math.max(i - 1, 0)); }
                                     else if (e.key === 'Enter') { e.preventDefault(); selectFinderFocus(typeaheadFlat[finderTypeaheadIdx] || typeaheadFlat[0]); }
                                 }}
-                                placeholder="Focus: search players, picks, owners — yours and the league's"
+                                placeholder={leagueHasPicks ? "Focus: search players, picks, owners — yours and the league's" : "Focus: search players, owners — yours and the league's"}
                                 aria-label="Finder focus search"
                                 role="combobox"
                                 aria-expanded={typeaheadFlat.length > 0}
@@ -4378,7 +4434,7 @@
                                     <div className="tc-dhq-asset-row tc-dhq-asset-head" role="row">
                                         <span>Player</span>
                                         <span>Pos</span>
-                                        <span>DHQ</span>
+                                        <span>{valueColLabel}</span>
                                         <span>Age</span>
                                         <span>Current owned team</span>
                                         <span>Last FP</span>
@@ -4719,7 +4775,7 @@
                                 breakdown, likelihood bar) — same TcVerdictPanel the phone
                                 builder sheet mounts, restored here so the desktop builder
                                 shows the Psychological Tax Breakdown by default too. */}
-                            {_verdict.hasTrade && React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}
+                            {_verdict.hasTrade && React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE, leagueHasPicks, valueLabel: valueColLabel })}
                         </section>
                     )}
                     {/* League Teams inline — narrow/portrait only (rail is hidden <1281px). */}
@@ -5246,11 +5302,12 @@
                 { key: 'best', label: 'Best Moves' },
                 { key: 'help', label: 'Get Help' },
                 { key: 'shop', label: 'Shop Target' },
-                { key: 'picks', label: 'Picks' },
+                // Picks intent only where the league actually has tradable picks.
+                ...(leagueHasPicks ? [{ key: 'picks', label: 'Picks' }] : []),
             ];
             const intentLabel = (finderIntents.find(i => i.key === finderQuery.intent) || finderIntents[0]).label;
             const assetBrowserSorts = [
-                { key: 'dhq', label: 'DHQ' },
+                { key: 'dhq', label: valueColLabel },
                 { key: 'age', label: 'Age' },
                 { key: 'owner', label: 'Owned Team' },
                 { key: 'points', label: 'Last FP' },
@@ -5401,7 +5458,7 @@
                         tag={row.ownerLabel + (rookieBits.length ? ' · ' + rookieBits.join(' · ') : '')}
                         // "+" rides a fixed right slot (was the tag-line verdict:
                         // its x-position followed the owner-name length).
-                        slots={[{ label: 'DHQ', value: row.value.toLocaleString(), w: '44px' }, { label: 'AGE', value: row.age || '—', tone: 'mute' }, { label: '', value: phPlusChip(row), w: '36px' }]}
+                        slots={[{ label: valueColLabel, value: row.value.toLocaleString(), w: '44px' }, { label: 'AGE', value: row.age || '—', tone: 'mute' }, { label: '', value: phPlusChip(row), w: '36px' }]}
                         accent={focusPlayerPid != null && String(focusPlayerPid) === String(row.pid) ? 'gold' : undefined}
                         onClick={() => {
                             // Row tap = focus the finder on this asset (desktop selectAssetFocus).
@@ -5599,7 +5656,7 @@
                             )}
                             <input type="text" value={finderSearch}
                                 onChange={e => setFinderSearch(e.target.value)}
-                                placeholder="Search players, picks, owners"
+                                placeholder={leagueHasPicks ? "Search players, picks, owners" : "Search players, owners"}
                                 aria-label="Finder focus search"
                                 style={{ width: '100%', minHeight: '44px', border: '1px solid rgba(212,175,55,0.22)', borderRadius: '5px', background: 'rgba(255,255,255,0.045)', color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '16px', padding: '8px 10px' }} />
                             {phTypeGroups.map(group => (
@@ -5656,7 +5713,7 @@
                         </div>
                         {_verdict.hasTrade
                             ? <React.Fragment>
-                                {React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}
+                                {React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE, leagueHasPicks, valueLabel: valueColLabel })}
                                 {renderAlexVerdict()}
                             </React.Fragment>
                             : <div className="tc-dhq-empty">Add assets to either side — the verdict updates live.</div>}
