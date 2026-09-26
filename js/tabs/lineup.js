@@ -477,33 +477,61 @@ function LineupTab({
     // Defaults to DHQ's best lineup once it's in. App.DhqProj.assignSlots
     // places the chosen starters with the fewest moves from the lineup in the
     // slots; the slot-name walk below is the fallback.
+    // A slot the chosen lineup leaves unfilled keeps the player in it (when
+    // he isn't placed elsewhere): the optimizer never empties a slot, so a
+    // starter nobody can replace is left alone, not benched for "Empty".
+    function keepUnfilled(next) {
+        const placedSet = new Set(Object.values(next).filter(Boolean).map(String));
+        startingSlots.forEach(sl => {
+            const cur = workingAssign[sl.idx];
+            if (!next[sl.idx] && cur && !placedSet.has(String(cur))) { next[sl.idx] = String(cur); placedSet.add(String(cur)); }
+        });
+        return next;
+    }
     function optimalAssign(lineup) {
         const opt = lineup || (dhqOk ? dhqOptimal : result.optimal), DQ = window.App && window.App.DhqProj;
         if (DQ && DQ.assignSlots && opt && opt.starters) {
             const placed = DQ.assignSlots(opt.starters.map(s => String(s.pid)), startingSlots, workingAssign);
-            if (placed) return placed;
+            if (placed) return keepUnfilled(placed);
         }
         const byName = {};
         opt.starters.forEach(s => { (byName[s.slot] = byName[s.slot] || []).push(s.pid); });
         const next = {};
         startingSlots.forEach(sl => { const arr = byName[sl.slotName]; if (arr && arr.length) next[sl.idx] = String(arr.shift()); });
-        return next;
+        return keepUnfilled(next);
     }
     // Who actually changes between two assignments — by PLAYER, not by slot.
     // Two backs trading RB1/RB2, or a receiver sliding WR→FLEX to open a
     // slot, is a reshuffle, not a swap: the player is still starting. Only a
     // player who leaves the lineup is "out"; only one who enters is "in".
+    // Gains are on the numbers the lineup was chosen by: DHQ's once its
+    // check is in (so the moves add up to the "+X" the top box shows), the
+    // platform's while DHQ loads.
+    const diffPts = pid => {
+        if (!pid) return 0;
+        if (!dhqOk) return objPts(pid);
+        const d = window.App.DhqProj.get(pid);
+        return d ? Number(d.median) || 0 : 0;
+    };
     function lineupDiff(fromAssign, toAssign) {
         const fromSet = new Set(Object.values(fromAssign).filter(Boolean).map(String));
         const toSet = new Set(Object.values(toAssign).filter(Boolean).map(String));
-        const out = [...fromSet].filter(pid => !toSet.has(pid)).sort((a, b) => objPts(b) - objPts(a));
-        const inn = [...toSet].filter(pid => !fromSet.has(pid)).sort((a, b) => objPts(b) - objPts(a));
-        // Pair them up for the "X → Y" facts: best incoming against best outgoing.
+        const out = [...fromSet].filter(pid => !toSet.has(pid)).sort((a, b) => diffPts(b) - diffPts(a));
+        const inn = [...toSet].filter(pid => !fromSet.has(pid)).sort((a, b) => diffPts(b) - diffPts(a));
+        // Pair them up for the "X → Y" facts: first a player out and a player
+        // in who share a slot (so the list says what each row's "Replace
+        // with" note says), then best incoming against best outgoing.
         const slotOf = pid => startingSlots.find(sl => String(toAssign[sl.idx] || '') === pid) || null;
         const swaps = [];
-        for (let i = 0; i < Math.max(out.length, inn.length); i++) {
-            const cur = out[i] || '', opt = inn[i] || '';
-            swaps.push({ sl: slotOf(opt) || startingSlots.find(sl => String(fromAssign[sl.idx] || '') === cur) || startingSlots[0], cur, opt, gain: objPts(opt) - objPts(cur) });
+        const outSet = new Set(out), innSet = new Set(inn);
+        startingSlots.forEach(sl => {
+            const cur = String(fromAssign[sl.idx] || ''), opt = String(toAssign[sl.idx] || '');
+            if (cur && opt && outSet.has(cur) && innSet.has(opt)) { swaps.push({ sl, cur, opt, gain: diffPts(opt) - diffPts(cur) }); outSet.delete(cur); innSet.delete(opt); }
+        });
+        const outRest = out.filter(pid => outSet.has(pid)), innRest = inn.filter(pid => innSet.has(pid));
+        for (let i = 0; i < Math.max(outRest.length, innRest.length); i++) {
+            const cur = outRest[i] || '', opt = innRest[i] || '';
+            swaps.push({ sl: slotOf(opt) || startingSlots.find(sl => String(fromAssign[sl.idx] || '') === cur) || startingSlots[0], cur, opt, gain: diffPts(opt) - diffPts(cur) });
         }
         return { out, inn, swaps };
     }
@@ -517,7 +545,7 @@ function LineupTab({
     // DHQ's best lineup straight from App.DhqProj.optimalFor (same slot
     // solver; IR and taxi never start; every Sleeper position counts).
     function applyDhqOptimal() {
-        const dhqLineup = window.App && window.App.DhqProj ? window.App.DhqProj.optimalFor(myRoster, currentLeague && currentLeague.roster_positions) : null;
+        const dhqLineup = window.App && window.App.DhqProj ? window.App.DhqProj.optimalFor(myRoster, currentLeague && currentLeague.roster_positions, workingAssign) : null;
         if (!dhqLineup) return;
         const next = optimalAssign(dhqLineup);
         const d = lineupDiff(workingAssign, next);
@@ -795,6 +823,37 @@ function LineupTab({
             // count===0 = a roster-gap hole, not a bye week — never say "0 on bye".
             return Object.keys(c).map(p => c[p] > 1 ? c[p] + ' ' + p + 's' : p).join(', ') || (bw.count > 0 ? bw.count + ' on bye' : 'lineup hole');
         };
+        // NOW = head-to-head record over COMPLETED weeks, counted off the
+        // schedule rows below it, so the outlook, the schedule and the Luck
+        // Ledger agree. summary.record is the roster's standings record
+        // (roster.settings wins/losses), which in a league-median league
+        // (league_average_match) also counts one median game per week —
+        // The One read "NOW 1-3" beside a 1-1 schedule at week 3. When the
+        // two differ, the standings record rides along as a caption. Falls
+        // back to summary.record if any past matchup lacks a final score.
+        const nowRec = (() => {
+            const s = d && d.summary;
+            if (!s || !s.record) return null;
+            const past = ((d && d.weeks) || []).filter(w => w.isPast && !w.bye);
+            if (!past.length || past.some(w => !w.result)) return { main: s.record, alt: null };
+            const n = r => past.filter(w => w.result === r).length;
+            const t = n('T');
+            const h2h = n('W') + '-' + n('L') + (t ? '-' + t : '');
+            if (h2h === s.record) return { main: s.record, alt: null };
+            const median = !!(currentLeague && currentLeague.settings && Number(currentLeague.settings.league_average_match) > 0);
+            // The fallback proj record (no sim yet) is standings W/L + future
+            // H2H win odds; re-base it on the same H2H record so it counts
+            // one game per week like the schedule ("3.4-12.6" over 14 weeks).
+            const [sw, sl] = String(s.record).split('-').map(Number);
+            const r1 = x => Math.round(x * 10) / 10;
+            const proj = (s.projWins != null && s.projLosses != null && isFinite(sw) && isFinite(sl))
+                ? r1(n('W') + s.projWins - sw) + '-' + r1(n('L') + s.projLosses - sl) + (t ? '-' + t : '') : null;
+            return { main: h2h, alt: s.record + (median ? ' w/ median' : ' standings'), proj };
+        })();
+        const nowCell = nowRec ? (
+            <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>NOW</div><div style={{ fontWeight: 700, color: TEXT }}>{nowRec.main}</div>
+                {nowRec.alt ? <div style={{ fontSize: fz('0.6rem'), color: SILVER, marginTop: '1px', whiteSpace: 'nowrap' }}>{nowRec.alt}</div> : null}</div>
+        ) : null;
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: isNarrow ? 'static' : 'sticky', top: '16px' }}>
                 {/* Season outlook (or a pre-season placeholder when no schedule yet) */}
@@ -806,7 +865,7 @@ function LineupTab({
                         <React.Fragment>
                             {d && d.summary && d.summary.record ? (
                                 <div style={{ display: 'flex', gap: '16px', margin: '8px 0 10px' }}>
-                                    <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>NOW</div><div style={{ fontWeight: 700, color: TEXT }}>{d.summary.record}</div></div>
+                                    {nowCell}
                                 </div>
                             ) : <div style={{ height: '8px' }} />}
                             {GatedRow ? <GatedRow title="Season projection" sub="Projected record, points-for and weekly win odds" feature={STARTSIT_FEAT} /> : null}
@@ -821,13 +880,13 @@ function LineupTab({
                                     the sim models real scoring distributions and seeding, and two
                                     different projected records on one screen reads as a bug. */}
                                 <span style={{ fontSize: '1.5rem', fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
-                                    {simSummary ? simSummary.projWins + '-' + simSummary.projLosses : d.summary.projRecord}
+                                    {simSummary ? simSummary.projWins + '-' + simSummary.projLosses : (nowRec && nowRec.proj) || d.summary.projRecord}
                                 </span>
                                 <span style={{ fontSize: fz('0.64rem'), color: SILVER }}>proj record</span>
                                 {simSummary ? <span style={{ fontSize: fz('0.64rem'), color: GOLD, fontWeight: 700 }}>· {simSummary.playoffPct}% playoffs</span> : null}
                             </div>
                             <div style={{ display: 'flex', gap: '16px', marginTop: '9px' }}>
-                                <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>NOW</div><div style={{ fontWeight: 700, color: TEXT }}>{d.summary.record}</div></div>
+                                {nowCell}
                                 <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>PROJ PF</div><div style={{ fontWeight: 700, color: TEXT, fontVariantNumeric: 'tabular-nums' }}>{d.summary.projPF}</div></div>
                                 {d.summary.winPct != null ? <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>WIN%</div><div style={{ fontWeight: 700, color: TEXT }}>{d.summary.winPct}%</div></div> : null}
                             </div>
@@ -911,25 +970,66 @@ function LineupTab({
         // assignment walk as applyOptimal(), diffed against the working
         // lineup. Pro only (the optimizer layer).
         const swaps = recSwaps.slice();
-        let topSwap = null;
-        swaps.forEach(sw => { if (!topSwap || sw.gain > topSwap.gain) topSwap = sw; });
-        const swapFacts = topSwap
-            ? swaps.length + ' swap' + (swaps.length === 1 ? '' : 's') + ': ' + (topSwap.cur ? pmeta(topSwap.cur).name : 'Empty') + ' → ' + (topSwap.opt ? pmeta(topSwap.opt).name : 'Empty') + ' · ' + topSwap.sl.slotName.replace('_', ' ') + ' slot'
-            : 'No swaps — your best lineup is in';
+        // Nothing to apply when the best lineup starts the same players as
+        // yours (a reshuffle between slots changes no total): the card reads
+        // optimal and offers no Apply, whatever rounding says.
+        const phoneOptimal = isOptimal || !swaps.length;
+        // Every swap the count promises, one per line: "QB · Murray → Lawrence".
+        const SWAP_LINES = 4;
+        const swapFacts = swaps.length ? (
+            <React.Fragment>
+                <span style={{ display: 'block' }}>{swaps.length + ' swap' + (swaps.length === 1 ? '' : 's') + ':'}</span>
+                {swaps.slice(0, swaps.length > SWAP_LINES ? SWAP_LINES - 1 : SWAP_LINES).map((sw, i) => (
+                    <span key={i} style={{ display: 'block' }}>
+                        <span style={{ color: GOLD }}>{sw.sl.slotName.replace('_', ' ')}</span>{' · ' + (sw.cur ? pmeta(sw.cur).name : 'Empty') + ' → '}<span style={{ color: TEXT }}>{sw.opt ? pmeta(sw.opt).name : 'Empty'}</span>
+                    </span>
+                ))}
+                {swaps.length > SWAP_LINES ? <span style={{ display: 'block', opacity: 0.8 }}>{'+' + (swaps.length - SWAP_LINES + 1) + ' more — shown after Apply'}</span> : null}
+            </React.Fragment>
+        ) : 'No swaps — your best lineup is in';
 
         // Apply Optimal, then show the moves it made as a list (owner ask).
         // Capture the swaps BEFORE applying (post-apply they recompute to []).
         const applyOptimalWithSummary = () => {
             const moves = swaps.slice();
+            moves.src = dhqOk ? 'DHQ' : (window.App && window.App.DhqProj ? window.App.DhqProj.provLabel() : 'Sleeper');   // whose numbers the gains are on
             applyOptimal();
             if (moves.length) setAppliedMoves(moves);
         };
 
         // Matchup-grade verdict chip (Pro interpretation — mirrors the Mtch column gate).
         const gradeChip = (grade) => (
-            <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: '5px', border: '1px solid ' + gradeColor(grade), color: gradeColor(grade), whiteSpace: 'nowrap' }}>{grade}</span>
+            // inline-block + a set line height: an inline span's padding spills
+            // out of its line box, and the row's clipped verdict cell cut the
+            // chip's bottom border.
+            <span style={{ display: 'inline-block', lineHeight: 1.3, verticalAlign: 'middle', fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '2px 8px', borderRadius: '5px', border: '1px solid ' + gradeColor(grade), color: gradeColor(grade), whiteSpace: 'nowrap' }}>{grade}</span>
         );
 
+        // Row tag (slot · team · opponent · status) that wraps between its
+        // parts instead of cutting the last one ("SUPER FLEX · LAR · @…"):
+        // each part stays whole, a second line only when 375px runs out.
+        // Injury status → the short tag Sleeper itself shows (Q / D / OUT /
+        // IR…), same map as My Roster's phone board: a full "Questionable"
+        // pushed "IDP FLEX · LAR · @ DEN · Questionable" to 3–4 lines and
+        // the grade chip down with it (phone fit pass 2026-09-26).
+        const injShort = (st) => {
+            if (!st) return st;
+            const k = String(st).trim().toLowerCase();
+            const map = { questionable: 'Q', doubtful: 'D', out: 'OUT', probable: 'P', suspended: 'SUS', sus: 'SUS', 'injured reserve': 'IR', ir: 'IR', pup: 'PUP', na: 'NA', cov: 'COV' };
+            return map[k] || String(st).slice(0, 4);
+        };
+        const wrapTag = (parts) => {
+            const list = parts.filter(Boolean);
+            return (
+                <span style={{ display: 'block', whiteSpace: 'normal', lineHeight: 1.35 }}>
+                    {list.map((t, i) => (
+                        <React.Fragment key={i}>
+                            <span style={{ whiteSpace: 'nowrap' }}>{t + (i < list.length - 1 ? ' ·' : '')}</span>{i < list.length - 1 ? ' ' : null}
+                        </React.Fragment>
+                    ))}
+                </span>
+            );
+        };
         // P1 slot row — the shipped phone column-set (GRID above: slot /
         // player / proj / mtch) recast as a WR.AssetRow: slot label rides the
         // tag, PROJ is the stat slot, the Pro matchup grade is the verdict
@@ -946,15 +1046,32 @@ function LineupTab({
             const meta = pmeta(pid), proj = projOf(pid), pts = proj && proj.points;
             const status = (proj && proj.injuryStatus) || '';
             const opp = proj && proj.opponent;
-            const tag = [slotLabel, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, status || null].filter(Boolean).join(' · ');
             const atRisk = !!status || (proj && proj.available === false);
             const shade = starterShade(pid);
-            return <AssetRow key={sl.idx} pos={meta.pos || '?'} name={meta.name} tag={(shade === 'out' ? (replaceMap[String(pid)] ? replaceText(pid) + ' · ' : 'Replace · ') : shade === 'in' ? 'SWAPPED IN · ' : '') + tag}
+            const row = <AssetRow key={sl.idx} pos={meta.pos || '?'} name={meta.name}
+                tag={wrapTag([slotLabel, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, injShort(status) || null])}
                 slots={[{ label: (window.App && window.App.DhqProj ? window.App.DhqProj.provLabel() : 'Sleeper').toUpperCase(), value: pts ? (pts[objective] || 0).toFixed(1) : '—' }, { label: 'DHQ', value: window.App && window.App.DhqProj ? window.App.DhqProj.fmt(pid) : '—' }]}
                 verdict={pro ? gradeChip((proj && proj.matchupGrade) || '—') : null}
                 accent={open ? 'gold' : atRisk ? 'risk' : undefined}
-                style={shadeCardStyle(shade)}
+                style={shade ? { background: 'transparent' } : undefined}
                 onClick={() => setOpenSlot(open ? null : sl.idx)} />;
+            // The optimizer's note gets its own full-width line under the row
+            // (it used to prefix the tag, where a 375px row cut the
+            // replacement's name and pushed slot / team / opponent out of
+            // view). No named replacement, no note.
+            const note = shade === 'out' && replaceMap[String(pid)] ? replaceText(pid) : shade === 'in' ? 'Swapped in' : null;
+            if (!shade) return row;
+            return (
+                <div key={sl.idx} style={shadeCardStyle(shade)}>
+                    {row}
+                    {note ? (
+                        <div onClick={() => setOpenSlot(open ? null : sl.idx)}
+                            style={{ padding: '0 12px 9px 49px', marginTop: '-3px', cursor: 'pointer', fontFamily: MONO, fontSize: MICRO, fontWeight: 600, lineHeight: 1.4, color: shade === 'in' ? GREEN : TEXT, textTransform: shade === 'in' ? 'uppercase' : 'none', letterSpacing: shade === 'in' ? '0.06em' : 0 }}>
+                            {note}
+                        </div>
+                    ) : null}
+                </div>
+            );
         };
         // Bench / IR / taxi row (label = BN, IR or TAXI): both projections and form.
         const benchRow = (pid, label) => {
@@ -963,7 +1080,7 @@ function LineupTab({
             const status = (proj && proj.injuryStatus) || (playersData[pid] || {}).injury_status || '';
             const fs = formOf(pid);
             return <AssetRow key={label + pid} pos={meta.pos || '?'} name={meta.name}
-                tag={[label, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, status || null].filter(Boolean).join(' · ')}
+                tag={wrapTag([label, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, injShort(status) || null])}
                 slots={[{ label: (window.App && window.App.DhqProj ? window.App.DhqProj.provLabel() : 'Sleeper').toUpperCase(), value: pts ? (pts[objective] || 0).toFixed(1) : '—' }, { label: 'DHQ', value: window.App && window.App.DhqProj ? window.App.DhqProj.fmt(pid) : '—' }, { label: formWinLabel, value: fs ? fs.rollingPPG.toFixed(1) : '—', tone: 'mute' }]} />;
         };
 
@@ -1000,8 +1117,11 @@ function LineupTab({
             const opp = proj && proj.opponent;
             const fs = formOf(epid);
             const isRec = !isCur && openPid && (replaceMap[String(openPid)] || {}).pid === String(epid);
+            // "Best swap" (was "Recommended Replacement": one no-wrap tag
+            // part the 375px tag column hard-cut to "Recommended Repl").
+            // The green-outlined row already marks it as DHQ's pick.
             return <AssetRow key={epid} pos={meta.pos || '?'} name={meta.name}
-                tag={[isCur ? 'IN' : isRec ? 'Recommended Replacement' : null, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, status || null].filter(Boolean).join(' · ')}
+                tag={wrapTag([isCur ? 'IN' : isRec ? 'Best swap' : null, meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, injShort(status) || null])}
                 slots={[{ label: (window.App && window.App.DhqProj ? window.App.DhqProj.provLabel() : 'Sleeper').toUpperCase(), value: pts ? (pts[objective] || 0).toFixed(1) : '—' }, { label: 'DHQ', value: window.App && window.App.DhqProj ? window.App.DhqProj.fmt(epid) : '—' }, { label: formWinLabel, value: fs ? fs.rollingPPG.toFixed(1) : '—', tone: 'mute' }]}
                 verdict={pro ? gradeChip((proj && proj.matchupGrade) || '—') : null}
                 accent={isCur ? 'gold' : undefined}
@@ -1014,9 +1134,9 @@ function LineupTab({
         // context + raw working total, optimizer teaser at the existing gate.
         const heroEl = pro ? (
             <HeroCard kicker="Optimizer"
-                headline={isOptimal ? 'LINEUP OPTIMAL · ' + workingTotal.toFixed(1) + ' PROJ' : 'OPTIMAL LINEUP +' + benchPts.toFixed(1) + ' PROJ'}
+                headline={phoneOptimal ? 'LINEUP OPTIMAL · ' + workingTotal.toFixed(1) + ' PROJ' : 'OPTIMAL LINEUP +' + benchPts.toFixed(1) + ' PROJ'}
                 facts={isOptimal ? 'No changes needed · yours ' + workingTotal.toFixed(1) + ' = optimal ' + optimalTotal.toFixed(1) : swapFacts}
-                cta={isOptimal ? null : 'APPLY OPTIMAL'} onCta={applyOptimalWithSummary} />
+                cta={phoneOptimal ? null : 'APPLY OPTIMAL'} onCta={applyOptimalWithSummary} />
         ) : (
             <HeroCard kicker={'Week ' + result.week + ' · Game Day'}
                 headline={'YOUR LINEUP ' + workingTotal.toFixed(1) + ' PTS'}
@@ -1029,7 +1149,7 @@ function LineupTab({
             <div key={label} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '9px 11px' }}>
                 <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
                 <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.3rem', fontWeight: 700, color: valColor || TEXT, lineHeight: 1.15, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-                {sub ? <div style={{ fontFamily: MONO, fontSize: MICRO, color: SILVER, opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '110px' }}>{sub}</div> : null}
+                {sub ? <div style={{ fontFamily: MONO, fontSize: MICRO, color: SILVER, opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{sub}</div> : null}
             </div>
         );
         const goldDiv = (label) => (
@@ -1066,7 +1186,9 @@ function LineupTab({
                 {matchup ? (
                     <React.Fragment>
                         {goldDiv('Matchup · vs ' + matchup.oppName)}
-                        <div className="wr-kpi-strip">
+                        {/* A 2×2 grid, not the snapping strip: on a 390px screen the
+                            strip clipped the third tile and hid "Their ideal". */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                             {pro ? [
                                 kpiTile('Win%', matchup.fc.winPct == null ? '—' : matchup.fc.winPct + '%', matchup.fc.margin == null ? null : (matchup.fc.margin >= 0 ? '+' : '') + matchup.fc.margin.toFixed(1) + ' margin', winColor),
                                 kpiTile('You', matchup.fc.projMe.toFixed(1), 'working proj'),
@@ -1122,7 +1244,7 @@ function LineupTab({
                                 ))}
                             </div>
                             {openPid && openFs ? (
-                                <div style={{ fontSize: '0.74rem', color: SILVER, fontVariantNumeric: 'tabular-nums' }}>
+                                <div style={{ fontSize: 'var(--text-label, 12px)', color: SILVER, fontVariantNumeric: 'tabular-nums' }}>
                                     {pmeta(openPid).name} · {formWinLabel} <span style={{ color: TEXT, fontWeight: 700 }}>{openFs.rollingPPG.toFixed(1)}</span>
                                     {' · Hi '}<span style={{ color: GREEN, fontWeight: 700 }}>{openFs.high.toFixed(1)}</span>
                                     {' · Lo '}<span style={{ color: SILVER, fontWeight: 700 }}>{openFs.low.toFixed(1)}</span>
@@ -1130,10 +1252,10 @@ function LineupTab({
                             ) : null}
                             <div style={{ fontFamily: MONO, fontSize: MICRO, letterSpacing: '0.05em', color: SILVER, textTransform: 'uppercase' }}>Eligible for {openSl.slotName.replace('_', ' ')} — tap to start</div>
                             {openElig.map(pickRow)}
-                            {!openElig.length ? <div style={{ color: SILVER, fontSize: '0.74rem', opacity: 0.7 }}>No eligible bench players.</div> : null}
+                            {!openElig.length ? <div style={{ color: SILVER, fontSize: 'var(--text-label, 12px)', opacity: 0.7 }}>No eligible bench players.</div> : null}
                             {openPid ? (
                                 <div onClick={() => { setWorkingAssign(w => { const n = { ...w }; delete n[openSl.idx]; return n; }); setOpenSlot(null); }}
-                                    style={{ padding: '13px 0', cursor: 'pointer', color: RED, fontSize: '0.74rem', fontWeight: 600 }}>✕ Empty this slot</div>
+                                    style={{ display: 'flex', alignItems: 'center', minHeight: '44px', padding: '0 2px', cursor: 'pointer', color: RED, fontSize: 'var(--text-label, 12px)', fontWeight: 600 }}>✕ Empty this slot</div>
                             ) : null}
                         </div>
                     ) : null}
@@ -1144,11 +1266,11 @@ function LineupTab({
                 <Sheet open={applyOpen} onClose={() => setApplyOpen(false)} title="Working lineup" desktop={null}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '10px 14px 4px' }}>
                         <div style={{ fontSize: '0.82rem', color: TEXT }}>
-                            {pro ? (isOptimal ? <span style={{ color: GREEN, fontWeight: 700 }}>Lineup is optimal</span> : <span style={{ color: GOLD, fontWeight: 700 }}>{benchPts.toFixed(1)} pts below optimal</span>) : <span style={{ fontWeight: 700 }}>Your lineup {workingTotal.toFixed(1)} pts</span>}
+                            {pro ? (phoneOptimal ? <span style={{ color: GREEN, fontWeight: 700 }}>Lineup is optimal</span> : <span style={{ color: GOLD, fontWeight: 700 }}>{benchPts.toFixed(1)} pts below optimal</span>) : <span style={{ fontWeight: 700 }}>Your lineup {workingTotal.toFixed(1)} pts</span>}
                             {pro ? <span style={{ color: SILVER, fontSize: '0.76rem' }}> · yours {workingTotal.toFixed(1)} · optimal {optimalTotal.toFixed(1)}</span> : null}
                         </div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            {pro ? <button onClick={applyOptimal} style={{ ...actBtn, color: GOLD, borderColor: 'var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.12)' }}>Apply Optimal</button> : null}
+                            {pro && !phoneOptimal ? <button onClick={applyOptimal} style={{ ...actBtn, color: GOLD, borderColor: 'var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.12)' }}>Apply Optimal</button> : null}
                             <button onClick={() => { setWorkingAssign(currentAssign); setOpenSlot(null); setSwapShade(null); }} style={actBtn}>Reset</button>
                         </div>
                         {renderMflPush()}
@@ -1160,9 +1282,12 @@ function LineupTab({
                 <Sheet open={!!appliedMoves} onClose={() => setAppliedMoves(null)} title={(appliedMoves ? appliedMoves.length : 0) + ' move' + ((appliedMoves && appliedMoves.length === 1) ? '' : 's') + ' applied'} desktop={null}>
                     {appliedMoves ? (() => {
                         const totalGain = appliedMoves.reduce((s, m) => s + (m.gain || 0), 0);
+                        // Signed, so a move that costs points on these numbers reads −2.9, not +-2.9.
+                        const signed = v => { const r = Math.round((v || 0) * 10) / 10; return (r > 0 ? '+' : r < 0 ? '\u2212' : '') + Math.abs(r).toFixed(1); };
+                        const signColor = v => (Math.round((v || 0) * 10) / 10 > 0 ? GREEN : Math.round((v || 0) * 10) / 10 < 0 ? RED : SILVER);
                         return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 14px 4px' }}>
-                            <div style={{ fontSize: '0.8rem', color: SILVER, lineHeight: 1.45 }}>Lineup set to optimal — <span style={{ color: GREEN, fontWeight: 700 }}>+{totalGain.toFixed(1)}</span> proj. Here's what changed:</div>
+                            <div style={{ fontSize: '0.8rem', color: SILVER, lineHeight: 1.45 }}>Lineup set to optimal — <span style={{ color: signColor(totalGain), fontWeight: 700 }}>{signed(totalGain)}</span> proj{appliedMoves.src ? ' (' + appliedMoves.src + ')' : ''}. Here's what changed:</div>
                             {appliedMoves.map((m, i) => {
                                 const outN = m.cur ? pmeta(m.cur).name : 'Empty';
                                 const inN = m.opt ? pmeta(m.opt).name : 'Empty';
@@ -1174,7 +1299,7 @@ function LineupTab({
                                             <span style={{ color: SILVER, flexShrink: 0 }}>→</span>
                                             <span style={{ color: TEXT, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{inN}</span>
                                         </span>
-                                        <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: GREEN, whiteSpace: 'nowrap' }}>+{(m.gain || 0).toFixed(1)}</span>
+                                        <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: signColor(m.gain), whiteSpace: 'nowrap' }}>{signed(m.gain)}</span>
                                     </div>
                                 );
                             })}
@@ -1188,8 +1313,8 @@ function LineupTab({
                     the platform lineup. APPLY = the same applyOptimal path
                     (Pro); bar tap opens the apply/push sheet. */}
                 <ActionBar visible={dirty && phoneView === 'week'} label="WORKING LINEUP"
-                    value={pro ? (isOptimal ? workingTotal.toFixed(1) + ' PROJ' : '+' + benchPts.toFixed(1)) : workingTotal.toFixed(1) + ' PROJ'}
-                    tone="good" actionLabel="APPLY"
+                    value={pro ? (phoneOptimal ? workingTotal.toFixed(1) + ' PROJ' : '+' + benchPts.toFixed(1)) : workingTotal.toFixed(1) + ' PROJ'}
+                    tone="good" actionLabel={pro && phoneOptimal ? null : 'APPLY'}
                     onAction={pro ? applyOptimalWithSummary : () => setApplyOpen(true)}
                     onOpen={() => setApplyOpen(true)} />
             </div>

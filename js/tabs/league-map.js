@@ -170,7 +170,7 @@ function ReportSubView({
       <div>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
           <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.125rem', fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.06em' }}>CUSTOM REPORTS</div>
-          <button onClick={handleNewReport} style={{ ...sortBtnStyle(false), marginLeft: 'auto', fontSize: '0.74rem' }}>+ New Report</button>
+          <button onClick={handleNewReport} style={{ ...sortBtnStyle(false), marginLeft: 'auto', fontSize: '0.74rem', ...(_phone ? { minHeight: '38px', padding: '6px 14px' } : null) }}>+ New Report</button>
         </div>
         {reports.length === 0 && <div style={{ color: 'var(--silver)', fontSize: '0.82rem', padding: '24px', textAlign: 'center' }}>No reports yet. Create one to get started.</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -189,7 +189,7 @@ function ReportSubView({
                   {r.groupBy && <span> {'\u00B7'} grouped by {r.groupBy}</span>}
                 </div>
               </div>
-              <button onClick={(e) => { e.stopPropagation(); handleEditReport(r); }} style={{ background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', padding: '3px 8px', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'var(--font-body)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Edit</button>
+              <button onClick={(e) => { e.stopPropagation(); handleEditReport(r); }} style={{ background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', padding: '3px 8px', color: 'var(--silver)', cursor: 'pointer', fontSize: _phone ? 'var(--text-micro, 11px)' : '0.7rem', fontFamily: 'var(--font-body)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Edit</button>
               {!r.id.startsWith('default_') && <button onClick={(e) => { e.stopPropagation(); handleDeleteReport(r.id); }} style={{ background: 'none', border: '1px solid rgba(231,76,60,0.3)', borderRadius: '4px', padding: '3px 8px', color: 'var(--bad)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'var(--font-body)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Del</button>}
             </div>
           ))}
@@ -2304,6 +2304,7 @@ function LeagueMapTab({
                             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
                                 <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--white)', fontWeight: 700, letterSpacing: '0.04em' }}>Customize Columns</div>
                                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58 }}>{orderKeys.length + 1} of {ALL_PLAYERS_COLUMNS.filter(c => isPro || c.key !== 'tier').length} active</div>
+                                {_phone && <div style={{ flexBasis: '100%', order: 3, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.4 }}>Phone rows show the first 3 columns of your order (default board: DHQ · PPG · DHQ Wk).</div>}
                                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                     <button onClick={() => setAllPlayersCols(ALL_PLAYERS_COLUMNS.filter(c => isPro || c.key !== 'tier').map(c => c.key))} style={smallBtn(false)}>All Fields</button>
                                     <button onClick={() => setAllPlayersCols(ALL_PLAYERS_DEFAULT_VISIBLE.slice())} style={smallBtn(true)}>Reset Default</button>
@@ -2366,6 +2367,57 @@ function LeagueMapTab({
                     // verdicts — the dossier gates internally). Early return —
                     // the desktop/tablet ledger below is untouched.
                     if (_phone) {
+                        // Phone slots follow Customize / saved views: the untouched
+                        // default board shows DHQ · PPG · weekly DHQ Proj (age already
+                        // rides the tag line); a customized order shows its first 3
+                        // columns, valued from the SAME helpers renderCell uses.
+                        const _dhqProj = window.App && window.App.DhqProj;
+                        const _phDefault = ['dhq', 'ppg', 'proj'];
+                        const _phActive = allPlayersCols.filter(k => k !== 'name' && ALL_PLAYERS_COL_BY_KEY[k] && (isPro || k !== 'tier'));
+                        const _isStockBoard = [ALL_PLAYERS_DEFAULT_VISIBLE].concat(ALL_PLAYERS_PREV_DEFAULTS).some(d => d.filter(k => k !== 'name').join(',') === _phActive.join(','));
+                        const phoneSlotKeys = (_isStockBoard || !_phActive.length) ? _phDefault : _phActive.slice(0, 3);
+                        const dash = '—';
+                        // Free-text values (school, owner…) cap at 64px so a custom
+                        // slot can't shove the name off a 375 row.
+                        const clip = (v) => (v && v !== dash) ? <span title={String(v)} style={{ display: 'inline-block', maxWidth: '64px', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'bottom' }}>{v}</span> : dash;
+                        const phoneSlot = (key, x, ppgShown, ppgLbl) => {
+                            switch (key) {
+                                case 'dhq': return { label: 'DHQ', value: x.dhq > 0 ? x.dhq.toLocaleString() : dash, tone: x.dhq >= 7000 ? 'good' : x.dhq >= 2000 ? undefined : 'mute' };
+                                case 'ppg': return { label: ppgLbl, value: ppgShown > 0 ? ppgShown : dash };
+                                case 'proj': {
+                                    // Same weekly figure the desktop Proj cell prints in gold.
+                                    if (_dhqProj) { const f = _dhqProj.fmt(x.pid); return { label: 'DHQ Wk', value: f || dash, tone: 'gold' }; }
+                                    const v = projOf(x); return { label: 'Proj', value: v != null && v > 0 ? v : dash };
+                                }
+                                case 'age': return { label: 'Age', value: x.age || dash, tone: 'mute' };
+                                case 'yoe': return { label: 'Yrs', value: x.p.years_exp != null ? x.p.years_exp : dash, tone: 'mute' };
+                                case 'points': { const v = ptsOf(x); return { label: 'Pts', value: v > 0 ? v : dash }; }
+                                case 'gp': { const v = gpOf(x); return { label: 'GP', value: v > 0 ? v : dash }; }
+                                case 'hi': { const f = fsOf(x); return { label: 'Hi', value: f ? f.high.toFixed(1) : dash }; }
+                                case 'lo': { const f = fsOf(x); return { label: 'Lo', value: f ? f.low.toFixed(1) : dash }; }
+                                case 'prev': { const v = prevPpgOf(x); return { label: 'Last', value: v > 0 ? v : dash }; }
+                                case 'adp': { const a = adpOf(x); return { label: 'ADP', value: a != null ? a.toFixed(1) : dash }; }
+                                case 'trend': { const t = trendOf(x); return { label: 'Trend', value: t ? (t > 0 ? '+' : '') + t + '%' : dash, tone: t > 0 ? 'good' : t < 0 ? 'bad' : 'mute' }; }
+                                case 'durability': { const g = durGpOf(x) || 0; return { label: 'Dur', value: g > 0 ? g + '/17' : dash }; }
+                                case 'sos': { const s = sosOf(x); return { label: 'SOS', value: s != null ? s : dash }; }
+                                case 'peakPhase': return { label: 'Peak', value: peakPhaseOf(x) };
+                                case 'peak':
+                                case 'peakYrs': { const pw = window.App?.peakWindows?.[x.pos]; return { label: 'Pk Yrs', value: pw && x.age ? Math.max(0, pw[1] - x.age) : dash }; }
+                                case 'posRankLg': return { label: 'Lg #', value: x.isPool ? dash : (lgRankByPid[x.pid] || dash) };
+                                case 'posRankNfl': return { label: 'NFL #', value: nflRankOf(x) || dash };
+                                case 'starterSzn': { const m = metaOf(x); return { label: 'Starts', value: m && m.starterSeasons != null ? m.starterSeasons : dash }; }
+                                case 'college': return { label: 'School', value: clip(x.p.college), tone: 'mute' };
+                                case 'height': return { label: 'Ht', value: fmtHeight(x.p.height) || dash };
+                                case 'weight': return { label: 'Wt', value: x.p.weight || dash };
+                                case 'depthChart': return { label: 'Depth', value: x.p.depth_chart_order != null ? x.pos + (x.p.depth_chart_order + 1) : ((!x.p.team || x.p.team === 'FA') ? 'FA' : dash) };
+                                case 'rkSlot': { const d = draftCapFor(x.pid); return { label: 'Draft', value: d ? (d.round > 0 ? 'R' + d.round + ' #' + d.overall : 'UDFA') : dash }; }
+                                case 'rkTeam': { const d = draftCapFor(x.pid); return { label: 'Drafted', value: clip(d && d.team) }; }
+                                case 'tier': { const t = window.App?.LI?.teamHealth?.[x.rosterId]?.tier || ''; return { label: 'Tier', value: clip(t) }; }
+                                case 'owner': return { label: 'Owner', value: x.isMe ? 'You' : clip(x.teamName) };
+                                case 'acq': { const acq = x.isPool ? { method: 'Draft Pool' } : getAcquisitionInfo(x.pid, x.rosterId); return { label: 'Acq', value: clip(acq?.method || (acq?.type === 'draft' ? 'Drafted' : acq?.type === 'trade' ? 'Traded' : acq?.type === 'add' ? 'FA' : dash)) }; }
+                                default: return { label: (ALL_PLAYERS_COL_BY_KEY[key]?.label || key), value: dash };
+                            }
+                        };
                         const phoneRows = filtered.map(x => {
                             const isExpanded = String(allPlayersExpandedPid) === String(x.pid);
                             let ppgShown = x.ppg, ppgLbl = 'PPG';
@@ -2374,16 +2426,19 @@ function LeagueMapTab({
                                 const rolling = typeof window.App?.computeRollingPPG === 'function' ? window.App.computeRollingPPG(x.pid, n) : 0;
                                 if (rolling > 0) { ppgShown = rolling; ppgLbl = 'L' + n; } else { ppgLbl = 'SZN'; }
                             }
+                            // Your rows lead with a gold "You" and let the team name
+                            // ellipsize after it — a trailing " (You)" was the first
+                            // thing the tag's ellipsis cut ("skjjcruz (…").
+                            const tagHead = (x.p.team || 'FA') + (x.age ? ' · ' + x.age : '') + ' · ';
+                            const tag = x.isMe
+                                ? <span style={{ display: 'flex', minWidth: 0 }}><span style={{ flexShrink: 0, whiteSpace: 'pre' }}>{tagHead}</span><span style={{ flexShrink: 0, color: 'var(--gold)', fontWeight: 700 }}>You</span><span style={{ whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{' · ' + x.teamName}</span></span>
+                                : tagHead + x.teamName;
                             return React.createElement(window.WR.AssetRow, {
                                 key: x.pid,
                                 pos: x.pos,
                                 name: x.p.full_name || ((x.p.first_name || '') + ' ' + (x.p.last_name || '')).trim(),
-                                tag: (x.p.team || 'FA') + (x.age ? ' · ' + x.age : '') + ' · ' + x.teamName + (x.isMe ? ' (You)' : ''),
-                                slots: [
-                                    { label: 'DHQ', value: x.dhq > 0 ? x.dhq.toLocaleString() : '—', tone: x.dhq >= 7000 ? 'good' : x.dhq >= 2000 ? undefined : 'mute' },
-                                    { label: ppgLbl, value: ppgShown > 0 ? ppgShown : '—' },
-                                    { label: 'Age', value: x.age || '—', tone: 'mute' },
-                                ],
+                                tag,
+                                slots: phoneSlotKeys.map(k => phoneSlot(k, x, ppgShown, ppgLbl)),
                                 accent: x.isMe ? 'gold' : undefined,
                                 expanded: isExpanded,
                                 onClick: () => setAllPlayersExpandedPid(prev => String(prev) === String(x.pid) ? null : x.pid),
@@ -2744,12 +2799,16 @@ function LeagueMapTab({
                         <div className="analytics-evidence-meta">{filteredRows.length.toLocaleString()} picks</div>
                     </div>
                 )}
-                <div className="analytics-filter-row">
-                    <select value={pickYearFilter} onChange={e => setPickYearFilter(e.target.value)}>
+                {/* Phone: an even 2-up grid (two selects, then the four status
+                    chips 2×2) at the 11px floor — the flex wrap left ragged rows
+                    of 9.7px chips. */}
+                <div className="analytics-filter-row" style={_phone ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' } : undefined}>
+                    {/* Phone: 38px tap targets on the filter row (CSS default ~26px). */}
+                    <select value={pickYearFilter} onChange={e => setPickYearFilter(e.target.value)} style={_phone ? { minHeight: '38px', minWidth: 0, width: '100%' } : undefined}>
                         <option value="all">All Years</option>
                         {years.map(yr => <option key={yr} value={yr}>{yr}</option>)}
                     </select>
-                    <select value={pickOwnerFilter} onChange={e => setPickOwnerFilter(e.target.value)}>
+                    <select value={pickOwnerFilter} onChange={e => setPickOwnerFilter(e.target.value)} style={_phone ? { minHeight: '38px', maxWidth: '100%', minWidth: 0, width: '100%' } : undefined}>
                         <option value="all">All Owners</option>
                         {(currentLeague.rosters || []).map(r => <option key={r.roster_id} value={r.roster_id}>{getOwnerName(r.roster_id)}</option>)}
                     </select>
@@ -2762,7 +2821,7 @@ function LeagueMapTab({
                     // 'Moved' (league-wide traded picks) is dropped on phone (owner
                     // ask) — Acquired/Traded Away cover the decisions that matter.
                     ].filter(([key]) => !_phone || key !== 'traded').map(([key, label]) => (
-                        <button key={key} onClick={() => setPickStatusFilter(key)} className={pickStatusFilter === key ? 'is-active' : ''}>{label}</button>
+                        <button key={key} onClick={() => setPickStatusFilter(key)} className={pickStatusFilter === key ? 'is-active' : ''} style={_phone ? { minHeight: '38px', padding: '6px 8px', fontSize: 'var(--text-micro, 11px)', whiteSpace: 'nowrap', minWidth: 0 } : undefined}>{label}</button>
                     ))}
                 </div>
                 {_analyticsEmbed && !_phone && (

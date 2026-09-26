@@ -218,13 +218,15 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     );
 
     // ── Pill selector ─────────────────────────────────────────────────────────
-    const PillGroup = ({ options, value, onChange, fullWidth }) => (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+    // cols (phone): an even N-up grid instead of a ragged flex wrap.
+    const PillGroup = ({ options, value, onChange, fullWidth, cols }) => (
+        <div style={cols ? { display: 'grid', gridTemplateColumns: 'repeat(' + cols + ', minmax(0, 1fr))', gap: 6 } : { display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {options.map(opt => {
                 const active = value === opt.value;
                 return (
                     <button key={opt.value} onClick={() => onChange(opt.value)} style={{
-                        padding: '12px 16px',
+                        padding: cols ? '6px 4px' : '12px 16px',
+                        minWidth: 0,
                         minHeight: 44,
                         border: active ? '1px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.12))',
                         borderRadius: 6,
@@ -409,9 +411,11 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Trade Acceptance Floor (always visible — drives the Trade Center) ── */}
             <div style={styles.card}>
                 <SectionHeader title="Trade Acceptance Floor" sub="The minimum acceptance an offer must clear for the Trade Center to call it Playable. Lower = chase more long-shot deals; higher = only safe, fair offers. Seeded by your aggression — drag to fine-tune." />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap', ...(_phone ? { rowGap: 4 } : null) }}>
                     <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '2.1rem', fontWeight: 700, color: 'var(--gold)', minWidth: 90, lineHeight: 1 }}>{draft.acceptanceFloor}%</div>
-                    <div style={{ flex: 1, minWidth: 220 }}>
+                    {/* Phone: slider takes its own full-width row so the two end
+                        labels have room (they ran together beside the number). */}
+                    <div style={{ flex: 1, minWidth: _phone ? '100%' : 220 }}>
                         <input
                             type="range" min="55" max="90" step="1"
                             value={draft.acceptanceFloor}
@@ -419,7 +423,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                             aria-label="Trade acceptance floor"
                             style={{ width: '100%', accentColor: 'var(--gold)', cursor: 'pointer', height: 32 }}
                         />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', fontFamily: 'var(--font-body)', marginTop: 2 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', fontFamily: 'var(--font-body)', marginTop: 2, ...(_phone ? { gap: 12 } : null) }}>
                             <span>55% · chase long-shots</span>
                             <span>only safe deals · 90%</span>
                         </div>
@@ -427,10 +431,18 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                 </div>
                 <div style={{ marginTop: 14 }}>
                     <div style={styles.subLabel}>Quick set</div>
+                    {/* Phone: three presets wrapped 2 + 1 at uneven widths — an
+                        even 3-up grid with the name over its % instead. */}
                     <PillGroup
-                        options={[{ value: 82, label: 'Conservative · 82%' }, { value: 75, label: 'Balanced · 75%' }, { value: 58, label: 'Aggressive · 58%' }]}
+                        options={[['Conservative', 82], ['Balanced', 75], ['Aggressive', 58]].map(([n, v]) => ({
+                            value: v,
+                            label: _phone
+                                ? <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.2 }}><span style={{ fontSize: 'var(--text-label)', whiteSpace: 'nowrap' }}>{n}</span><span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700 }}>{v}%</span></span>
+                                : n + ' · ' + v + '%',
+                        }))}
                         value={draft.acceptanceFloor}
                         onChange={v => set('acceptanceFloor', v)}
+                        cols={_phone ? 3 : undefined}
                     />
                 </div>
             </div>

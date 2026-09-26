@@ -2437,6 +2437,30 @@ WRShared.preloadMany(WR_SHARED_FILES);
            its inline left:80px was desktop-sidebar clearance. */
         .wr-corner-toast { bottom:calc(12px + var(--wr-bottom-inset)) !important; right:12px !important; }
         .wr-dhq-bubble { bottom:calc(12px + var(--wr-bottom-inset)) !important; left:12px !important; right:12px !important; min-width:0 !important; }
+        /* DHQ bubble → slim progress strip (phone audit B): the desktop card
+           covered ~140px of content for the whole build and sat on z 300,
+           ABOVE bottom sheets (200). Here it drops under the sheet/action-bar
+           layers, loses the long explainer, and gains a × (JSX renders it
+           display:none; shown only here). Title + step + bar are kept. */
+        .wr-dhq-bubble { bottom:calc(8px + var(--wr-bottom-inset)) !important; z-index:140 !important; padding:7px 6px 8px 12px !important; border-width:1px !important; border-radius:var(--card-radius-sm, 8px) !important; box-shadow:0 4px 16px rgba(0,0,0,0.5) !important; }
+        .wr-dhq-bubble-head { gap:8px !important; margin-bottom:6px !important; }
+        .wr-dhq-bubble-spin { width:14px !important; height:14px !important; flex:none; }
+        .wr-dhq-bubble-text { flex:1 1 auto; min-width:0; }
+        .wr-dhq-bubble-title { font-size:var(--text-label, 0.75rem) !important; line-height:1.25; }
+        .wr-dhq-bubble-step { font-size:var(--text-label, 0.75rem) !important; line-height:1.25; margin-top:1px !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .wr-dhq-bubble-note { display:none !important; }
+        .wr-dhq-bubble-close { display:inline-flex !important; align-items:center; justify-content:center; flex:none; width:36px; height:36px; margin:-6px 0 -6px 0; padding:0; background:none; border:0; color:var(--silver); opacity:0.7; font-size:0.9rem; cursor:pointer; }
+
+        /* Build tag (#dhq-build-tag, end of <body>): its desktop bottom-right
+           corner lands on the dock's last label and on sheet footers here.
+           Ride just above the dock instead. The league shell's .app-container
+           is its own z:1 stacking context (sheets, strip and toasts all live
+           inside it), so no z-index can slot the tag beneath them — step it
+           aside instead while any bottom-anchored overlay is up. */
+        body:has(.wr-phone-dock) #dhq-build-tag { bottom:calc(var(--wr-bottom-inset) + 2px) !important; right:4px !important; }
+        /* The franchise board's bottom bar (no league dock): same lift, clear of the home indicator. */
+        body:has(.hub-bottombar):not(:has(.wr-phone-dock)) #dhq-build-tag { bottom:calc(var(--sab, 0px) + 68px) !important; right:4px !important; }
+        body:has(.wr-sheet-backdrop, [aria-modal="true"], .wr-alex-panel, .wr-dhq-bubble, .wr-phone-actionbar, .wr-corner-toast, .wr-settings-modal) #dhq-build-tag { visibility:hidden !important; }
 
         /* iOS zoom-on-focus guard: Safari zooms any focused input under
            16px. Phone tier only (plan D7). */
@@ -2536,6 +2560,19 @@ WRShared.preloadMany(WR_SHARED_FILES);
            token in JS; the class-styled roots normalize here. */
         .fa-page { padding-left: var(--wr-phone-gutter, 12px) !important; padding-right: var(--wr-phone-gutter, 12px) !important; }
         .draft-cc-scope { padding-left: var(--wr-phone-gutter, 12px) !important; padding-right: var(--wr-phone-gutter, 12px) !important; }
+        /* GM's Office (+ its Strategy sub-view) and Trophy Room / Calendar
+           roots shipped with no side padding — first letters sat on the
+           screen edge. Same gutter as Draft / Analytics. */
+        .gm-office-shell, .trophy-room-root { padding-left: var(--wr-phone-gutter, 12px) !important; padding-right: var(--wr-phone-gutter, 12px) !important; box-sizing: border-box; }
+        /* Trophy Room › All-Time Leaders snap strip: tiles sized so ~2.4 fit
+           — the third tile clearly peeks (reads as "swipe") instead of being
+           shaved a few px short of whole. */
+        .wr-kpi-strip.tr-leaders-strip > * { flex: 0 0 calc((100% - 16px) / 2.4); min-width: 0; box-sizing: border-box; }
+        /* Same peek for the other swipe strips that showed only a sliver of
+           the next tile (read as cut, not "swipe"): GM's Office KPIs and the
+           Trophy Room strips (All-Time stats banner, My Trophies stats,
+           Chronicles RS record). */
+        .wr-kpi-strip.gmoff-kpis > *, .trophy-room-root .wr-kpi-strip > * { flex: 0 0 calc((100% - 16px) / 2.4); min-width: 0; box-sizing: border-box; }
 
         /* dvh audit (plan Phase 3): full-height overlay tracks the visual
            viewport so Safari's collapsing URL bar can't clip the bottom.
@@ -2947,8 +2984,8 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/components.js?v=20260902voice1"></script>
 <!-- 2b. Unified Player Card (SI-2) — window.WR.openPlayerCard — replaces CDN modal -->
 <!-- Shared visual primitives (WR.Card / Badge / Chip / ConfChip / DeltaLine / Kpi / InsightCard) -->
-<script type="text/babel" src="js/components/wr-primitives.js?v=20260824chip1"></script>
-    <script type="text/babel" src="js/components/player-card.js?v=20260926b133a"></script>
+<script type="text/babel" src="js/components/wr-primitives.js?v=20260926b134a"></script>
+    <script type="text/babel" src="js/components/player-card.js?v=20260926b134a"></script>
 <!-- 2c. Saved List Views (SI-1) — window.WR.SavedViews — shared across list surfaces -->
 <script type="text/babel" src="js/shared/saved-views.js?v=20260427font1"></script>
 <!-- 2c-2. Saved Alex Reports — window.WR.SavedReports — local cache + ai_analysis server sync -->
@@ -2958,7 +2995,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/startsit-engine.js?v=20260926b133a"></script>
 <script src="js/shared/weekly-proj.js?v=20260926b133a"></script>
 <script src="js/shared/sleeper-proj.js?v=20260917truth3a"></script>
-<script src="js/shared/dhq-proj.js?v=20260926b133a"></script>
+<script src="js/shared/dhq-proj.js?v=20260926b134a"></script>
 <script src="js/shared/nfl-context.js?v=20260824wx2"></script>
 <script src="js/shared/matchup.js?v=20260701gdc1"></script>
 <!-- Season Odds engines (lab port 2026-08-16): plain Node-testable scripts —
@@ -3017,14 +3054,14 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/qb-trade-rules.js?v=20260902qbr2"></script>
 <script src="js/shared/elite-skill-trade-rules.js?v=20260902esr1"></script>
 <script type="text/babel" src="js/settings.js?v=20260902intel1"></script>
-<script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20260906b106a"></script>
+<script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20260926b134a"></script>
 <script type="text/babel" src="js/post-draft.js?v=20260907b112a"></script>
-<script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260926b133a"></script>
+<script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260926b134a"></script>
 <!-- Season Odds panel loads with Game Day (owner ruling 2026-07-30) — must
      precede lineup.js in the group so window.WrSeasonOdds exists on first render. -->
-<script type="text/babel" data-wr-defer="lineup" src="js/components/season-odds-panel.js?v=20260926b133a"></script>
-<script type="text/babel" src="js/components/chop-block-panel.js?v=20260926b133a"></script>
-<script type="text/babel" data-wr-defer="lineup" src="js/tabs/lineup.js?v=20260926b133a"></script>
+<script type="text/babel" data-wr-defer="lineup" src="js/components/season-odds-panel.js?v=20260926b134a"></script>
+<script type="text/babel" src="js/components/chop-block-panel.js?v=20260926b134a"></script>
+<script type="text/babel" data-wr-defer="lineup" src="js/tabs/lineup.js?v=20260926b134a"></script>
 <!-- 4b. Draft Command Center modules — group "draft" (~28 scripts, ~1.26MB),
      loaded on first Draft-tab open. -->
 <script type="text/babel" data-wr-defer="draft" src="js/draft/styles.js?v=20260427font1"></script>
@@ -3053,11 +3090,11 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" data-wr-defer="draft" src="js/draft/live-sync.js?v=20260516p6redo"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/live-decision-engine.js?v=20260601draftux"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft/analyst-mock.js?v=20260531voice1"></script>
-<script type="text/babel" data-wr-defer="draft" src="js/draft/command-center.js?v=20260828jan2"></script>
+<script type="text/babel" data-wr-defer="draft" src="js/draft/command-center.js?v=20260926g2a"></script>
 <script type="text/babel" data-wr-defer="draft" src="js/draft-room.js?v=20260907b116a"></script>
 <!-- 5. League detail tab components (extracted from league-detail.js) -->
 <!-- v2 widget modules (load before dashboard.js which consumes them) -->
-<script type="text/babel" src="js/widgets/roster-pulse.js?v=20260613gm1"></script>
+<script type="text/babel" src="js/widgets/roster-pulse.js?v=20260926b134a"></script>
 <script type="text/babel" src="js/widgets/lineup-check.js?v=20260926b133a"></script>
 <script type="text/babel" src="js/widgets/window-forecast.js?v=20260902voice1"></script>
 <script type="text/babel" src="js/widgets/gap-plan.js?v=20260902onemsg1"></script>
@@ -3070,24 +3107,24 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/widgets/player-tags.js?v=20260516liveclick1"></script>
 <!-- Phase 3: League intel widgets (Competitive Tiers, Power Rankings) — ex-League Map -->
 <script type="text/babel" src="js/widgets/competitive-tiers.js?v=20260902onemsg1"></script>
-<script type="text/babel" src="js/widgets/power-rankings.js?v=20260917rec1a"></script>
+<script type="text/babel" src="js/widgets/power-rankings.js?v=20260926b134a"></script>
 <!-- Phase 9: My Trophies widget -->
 <script type="text/babel" src="js/widgets/my-trophies.js?v=20260611kpifix1"></script>
 <!-- League Calendar widget — depends on window.WrCalendar (js/tabs/calendar.js) -->
 <script type="text/babel" src="js/widgets/league-calendar.js?v=20260827cal4"></script>
-<script type="text/babel" src="js/tabs/dashboard.js?v=20260926b133a"></script>
-<script type="text/babel" src="js/tabs/flash-brief.js?v=20260917week1a"></script>
+<script type="text/babel" src="js/tabs/dashboard.js?v=20260926b134a"></script>
+<script type="text/babel" src="js/tabs/flash-brief.js?v=20260926b134a"></script>
 <!-- Group "analysis": analytics.js embeds LeagueMapTab, so both defer together
      (league-map.js first — DOM order is execution order within a group). -->
-<script type="text/babel" data-wr-defer="analysis" src="js/tabs/league-map.js?v=20260926b133a"></script>
-<script type="text/babel" data-wr-defer="myteam" src="js/tabs/my-team.js?v=20260926b133a"></script>
+<script type="text/babel" data-wr-defer="analysis" src="js/tabs/league-map.js?v=20260926g2a"></script>
+<script type="text/babel" data-wr-defer="myteam" src="js/tabs/my-team.js?v=20260926b134a"></script>
 <!-- Compare: extracted from My Roster's former sub-view, now a top-level ROSTER-group tab. -->
-<script type="text/babel" data-wr-defer="compare" src="js/tabs/compare.js?v=20260926b133"></script>
-<script type="text/babel" data-wr-defer="analysis" src="js/tabs/analytics.js?v=20260902onemsg1"></script>
-<script type="text/babel" data-wr-defer="trophies" src="js/tabs/trophy-room.js?v=20260619cal1"></script>
+<script type="text/babel" data-wr-defer="compare" src="js/tabs/compare.js?v=20260926b134"></script>
+<script type="text/babel" data-wr-defer="analysis" src="js/tabs/analytics.js?v=20260926g2"></script>
+<script type="text/babel" data-wr-defer="trophies" src="js/tabs/trophy-room.js?v=20260926g2"></script>
 <script type="text/babel" src="js/tabs/calendar.js?v=20260827cal4"></script>
 <!-- Alex Insights (Option A): top-level tab for behavioral analysis + AI settings -->
-<script type="text/babel" data-wr-defer="alex" src="js/tabs/alex-insights.js?v=20260613strip1"></script>
+<script type="text/babel" data-wr-defer="alex" src="js/tabs/alex-insights.js?v=20260926b134"></script>
 <!-- Group "empire": hub-level Empire Dashboard (Pro mode), loaded by app.js when
      Pro mode activates — also provides window.App.buildEmpireDna etc. -->
 <script type="text/babel" data-wr-defer="empire" src="js/tabs/global-view.js?v=20260902onemsg1"></script>
@@ -3095,9 +3132,9 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- 6. Strategy editor: calls shared GMStrategy API, no logic duplication.
      Only consumed by alex-insights' Strategy sub-view, so it rides the same
      "alex" lazy group — inert at boot, loaded on first GM's Office / Strategy open. -->
-<script type="text/babel" data-wr-defer="alex" src="js/tabs/strategy-editor.js?v=20260613rec1"></script>
+<script type="text/babel" data-wr-defer="alex" src="js/tabs/strategy-editor.js?v=20260926g2"></script>
 <!-- 7. League detail: coordinator shell, depends on all above -->
-    <script type="text/babel" src="js/league-detail.js?v=20260926b133"></script>
+    <script type="text/babel" src="js/league-detail.js?v=20260926g2"></script>
 <!-- 8. App: OwnerDashboard + ReactDOM.render (loads last) -->
 <script type="text/babel" src="js/app.js?v=20260925espn1a"></script>
 
@@ -3172,7 +3209,7 @@ window.addEventListener('appinstalled', () => {
 <!-- Deploy tag (owner ask 2026-08-19): a tiny always-visible build code so the
      owner can read back exactly which version his device is running before
      testing — kills the stale-cache guessing game. Bump the code every deploy. -->
-<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b133a</div>
+<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b134a</div>
 </body>
 </html>
 <!-- build 1774212614 -->
