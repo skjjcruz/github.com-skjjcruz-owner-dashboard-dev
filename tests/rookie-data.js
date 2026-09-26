@@ -67,10 +67,9 @@ const draftState = read(ROOT, 'js/draft/state.js');
 const csvLoader = read(ROOT, 'draft-war-room/csv-loader.js');
 const sharedLoader = read(ROOT, 'js/shared/shared-loader.js');
 const rootIndex = read(ROOT, 'index.html');
+// draft-warroom / free-agency / trade-calculator.html were retired 2026-09-26
+// to redirect stubs (they load nothing).
 const standalonePages = [
-  'draft-warroom.html',
-  'free-agency.html',
-  'trade-calculator.html',
   'draft-war-room/index.html',
   'draft-war-room/player-detail.html',
 ];
