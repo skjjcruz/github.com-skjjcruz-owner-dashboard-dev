@@ -24,6 +24,7 @@ regexes = [
   # localStorage key-name constants misdetected as generic API keys (these are
   # client-side storage keys, not credentials).
   '''wr_compare_h2h_v3_''',
+  '''wr_compare_h2h_v4_''',
   '''fw_pending_sleeper_v1''',
   '''dhq_season_marker_v1''',
   # RevenueCat PUBLIC SDK key (Apple). Public by design — it ships in the app
