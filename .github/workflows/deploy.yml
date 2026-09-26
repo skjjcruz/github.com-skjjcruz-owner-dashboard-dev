@@ -4,6 +4,15 @@ on:
   push:
     branches: ["main"]
   workflow_dispatch:
+    inputs:
+      critical:
+        description: "Live update: urgent — running pages apply it at the next safe moment (any return to the app, or 60s idle) (version.json critical:true)"
+        type: boolean
+        default: false
+      notes:
+        description: "Live update: optional notes written to version.json"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -48,10 +57,17 @@ jobs:
       - name: Sync shared modules from DHQ-Shared
         run: DHQ_SHARED_SOURCE="$GITHUB_WORKSPACE/dhq-shared-src" npm run sync:shared
 
-      # Precompile every type="text/babel" entry (index + free-agency + draft-warroom
-      # + trade-calculator) to plain JS so production no longer downloads ~3.1MB of
-      # @babel/standalone or runs the in-browser JSX transform on cold load.
+      # Precompile every type="text/babel" entry (index + free-agency +
+      # draft-warroom + trade-calculator) to plain JS so production never
+      # downloads ~3.1MB of @babel/standalone or runs the in-browser JSX
+      # transform on cold load.
+      # Also stamps the build id (<meta name="dhq-build">) into every
+      # self-updating page and writes dist-deploy/version.json, which running
+      # pages poll (js/shared/live-update.js) to pick up this deploy.
       - name: Precompile JSX for production (drop in-browser Babel)
+        env:
+          DHQ_UPDATE_CRITICAL: ${{ inputs.critical && '1' || '' }}
+          DHQ_UPDATE_NOTES: ${{ inputs.notes || '' }}
         run: node scripts/build-deploy.cjs
 
       - name: Build Pages artifact
@@ -67,6 +83,8 @@ jobs:
           # sources, replacing the JSX files and the index.html that loaded Babel.
           cp -R dist-deploy/. pages-artifact/
           rm -rf pages-artifact/**/.git pages-artifact/**/node_modules pages-artifact/**/supabase pages-artifact/**/tests
+          # Live update: without version.json running pages never see this deploy.
+          [ -f pages-artifact/version.json ] || { echo "Missing pages-artifact/version.json" >&2; exit 1; }
 
       - name: Setup Pages
         uses: actions/configure-pages@v6

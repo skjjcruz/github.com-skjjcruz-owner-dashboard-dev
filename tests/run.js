@@ -918,23 +918,92 @@ test('nfl scoreboard: production endpoint + failure backoff (contract)',
     ok(card.includes('Object.keys(map).length) setScoutTick'), 'scouting tab must not re-tick (and re-fetch) on empty loads');
   });
 
-test('update sentinel: quiet self-update with all owner guard rails (2026-08-27)',
+test('live update: silent self-update — build id + version.json, every page polls it (2026-09-26)',
   () => {
-    // Users must receive shipped builds without force-quitting the app shell,
-    // and a reload must never interrupt live work. Pin every guard the owner
-    // approved: real absence, no draft, no typing, no recent touch, no loops.
-    const s = fs.readFileSync(path.join(ROOT, 'js/shared/update-sentinel.js'), 'utf8');
-    ok(s.includes('15 * 60 * 1000'), 'wake check requires a 15-minute absence');
-    ok(s.includes("doc.querySelector('[data-draft-pid]')"), 'a mounted draft board must block the reload');
-    ok(s.includes('typingNow'), 'a focused input must block the reload');
-    ok(s.includes('minTouchGapMs'), 'a recent touch must block the reload');
-    ok(s.includes('DONE_FOR_KEY'), 'a target tag may only be attempted once per session (no reload loops)');
-    ok(s.includes("cache: 'no-store'"), 'the version probe must bypass every HTTP cache');
-    ok(/dhq-build-tag[^']*'/.test(s) || s.includes('dhq-build-tag'), 'the probe reads the build tag the deploy pipeline stamps');
-    ok(s.includes('onLine === false'), 'offline wakes must skip silently');
-    ok(s.includes('location.replace'), 'the reload must navigate with a cache-busting query, not location.reload');
-    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-    ok(html.includes('js/shared/update-sentinel.js?v='), 'index.html must load the sentinel with a cache-buster');
+    // Owner ruling 2026-08-27: users must receive shipped builds without
+    // force-quitting the app; no button, no banner. The deploy stamps the build
+    // id into each self-updating page and writes version.json; live-update.js
+    // (which replaces update-sentinel.js) polls it and reloads only on a long
+    // absence, a resume after one, or a long idle.
+    const bd = fs.readFileSync(path.join(ROOT, 'scripts/build-deploy.cjs'), 'utf8');
+    ok(bd.includes("'version.json'"), 'build-deploy must write dist-deploy/version.json');
+    ok(bd.includes('<meta name="dhq-build" content="${build}">'), 'build-deploy must stamp <meta name="dhq-build">');
+    ok(/STAMP_ONLY = \['landing\.html', 'connect-sleeper\.html', 'upgrade\.html'\]/.test(bd), 'plain pages are stamped too');
+    ok(bd.includes('DHQ_UPDATE_CRITICAL') && bd.includes('DHQ_UPDATE_NOTES'), 'critical/notes overrides');
+    ok(bd.includes('does not load ${LIVE_UPDATE_SRC}'), 'a stamped page that does not load the updater fails the build');
+    const pages = ['index.html', 'draft-warroom.html', 'free-agency.html', 'trade-calculator.html', 'landing.html', 'connect-sleeper.html', 'upgrade.html'];
+    for (const pg of pages) {
+      const html = fs.readFileSync(path.join(ROOT, pg), 'utf8');
+      ok(html.includes('<script src="js/shared/live-update.js?v='), pg + ' must load js/shared/live-update.js');
+      ok(/connect-src 'self'/.test(html) && /script-src 'self'/.test(html), pg + ' CSP must allow same-origin script + version.json fetch');
+    }
+    const index = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    ok(!index.includes('src="js/shared/update-sentinel.js'), 'one updater only: update-sentinel.js is superseded');
+    const lu = fs.readFileSync(path.join(ROOT, 'js/shared/live-update.js'), 'utf8');
+    ok(lu.includes("'version.json?t='") && lu.includes("cache: 'no-store'"), 'version probe bypasses every cache');
+    ok(lu.includes('meta[name="dhq-build"]'), 'own build read from the stamped meta tag');
+    ok(lu.includes("'[aria-modal=\"true\"],.wr-sheet-backdrop,dialog[open]'") && lu.includes('getClientRects().length'), 'a rendered sheet/modal blocks the reload (a closed, display:none one does not)');
+    ok(lu.includes('[data-draft-pid]') && lu.includes('liveSync'), 'a draft blocks the reload');
+    ok(lu.includes('2026-08-27') && lu.includes('no button, no banner'), 'header cites the owner ruling');
+    ok(!/createElement|innerHTML|textContent\s*=|role=|toast|overlay/i.test(lu.replace(/^\s*\/\/.*$/gm, '')), 'no visible UI at all: no toast, no button, no overlay');
+    ok(lu.includes('minAwayMs: 120000') && lu.includes('idleMs: 300000') && lu.includes('critAwayMs: 0') && lu.includes('critIdleMs: 60000'), 'thresholds: away 2 min, idle 5 min, critical any-resume / 60s idle');
+    ok(lu.includes('root.WR_UPDATE_TUNING'), 'thresholds tunable via window.WR_UPDATE_TUNING');
+    const ls = fs.readFileSync(path.join(ROOT, 'js/draft/live-sync.js'), 'utf8');
+    ok(ls.includes("('live-draft')") && ls.includes('holdUpdates(true)') && ls.includes('holdUpdates(false)'), 'live draft sync holds updates');
+    const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/deploy.yml'), 'utf8');
+    ok(wf.includes('cp -R dist-deploy/. pages-artifact/') && wf.includes('pages-artifact/version.json'), 'Pages artifact ships version.json');
+    // The Lab publisher lives in the website repo only (the app repo has none).
+    const labPath = path.join(ROOT, 'scripts/publish-lab.cjs');
+    if (fs.existsSync(labPath)) {
+      const lab = fs.readFileSync(labPath, 'utf8');
+      ok(lab.includes('fs.cpSync(DIST, LAB_DIR') && lab.includes("'version.json'"), 'Lab ships version.json');
+    }
+  });
+
+test('live update: unsaved work holds the silent reload (QA 2026-09-26)',
+  () => {
+    // A reload keeps the URL + localStorage but wipes in-memory React state.
+    // Every screen whose work lives only in memory holds the update while it
+    // is dirty and releases it when applied / cleared / unmounted (effect
+    // cleanup). Plain pages register a predicate hold.
+    const holds = {
+      'js/tabs/lineup.js': 'gameday-lineup',
+      'js/trade-calc.js': 'trade-builder',
+      'trade-calculator.html': 'trade-builder',
+      'js/tabs/league-map.js': 'report-builder',
+      'js/tabs/strategy-editor.js': 'strategy-editor',
+      'js/settings.js': 'settings-form',
+      'js/tabs/trophy-room.js': 'trophy-room',
+      'js/league-detail.js': 'alex-chat-draft',
+      'js/draft/command-center.js': 'draft-in-progress',
+      'js/mock-draft.js': 'mock-draft',
+      'draft-warroom.html': 'draft-ai',
+      'free-agency.html': 'fa-target-form',
+    };
+    for (const [file, reason] of Object.entries(holds)) {
+      const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+      ok(src.includes(".hold('" + reason + "')"), file + ' must hold live updates (' + reason + ')');
+      ok(src.includes(".release('" + reason + "')"), file + ' must release its hold on apply/clear/unmount (' + reason + ')');
+    }
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    ok(landing.includes("LiveUpdate.hold('landing-form', function"), 'landing one-box text holds the reload');
+    const connect = fs.readFileSync(path.join(ROOT, 'connect-sleeper.html'), 'utf8');
+    ok(connect.includes("LiveUpdate.hold('connect', () =>") && connect.includes('mflPending || espnPending'), 'connect page: typed IDs / team picker / linked-not-entered hold the reload');
+    const fb = fs.readFileSync(path.join(ROOT, 'js/shared/feedback-hub.js'), 'utf8');
+    ok(fb.includes("modal.setAttribute('aria-modal', 'true')"), 'feedback/bug-report overlay is an aria-modal (guarded)');
+    const lu = fs.readFileSync(path.join(ROOT, 'js/shared/live-update.js'), 'utf8');
+    ok(/access_token\|refresh_token\|error_description\|dhq_session/.test(lu) && lu.includes("'auth-handoff'"), 'an OAuth / session handoff in the URL blocks the reload');
+    ok(lu.includes("wrapFn(root, 'dhqAI')") && lu.includes("wrapFn(root, 'callClaude')"), 'AI in flight covers dhqAI / callClaude (BYO-key path), not only OD.callAI');
+    ok(lu.includes('holdMaxMs: 7200000, holdAwayMs: 1800000'), 'hard cap: 2 h stale hold, 30 min away');
+    ok(lu.includes('UNREACHABLE') && lu.includes("'offline'"), 'never navigates when the page cannot be re-fetched / offline');
+    // Holds are a no-op before the updater loads, so it must load before any holder.
+    for (const pg of ['index.html', 'draft-warroom.html', 'free-agency.html', 'trade-calculator.html', 'landing.html', 'connect-sleeper.html']) {
+      const html = fs.readFileSync(path.join(ROOT, pg), 'utf8');
+      const at = html.indexOf('js/shared/live-update.js?v=');
+      const firstHold = Math.min(...Object.keys(holds).concat(['.hold(\'', 'js/draft/live-sync.js'])
+        .map(k => html.indexOf(k.endsWith('.js') ? 'src="' + k : k)).filter(i => i >= 0), Infinity);
+      ok(at > 0 && at < firstHold, pg + ': live-update.js must load before any screen that holds');
+    }
   });
 
 test('draft storage: no orphan recaps, quota-safe mid-draft saves (2026-08-28)',
