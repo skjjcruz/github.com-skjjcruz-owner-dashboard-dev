@@ -394,30 +394,32 @@ test('custom report player rows open the unified player card', () => {
 
 group('live platform gate');
 
-test('live loader keeps non-Sleeper connector files sandbox-only', () => {
+test('live loader: ESPN is GA like MFL (b133a), Yahoo stays sandbox-only', () => {
   sourceHas(indexHtml, 'const WR_PLATFORM_SANDBOX_ACCESS', 'sandbox platform flag missing from loader');
   sourceHas(indexHtml, "'sleeper-api.js',", 'Sleeper connector must remain in live loader');
   sourceHas(indexHtml, "'app-config.js',", 'shared backend config must load before backend-backed modules');
   sourceHas(indexHtml, "WR_SHARED_FILES.splice(7, 0, 'mfl-api.js');", 'shared mfl-proxy connector loads on live (single anon-tolerant relay)');
-  sourceHas(indexHtml, "if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'espn-api.js', 'yahoo-api.js');", 'espn/yahoo connectors must stay gated behind the sandbox flag');
+  sourceHas(indexHtml, "WR_SHARED_FILES.splice(7, 0, 'espn-api.js');", 'ESPN connector loads on live, as on the website since b121');
+  sourceHas(indexHtml, "if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'yahoo-api.js');", 'yahoo connector must stay gated behind the sandbox flag');
   ok(!/WRShared\.loadMany\(\[[\s\S]*'espn-api\.js'/.test(indexHtml), 'ESPN connector should not be in unconditional live loadMany list');
 });
 
 test('War Room app filters beta-platform leagues out of live route data', () => {
   sourceHas(appSrc, 'const PLATFORM_SANDBOX_ACCESS = WR_HOST.includes(\'sandbox\')', 'app sandbox platform flag missing');
-  sourceHas(appSrc, 'const visibleEspnLeagues = PLATFORM_SANDBOX_ACCESS ? espnLeagues : [];', 'ESPN leagues must be hidden on live');
+  sourceHas(appSrc, 'const visibleEspnLeagues = (ESPN_ENABLED || PLATFORM_SANDBOX_ACCESS) ? espnLeagues : [];', 'ESPN leagues show on live once ESPN_ENABLED (b133a)');
   sourceHas(appSrc, 'const visibleMflLeagues = MFL_SANDBOX_ACCESS ? mflLeagues : [];', 'MFL leagues are gated behind MFL_SANDBOX_ACCESS (enable-able on live)');
   sourceHas(appSrc, 'const allLeagues = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues];', 'resume must use filtered platform leagues');
 });
 
-test('connect page validates both live platforms and records what was linked', () => {
+test('connect page validates the live platforms and records what was linked', () => {
   // The 4-step onboarding wizard is gone (owner ruling 2026-07-13); the
-  // connect-your-leagues page offers exactly the two live connectors.
+  // connect-your-leagues page offers the live connectors (ESPN joined b133a).
   sourceHas(connectSrc, 'https://api.sleeper.app/v1/user/', 'sleeper username must be validated against the Sleeper API');
   sourceHas(connectSrc, 'TYPE=league&L=', 'mfl league id must be validated against the MFL API');
   sourceHas(connectSrc, "localStorage.setItem('mfl_league_id', leagueId)", 'mfl league id must persist where the app loads it');
   sourceHas(connectSrc, 'patchProfile({ platforms, onboardingComplete: true })', 'entering must record linked platforms and completion');
-  sourceHas(connectSrc, "if (linked.sleeper) platforms.push('sleeper')", 'profile platforms must reflect only what was actually linked');
+  sourceHas(connectSrc, "localStorage.setItem('espn_league_id', leagueId)", 'espn league id must persist where the app loads it');
+  sourceHas(connectSrc, 'const platforms = Object.keys(TABS).filter(k => linked[k]);', 'profile platforms must reflect only what was actually linked');
 });
 
 group('mobile overflow');

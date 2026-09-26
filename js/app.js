@@ -10,15 +10,18 @@
         || /\/warroom-sandbox(\/|$)/i.test(WR_PATH)
         || window.SANDBOX_MODE === true
         || ['localhost', '127.0.0.1'].includes(WR_HOST);
-    // MFL is GA on production (no longer sandbox-beta-only). ESPN/Yahoo remain
-    // sandbox-gated via PLATFORM_SANDBOX_ACCESS. Flip to false to re-gate MFL.
+    // MFL is GA on production (no longer sandbox-beta-only). ESPN joined it on
+    // the website 2026-09-09 (b121) and in the app with b133a. Yahoo stays
+    // sandbox-gated. Flip either to false to re-gate that platform.
     const MFL_ENABLED = true;
+    const ESPN_ENABLED = true;
     const MFL_SANDBOX_ACCESS = MFL_ENABLED || PLATFORM_SANDBOX_ACCESS;
     function platformAccessAllowed(platform) {
         platform = platform || 'sleeper';
         if (platform === 'sleeper') return true;
         if (platform === 'mfl') return MFL_ENABLED || PLATFORM_SANDBOX_ACCESS;
-        return PLATFORM_SANDBOX_ACCESS; // espn / yahoo — sandbox only
+        if (platform === 'espn') return ESPN_ENABLED || PLATFORM_SANDBOX_ACCESS;
+        return PLATFORM_SANDBOX_ACCESS; // yahoo — sandbox only
     }
     function platformBetaMessage(platform) {
         const labels = { espn: 'ESPN', mfl: 'MFL', yahoo: 'Yahoo' };
@@ -854,7 +857,7 @@
         const [mflError, setMflError] = useState(null);
         const [mflFranchises, setMflFranchises] = useState(null);
         const [mflPendingResult, setMflPendingResult] = useState(null);
-        const visibleEspnLeagues = PLATFORM_SANDBOX_ACCESS ? espnLeagues : [];
+        const visibleEspnLeagues = (ESPN_ENABLED || PLATFORM_SANDBOX_ACCESS) ? espnLeagues : [];
         const visibleMflLeagues = MFL_SANDBOX_ACCESS ? mflLeagues : [];
         const [espnError, setEspnError] = useState(null);
         // Sleeper username — read from localStorage (login.html stores 'username', inline connect stores 'sleeperUsername')
@@ -1026,6 +1029,64 @@
                     }
                 } catch (e) {
                     window.wrLog?.('app.loadMflData', e);
+                }
+            })();
+            return () => { alive = false; };
+        }, []);
+
+        // ── ESPN rehydration ──
+        // The connect page stores the ESPN league (id / season / team) and, for
+        // private leagues, the espn_s2 + SWID cookies for this browser session.
+        // Like MFL there is no username to reload from, so re-fetch it on mount;
+        // without this an ESPN-only guest entered to an empty app.
+        useEffect(() => {
+            if (!(ESPN_ENABLED || PLATFORM_SANDBOX_ACCESS)) return;
+            const leagueId = localStorage.getItem('espn_league_id');
+            if (!leagueId) return;
+            let alive = true;
+            (async () => {
+                for (let i = 0; i < 50 && !window.ESPN; i++) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                if (!alive || !window.ESPN) return;
+                const year = localStorage.getItem('espn_year') || '2026';
+                const teamId = localStorage.getItem('espn_team_id') || null;
+                let espnS2 = null, swid = null;
+                try { espnS2 = sessionStorage.getItem('espn_s2'); swid = sessionStorage.getItem('espn_swid'); } catch (e) {}
+                try {
+                    const raw = await window.ESPN.fetchLeague(leagueId, year, espnS2, swid);
+                    if (!alive || !raw?.teams) return;
+                    const result = window.ESPN.mapToSleeperState(raw, leagueId, year, {});
+                    const lg = result.league || {};
+                    const drafted = raw.draftDetail ? raw.draftDetail.drafted !== false : true;
+                    const league = {
+                        id: lg.league_id,
+                        league_id: lg.league_id,
+                        name: lg.name,
+                        season: lg.season,
+                        status: drafted ? (lg.status || 'in_season') : 'pre_draft',
+                        total_rosters: lg.total_rosters,
+                        wins: 0, losses: 0, ties: 0,
+                        rosters: result.rosters,
+                        scoring_settings: lg.scoring_settings,
+                        roster_positions: lg.roster_positions,
+                        settings: lg.settings || {},
+                        users: result.leagueUsers,
+                        _source: 'espn',
+                        _platform: 'espn',
+                        _espn: true,
+                        _espnLeagueId: String(leagueId),
+                        _espnTeamId: teamId ? String(teamId) : null,
+                        _platformCreds: { leagueId: String(leagueId), year: String(year), espnS2: espnS2 || null, swid: swid || null },
+                    };
+                    setEspnLeagues(prev => [...prev.filter(l => l._espnLeagueId !== league._espnLeagueId), league]);
+                } catch (e) {
+                    window.wrLog?.('app.loadEspnData', e);
+                    // A private league whose cookies ended with the browser
+                    // session: say so instead of silently showing nothing.
+                    if (alive) setEspnError(/private/i.test(e?.message || '')
+                        ? 'Your ESPN league is private and this session no longer has access. Reconnect it on the connect page.'
+                        : (e?.message || 'ESPN league could not be loaded'));
                 }
             })();
             return () => { alive = false; };

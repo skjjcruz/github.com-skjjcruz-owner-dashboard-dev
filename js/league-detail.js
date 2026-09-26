@@ -1034,12 +1034,17 @@
         const [analyticsTab, setAnalyticsTab] = useState('roster');
         const [rosterFilter, setRosterFilter] = useState('All');
         const [rosterSort, setRosterSort] = useState({ key: 'dhq', dir: 1 });
-        const defaultRosterCols = ['pos','age','dhq','posRankLg','ppg','durability','peak','action','sos'];
+        // LAB101-104: Sleeper's weekly projection and DHQ's own sit side by side.
+        const defaultRosterCols = ['pos','age','dhq','posRankLg','ppg','proj','dhqProj','durability','peak','action','sos'];
         const [visibleCols, setVisibleCols] = useState(() => {
             const stored = LeagueStorage.get(LEAGUE_WR_KEYS.ROSTER_COLS);
             const legacyDefault = ['pos','age','dhq','ppg','trend','action'];
             if (Array.isArray(stored) && stored.length) {
-                const wasLegacyDefault = stored.length === legacyDefault.length && stored.every((key, idx) => key === legacyDefault[idx]);
+                // A stored set that is one of the earlier defaults upgrades to
+                // today's, so the projection columns appear without a reset.
+                const wasLegacyDefault = stored.length === legacyDefault.length && stored.every((key, idx) => key === legacyDefault[idx])
+                    || stored.join() === 'pos,age,dhq,posRankLg,ppg,durability,peak,action,sos'
+                    || stored.join() === 'pos,age,dhq,posRankLg,ppg,proj,durability,peak,action,sos';
                 return wasLegacyDefault ? defaultRosterCols : stored;
             }
             return defaultRosterCols;
@@ -1881,7 +1886,9 @@
 
                 const myRosterData = currentLeague._mfl && currentLeague._mflFranchiseId
                     ? currentLeague.rosters.find(r => r.roster_id === currentLeague._mflFranchiseId)
-                    : currentLeague.rosters.find(r => r.owner_id === sleeperUserId);
+                    : currentLeague._espn && currentLeague._espnTeamId
+                        ? currentLeague.rosters.find(r => r.roster_id === currentLeague._espnTeamId)
+                        : currentLeague.rosters.find(r => r.owner_id === sleeperUserId);
                 setMyRoster(myRosterData);
 
                 // Compute standings immediately (no fetch needed)
@@ -2114,7 +2121,9 @@
             // Re-resolve myRosterData now that rosters may have changed
             const freshMyRoster = provider.id === 'mfl' && currentLeague._mflFranchiseId
                 ? rosters.find(r => r.roster_id === currentLeague._mflFranchiseId)
-                : rosters.find(r => r.owner_id === sleeperUserId) || myRosterData;
+                : provider.id === 'espn' && currentLeague._espnTeamId
+                    ? rosters.find(r => r.roster_id === currentLeague._espnTeamId)
+                    : rosters.find(r => r.owner_id === sleeperUserId) || myRosterData;
             if (freshMyRoster && freshMyRoster !== myRosterData) setMyRoster(freshMyRoster);
             const myRoster = freshMyRoster || myRosterData;
 
@@ -3955,7 +3964,9 @@
                     setRosterFilter={setRosterFilter}
                     rosterSort={rosterSort}
                     setRosterSort={setRosterSort}
-                    visibleCols={visibleCols}
+                    visibleCols={visibleCols.includes('proj') && !visibleCols.includes('dhqProj')
+                        ? visibleCols.flatMap(k => k === 'proj' ? ['proj', 'dhqProj'] : [k])
+                        : visibleCols}
                     setVisibleCols={setVisibleCols}
                     expandedPid={expandedPid}
                     setExpandedPid={setExpandedPid}

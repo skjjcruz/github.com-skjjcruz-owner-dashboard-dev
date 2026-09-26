@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://site.web.api.espn.com https://fantasysports.yahooapis.com https://api.fantasycalc.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://site.api.espn.com https://sports.core.api.espn.com https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://site.web.api.espn.com https://fantasysports.yahooapis.com https://api.fantasycalc.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <!-- Early auth gate: bounce signed-out visitors to the sign-in page BEFORE the
          React/Babel app (~80 modules, multi-second in-browser compile) loads, so
@@ -36,7 +36,7 @@
         if (!ok && isGuest) {
           try {
             var ga = JSON.parse(localStorage.getItem('od_auth_v1') || 'null');
-            if ((ga && ga.username) || localStorage.getItem('mfl_league_id')) ok = true;
+            if ((ga && ga.username) || localStorage.getItem('mfl_league_id') || localStorage.getItem('espn_league_id')) ok = true;
           } catch (e) {}
         }
         if (!ok) {
@@ -156,7 +156,10 @@ const WR_SHARED_FILES = [
 ];
 // MFL is GA on production (mirrors MFL_ENABLED=true in js/app.js). ESPN/Yahoo stay sandbox-only beta.
 WR_SHARED_FILES.splice(7, 0, 'mfl-api.js');
-if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'espn-api.js', 'yahoo-api.js');
+// ESPN is GA on the website (b121) and in the app (b133a) — its module loads
+// for everyone, the same way MFL does. Yahoo stays sandbox-only.
+WR_SHARED_FILES.splice(7, 0, 'espn-api.js');
+if (WR_PLATFORM_SANDBOX_ACCESS) WR_SHARED_FILES.splice(7, 0, 'yahoo-api.js');
 WRShared.preloadMany(WR_SHARED_FILES);
     </script>
     <style>
@@ -2945,26 +2948,27 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- 2b. Unified Player Card (SI-2) — window.WR.openPlayerCard — replaces CDN modal -->
 <!-- Shared visual primitives (WR.Card / Badge / Chip / ConfChip / DeltaLine / Kpi / InsightCard) -->
 <script type="text/babel" src="js/components/wr-primitives.js?v=20260824chip1"></script>
-    <script type="text/babel" src="js/components/player-card.js?v=20260824scout2"></script>
+    <script type="text/babel" src="js/components/player-card.js?v=20260926b133a"></script>
 <!-- 2c. Saved List Views (SI-1) — window.WR.SavedViews — shared across list surfaces -->
 <script type="text/babel" src="js/shared/saved-views.js?v=20260427font1"></script>
 <!-- 2c-2. Saved Alex Reports — window.WR.SavedReports — local cache + ai_analysis server sync -->
 <script src="js/shared/saved-reports.js?v=20260601reports1"></script>
 <!-- 2d. GM Mode helper (Phase 1) — window.WR.GmMode — canonical mode/preset source of truth -->
 <script type="text/babel" src="js/shared/gm-mode.js?v=20260902voice1"></script>
-<script src="js/shared/startsit-engine.js?v=20260701gdc4"></script>
-<script src="js/shared/weekly-proj.js?v=20260917truth3a"></script>
+<script src="js/shared/startsit-engine.js?v=20260926b133a"></script>
+<script src="js/shared/weekly-proj.js?v=20260926b133a"></script>
 <script src="js/shared/sleeper-proj.js?v=20260917truth3a"></script>
+<script src="js/shared/dhq-proj.js?v=20260926b133a"></script>
 <script src="js/shared/nfl-context.js?v=20260824wx2"></script>
 <script src="js/shared/matchup.js?v=20260701gdc1"></script>
 <!-- Season Odds engines (lab port 2026-08-16): plain Node-testable scripts —
      the luck ledger feeds the playoff Monte Carlo, so luck loads first. -->
 <script src="js/shared/luck-engine.js?v=20260816so1"></script>
-<script src="js/shared/chopped.js?v=20260817chp1"></script>
-<script src="js/shared/chop-odds.js?v=20260817chp1"></script>
-<script src="js/shared/playoff-odds.js?v=20260816so1"></script>
+<script src="js/shared/chopped.js?v=20260926b133"></script>
+<script src="js/shared/chop-odds.js?v=20260926b133"></script>
+<script src="js/shared/playoff-odds.js?v=20260926b133"></script>
 <script src="js/shared/faab-engine.js?v=20260816fc1"></script>
-<script src="js/utils/schedule-engine.js?v=20260702bye1"></script>
+<script src="js/utils/schedule-engine.js?v=20260926b133"></script>
 <script src="js/utils/gamelog-engine.js?v=20260702scout1"></script>
 <script src="js/shared/draft-gameplan.js?v=20260616ros1"></script>
 <!-- 2e. Alex behavioral-insight settings — window.WR.AlexSettings — shared tuning for every Alex surface -->
@@ -3002,7 +3006,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/txn-store.js?v=20260601a"></script>
 <!-- 3. Shared utilities: player valuation constants + projection engine -->
 <script type="text/babel" src="js/utils/sos-engine.js?v=20260702scout1"></script>
-<script type="text/babel" src="js/utils/player-value.js?v=20260915truth1"></script>
+<script type="text/babel" src="js/utils/player-value.js?v=20260926b133"></script>
 <!-- 4. Feature modules (no internal dependencies between these) -->
 <!-- data-wr-defer scripts are DEFERRED: emitted INERT (type="text/wr-deferred" by
      every build/serve pipeline) so the browser does NOT parse/execute them at app
@@ -3015,12 +3019,12 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/settings.js?v=20260902intel1"></script>
 <script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20260906b106a"></script>
 <script type="text/babel" src="js/post-draft.js?v=20260907b112a"></script>
-<script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260915truth1"></script>
+<script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20260926b133a"></script>
 <!-- Season Odds panel loads with Game Day (owner ruling 2026-07-30) — must
      precede lineup.js in the group so window.WrSeasonOdds exists on first render. -->
-<script type="text/babel" data-wr-defer="lineup" src="js/components/season-odds-panel.js?v=20260817chp1"></script>
-<script type="text/babel" src="js/components/chop-block-panel.js?v=20260817chp1"></script>
-<script type="text/babel" data-wr-defer="lineup" src="js/tabs/lineup.js?v=20260917truth3a"></script>
+<script type="text/babel" data-wr-defer="lineup" src="js/components/season-odds-panel.js?v=20260926b133a"></script>
+<script type="text/babel" src="js/components/chop-block-panel.js?v=20260926b133a"></script>
+<script type="text/babel" data-wr-defer="lineup" src="js/tabs/lineup.js?v=20260926b133a"></script>
 <!-- 4b. Draft Command Center modules — group "draft" (~28 scripts, ~1.26MB),
      loaded on first Draft-tab open. -->
 <script type="text/babel" data-wr-defer="draft" src="js/draft/styles.js?v=20260427font1"></script>
@@ -3054,7 +3058,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- 5. League detail tab components (extracted from league-detail.js) -->
 <!-- v2 widget modules (load before dashboard.js which consumes them) -->
 <script type="text/babel" src="js/widgets/roster-pulse.js?v=20260613gm1"></script>
-<script type="text/babel" src="js/widgets/lineup-check.js?v=20260917truth3a"></script>
+<script type="text/babel" src="js/widgets/lineup-check.js?v=20260926b133a"></script>
 <script type="text/babel" src="js/widgets/window-forecast.js?v=20260902voice1"></script>
 <script type="text/babel" src="js/widgets/gap-plan.js?v=20260902onemsg1"></script>
 <script type="text/babel" src="js/widgets/league-landscape.js?v=20260902onemsg1"></script>
@@ -3071,14 +3075,14 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/widgets/my-trophies.js?v=20260611kpifix1"></script>
 <!-- League Calendar widget — depends on window.WrCalendar (js/tabs/calendar.js) -->
 <script type="text/babel" src="js/widgets/league-calendar.js?v=20260827cal4"></script>
-<script type="text/babel" src="js/tabs/dashboard.js?v=20260917truth3a"></script>
+<script type="text/babel" src="js/tabs/dashboard.js?v=20260926b133a"></script>
 <script type="text/babel" src="js/tabs/flash-brief.js?v=20260917week1a"></script>
 <!-- Group "analysis": analytics.js embeds LeagueMapTab, so both defer together
      (league-map.js first — DOM order is execution order within a group). -->
-<script type="text/babel" data-wr-defer="analysis" src="js/tabs/league-map.js?v=20260917rec1a"></script>
-<script type="text/babel" data-wr-defer="myteam" src="js/tabs/my-team.js?v=20260919chip1a"></script>
+<script type="text/babel" data-wr-defer="analysis" src="js/tabs/league-map.js?v=20260926b133a"></script>
+<script type="text/babel" data-wr-defer="myteam" src="js/tabs/my-team.js?v=20260926b133a"></script>
 <!-- Compare: extracted from My Roster's former sub-view, now a top-level ROSTER-group tab. -->
-<script type="text/babel" data-wr-defer="compare" src="js/tabs/compare.js?v=20260827slot1"></script>
+<script type="text/babel" data-wr-defer="compare" src="js/tabs/compare.js?v=20260926b133"></script>
 <script type="text/babel" data-wr-defer="analysis" src="js/tabs/analytics.js?v=20260902onemsg1"></script>
 <script type="text/babel" data-wr-defer="trophies" src="js/tabs/trophy-room.js?v=20260619cal1"></script>
 <script type="text/babel" src="js/tabs/calendar.js?v=20260827cal4"></script>
@@ -3093,9 +3097,9 @@ WRShared.preloadMany(WR_SHARED_FILES);
      "alex" lazy group — inert at boot, loaded on first GM's Office / Strategy open. -->
 <script type="text/babel" data-wr-defer="alex" src="js/tabs/strategy-editor.js?v=20260613rec1"></script>
 <!-- 7. League detail: coordinator shell, depends on all above -->
-    <script type="text/babel" src="js/league-detail.js?v=20260902voice1"></script>
+    <script type="text/babel" src="js/league-detail.js?v=20260926b133"></script>
 <!-- 8. App: OwnerDashboard + ReactDOM.render (loads last) -->
-<script type="text/babel" src="js/app.js?v=20260909b120a"></script>
+<script type="text/babel" src="js/app.js?v=20260925espn1a"></script>
 
 <!-- All JSX code extracted to js/ modules. Only bootstrap remains. -->
 <script>
@@ -3168,7 +3172,7 @@ window.addEventListener('appinstalled', () => {
 <!-- Deploy tag (owner ask 2026-08-19): a tiny always-visible build code so the
      owner can read back exactly which version his device is running before
      testing — kills the stale-cache guessing game. Bump the code every deploy. -->
-<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b132a</div>
+<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b133a</div>
 </body>
 </html>
 <!-- build 1774212614 -->
