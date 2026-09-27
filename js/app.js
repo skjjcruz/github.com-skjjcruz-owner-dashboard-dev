@@ -1357,6 +1357,9 @@
         // eslint-disable-next-line no-undef
         const _EmpireDash = typeof EmpireDashboard === 'function' ? EmpireDashboard : null;
         const [empireModuleState, setEmpireModuleState] = useState(_EmpireDash ? 'ready' : 'idle');
+        // Bumped by "Try again" — the loader forgets a failed/timed-out group
+        // (js/module-loader.js), so this re-requests it without a page reload.
+        const [empireAttempt, setEmpireAttempt] = useState(0);
         useEffect(() => {
             if (!proMode || _EmpireDash || !window.wrLoadModuleGroup) return;
             let alive = true;
@@ -1364,21 +1367,35 @@
             window.wrLoadModuleGroup('empire')
                 .then(() => { if (alive) setEmpireModuleState('ready'); })
                 .catch(() => { if (alive) setEmpireModuleState('error'); });
-            return () => { alive = false; };
-        }, [proMode, _EmpireDash]);
+            // A stalled group that lands after the loader gave up is still
+            // announced — recover from the error screen without a tap.
+            const onGroupLoaded = (e) => { if (alive && e && e.detail && e.detail.group === 'empire') setEmpireModuleState('ready'); };
+            window.addEventListener('wr:module-group-loaded', onGroupLoaded);
+            return () => { alive = false; window.removeEventListener('wr:module-group-loaded', onGroupLoaded); };
+        }, [proMode, _EmpireDash, empireAttempt]);
         const [empirePlayersLoaded, setEmpirePlayersLoaded] = useState(false);
         const [empirePlayers, setEmpirePlayers] = useState({});
         // Bumped after background roster assessment so the Rolodex re-renders.
         const [, setEmpireAssessReady] = useState(0);
 
         // Load player database + DHQ engine when Pro mode activates
+        const empireDataRunningRef = React.useRef(false);
         useEffect(() => {
-            if (!proMode || empirePlayersLoaded) return;
+            // 'error': wait for Try again or a late arrival instead of silently
+            // re-requesting the group from here.
+            if (!proMode || empirePlayersLoaded || empireDataRunningRef.current || empireModuleState === 'error') return;
+            empireDataRunningRef.current = true;
             (async () => {
                 try {
                     // The deferred empire group owns buildEmpireDna & co. — make sure it
-                    // has executed before the assessment loop below reaches for it.
-                    if (window.wrLoadModuleGroup) { try { await window.wrLoadModuleGroup('empire'); } catch (e) {} }
+                    // has executed before the assessment loop below reaches for it. If
+                    // it didn't load, stop here WITHOUT marking the data loaded: this
+                    // effect re-runs when the group becomes ready (Try again, or a
+                    // late arrival — empireModuleState below), instead of assessing
+                    // every league without the Empire engine and never retrying.
+                    if (window.wrLoadModuleGroup) {
+                        try { await window.wrLoadModuleGroup('empire'); } catch (e) { return; }
+                    }
                     // Load 10k player database (league-independent, cached 1hr)
                     const players = await window.App.fetchAllPlayers();
                     setEmpirePlayers(players || {});
@@ -1470,8 +1487,9 @@
                         })();
                     }
                 } catch (e) { console.warn('[Empire] Data load error:', e); setEmpirePlayersLoaded(true); }
+                finally { empireDataRunningRef.current = false; }
             })();
-        }, [proMode, empirePlayersLoaded]);
+        }, [proMode, empirePlayersLoaded, empireModuleState]);
 
         // Defense-in-depth: Empire is sandbox-only — even if stale history state or
         // a stray caller flips proMode on in production, never mount the surface.
@@ -1487,18 +1505,29 @@
             // flashing the hub. Escape hatch mirrors the Empire onBack handler.
             return (
                 <div style={{ padding: '96px 24px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' }}>
-                    {empireModuleState === 'error' ? 'Empire Dashboard failed to load.' : 'Loading Empire Dashboard…'}
-                    <div>
+                    {empireModuleState === 'error' ? 'Empire Dashboard didn’t load — check your connection.' : 'Loading Empire Dashboard…'}
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '16px' }}>
+                        {empireModuleState === 'error' && (<>
+                            <button
+                                onClick={() => setEmpireAttempt(a => a + 1)}
+                                style={{ minHeight: '44px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontWeight: 600 }}
+                            >Try again</button>
+                            <button
+                                onClick={() => window.location.reload()}
+                                style={{ minHeight: '44px', padding: '8px 16px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontWeight: 600 }}
+                            >Reload</button>
+                        </>)}
                         <button
                             onClick={() => {
-                                if (empireModuleState === 'error') { window.location.reload(); return; }
                                 setProMode(false);
                                 if (!isNavigatingRef.current) {
                                     history.pushState({ view: 'hub' }, '', routeUrl(''));
                                 }
                             }}
-                            style={{ marginTop: '16px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
-                        >{empireModuleState === 'error' ? 'Reload' : 'Back to Hub'}</button>
+                            style={empireModuleState === 'error'
+                                ? { minHeight: '44px', padding: '8px 16px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontWeight: 600 }
+                                : { padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontWeight: 600 }}
+                        >Back to Hub</button>
                     </div>
                 </div>
             );
@@ -1541,6 +1570,8 @@
                         }}
                         activeTab={activeTab}
                         onTabChange={handleTabChange}
+                        allLeagues={sleeperLeagues}
+                        onSelectLeague={handleSelectLeague}
                         sleeperUserId={sleeperUser?.user_id}
                         settingsProps={{
                             initDisplayName: customDisplayName,

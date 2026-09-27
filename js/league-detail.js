@@ -15,25 +15,39 @@
             const [phase, setPhase] = React.useState(
                 (window.wrModuleGroupLoaded?.(group) && typeof resolveComponent() === 'function') ? 'ready' : 'loading'
             );
+            // Bumped by "Try again". The loader forgets a failed or stalled group
+            // (js/module-loader.js), so this re-requests only the scripts that
+            // never ran — no page reload, tab/league state kept.
+            const [attempt, setAttempt] = React.useState(0);
             React.useEffect(() => {
-                if (phase === 'ready') return;
+                if (phase === 'ready') return undefined;
                 let alive = true;
+                const settle = () => {
+                    // Loaded but the component never defined itself: show the
+                    // retry instead of "Loading…" forever.
+                    if (alive) setPhase(typeof resolveComponent() === 'function' ? 'ready' : 'error');
+                };
                 const loader = window.wrLoadModuleGroup ? window.wrLoadModuleGroup(group) : Promise.resolve();
-                loader.then(() => { if (alive) setPhase('ready'); })
+                loader.then(settle)
                       .catch((e) => { if (window.wrLog) window.wrLog(group + '.lazyLoad', e); if (alive) setPhase('error'); });
-                return () => { alive = false; };
-            }, []);
+                // A stalled group can still land after the loader gave up; the
+                // loader announces it, and the tab recovers without a tap.
+                const onGroupLoaded = (e) => { if (e && e.detail && e.detail.group === group) settle(); };
+                window.addEventListener('wr:module-group-loaded', onGroupLoaded);
+                return () => { alive = false; window.removeEventListener('wr:module-group-loaded', onGroupLoaded); };
+            }, [attempt, phase === 'ready']);
             if (phase === 'error') {
+                const retryBtn = { marginTop: '12px', padding: '8px 16px', minHeight: '44px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontWeight: 600 };
+                const reloadBtn = { ...retryBtn, marginLeft: '8px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))' };
                 return React.createElement('div', { style: { padding: '48px 24px', textAlign: 'center', color: 'var(--silver)' } },
-                    label + ' module failed to load. ',
-                    React.createElement('button', {
-                        onClick: () => window.location.reload(),
-                        style: { marginTop: '12px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 },
-                    }, 'Reload'));
+                    label + ' didn\u2019t load \u2014 check your connection.',
+                    React.createElement('div', null,
+                        React.createElement('button', { onClick: () => { setPhase('loading'); setAttempt(a => a + 1); }, style: retryBtn }, 'Try again'),
+                        React.createElement('button', { onClick: () => window.location.reload(), style: reloadBtn }, 'Reload')));
             }
             const Comp = resolveComponent();
             if (phase !== 'ready' || typeof Comp !== 'function') {
-                return React.createElement('div', { style: { padding: '64px 24px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' } }, 'Loading ' + label + '…');
+                return React.createElement('div', { style: { padding: '64px 24px', textAlign: 'center', color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)' } }, 'Loading ' + label + '\u2026');
             }
             return React.createElement(Comp, props);
         };
@@ -54,6 +68,9 @@
     const MyTeamTabLazy = wrLazyTab('myteam', 'My Team', () => (typeof MyTeamTab === 'function' ? MyTeamTab : null));
     const CalendarTabLazy = wrLazyTab('calendar', 'Calendar', () => (typeof CalendarTab === 'function' ? CalendarTab : null));
     const LineupTabLazy = wrLazyTab('lineup', 'Lineup', () => (typeof window.LineupTab === 'function' ? window.LineupTab : null));
+    // The Wire (league newspaper): engines + JSX + styles live in the deferred
+    // 'wire' group, injected on first open of the tab.
+    const LeagueWireTabLazy = wrLazyTab('wire', 'The Wire', () => (typeof window.WrLeagueWire === 'function' ? window.WrLeagueWire : null));
 
     function escapeHtml(str) {
         return String(str)
@@ -266,6 +283,8 @@
         settings: ['M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z', 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z'],
         // book-open — the reference key
         legend: ['M12 7v14', 'M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z'],
+        // newspaper — The Wire (league newspaper)
+        wire: ['M15 18h-5', 'M18 14h-8', 'M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2', 'M11 6h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z'],
         // refresh-cw
         refresh: ['M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8', 'M21 3v5h-5', 'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16', 'M8 16H3v5'],
     };
@@ -286,6 +305,11 @@
             { label: 'Free Agency', tab: 'fa', iconKey: 'fa' },
             { label: 'Draft', tab: 'draft', iconKey: 'draft' },
             { label: 'Analytics', tab: 'analytics', iconKey: 'analytics' },
+            // The Wire — the league's newspaper (C2 port 2026-09-27). Its own
+            // tab instead of C2's fixed bottom ticker: no bar competing with
+            // the phone dock, no second ticker beside the dashboard's
+            // Transaction Ticker, and nothing loads until it is opened.
+            { label: 'The Wire', tab: 'wire', iconKey: 'wire' },
             { section: 'DOSSIER' },
             { label: 'GM\'s Office', tab: 'alex', iconKey: 'office' },
             { label: 'Trophy Room', tab: 'trophies', iconKey: 'trophy' },
@@ -392,7 +416,10 @@
     }
 
     // League Detail Component
-    function LeagueDetail({ league, onBack, sleeperUserId, onOpenSettings, settingsProps = {}, activeTab: propActiveTab, onTabChange }) {
+    // allLeagues / onSelectLeague are optional (The Wire's "All my leagues"
+    // edition): without them the Wire loads the Sleeper league list itself
+    // on demand and hides "Open league" links.
+    function LeagueDetail({ league, onBack, sleeperUserId, onOpenSettings, settingsProps = {}, activeTab: propActiveTab, onTabChange, allLeagues, onSelectLeague }) {
         const [loading, setLoading] = useState(true);
         const [error, setError] = useState(null);
         const [playersData, setPlayersData] = useState({});
@@ -1298,10 +1325,13 @@
                 case 'faab-efficiency': {
                     // The FAAB budget is a LEAGUE setting (waiver_budget, FAAB when
                     // waiver_type === 2); only the spend lives on the roster.
+                    // One definition app-wide: App.FaabLeague (js/shared/faab-league.js).
                     const _ls = currentLeague?.settings || {};
-                    const budget = (_ls.waiver_type === 2 ? Number(_ls.waiver_budget) || 0 : 0) || myRoster?.settings?.waiver_budget || 0;
+                    const _fl = window.App?.FaabLeague;
+                    const budget = _fl ? _fl.faab(currentLeague, myRoster).budget
+                        : ((Number(_ls.waiver_budget) || 0) > 0 && (_ls.waiver_type == null || Number(_ls.waiver_type) === 2) ? Number(_ls.waiver_budget) || 0 : 0);
                     const spent = myRoster?.settings?.waiver_budget_used || 0;
-                    if (!budget) return { value: '\u2014', sub: 'No FAAB', color: 'var(--silver)' };
+                    if (!budget) return { value: '\u2014', sub: _fl ? 'No FAAB · ' + _fl.waiverLabel(currentLeague) : 'No FAAB', color: 'var(--silver)' };
                     const remaining = budget - spent;
                     return { value: '$' + remaining, sub: '$' + budget + ' budget', color: remaining > budget * 0.5 ? 'var(--k-2ecc71, #2ecc71)' : remaining > budget * 0.25 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)' };
                 }
@@ -2275,10 +2305,15 @@
                 window.getFAAB = () => {
                     const league = window.S.leagues?.[0];
                     const my = window.myR();
-                    const isFAAB = (league?.settings?.waiver_type === 2) || (league?.settings?.waiver_budget > 0);
+                    // Budget AND Sleeper waiver_type 2 (App.FaabLeague): Sleeper keeps a
+                    // $100 budget on rolling-waiver leagues, which made this say FAAB.
+                    const isFAAB = window.App?.FaabLeague?.isFaabLeague
+                        ? window.App.FaabLeague.isFaabLeague(league)
+                        : ((Number(league?.settings?.waiver_budget) || 0) > 0 && (league?.settings?.waiver_type == null || Number(league.settings.waiver_type) === 2));
                     const budget = isFAAB ? (league?.settings?.waiver_budget || 0) : 0;
-                    const spent = my?.settings?.waiver_budget_used || 0;
-                    const minBid = isFAAB ? (league?.settings?.waiver_budget_min ?? 0) : 0;
+                    const spent = isFAAB ? (my?.settings?.waiver_budget_used || 0) : 0;
+                    // Sleeper's real floor field is waiver_bid_min (imports use waiver_budget_min).
+                    const minBid = isFAAB ? (league?.settings?.waiver_bid_min ?? league?.settings?.waiver_budget_min ?? 0) : 0;
                     return { budget, spent, remaining: Math.max(0, budget - spent), isFAAB, minBid };
                 };
                 window.loadMentality = () => {
@@ -3987,7 +4022,17 @@
                         initialSubTab={tradeSubTab}
                         onSubTabConsumed={() => setTradeSubTab(null)}
                     />
-                ) : activeTab === 'myteam' ? <MyTeamTabLazy
+                ) : activeTab === 'wire' ? <LeagueWireTabLazy
+                    currentLeague={currentLeague}
+                    standings={standings}
+                    transactions={transactions}
+                    playersData={playersData}
+                    getOwnerName={getOwnerName}
+                    getPlayerName={getPlayerName}
+                    sleeperUserId={sleeperUserId}
+                    allLeagues={allLeagues}
+                    onOpenLeague={onSelectLeague}
+                /> : activeTab === 'myteam' ? <MyTeamTabLazy
                     myRoster={myRoster}
                     currentLeague={currentLeague}
                     leagueSkin={leagueSkin}
