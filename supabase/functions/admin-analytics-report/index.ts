@@ -60,11 +60,24 @@ function isServerRow(r: FenceRow): boolean {
 
 // The owner testing the product as a guest is not a guest (owner ask
 // 2026-09-20: "remove me from the guest stats"). Handles here never appear
-// as guests in the Guest Tracker, Known Users, or the visitor list; the
-// owner's signed-in account rows are untouched.
+// as guests in the Guest Tracker, Known Users, or the visitor list. Since
+// 2026-09-27 the owners' signed-in sessions leave production too (the test
+// fence below).
 const OWNER_HANDLES = new Set(['skjjcruz']);
 function isOwnerHandle(handle: unknown): boolean {
   return typeof handle === 'string' && OWNER_HANDLES.has(handle.toLowerCase());
+}
+
+// Test-traffic fence (owner ask 2026-09-27: "filter out test traffic").
+// Robots (the client stamps metadata.internal when the browser is automated)
+// and the owners (owner/admin accounts, their Sleeper handles, devices marked
+// as owner devices) leave every production view. The session list comes from
+// analytics_test_sessions — the same one the SQL rollup and doors use — so a
+// tile and its detail table can never disagree.
+async function loadTestSessions(admin: any, since: string): Promise<Set<string>> {
+  const { data, error } = await fetchAllRows(() => admin.rpc('analytics_test_sessions', { p_since: since }));
+  if (error) console.error('admin-analytics-report test-sessions rpc error:', error);
+  return new Set((data ?? []).map((r: { session_id: string }) => String(r.session_id)));
 }
 
 Deno.serve(async (req) => {
@@ -83,6 +96,10 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const days = clampDays(url.searchParams.get('days'));
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const testSessions = await loadTestSessions(admin, since);
+    const isTestRow = (r: FenceRow) => typeof r.session_id === 'string' && testSessions.has(r.session_id);
+    // Production and not test traffic: what every view below counts.
+    const isLive = (r: FenceRow) => isProdRow(r) && !isTestRow(r);
 
     // ── detail=users: who is behind the "known users" tile ──
     // Same window as the rollup; aggregated here (not in SQL) because the
@@ -111,7 +128,7 @@ Deno.serve(async (req) => {
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         return typeof meta.sleeper === 'string' && meta.sleeper ? meta.sleeper : null;
       };
-      const rows = (allRows ?? []).filter((r) => isProdRow(r) && !isOwnerHandle(guestHandle(r)));
+      const rows = (allRows ?? []).filter((r) => isLive(r) && !isOwnerHandle(guestHandle(r)));
       // username -> account bridge from events that carry both.
       const links = new Map<string, string>();
       for (const r of rows ?? []) {
@@ -193,7 +210,7 @@ Deno.serve(async (req) => {
         console.error('admin-analytics-report guests query error:', error);
         return json(req, { error: error.message }, 500);
       }
-      const rows = (allRows ?? []).filter((r) => isProdRow(r) && !isServerRow(r));
+      const rows = (allRows ?? []).filter((r) => isLive(r) && !isServerRow(r));
       // Handles any account owns: events that carry both a username and an
       // account id, plus app_users' linked Sleeper name.
       const linked = new Map<string, string>(); // handle -> account id
@@ -349,7 +366,7 @@ Deno.serve(async (req) => {
       // This loop only builds the guest list off the connect-module slice.
       const guests: Array<{ when: string; event: string; username: string | null; guest: boolean; surface: string }> = [];
       for (const r of rows ?? []) {
-        if (!isProdRow(r) || guests.length >= 200) continue;
+        if (!isLive(r) || guests.length >= 200) continue;
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         const doorName = (typeof meta.sleeperUsername === 'string' && meta.sleeperUsername) || (typeof meta.sleeper === 'string' && meta.sleeper) || r.username || null;
         if (meta.guest === true && isOwnerHandle(doorName)) continue;
@@ -395,8 +412,10 @@ Deno.serve(async (req) => {
       // 2026-09-19: keep it out of the "what actually broke" table).
       const INFORMATIONAL_CONTEXTS = new Set(['viewport.nudge']);
       let devSandboxErrors = 0;
+      let testErrors = 0;
       let informational = 0;
       for (const r of rows ?? []) {
+        if (isTestRow(r)) { testErrors++; continue; }
         if (!isProdRow(r)) { devSandboxErrors++; continue; }
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         const source = typeof meta.source === 'string' && meta.source ? meta.source : 'unknown';
@@ -426,7 +445,7 @@ Deno.serve(async (req) => {
         .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1))
         .slice(0, 100);
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'errors' });
-      return json(req, { errors, devSandboxErrors, informational, days, since });
+      return json(req, { errors, devSandboxErrors, testErrors, informational, days, since });
     }
 
     // ── detail=signin: the front door's auth health, with reasons ──
@@ -456,7 +475,7 @@ Deno.serve(async (req) => {
       }
       const groups = new Map<string, { event: string; method: string; reason: string | null; times: number; people: Set<string>; lastSeen: string }>();
       for (const r of rows ?? []) {
-        if (!isProdRow(r)) continue;
+        if (!isLive(r)) continue;
         const meta = (r.metadata ?? {}) as Record<string, unknown>;
         const method = typeof meta.method === 'string' && meta.method ? meta.method
           : (typeof meta.provider === 'string' && meta.provider ? meta.provider : 'email');
@@ -533,9 +552,11 @@ Deno.serve(async (req) => {
       const bySession = new Map<string, { first: string; last: string; events: number; platform: string | null; surface: string | null; pages: Map<string, number>; ref: string | null; sleeper: string | null }>();
       let devSandboxSessions = 0;
       const seenNoise = new Set<string>();
+      const seenTest = new Set<string>();
       for (const r of rows ?? []) {
         if (!r.session_id || named.has(r.session_id)) continue;
         if (isServerRow(r)) continue;
+        if (isTestRow(r)) { seenTest.add(r.session_id); continue; }
         if (!isProdRow(r)) {
           if (!seenNoise.has(r.session_id)) { seenNoise.add(r.session_id); devSandboxSessions++; }
           continue;
@@ -572,7 +593,7 @@ Deno.serve(async (req) => {
         .sort((a, b) => (a.started < b.started ? 1 : -1))
         .slice(0, 150);
       await auditEvent(admin, req, 'admin_analytics_report', 'success', { userId }, { days, detail: 'sessions' });
-      return json(req, { sessions, anonymousTotal: bySession.size, devSandboxSessions, days, since });
+      return json(req, { sessions, anonymousTotal: bySession.size, devSandboxSessions, testSessions: seenTest.size, days, since });
     }
 
     const { data, error } = await admin.rpc('admin_analytics_report', { p_since: since });

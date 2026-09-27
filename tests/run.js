@@ -1002,6 +1002,39 @@ test('live update: unsaved work holds the silent reload (QA 2026-09-26)',
     }
   });
 
+test('analytics: robots and owner devices are stamped as test traffic (2026-09-27)',
+  () => {
+    // Mission Control leaves any session with metadata.internal out of its
+    // numbers (analytics_test_sessions). Every event sender must stamp it.
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    const connect = fs.readFileSync(path.join(ROOT, 'connect-sleeper.html'), 'utf8');
+    for (const [name, src] of [['landing.html', landing], ['connect-sleeper.html', connect]]) {
+      ok(src.includes('function dhqInternalTag()') && src.includes("navigator.webdriver) return 'automated'"), name + ': robots are stamped');
+      ok(src.includes("DHQ_OWNER_HANDLES = ['skjjcruz', 'bigloco']") && src.includes("localStorage.setItem('dhq_internal_v1', 'owner')"), name + ': owner devices are marked (sticky)');
+    }
+    ok(landing.includes('if (internal) out.internal = internal;'), 'landing events carry the stamp');
+    ok(connect.includes('internal: dhqInternalTag()'), 'connect events carry the stamp');
+    const shared = path.join(ROOT, 'reconai-shared/supabase-client.js');
+    if (fs.existsSync(shared)) {
+      const sc = fs.readFileSync(shared, 'utf8');
+      ok(sc.includes('function dhqInternalTag()') && sc.includes('if (internal) meta.internal = internal;'), 'shared analytics client stamps every queued event');
+    }
+  });
+
+test('Mission Control leaves test traffic out of every number (2026-09-27)',
+  () => {
+    const mig = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20260927000000_analytics_test_traffic_fence.sql'), 'utf8');
+    ok(mig.includes('create or replace function public.analytics_test_sessions') && mig.includes("coalesce(e.metadata->>'internal', '') <> ''"), 'stamped sessions are test traffic');
+    ok(mig.includes("where r.role in ('admin', 'owner')") && mig.includes("select 'skjjcruz'"), 'owner accounts and handles are test traffic');
+    ok(mig.includes('where sc.is_prod and not sc.is_test') && mig.includes("'testTraffic'"), 'rollup excludes test sessions and still counts them apart');
+    ok(mig.includes('from scoped where is_prod and not is_test group by surface'), 'doors exclude test sessions');
+    const fn = fs.readFileSync(path.join(ROOT, 'supabase/functions/admin-analytics-report/index.ts'), 'utf8');
+    ok(fn.includes("admin.rpc('analytics_test_sessions'") && fn.includes('const isLive = (r: FenceRow) => isProdRow(r) && !isTestRow(r);'), 'detail views use the same session list');
+    ok((fn.match(/isLive\(r\)/g) || []).length >= 4, 'every detail view is fenced');
+    const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/deploy-functions.yml'), 'utf8');
+    ok(wf.includes("'20260927000000': 'supabase/migrations/20260927000000_analytics_test_traffic_fence.sql'"), 'the fence migration is applied on deploy');
+  });
+
 test('retired standalone pages are redirect stubs to the app (2026-09-26)',
   () => {
     // draft-warroom / free-agency / trade-calculator moved into app tabs; the
