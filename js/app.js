@@ -860,49 +860,101 @@
         const visibleEspnLeagues = (ESPN_ENABLED || PLATFORM_SANDBOX_ACCESS) ? espnLeagues : [];
         const visibleMflLeagues = MFL_SANDBOX_ACCESS ? mflLeagues : [];
         const [espnError, setEspnError] = useState(null);
-        // Sleeper username — read from localStorage (login.html stores 'username', inline connect stores 'sleeperUsername')
-        // Sign-out removes od_auth_v1, and signing back in (Google/Apple/email)
-        // never re-wrote it, so a returning owner whose profile still said
-        // onboardingComplete landed on a hub that waited forever for a username
-        // it would never get ("Loading more leagues…", 0 leagues — owner report
-        // 2026-09-28). Recover it: local profile first, then the account's
-        // server profile (app_users.platform_usernames.sleeper), and re-store it
-        // where every other screen reads it. No handle anywhere → stop loading
-        // so the hub offers "Add a league" instead of spinning.
-        function storeSleeperHandle(handle) {
-            try {
-                const prev = JSON.parse(localStorage.getItem('od_auth_v1') || 'null') || {};
-                localStorage.setItem('od_auth_v1', JSON.stringify({ ...prev, sleeperUsername: handle }));
-            } catch (e) { window.wrLog?.('app.storeSleeperHandle', e); }
+        // ── Whose Sleeper handle this hub loads (sign-in lifecycle fix, 2026-09-28) ──
+        // The device's identity cache is stamped with its owner (DHQ-Shared
+        // identity.js). The local handle (od_auth_v1, either shape) is used
+        // only when that stamp is the current session's; otherwise the
+        // account's server copy decides (OD.identity.reconcileAfterSignIn —
+        // it clears another owner's cache, lets the server handle win and
+        // uploads a handle only this device knew). b143 read od_profile_v1
+        // unconditionally, which after a sign-out showed the NEXT person the
+        // previous person's leagues. The Demo League is a tab-scoped flag
+        // (sessionStorage), never written into the persistent identity.
+        const DEMO_HANDLE_KEY = 'dhq_demo_handle_v1';
+        function readDemoHandle() {
+            try { return sessionStorage.getItem(DEMO_HANDLE_KEY) || null; } catch (e) { return null; }
+        }
+        const HUB_TIMEOUT_MS = 8000;
+        // The boot reconcile's own worst case is a 6s read + a 3s write settle.
+        const RECONCILE_CAP_MS = 12000;
+        function withHubTimeout(promise, ms) {
+            let timer = null;
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { hubTimeout: true })), ms || HUB_TIMEOUT_MS); }),
+            ]).finally(() => { if (timer) clearTimeout(timer); });
         }
         const [sleeperUsername, setSleeperUsername] = useState(() => {
-            const current = window.OD?.getCurrentUsername?.();
-            if (current) return current;
-            try {
-                const prof = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
-                if (prof && typeof prof.sleeperUsername === 'string' && prof.sleeperUsername) {
-                    storeSleeperHandle(prof.sleeperUsername);
-                    return prof.sleeperUsername;
+            const idn = window.OD?.identity;
+            if (idn) {
+                // Stamp matches (or a device from before stamping): this
+                // owner's cache — start from it; the boot reconcile below may
+                // still swap in the server's handle.
+                const stamp = idn.getStamp();
+                if (!stamp || stamp === idn.currentOwner()) {
+                    const h = idn.localHandle();
+                    // The old Demo button's residue is not trusted until the
+                    // account's server handle says it is this account's.
+                    if (h && !(idn.isDemo && idn.isDemo(h))) return h;
                 }
-            } catch (e) { /* unreadable profile — fall through to the server */ }
-            return null;
+                return readDemoHandle();
+            }
+            return window.OD?.getCurrentUsername?.() || readDemoHandle();
         });
+        // 'reconcile' while the account's handle is being fetched and it took
+        // too long; 'sleeper' when Sleeper itself did. Drives the retry notice.
+        const [hubStall, setHubStall] = useState(null);
+        const [reconcileNonce, setReconcileNonce] = useState(0);
         useEffect(() => {
-            if (sleeperUsername) return undefined;
+            const idn = window.OD?.identity;
+            if (!idn) { if (!sleeperUsername) setLoading(false); return undefined; }
+            const owner = idn.currentOwner();
+            const signedIn = owner && owner !== 'guest';
+            // Guest / signed out, or the cache is already this owner's and
+            // holds a handle: nothing to ask the server.
+            // (An account write that never landed — hub connect offline, a
+            // 5xx — is retried here: needsSync.)
+            const lh = idn.localHandle();
+            if (!signedIn || (idn.getStamp() === owner && lh && !(idn.isDemo && idn.isDemo(lh)) && !reconcileNonce && !(idn.needsSync && idn.needsSync()))) {
+                if (!sleeperUsername) setLoading(false);
+                return undefined;
+            }
             let alive = true;
+            setHubStall(null);
             (async () => {
-                let handle = null;
-                try {
-                    const prof = window.OD?.loadProfile ? await window.OD.loadProfile() : null;
-                    const h = prof && prof.platforms && prof.platforms.sleeper;
-                    if (typeof h === 'string' && h.trim()) handle = h.trim();
-                } catch (e) { window.wrLog?.('app.recoverSleeperHandle', e); }
+                let r = null;
+                try { r = await withHubTimeout(idn.reconcileAfterSignIn(null, { timeoutMs: 6000, boot: true }), RECONCILE_CAP_MS); }
+                catch (e) {
+                    window.wrLog?.('app.reconcileIdentity', e);
+                    if (alive && !sleeperUsername) { setHubStall('reconcile'); setLoading(false); }
+                    return;
+                }
                 if (!alive) return;
-                if (handle) { storeSleeperHandle(handle); setSleeperUsername(handle); }
-                else setLoading(false);
+                const h = r && r.handle;
+                // The account (server read OK) has no league source at all and
+                // this device has none either (and never finished onboarding
+                // for this owner): onboarding lives on the connect
+                // page — the same place sign-in sends them (a Demo League
+                // opened in this tab stays here).
+                // (A profile this owner marked onboarding-complete stays on the
+                // hub, which offers "Add a league".)
+                if (r && r.serverOk && !r.onboarded && !idn.localOnboarded() && !readDemoHandle() && String(r.owner || '').indexOf('account:') === 0) {
+                    window.location.replace('connect-sleeper.html');
+                    return;
+                }
+                if (h && h !== sleeperUsername) setSleeperUsername(h);
+                else if (!h) {
+                    // Another owner's handle was on screen: drop it (a Demo
+                    // League opened in this tab stays).
+                    if (sleeperUsername && sleeperUsername !== readDemoHandle()) setSleeperUsername(readDemoHandle());
+                    // The account couldn't be read (offline / timeout / 5xx):
+                    // offer a retry instead of an empty "Add a league".
+                    if (r && r.serverOk === false) setHubStall('reconcile');
+                    setLoading(false);
+                }
             })();
             return () => { alive = false; };
-        }, [sleeperUsername]);
+        }, [reconcileNonce]);
 
         // Display name state
         const [customDisplayName, setCustomDisplayName] = useState(() => {
@@ -1036,7 +1088,10 @@
                 let franchiseId = localStorage.getItem('mfl_franchise_id') || null;
                 try {
                     const raw = await window.MFL.fetchLeague(leagueId, year, apiKey);
-                    if (!alive || !raw?.leagueData?.league) return;
+                    if (!alive) return;
+                    // MFL answers a private league without its key with an
+                    // error body (HTTP 200): say so instead of vanishing.
+                    if (!raw?.leagueData?.league) throw new Error((raw?.leagueData?.error && (raw.leagueData.error.$t || raw.leagueData.error)) || 'no league data');
                     const franchisesRaw = raw.leagueData?.league?.franchises?.franchise || [];
                     const franchiseArr = Array.isArray(franchisesRaw) ? franchisesRaw : [franchisesRaw];
                     // Owner default: if bigloco hasn't picked a team yet, lock in the
@@ -1068,6 +1123,11 @@
                     }
                 } catch (e) {
                     window.wrLog?.('app.loadMflData', e);
+                    // Said out loud instead of vanishing: a private league
+                    // without its API key (it ends with the app session).
+                    if (alive) setMflError(!apiKey
+                        ? 'Your MFL league could not be loaded. If it is private, reconnect it with your MFL API key.'
+                        : (e?.message || 'MFL league could not be loaded'));
                 }
             })();
             return () => { alive = false; };
@@ -1124,7 +1184,7 @@
                     // A private league whose cookies ended with the browser
                     // session: say so instead of silently showing nothing.
                     if (alive) setEspnError(/private/i.test(e?.message || '')
-                        ? 'Your ESPN league is private and this session no longer has access. Reconnect it on the connect page.'
+                        ? 'Your ESPN league is private and this session no longer has access. Reconnect it to bring it back.'
                         : (e?.message || 'ESPN league could not be loaded'));
                 }
             })();
@@ -1134,10 +1194,13 @@
         async function loadSleeperData() {
             setLoading(true);
             setError(null);
+            setHubStall(null);
             setSleeperLeagues([]);
 
             try {
-                const user = await fetchSleeperUser(sleeperUsername);
+                // Capped (SHOULD-FIX 9): a stalled Sleeper answer ends in a
+                // retry notice, never an endless "Loading…".
+                const user = await withHubTimeout(fetchSleeperUser(sleeperUsername));
                 if (!user) {
                     setError("Couldn't find that Sleeper username — check spelling and try again");
                     setLoading(false);
@@ -1145,7 +1208,7 @@
                 }
                 setSleeperUser(user);
 
-                const leagues = (await fetchUserLeagues(user.user_id, selectedYear)) || [];
+                const leagues = (await withHubTimeout(fetchUserLeagues(user.user_id, selectedYear))) || [];
                 if (!leagues.length) { setSleeperLeagues([]); setLoading(false); hubSyncedAtRef.current = Date.now(); return; }
 
                 // Stream each league's full details into state as it resolves, preserving
@@ -1160,10 +1223,10 @@
                 await Promise.all(
                     leagues.map(async (league) => {
                         try {
-                            const [rosters, users] = await Promise.all([
+                            const [rosters, users] = await withHubTimeout(Promise.all([
                                 fetchLeagueRosters(league.league_id),
                                 fetchLeagueUsers(league.league_id)
-                            ]);
+                            ]), 15000);
 
                             const myRoster = rosters.find(r => r.owner_id === user.user_id);
 
@@ -1198,7 +1261,8 @@
                 setLoading(false);
             } catch (err) {
                 console.error('Failed to load Sleeper data:', err);
-                setError('Failed to load Sleeper data. Please refresh.');
+                if (err && err.hubTimeout) setHubStall('sleeper');
+                setError(err && err.hubTimeout ? 'Sleeper is taking too long to answer.' : 'Failed to load Sleeper data. Please refresh.');
                 setLoading(false);
             }
         }
@@ -2046,6 +2110,9 @@
             else localStorage.removeItem('mfl_franchise_id');
             // Sync the connection to the account so it follows the user across devices.
             window.OD?.saveMflConnection?.({ leagueId, year: localStorage.getItem('mfl_year') || '2026', franchiseId: franchiseId || null });
+            // App accounts: the league pointer goes on the account profile
+            // (fw-profile, keepalive). The users-table write above is legacy-only.
+            try { window.OD?.identity?.pushIdentity?.(); } catch (e) { /* offline — next sign-in uploads it */ }
             const league = buildMflLeagueObj(result, leagueId, franchiseId);
             setMflLeagues(prev => {
                 const filtered = prev.filter(l => l._mflLeagueId !== league._mflLeagueId);
@@ -2074,8 +2141,17 @@
                 if (user && user.user_id) { uname = user.username || typed; sleeperUserId = user.user_id; }
             } catch (e) { /* offline — accept the typed name, as before */ }
             try {
-                localStorage.setItem('od_auth_v1', JSON.stringify({ sleeperUsername: uname, sleeperUserId }));
-                localStorage.setItem('od_locked_username_v2', uname);
+                // Both od_auth_v1 shapes + the profile copy (identity.js).
+                const idn = window.OD?.identity;
+                if (idn) {
+                    idn.writeHandle(uname, sleeperUserId ? { sleeperUserId } : null);
+                    // This device's identity is now this session's owner's.
+                    if (!idn.getStamp() || idn.getStamp() !== idn.currentOwner()) idn.setStamp(idn.currentOwner());
+                } else {
+                    localStorage.setItem('od_auth_v1', JSON.stringify({ username: uname, sleeperUsername: uname, sleeperUserId }));
+                    localStorage.setItem('od_locked_username_v2', uname);
+                }
+                sessionStorage.removeItem(DEMO_HANDLE_KEY);
             } catch (e) { /* storage blocked — the reload below still tries */ }
             // Fire-and-forget: tracking must never delay or block the connect.
             try { window.OD?.track?.('sleeper_connected', { sleeperUsername: uname, source: 'hub', verified: !!sleeperUserId }); } catch (e) {}
@@ -2085,8 +2161,20 @@
             // Sleeper confirmed is recorded — a typo must not leave the account
             // permanently claiming a league it does not have. The local sign-in
             // above still accepts it, exactly as before.
+            // B2: this write used to die with the reload right below it (no
+            // keepalive, not awaited) — the owner's connects never reached the
+            // server. Now keepalive + awaited, capped so a dead network can't
+            // hold the hub.
             if (sleeperUserId) {
-                try { window.OD?.savePlatformUsernames?.({ sleeper: uname }); } catch (e) {}
+                const idn = window.OD?.identity;
+                let write = null;
+                try {
+                    write = idn?.pushIdentity ? idn.pushIdentity() : window.OD?.savePlatformUsernames?.({ sleeper: uname });
+                } catch (e) { write = null; }
+                if (write) {
+                    const cap = new Promise(r => setTimeout(r, 4000));
+                    await Promise.race([Promise.resolve(write).catch(() => false), cap]);
+                }
             }
             window.location.reload();
         };
@@ -2218,6 +2306,27 @@
                 )}
                 {sleeperUsername && <ChampionshipBanners titles={ownerTitles} />}
 
+                {/* ── Hub notices: a stalled load gets a retry (never an endless
+                     "Loading…"), and a private ESPN / MFL league that lost its
+                     session-only sign-in gets a way back in. ── */}
+                {(hubStall || (espnError && localStorage.getItem('espn_league_id')) || (mflError && !mflFranchises && localStorage.getItem('mfl_league_id'))) && (
+                    <div role="status" style={{ margin: '0 12px 12px', padding: '10px 12px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--ov-1, rgba(255,255,255,0.02))', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.5, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {hubStall && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                <span>{hubStall === 'sleeper' ? 'Sleeper is taking too long to answer.' : 'We couldn’t reach your account to load your leagues.'}</span>
+                                <button type="button" className="hub-cta ghost" style={{ padding: '4px 10px' }}
+                                    onClick={() => { if (hubStall === 'sleeper' && sleeperUsername) loadSleeperData(); else { setHubStall(null); setLoading(true); setReconcileNonce(n => n + 1); } }}>Try again</button>
+                            </div>
+                        )}
+                        {espnError && localStorage.getItem('espn_league_id') && (
+                            <div>{espnError} <a href="connect-sleeper.html?reconnect=espn" style={{ color: 'var(--gold)', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>Reconnect ESPN</a></div>
+                        )}
+                        {mflError && !mflFranchises && localStorage.getItem('mfl_league_id') && (
+                            <div>{mflError} <a href="connect-sleeper.html?reconnect=mfl" style={{ color: 'var(--gold)', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>Reconnect MFL</a></div>
+                        )}
+                    </div>
+                )}
+
                 {/* ── Franchise picker — the default landing for every visitor.
                      Shows once we're past the initial no-cache sync, and stays
                      mounted behind the Add-a-league modal so connecting never
@@ -2290,7 +2399,7 @@
                                 <div className="hub-connect-card">
                                     <input id="wr-sleeper-input" placeholder="Sleeper username" onKeyDown={e => { if (e.key === 'Enter') { const v = e.target.value.trim(); if (v) connectSleeperFromHub(v); } }} />
                                     <button className="hub-cta gold" onClick={() => { const v = document.getElementById('wr-sleeper-input')?.value?.trim(); if (v) connectSleeperFromHub(v); }}>CONNECT</button>
-                                    <button className="hub-cta ghost" style={{ marginTop: '6px' }} onClick={() => { localStorage.setItem('od_auth_v1', JSON.stringify({sleeperUsername:'bigloco'})); AppStorage.set(APP_WR_KEYS.DEMO_MODE, '1'); window.location.reload(); }}>Demo League</button>
+                                    <button className="hub-cta ghost" style={{ marginTop: '6px' }} onClick={() => { try { sessionStorage.setItem(DEMO_HANDLE_KEY, 'bigloco'); } catch (e) { /* storage blocked */ } setSleeperUsername('bigloco'); }}>Demo League</button>
                                 </div>
                             ) : hasLeagues ? (
                                 /* Add-a-league view is connect-forms only — the league list

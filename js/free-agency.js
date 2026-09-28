@@ -27,7 +27,7 @@
         // The dhq/250 formula below is OUR estimate, never a market price —
         // the label says so (C2 wave 2026-09-27). The league's real winning
         // bids ride in FAAB Command as history.
-        faab:       { label: 'DHQ Bid Estimate (formula, not a market price)', shortLabel: 'Est. bid', width: '64px', group: 'stats' },
+        faab:       { label: 'DHQ Bid Estimate (league bid model, not a market price)', shortLabel: 'Est. bid', width: '64px', group: 'stats' },
         // Per-game usage, POSITION-SPECIFIC (C2 port): each row reads its own
         // position's top-2 signature stats (App.StatCatalog via
         // App.FAMarketData) from THIS season's Sleeper line — '—' when he has
@@ -120,6 +120,194 @@
     }
     // What a free-agent recommendation may never say about a backup QB.
     const FA_BACKUP_FIT = { label: 'Backup QB — stash, not a starter', short: 'Stash', score: 1, color: 'var(--silver)', need: null, backup: true };
+
+    // ── ONE bid estimate (bidfix 2026-09-27) ────────────────────────────────
+    // Every "$ est." on this tab — the phone hero, the waiver-board rows, the
+    // market column, the drawer, FAAB Command, and the Flash Brief target the
+    // action board feeds — comes from App.Faab.estimate (js/shared/faab-engine.js,
+    // a boot script, so it is there wherever the board is built). It used to be
+    // two estimators: a value÷250 formula on the rows/hero/drawer and the
+    // league-history model in FAAB Command, which disagreed for the same player
+    // on the same screen ("EST. BID $7–14" over "ESTIMATE $26"). The model won:
+    // it reads what THIS league pays (winning and losing claims), who else
+    // needs the player, and their budgets — the formula read a player score
+    // and a multiplier, which is not what a claim costs. The range is the
+    // model's own band (see estimate()), not a second formula.
+    //
+    // Inputs: the league's cached transactions (WrTxns — the same cache FAAB
+    // Command fills). Until they land the model is in league-median mode, and
+    // EVERY surface is, so they still agree; faEnsureBidHistory fetches once
+    // (6h TTL, one in-flight per league) and announces wr:fa-txns-updated so
+    // the tab and the brief recompute together.
+    let _faTxnsVersion = 0;
+    const _faBidInflight = new Map();
+    const _faTxnsSig = new Map();     // lid → 'won:lost' counts last announced
+    function faBidHistoryTxns(league) {
+        const lid = league?.league_id || league?.id;
+        if (!lid || !window.WrTxns?.getCached) return [];
+        try { return (window.WrTxns.getCached(lid) || []).concat(window.WrTxns.getFailedWaivers ? (window.WrTxns.getFailedWaivers(lid) || []) : []); }
+        catch (e) { return []; }
+    }
+    // Where a bid can be estimated at all: a FAAB league on Sleeper (we don't
+    // import ESPN / MFL / Yahoo budgets or claims). One gate for the fetch and
+    // for every estimate.
+    function faBidsHere(league) {
+        return faIsFaabLeague(league) && faLeaguePlatform(league) === 'sleeper';
+    }
+    function faEnsureBidHistory(league) {
+        const lid = league?.league_id || league?.id;
+        if (!lid || !window.WrTxns?.fetchLeagueTxns || !faBidsHere(league)) return Promise.resolve([]);
+        if (_faBidInflight.has(lid)) return _faBidInflight.get(lid);
+        // Baseline = what the estimates have ALREADY been reading (getCached),
+        // so a fetch that is only a cache hit doesn't announce a "change".
+        if (!_faTxnsSig.has(lid) && window.WrTxns.getCached) {
+            try { _faTxnsSig.set(lid, (window.WrTxns.getCached(lid) || []).length + ':' + (window.WrTxns.getFailedWaivers ? (window.WrTxns.getFailedWaivers(lid) || []).length : 0)); } catch (e) { /* no baseline */ }
+        }
+        const p = Promise.resolve(window.WrTxns.fetchLeagueTxns(lid)).then(txns => {
+            // Announce only when the history actually changed — a cache hit
+            // (every FAAB Command target tap re-asks) must not invalidate the
+            // estimate memo and re-run the model for the whole board.
+            const failed = window.WrTxns.getFailedWaivers ? (window.WrTxns.getFailedWaivers(lid) || []) : [];
+            const sig = (txns || []).length + ':' + failed.length;
+            if (_faTxnsSig.get(lid) !== sig) {
+                _faTxnsSig.set(lid, sig);
+                _faTxnsVersion++;
+                try { window.dispatchEvent(new CustomEvent('wr:fa-txns-updated', { detail: { leagueId: String(lid), version: _faTxnsVersion } })); } catch (e) { /* no-op */ }
+            }
+            return txns || [];
+        }).catch(() => []).finally(() => { _faBidInflight.delete(lid); });
+        _faBidInflight.set(lid, p);
+        return p;
+    }
+    // THE player value every bid surface prices off (review B1): format-aware
+    // App.PlayerValue.getValue (ROS in redraft / chopped, dynasty DHQ otherwise),
+    // raw DHQ only when that module is missing. The FA tab pool, the action
+    // board behind the Flash Brief, the Home widget and faModelBid all read
+    // this — before, the board priced off raw dynasty DHQ while the tab used
+    // ROS, so the same redraft player got two estimates.
+    function faValueOf(pid, skin) {
+        const PV = window.App?.PlayerValue;
+        if (PV?.getValue) {
+            try { return Number(PV.getValue(pid, skin ? { skin } : {})) || 0; } catch (e) { /* fall through */ }
+        }
+        return Number(window.App?.LI?.playerScores?.[pid]) || 0;
+    }
+
+    // Priority-add ordering shared by the FA tab and the action board: craze
+    // seeds first, then GM Strategy target positions, then fit × value (+ the
+    // GM market-posture bias). Top 5.
+    function faRankPriorityAdds(list, { crazeSeed, gmTargets, postureBias }) {
+        const seed = crazeSeed || new Set();
+        const tgt = gmTargets || new Set();
+        const bias = postureBias || (() => 0);
+        return (list || [])
+            .map(x => ({ ...x, seeded: seed.has(String(x.pid)), isStrategicTarget: tgt.has(x.pos) }))
+            .sort((a, b) => (Number(b.seeded) - Number(a.seeded)) || (Number(b.isStrategicTarget) - Number(a.isStrategicTarget)) || ((b.fitScore * 5000 + b.dhq + bias(b)) - (a.fitScore * 5000 + a.dhq + bias(a))))
+            .slice(0, 5);
+    }
+
+    // The shared free-agent candidate pool — the FA tab's Market/Action HQ and
+    // buildFreeAgencyActionBoard (Flash Brief, UDFA craze) both build from this,
+    // so they rank and gate the same players on the same numbers. Carries
+    // Sleeper's published weekly line (requireSleeper) and depth-chart slot for
+    // the recommendation truth gate.
+    function faBuildAvailable({ playersData, statsData, prevStatsData, currentLeague, skin, rostered, isDraftProspect, leaguePosSet }) {
+        const normPos = window.App?.normPos || (x => x);
+        const WP = window.App && window.App.WeeklyProj;
+        const scores = window.App?.LI?.playerScores || {};
+        const week = WP ? (WP.displayWeek ? WP.displayWeek() : WP.loadedProjWeek ? (WP.loadedProjWeek() || (WP.currentWeek ? WP.currentWeek() : 1)) : (window.S?.currentWeek || 1)) : null;
+        return Object.entries(playersData || {})
+            .filter(([pid, p]) => !rostered.has(pid) && p.team && p.status !== 'Inactive' && p.status !== 'Retired' && p.active !== false && !isDraftProspect(pid, p)
+                && (p.full_name || p.first_name || p.last_name) && (scores[pid] || 0) > 0
+                && (!leaguePosSet || leaguePosSet.has(normPos(p.position) || p.position)))
+            .map(([pid, p]) => {
+                const dhq = faValueOf(pid, skin);
+                // requireSleeper: only a number Sleeper published. No line →
+                // null (not zero), so "not projected" stays distinguishable.
+                let proj = null;
+                if (WP && WP.projectPlayer) {
+                    try {
+                        const pr = WP.projectPlayer(pid, {
+                            playersData, statsData, priorData: prevStatsData,
+                            scoring: currentLeague?.scoring_settings || {},
+                            week,
+                            requireSleeper: true,
+                        });
+                        proj = (pr && pr.points && Number.isFinite(pr.points.median)) ? pr.points.median : null;
+                    } catch (e) { proj = null; }
+                }
+                // Sleeper's depth chart: no slot, no NFL role.
+                const depthSlot = Number.isFinite(Number(p.depth_chart_order)) && Number(p.depth_chart_order) > 0
+                    ? Number(p.depth_chart_order) : null;
+                return { pid, p, dhq, proj, projected: proj != null, depthSlot, pos: normPos(p.position) || p.position };
+            })
+            .sort((a, b) => b.dhq - a.dhq)
+            .slice(0, 300);
+    }
+
+    // Every input the model reads off the rosters: budgets spent and roster
+    // sizes (league-detail refreshes currentLeague.rosters IN PLACE on the same
+    // league object, so the object identity alone can't key the memo — S1).
+    function faRosterSig(league) {
+        return (league?.rosters || []).map(r => r.roster_id + ':' + (Number(r.settings?.waiver_budget_used) || 0) + ':' + (r.players || []).length + ':' + (r.reserve || []).length).join(',');
+    }
+
+    // Memo per league object × players object × txns version × roster
+    // signature × target. The tab rebuilds its board on every render, so the
+    // model must not re-run per keystroke.
+    //
+    // `dhq` from callers is IGNORED — the value is resolved here (faValueOf)
+    // so no surface can price the same player off a different number.
+    const _faBidCache = new WeakMap();
+    function faModelBid({ league, myRoster, playersData, pid, pos, skin }) {
+        const Faab = window.App?.Faab;
+        if (!Faab?.estimate || !league || !faBidsHere(league)) return null;
+        const lid = league.league_id || league.id || '';
+        const dhq = faValueOf(pid, skin);
+        const gmEff = window.WR?.GmMode?.effects?.(lid) || {};
+        const horizonWeeks = window.App?.ChopOdds?.horizonFor?.(lid, null) || null;
+        const key = [_faTxnsVersion, faRosterSig(league), myRoster?.roster_id, pid, pos, dhq, gmEff.faabMinBid || '', horizonWeeks || ''].join('|');
+        let slot = _faBidCache.get(league);
+        if (!slot || slot.pd !== playersData) { slot = { pd: playersData, map: new Map() }; _faBidCache.set(league, slot); }
+        if (slot.map.has(key)) return slot.map.get(key);
+        if (slot.map.size > 1500) slot.map.clear();
+        let est = null;
+        try {
+            est = Faab.estimate({
+                league, myRosterId: myRoster?.roster_id,
+                txns: faBidHistoryTxns(league),
+                playersData,
+                minBidOverride: gmEff.faabMinBid || undefined,
+                targetPid: pid, targetPos: pos, dhq,
+                // Same value scale for the rivals' rostered players: on K / DEF /
+                // 1-QB a rival is in the market only if this is an upgrade.
+                playerValue: (rp) => faValueOf(rp, skin),
+                // CHOPPED: bid against how long you expect to be ALIVE.
+                horizonWeeks,
+            });
+        } catch (e) { est = null; if (window.wrLog) window.wrLog('fa.modelBid', e); }
+        if (est) {
+            est.dhq = dhq;
+            // The drawer's competition read, from the same model: rivals with
+            // a need at the position AND the budget to chase him.
+            const engaged = (est.analysis?.rivals || []).filter(r => r.engaged).length;
+            est.competitors = engaged;
+            est.conf = engaged <= 1 ? 'Low competition' : engaged <= 3 ? 'Moderate' : 'High demand';
+            est.confCol = engaged <= 1 ? 'var(--good)' : engaged <= 3 ? 'var(--warn)' : 'var(--bad)';
+        }
+        slot.map.set(key, est);
+        return est;
+    }
+    // "$26" (uncontested → the band collapses), "$18–34", or "$18–64 (your
+    // cap)" when the top of the band is your spend cap, not 80% win odds (N7).
+    // compact: tight table / phone slots drop the words (the title says it).
+    function faEstText(f, dash, compact) {
+        if (!f) return '';
+        if (window.App?.Faab?.formatRange) return window.App.Faab.formatRange(f, dash, { capLabel: !compact });
+        return f.lo === f.hi ? '$' + f.lo : '$' + f.lo + (dash || '–') + f.hi;
+    }
+    const FA_EST_TITLE = 'DHQ bid estimate from this league’s bid history and rival budgets — not a market price';
+    const faEstTitle = f => f ? FA_EST_TITLE + (f.hiCapped ? ' · the top of the range is your spend cap, not a stronger bid' : '') : undefined;
 
     // The player position groups this league actually rosters, derived from
     // roster_positions (FLEX→RB/WR/TE, SUPER_FLEX→+QB, REC_FLEX→WR/TE, IDP_FLEX→DL/LB/DB).
@@ -286,9 +474,7 @@
         const faIsPro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
 
         const normPos = window.App?.normPos || (p => p);
-        const scores = window.App?.LI?.playerScores || {};
         const assess = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
-        const rosterPositions = currentLeague?.roster_positions || [];
         const scoring = currentLeague?.scoring_settings || {};
         const leagueProfile = typeof window.App?.Intelligence?.buildLeagueProfile === 'function'
             ? window.App.Intelligence.buildLeagueProfile({ league: currentLeague, rosters: currentLeague?.rosters || [], platform: currentLeague?._platform })
@@ -297,7 +483,6 @@
         const spent = myRoster?.settings?.waiver_budget_used || 0;
         const remaining = Math.max(0, budget - spent);
         const hasFAAB = faIsFaabLeague(currentLeague);
-        const faabMinBid = currentLeague?.settings?.waiver_bid_min ?? currentLeague?.settings?.waiver_budget_min ?? 0; // Sleeper's real field is waiver_bid_min (owner league floors at $13)
         const teamTier = assess?.tier || '';
         const teamWindow = assess?.window || '';
         // GM Strategy outranks the roster grade for FA posture: a committed plan
@@ -306,10 +491,7 @@
         // (shorter window = looser youth filter); 25 is the legacy default.
         const gmEff = window.WR?.GmMode?.effects?.(currentLeague?.id || currentLeague?.league_id) || {};
         const isRebuilding = gmEff.hasStrategy ? gmEff.mode === 'rebuild' : (teamTier === 'REBUILDING' || teamWindow === 'REBUILDING');
-        const isContending = gmEff.hasStrategy ? gmEff.mode === 'win_now' : (teamTier === 'ELITE' || teamTier === 'CONTENDER' || teamWindow === 'CONTENDING');
         const faAgeGate = gmEff.hasStrategy ? ({ '1_year': 29, '2_3_years': 27, 'dynasty_long': 25 }[gmEff.timeline] || 25) : 25;
-        const isSuperFlex = leagueProfile ? leagueProfile.formatTags?.includes('superflex') : rosterPositions.includes('SUPER_FLEX');
-        const isTEP = leagueProfile ? ((leagueProfile.scoring?.teBonus || 0) > 0 || leagueProfile.scoring?.tePremium >= 1.45) : (scoring.bonus_rec_te || scoring.rec_te || 0) > 0;
         const peaks = window.App?.peakWindows || {};
         // UDFA-craze seed: pids the post-draft recap pre-identified as waiver targets.
         // Seeded pids float to the top of priorityAdds when the craze is live.
@@ -374,30 +556,18 @@
             if (assess?.strengths?.includes(pos)) return { label: 'Surplus stash', short: 'Stash', score: 1, color: 'var(--silver)', need: null };
             return { label: 'Depth add', short: 'Depth', score: 2, color: 'var(--silver)', need: null };
         }
-        function getScarcityMultiplier(pos) {
-            let mult = 1.0;
-            if (isSuperFlex && pos === 'QB') mult = 1.8;
-            if (isTEP && pos === 'TE') mult = 1.5;
-            const rbSlots = rosterPositions.filter(s => s === 'RB').length;
-            if (pos === 'RB' && rbSlots >= 2) mult = Math.max(mult, 1.3);
-            return mult;
-        }
-        // OUR estimate (dhq/250 × scarcity × mode), never a market price —
-        // `estimate: true` rides the payload so every surface labels it.
-        function faabSuggest(dhq, pos, playerAge) {
+        // OUR estimate — the league bid model (faModelBid → App.Faab.estimate),
+        // never a market price; `estimate: true` rides the payload so every
+        // surface labels it. The gates here decide WHETHER to estimate at all
+        // (Pro, FAAB league, replacement-level, rebuild posture); the number
+        // itself is the model's, the same one FAAB Command prints.
+        function faabSuggest(dhq, pos, playerAge, pid) {
             if (!faIsPro) return null; // FAAB bid recommendations are Pro
-            if (!hasFAAB || dhq <= 0) return null;
+            if (!hasFAAB || !faBidsHere(currentLeague) || dhq <= 0) return null;
             if (dhq < 500) return null;
             if (isRebuilding && (playerAge || 30) > faAgeGate && dhq < 2000) return null;
-            const floor = faabMinBid || 1;
-            if (remaining < floor) return null; // FAAB exhausted — no legal bid left to suggest
-            const base = Math.round((dhq / 250) * getScarcityMultiplier(pos));
-            const cap = Math.round(remaining * 0.15);
-            const modeMultiplier = isRebuilding ? 0.6 : isContending ? 1.2 : 1.0;
-            const sug = Math.min(remaining, Math.max(floor, Math.min(cap, Math.round(base * modeMultiplier))));
-            const lo = Math.min(remaining, Math.max(floor, Math.round(sug * 0.7)));
-            const hi = Math.max(lo, Math.min(remaining, Math.round(sug * 1.4)));
-            return { sug, lo, hi, scarcity: getScarcityMultiplier(pos), modeMultiplier, estimate: true, basis: 'dhq-formula' };
+            if (remaining <= 0) return null; // FAAB exhausted — no legal bid left to suggest
+            return faModelBid({ league: currentLeague, myRoster, playersData, pid, pos, skin: leagueSkin });
         }
         function decorateFaCandidate(x) {
             const pos = x.pos || normPos(x.p?.position) || x.p?.position || '';
@@ -405,7 +575,7 @@
             const ppg = x.ppg != null ? x.ppg : seasonPpgFor(x.pid);
             const win = windowRead(pos, x.p?.age);
             const fit = fitRead(pos, x.p);
-            const faab = x.faab || faabSuggest(x.dhq, pos, x.p?.age);
+            const faab = x.faab || faabSuggest(x.dhq, pos, x.p?.age, x.pid);
             const formatReasons = leagueProfile && typeof window.App?.Intelligence?.buildPlayerFormatReasons === 'function'
                 ? window.App.Intelligence.buildPlayerFormatReasons({ player: x.p, pos, profile: leagueProfile }).slice(0, 2)
                 : [];
@@ -467,11 +637,22 @@
         // would double-count a taxi/IR stash toward the copy cap.
         (currentLeague?.rosters || []).forEach(r => new Set((r.players || []).concat(r.taxi || [], r.reserve || []).map(String)).forEach(k => { faRosteredCount[k] = (faRosteredCount[k] || 0) + 1; }));
         const rostered = { has: (pid) => (faRosteredCount[String(pid)] || 0) >= faCopies };
-        const availablePlayers = Object.entries(playersData || {})
-            .filter(([pid, p]) => !rostered.has(pid) && p.team && p.status !== 'Inactive' && p.status !== 'Retired' && p.active !== false && (scores[pid] || 0) > 0 && !isDraftProspect(pid, p))
-            .map(([pid, p]) => ({ pid, p, dhq: scores[pid] || 0, pos: normPos(p.position) || p.position }))
-            .sort((a, b) => b.dhq - a.dhq)
-            .slice(0, 300);
+        // Redraft / chopped value is rest-of-season (App.PlayerValue); build it
+        // for this league the way the FA tab does, so the Flash Brief reads the
+        // same numbers even when Free Agency was never opened (cached; no-op in
+        // dynasty / keeper).
+        try {
+            window.App?.PlayerValue?.ensureRos?.({ leagueId: currentLeague?.league_id || currentLeague?.id, league: currentLeague, playersData, statsData, priorData: prevStatsData, skin: leagueSkin });
+        } catch (e) { if (window.wrLog) window.wrLog('fa.board.ensureRos', e); }
+        let leaguePosSet = null;
+        try { leaguePosSet = typeof window.getLeaguePositions === 'function' ? window.getLeaguePositions({ league: currentLeague, asSet: true }) : null; } catch (e) { leaguePosSet = null; }
+        // The SAME pool builder as the FA tab (faBuildAvailable): same value
+        // resolver, same gates, same Sleeper line + depth slot.
+        const availablePlayers = faBuildAvailable({ playersData, statsData, prevStatsData, currentLeague, skin: leagueSkin, rostered, isDraftProspect, leaguePosSet });
+        // The FA tab's truth gate: a recommendation needs a published Sleeper
+        // line and a depth-chart slot. The UDFA craze opts out (undrafted
+        // rookies have neither in May, and it runs its own eligibility).
+        const truthOk = (x) => !!args.skipTruthGate || (x.projected && x.depthSlot != null);
 
         // GM-Office filters scope the recommendation surfaces (not the market pool).
         const gmFa = getGmFaFilters(currentLeague);
@@ -504,6 +685,7 @@
                 .filter(x => {
                     if (!needPositions.includes(x.pos)) return false;
                     if (isBackupQb(x)) return false; // a backup never "fills" a starting need
+                    if (!truthOk(x)) return false;   // same truth gate as the FA tab
                     if (x.dhq < dynamicFloor) return false;
                     if (isRebuilding && (x.p.age || 30) > faAgeGate && x.dhq < 2000) return false;
                     return true;
@@ -514,19 +696,18 @@
                     const ppg = st.gp > 0 ? +(calcRawPtsFor(st) / st.gp).toFixed(1) : 0;
                     if (ppg > 0 && ppg < 5.0 && (st.gp || 0) >= 6) return null;
                     const need = assess?.needs?.find(n => n.pos === x.pos);
-                    return { ...x, ppg, need, peakYrs: peakYearsFor(x.pos, x.p.age), valueYrs: valueYearsFor(x.pos, x.p.age), faab: faabSuggest(x.dhq, x.pos, x.p.age) };
+                    return { ...x, ppg, need, peakYrs: peakYearsFor(x.pos, x.p.age), valueYrs: valueYearsFor(x.pos, x.p.age), faab: faabSuggest(x.dhq, x.pos, x.p.age, x.pid) };
                 })
                 .filter(Boolean);
         }
 
         const actionBoardPlayers = recPool
+            .filter(truthOk)
             .map(decorateFaCandidate)
             .sort((a, b) => (b.fitScore * 5000 + b.dhq + (b.ppg || 0) * 35 + postureBias(b)) - (a.fitScore * 5000 + a.dhq + (a.ppg || 0) * 35 + postureBias(a)));
-        const priorityAdds = (recommendations.length ? recommendations : actionBoardPlayers)
-            .map(decorateFaCandidate)
-            .map(x => ({ ...x, seeded: crazeSeed.has(String(x.pid)), isStrategicTarget: gmTargets.has(x.pos) }))
-            .sort((a, b) => (Number(b.seeded) - Number(a.seeded)) || (Number(b.isStrategicTarget) - Number(a.isStrategicTarget)) || ((b.fitScore * 5000 + b.dhq + postureBias(b)) - (a.fitScore * 5000 + a.dhq + postureBias(a))))
-            .slice(0, 5);
+        // Same ordering as the FA tab's Priority Moves (faRankPriorityAdds), so
+        // the Flash Brief's target IS the FA tab's top add.
+        const priorityAdds = faRankPriorityAdds((recommendations.length ? recommendations : actionBoardPlayers).map(decorateFaCandidate), { crazeSeed, gmTargets, postureBias });
         if (faIsPro && typeof window.App?.Intelligence?.publishRecommendations === 'function') {
             window.App.Intelligence.publishRecommendations('waiver', priorityAdds.map(x => x.intelligence).filter(Boolean), { surface: 'free-agency-action-board' });
         }
@@ -538,21 +719,16 @@
     // newly-eligible UDFAs (undrafted rookies signed to an NFL team) become claimable
     // and the craze board ranks them by roster fit with league-history-anchored FAAB.
 
-    // Blend the model FAAB bid with this league's own positional FAAB history so the
-    // suggestion reflects how this league actually bids, not just a generic dhq/250.
+    // Kept on window.App for API compatibility only — nothing here calls it
+    // since the craze board stopped blending (review N2).
+    // bidfix 2026-09-27: ONE estimate. The model already reads this league's
+    // bid history, so a positional history range is carried as evidence
+    // (leagueAvg / leagueCount) and never averaged into the numbers — that
+    // averaging was a third estimator. No estimate → no invented one from
+    // the range alone.
     function blendFaabWithHistory(faab, range) {
-        if (!faab && !range) return null;
-        if (!faab) return { sug: range.avg, lo: range.low, hi: range.high, leagueAvg: range.avg, leagueCount: range.count };
-        if (!range) return { ...faab, leagueAvg: null, leagueCount: 0 };
-        return {
-            sug: Math.round((faab.sug + range.avg) / 2),
-            lo: Math.min(faab.lo, range.low),
-            hi: Math.max(faab.hi, range.high),
-            leagueAvg: range.avg,
-            leagueCount: range.count,
-            scarcity: faab.scarcity,
-            modeMultiplier: faab.modeMultiplier,
-        };
+        if (!faab) return null;
+        return { ...faab, leagueAvg: range ? range.avg : null, leagueCount: range ? range.count : 0 };
     }
 
     // Tier the post-unlock free-agent pool into the craze board. Composes the existing
@@ -572,16 +748,18 @@
         const prospectByName = new Map(prospects.map(p => [faNormName(p.name), p]));
         // The craze runs its own eligibility — exempt it from the GM-Office FA filters
         // (a minDHQ would wrongly nuke low-value-but-high-upside UDFAs).
-        const board = (window.App?.buildFreeAgencyActionBoard || buildFreeAgencyActionBoard)({ ...args, skipGmFilters: true });
+        // skipTruthGate: undrafted rookies have no Sleeper line / depth slot yet.
+        const board = (window.App?.buildFreeAgencyActionBoard || buildFreeAgencyActionBoard)({ ...args, skipGmFilters: true, skipTruthGate: true });
         const pool = board.actionBoardPlayers || [];
-        const livRange = window.App?.livFAABRange || (typeof window.livFAABRange === 'function' ? window.livFAABRange : null);
 
         const candidates = pool
             .filter(x => x.p?.team && isRookieWaiverLockedCandidate(x.pid, x.p, { rookiesLocked: true, prospectNames, statsData, prevStatsData }))
             .map(x => {
                 const prospect = prospectByName.get(faNormName(x.name)) || null;
-                const range = livRange ? livRange(x.pos) : null;
-                return { ...x, prospect, nflTeam: x.p.team, faab: blendFaabWithHistory(x.faab, range), tierLabel: prospect?.tierLabel || null };
+                // x.faab is already THE estimate (faModelBid) — the positional
+                // history blend it used to get read a livFAABRange that doesn't
+                // exist in this app (review N2).
+                return { ...x, prospect, nflTeam: x.p.team, tierLabel: prospect?.tierLabel || null };
             });
 
         const posList = (args.leaguePositions && args.leaguePositions.length) ? args.leaguePositions : leaguePlayablePositions(currentLeague.roster_positions);
@@ -640,12 +818,16 @@
     window.App.buildUdfaCrazeBoard = buildUdfaCrazeBoard;
     window.App.observeUdfaCrazeFlip = observeUdfaCrazeFlip;
     window.App.blendFaabWithHistory = blendFaabWithHistory;
+    // ONE bid estimate + its history fetch (bidfix) — the Flash Brief and any
+    // other surface printing a bid for a player go through these.
+    window.App.faModelBid = faModelBid;
+    window.App.faEnsureBidHistory = faEnsureBidHistory;
+    window.App.faValueOf = faValueOf;
+    window.App.faBidsHere = faBidsHere;
+    window.App.faRosterSig = faRosterSig;
 
     // Module-level caches for the waiver tools (FreeAgencyTab below).
     let _faStreamCache = null;
-    // Bumped whenever FAAB Command (re)reads a league's transactions, so the
-    // drawer's bid-history memo knows the cache may have changed.
-    let _faTxnsVersion = 0;
 
     // ── Waiver-tool styles (C2 wave 2026-09-27) ───────────────────────────
     // Scoped to the FA tab and rendered with it (no index.html / build edit).
@@ -683,6 +865,7 @@
         .fa-bid-evidence small { display: block; margin-top: 4px; color: var(--silver); font-size: var(--text-micro, 0.6875rem); line-height: 1.45; }
         .fa-bid-evidence .is-warn { color: var(--warn, #f0a500); }
         .fa-hq-command-model { color: var(--silver); font-size: var(--text-micro, 0.6875rem); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 4px; }
+        .fa-hq-command-band { color: var(--gold); font-weight: 700; }
         .fa-bid-note { border: 1px dashed var(--ov-6, rgba(255,255,255,0.12)); border-radius: var(--card-radius-sm, 8px); padding: 8px 10px; margin: 0 0 10px; color: var(--silver); font-size: var(--text-label, 0.75rem); line-height: 1.5; }
         @media (max-width: 767px) {
             .fa-streams { padding: 12px; }
@@ -742,52 +925,45 @@
     // below it are labelled as our model's estimate. Only Sleeper FAAB
     // leagues fetch (rolling waivers / ESPN / MFL never hit the 19
     // transaction endpoints for nothing — the parent shows a note instead).
-    function FaabCommandCard({ league, myRoster, playersData, targets }) {
+    // bidfix: the bid printed here is faModelBid — the SAME call the hero,
+    // the board rows and the drawer make for this target — so the card can
+    // no longer say $26 under a hero that says $7–14.
+    function FaabCommandCard({ league, myRoster, playersData, targets, skin }) {
         const [pick, setPick] = useState(0);
-        const [plan, setPlan] = useState(null);   // null | {loading} | {a, evidence} | {err}
+        const [plan, setPlan] = useState(null);   // null | {loading} | {est, evidence} | {err}
         // Fall back to the top target if the board shifted under a stale index
         // (a new week's Priority Moves can be shorter than the old selection).
         const target = (targets || [])[pick] || (targets || [])[0] || null;
         const lid = league?.league_id || league?.id || '';
-        const bidsHere = faIsFaabLeague(league) && faLeaguePlatform(league) === 'sleeper';
+        const bidsHere = faBidsHere(league);
+        // Re-plan when the rosters refresh in place (budgets / roster sizes —
+        // review S1) or the league's bid history changes, not only on a new target.
+        const rosterSig = faRosterSig(league);
         useEffect(() => {
             if (!target || !bidsHere || !window.WrTxns) { setPlan(null); return; }
             let alive = true;
             setPlan({ loading: true });
             (async () => {
                 try {
-                    const txns = await window.WrTxns.fetchLeagueTxns(lid);
-                    _faTxnsVersion++;
-                    const failed = window.WrTxns.getFailedWaivers(lid);
+                    // One fetch per league (6h cache) — announces wr:fa-txns-updated
+                    // so the parent tab's rows/hero recompute on the same history.
+                    await faEnsureBidHistory(league);
+                    const txns = window.WrTxns.getCached ? (window.WrTxns.getCached(lid) || []) : [];
                     const evidence = window.App?.WaiverTools?.bidEvidence
-                        ? window.App.WaiverTools.bidEvidence(txns || [], league, target.pos, playersData)
+                        ? window.App.WaiverTools.bidEvidence(txns, league, target.pos, playersData)
                         : null;
-                    // GM Strategy's minimum-bid override wins over the imported
-                    // platform setting (some leagues/platforms don't expose it
-                    // reliably) — same precedence as the recommendation panels.
-                    const gmEff = window.WR?.GmMode?.effects?.(lid) || {};
-                    const a = window.App?.Faab ? window.App.Faab.analyze({
-                        league, myRosterId: myRoster?.roster_id,
-                        txns: (txns || []).concat(failed || []),
-                        playersData,
-                        minBidOverride: gmEff.faabMinBid || undefined,
-                        targetPid: target.pid, targetPos: target.pos,
-                        // Strength: DHQ vs an elite-FA benchmark (6000 ≈ a league-winning add).
-                        targetStrength: Math.max(0.15, Math.min(1, (Number(target.dhq) || 0) / 6000)),
-                        // CHOPPED: bid against how long you expect to be ALIVE,
-                        // not the calendar. Unspent budget is wasted budget.
-                        horizonWeeks: window.App?.ChopOdds?.horizonFor?.(lid, null) || null,
-                    }) : null;
-                    if (alive) setPlan(a || evidence ? { a, evidence } : null);
+                    const est = faModelBid({ league, myRoster, playersData, pid: target.pid, pos: target.pos, skin });
+                    if (alive) setPlan(est || evidence ? { est, evidence } : null);
                 } catch (e) { if (alive) setPlan({ err: true }); }
             })();
             return () => { alive = false; };
-        }, [lid, target?.pid, bidsHere]);
+        }, [lid, target?.pid, bidsHere, rosterSig, _faTxnsVersion, skin]);
         if (!target || !bidsHere || (plan && plan.err)) return null;
         if (plan && plan.loading) {
             return <div style={{ padding: '10px 12px', marginBottom: '10px', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 'var(--card-radius-sm, 8px)', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>Reading this league’s bid history…</div>;
         }
-        const a = plan && plan.a;
+        const est = plan && plan.est;
+        const a = est && est.analysis;
         const evidence = plan && plan.evidence;
         if (!a && !evidence) return null;    // pre-effect or engine absent
         const budgetNum = Number(league?.settings?.waiver_budget) || 0;
@@ -842,6 +1018,7 @@
                 <div className="fa-hq-command-hero">
                     <strong>${a.rec.bid}</strong>
                     <span>
+                        {est.lo !== est.hi ? <span className="fa-hq-command-band" title={faEstTitle(est)}>est. range {faEstText(est)} · </span> : null}
                         {!engaged.length
                             ? 'uncontested — no rival needs him'
                             : oddsOk
@@ -1219,42 +1396,12 @@
             } catch (e) { return null; }
         }, [currentLeague]);
 
+        // The shared pool builder (faBuildAvailable) — the action board behind
+        // the Flash Brief builds from the same function, so both rank the same
+        // players on the same value (App.PlayerValue: ROS in redraft/chopped).
         const availablePlayers = useMemo(() => {
             if (!rosterState.isUsable) return [];
-            return Object.entries(playersData)
-                .filter(([pid, p]) => !rostered.has(pid) && p.team && p.status !== 'Inactive' && p.status !== 'Retired' && p.active !== false && !isDraftProspect(pid, p)
-                    && (p.full_name || p.first_name || p.last_name) && (window.App?.LI?.playerScores?.[pid] || 0) > 0
-                    && (!leaguePosSet || leaguePosSet.has(normPos(p.position) || p.position)))
-                .map(([pid, p]) => {
-                    const dhq = (window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid, { skin: resolvedLeagueSkin }) : (window.App?.LI?.playerScores?.[pid] || 0));
-                    // requireSleeper: this column only ever shows a number Sleeper
-                    // published. When Sleeper has no line the projection is null —
-                    // not zero — so the board can show a blank and know the
-                    // difference between "projected to score nothing" and "not
-                    // projected at all".
-                    let proj = null;
-                    const WP = window.App && window.App.WeeklyProj;
-                    if (WP && WP.projectPlayer) {
-                        try {
-                            const pr = WP.projectPlayer(pid, {
-                                playersData, statsData, priorData: prevStatsData,
-                                scoring: currentLeague?.scoring_settings || {},
-                                // displayWeek: the current week once its lines load (LAB114).
-                                week: WP.displayWeek ? WP.displayWeek() : WP.loadedProjWeek ? (WP.loadedProjWeek() || (WP.currentWeek ? WP.currentWeek() : 1)) : (window.S?.currentWeek || 1),
-                                requireSleeper: true,
-                            });
-                            proj = (pr && pr.points && Number.isFinite(pr.points.median)) ? pr.points.median : null;
-                        } catch (e) { proj = null; }
-                    }
-                    // Sleeper's depth chart: a player with no slot is not in an
-                    // NFL role. We already download this — it is the difference
-                    // between a back who might play and one who will not.
-                    const depthSlot = Number.isFinite(Number(p.depth_chart_order)) && Number(p.depth_chart_order) > 0
-                        ? Number(p.depth_chart_order) : null;
-                    return { pid, p, dhq, proj, projected: proj != null, depthSlot, pos: normPos(p.position) || p.position };
-                })
-                .sort((a, b) => b.dhq - a.dhq)
-                .slice(0, 300);
+            return faBuildAvailable({ playersData, statsData, prevStatsData, currentLeague, skin: resolvedLeagueSkin, rostered, isDraftProspect, leaguePosSet });
         }, [rosterState.isUsable, playersData, statsData, prevStatsData, currentLeague, rostered, timeRecomputeTs, isDraftProspect, leaguePosSet, projTick]);
 
         // ── Streaming & season upgrades (C2 renderWeeklyStreams port) ──────────
@@ -1587,79 +1734,42 @@
         // Bid UI only where the league actually bids (waiver_type 2 on
         // Sleeper); rolling / reverse-standings waivers get a plain note.
         const hasFAAB = faIsFaabLeague(currentLeague);
-        const faabMinBid = currentLeague?.settings?.waiver_bid_min ?? currentLeague?.settings?.waiver_budget_min ?? 0; // Sleeper's real field is waiver_bid_min (owner league floors at $13)
-
-        // ── League format detection (for scarcity multipliers) ──
         const rosterPositions = currentLeague?.roster_positions || [];
-        const isSuperFlex = leagueProfile ? leagueProfile.formatTags?.includes('superflex') : rosterPositions.includes('SUPER_FLEX');
-        const scoring = currentLeague?.scoring_settings || {};
-        const isTEP = leagueProfile ? ((leagueProfile.scoring?.teBonus || 0) > 0 || leagueProfile.scoring?.tePremium >= 1.45) : (scoring.bonus_rec_te || scoring.rec_te || 0) > 0;
         const teamTier = assess?.tier || '';
         const teamWindow = assess?.window || '';
         // GM Strategy outranks the roster grade (assessment = fallback); the
         // rebuild age gate follows the GM timeline. Mirrors buildFreeAgencyActionBoard.
         const isRebuilding = gmEff.hasStrategy ? gmEff.mode === 'rebuild' : (teamTier === 'REBUILDING' || teamWindow === 'REBUILDING');
-        const isContending = gmEff.hasStrategy ? gmEff.mode === 'win_now' : (teamTier === 'ELITE' || teamTier === 'CONTENDER' || teamWindow === 'CONTENDING');
         const faAgeGate = gmEff.hasStrategy ? ({ '1_year': 29, '2_3_years': 27, 'dynasty_long': 25 }[gmEff.timeline] || 25) : 25;
 
-        // ── Positional scarcity multipliers based on league format ──
-        function getScarcityMultiplier(pos) {
-            let mult = 1.0;
-            if (isSuperFlex && pos === 'QB') mult = 1.8;
-            if (isTEP && pos === 'TE') mult = 1.5;
-            // RB scarcity: if league has 2+ RB slots + FLEX, RBs are scarce
-            const rbSlots = rosterPositions.filter(s => s === 'RB').length;
-            if (pos === 'RB' && rbSlots >= 2) mult = Math.max(mult, 1.3);
-            return mult;
-        }
+        // The league's bid history feeds every estimate on this tab (see the
+        // faModelBid note). Fetch it once per league (6h cache) and recompute
+        // when it lands — FAAB Command used to be the only fetcher, so a tab
+        // with no priority adds showed league-median numbers forever.
+        const [faTxnsTick, setFaTxnsTick] = useState(0);
+        const faBidLeagueId = String(currentLeague?.league_id || currentLeague?.id || '');
+        useEffect(() => {
+            const h = (e) => { if (!e?.detail?.leagueId || e.detail.leagueId === faBidLeagueId) setFaTxnsTick(t => t + 1); };
+            window.addEventListener('wr:fa-txns-updated', h);
+            return () => window.removeEventListener('wr:fa-txns-updated', h);
+        }, [faBidLeagueId]);
+        useEffect(() => {
+            if (!isPro || !hasFAAB) return;
+            faEnsureBidHistory(currentLeague);
+        }, [faBidLeagueId, isPro, hasFAAB]);
 
-        // DHQ bid ESTIMATE — team mode + scarcity over dhq/250. It is our
-        // formula, not a market price: `estimate: true` rides the payload and
-        // every surface labels it "est."; the league's real winning bids are
-        // shown separately as history (FAAB Command, App.WaiverTools.bidEvidence).
-        function faabSuggest(dhq, pos, playerAge) {
+        // DHQ bid ESTIMATE — the league bid model, the same number FAAB
+        // Command prints (faModelBid → App.Faab.estimate). It is our estimate,
+        // not a market price: `estimate: true` rides the payload and every
+        // surface labels it "est."; the league's real winning bids are shown
+        // separately as history (FAAB Command, App.WaiverTools.bidEvidence).
+        function faabSuggest(dhq, pos, playerAge, pid) {
             if (!isPro) return null; // FAAB bid recommendations are Pro
-            if (!hasFAAB || dhq <= 0) return null;
-
-            // ── Quality gate: skip replacement-level players ──
-            if (dhq < 500) return null; // Below minimum quality threshold
-
-            // ── Team mode gate ──
-            if (isRebuilding && (playerAge || 30) > faAgeGate && dhq < 2000) {
-                // Rebuilding teams should NOT bid on older low-value players
-                return null;
-            }
-
-            const floor = faabMinBid || 1;
-            if (remaining < floor) return null; // FAAB exhausted — no legal bid left to suggest
-            // Apply scarcity multiplier to base valuation
-            const scarcity = getScarcityMultiplier(pos);
-            const base = Math.round((dhq / 250) * scarcity);
-            const cap = Math.round(remaining * 0.15);
-
-            // Team mode adjustment
-            let modeMultiplier = 1.0;
-            if (isRebuilding) modeMultiplier = 0.6; // Rebuilders spend less, save FAAB
-            if (isContending) modeMultiplier = 1.2; // Contenders bid aggressively on starters
-
-            const adjusted = Math.round(base * modeMultiplier);
-            const sug = Math.min(remaining, Math.max(floor, Math.min(cap, adjusted)));
-            const lo = Math.min(remaining, Math.max(floor, Math.round(sug * 0.7)));
-            const hi = Math.max(lo, Math.min(remaining, Math.round(sug * 1.4)));
-
-            // Competition: count teams with deficit at this position
-            let competitors = 0;
-            if (assess && currentLeague.rosters) {
-                const reqCount = rosterPositions.filter(s => normPos(s) === pos || s === 'FLEX' || s === 'SUPER_FLEX').length;
-                currentLeague.rosters.forEach(r => {
-                    if (r.roster_id === myRoster?.roster_id) return;
-                    const cnt = (r.players || []).filter(pid => normPos(playersData[pid]?.position) === pos).length;
-                    if (cnt < reqCount) competitors++;
-                });
-            }
-            const conf = competitors <= 1 ? 'Low competition' : competitors <= 3 ? 'Moderate' : 'High demand';
-            const confCol = competitors <= 1 ? 'var(--good)' : competitors <= 3 ? 'var(--warn)' : 'var(--bad)';
-            return { sug, lo, hi, conf, confCol, competitors, scarcity, modeMultiplier, estimate: true, basis: 'dhq-formula' };
+            if (!hasFAAB || !faBidsHere(currentLeague) || dhq <= 0) return null;
+            if (dhq < 500) return null; // replacement level — nothing to bid on
+            if (isRebuilding && (playerAge || 30) > faAgeGate && dhq < 2000) return null; // rebuilders skip old low-value
+            if (remaining <= 0) return null; // FAAB exhausted — no legal bid left to suggest
+            return faModelBid({ league: currentLeague, myRoster, playersData, pid, pos, skin: resolvedLeagueSkin });
         }
 
         // Top recommendations at weak positions — with quality + mode filtering
@@ -1709,11 +1819,11 @@
                     const need = assess.needs.find(n => n.pos === x.pos);
 	                    const peakYrs = peakYearsFor(x.pos, x.p.age);
 	                    const valueYrs = valueYearsFor(x.pos, x.p.age);
-	                    const faab = faabSuggest(x.dhq, x.pos, x.p.age);
+	                    const faab = faabSuggest(x.dhq, x.pos, x.p.age, x.pid);
 	                    return { ...x, ppg, need, peakYrs, valueYrs, faab };
                 })
                 .filter(Boolean);
-        }, [isPro, rosterState.isUsable, recPool, assess, statsData, gmEff]);
+        }, [isPro, rosterState.isUsable, recPool, assess, statsData, gmEff, faTxnsTick]);
 
         // Selected player detail
         const selPlayer = faSelectedPid ? playersData[faSelectedPid] : null;
@@ -1724,7 +1834,7 @@
         const selPos = selPlayer ? normPos(selPlayer.position) : '';
         const selPeakYrs = selPlayer ? peakYearsFor(selPos, selPlayer.age) : 0;
         const selValueYrs = selPlayer ? valueYearsFor(selPos, selPlayer.age) : 0;
-        const selFaab = faSelectedPid ? faabSuggest(selDhq, selPos, selPlayer?.age) : null;
+        const selFaab = faSelectedPid ? faabSuggest(selDhq, selPos, selPlayer?.age, faSelectedPid) : null;
         // Evidence from whatever this league's bid history cache already holds
         // (FAAB Command fills it) — never a fetch from the drawer.
         const selBidLeagueId = currentLeague?.league_id || currentLeague?.id;
@@ -1733,7 +1843,7 @@
             return window.App.WaiverTools.bidEvidence(window.WrTxns.getCached(selBidLeagueId), currentLeague, selPos, playersData);
             // Memoized on league / position / the FAAB Command fetch counter:
             // getCached parses the whole season's transactions from storage.
-        }, [selBidLeagueId, selPos, !!selFaab, hasFAAB, faPlatformNow, _faTxnsVersion]);
+        }, [selBidLeagueId, selPos, !!selFaab, hasFAAB, faPlatformNow, faTxnsTick]);
         const selInitials = selPlayer ? ((selPlayer.first_name||'?')[0] + (selPlayer.last_name||'?')[0]).toUpperCase() : '';
 
         function openFaPlayer(pid) {
@@ -1810,7 +1920,7 @@
             const ppg = x.ppg != null ? x.ppg : seasonPpgFor(x.pid);
             const win = windowRead(pos, x.p?.age);
             const fit = fitRead(pos, x.p);
-            const faab = x.faab || faabSuggest(x.dhq, pos, x.p?.age);
+            const faab = x.faab || faabSuggest(x.dhq, pos, x.p?.age, x.pid);
             const formatReasons = leagueProfile && typeof window.App?.Intelligence?.buildPlayerFormatReasons === 'function'
                 ? window.App.Intelligence.buildPlayerFormatReasons({ player: x.p, pos, profile: leagueProfile }).slice(0, 2)
                 : [];
@@ -1916,10 +2026,14 @@
             .filter(x => x.projected && x.depthSlot != null)
             .map(decorateFaCandidate)
             .sort((a, b) => (b.fitScore * 5000 + b.dhq + (b.ppg || 0) * 35 + postureBias(b)) - (a.fitScore * 5000 + a.dhq + (a.ppg || 0) * 35 + postureBias(a)));
-        const priorityAdds = (recommendations.length ? recommendations : actionBoardPlayers)
-            .map(decorateFaCandidate)
-            .sort((a, b) => (b.fitScore * 5000 + b.dhq + postureBias(b)) - (a.fitScore * 5000 + a.dhq + postureBias(a)))
-            .slice(0, 5);
+        // Same ordering as the action board behind the Flash Brief
+        // (faRankPriorityAdds), so the hero here and the brief's waiver target
+        // are one player. GM Strategy target positions float first — the board
+        // already did that; this tab didn't (review B1).
+        const priorityAdds = faRankPriorityAdds((recommendations.length ? recommendations : actionBoardPlayers).map(decorateFaCandidate), {
+            gmTargets: gmEff.targetPositions instanceof Set ? gmEff.targetPositions : new Set(),
+            postureBias,
+        });
         if (isPro && typeof window.App?.Intelligence?.publishRecommendations === 'function') {
             window.App.Intelligence.publishRecommendations('waiver', priorityAdds.map(x => x.intelligence).filter(Boolean), { surface: 'free-agency' });
         }
@@ -2007,7 +2121,7 @@
                     <span className="fa-hq-player-fit" style={{ color: x.fit.color }}>{x.fit.short}</span>
                     <span className="fa-hq-player-value">
                         <strong style={{ color: dhqCol }}>{x.dhq ? x.dhq.toLocaleString() : '—'}</strong>
-                        <em title={x.faab ? 'DHQ bid estimate (formula) — not a market price' : undefined}>{x.faab ? 'est $' + x.faab.lo + '–' + x.faab.hi : hasFAAB ? 'No bid' : '—'}</em>
+                        <em title={faEstTitle(x.faab)}>{x.faab ? 'est ' + faEstText(x.faab, null, true) : hasFAAB ? 'No bid' : '—'}</em>
                     </span>
                     <span className="fa-hq-why">{x.why}</span>
                 </button>
@@ -2136,7 +2250,7 @@
                             {/* FAAB Command — league-aware bid plan for the top targets
                                 (deterministic; the league's own bid history is the model). */}
                             {isPro && topAdds.length > 0 && hasFAAB && faPlatformNow === 'sleeper' && (
-                                <FaabCommandCard league={currentLeague} myRoster={myRoster} playersData={playersData}
+                                <FaabCommandCard league={currentLeague} myRoster={myRoster} playersData={playersData} skin={resolvedLeagueSkin}
                                     targets={topAdds.slice(0, 3).map(x => ({ pid: x.pid, name: x.name, pos: x.pos, dhq: x.dhq }))} />
                             )}
                             {isPro ? renderBidNote() : null}
@@ -2150,7 +2264,7 @@
                                 {topAdds.length ? topAdds.map((x, i) => (
                                     <button key={x.pid} className="fa-hq-mini-card" title="Open player card" onClick={() => openFaPlayer(x.pid)}>
                                         <strong>{playerName(x.p)} <span style={{ color: posColors[x.pos] || 'var(--silver)' }}>{x.pos}</span></strong>
-                                        <em>{x.fit.label} · {x.dhq.toLocaleString()} {valueShortLabel}{x.faab ? ' · est $' + x.faab.lo + '–' + x.faab.hi : ''}</em>
+                                        <em>{x.fit.label} · {x.dhq.toLocaleString()} {valueShortLabel}{x.faab ? ' · est ' + faEstText(x.faab) : ''}</em>
                                     </button>
                                 )) : <div className="fa-hq-empty">No priority adds match your current roster needs.</div>}
                             </div>
@@ -2439,9 +2553,9 @@
                 switch (k) {
                     case 'dhq': return { label: valueShortLabel, value: x.dhq > 0 ? x.dhq.toLocaleString() : '—', strong: true };
                     case 'faab': {
-                        // EST, not BID: the formula is our estimate, not a price.
-                        const f = faabSuggest(x.dhq, x.pos, p.age);
-                        return { label: 'EST', value: f ? '$' + f.lo + '-' + f.hi : '—', tone: f ? 'gold' : 'mute' };
+                        // EST, not BID: the model's estimate, not a price.
+                        const f = faabSuggest(x.dhq, x.pos, p.age, x.pid);
+                        return { label: 'EST', value: f ? faEstText(f, '-', true) : '—', tone: f ? 'gold' : 'mute' };
                     }
                     case 'sig1': case 'sig2': {
                         const read = faSigRead(x.pos, k === 'sig1' ? 0 : 1, x.pid);
@@ -2517,9 +2631,10 @@
                 const faabBits = hasFAAB ? ' · $' + remaining + ' of $' + budget + ' left · #' + (myFaabRank || '—') + ' FAAB' : '';
                 _faHeroEl = React.createElement(window.WR.HeroCard, {
                     kicker: 'Top add',
-                    // "EST. BID": the range is the DHQ formula's estimate, never
-                    // a price; the league's real bid history is in FAAB Command.
-                    headline: playerName(_heroPro.p, _heroPro.pid).toUpperCase() + (heroFaab ? ' — EST. BID $' + heroFaab.lo + '–' + heroFaab.hi : ''),
+                    // "EST. BID": the league bid model's range (the same number
+                    // FAAB Command below prints), never a price; the league's
+                    // real bid history is in FAAB Command.
+                    headline: playerName(_heroPro.p, _heroPro.pid).toUpperCase() + (heroFaab ? ' — EST. BID ' + faEstText(heroFaab) : ''),
                     facts: _heroPro.why + faabBits,
                     cta: 'OPEN PLAYER CARD',
                     onCta: () => openFaPlayer(_heroPro.pid),
@@ -2784,7 +2899,7 @@
                             {/* FAAB Command on phone (owner ask 2026-08-16) — same
                                 card, right under the hero; Pro-gated like desktop. */}
                             {isPro && priorityAdds.length > 0 && hasFAAB && faPlatformNow === 'sleeper' && (
-                                <FaabCommandCard league={currentLeague} myRoster={myRoster} playersData={playersData}
+                                <FaabCommandCard league={currentLeague} myRoster={myRoster} playersData={playersData} skin={resolvedLeagueSkin}
                                     targets={priorityAdds.slice(0, 3).map(x => ({ pid: x.pid, name: x.name, pos: x.pos, dhq: x.dhq }))} />
                             )}
                             {isPro ? renderBidNote() : null}
@@ -3028,7 +3143,7 @@
                                     if (rolling > 0) { ppg = rolling; ppgMarker = ' · L' + n; }
                                     else { ppgMarker = ' · Szn'; }
                                 }
-	                                const faab = faabSuggest(dhq, pos);
+	                                const faab = faabSuggest(dhq, pos, p.age, pid);
 		                                const peakYrs = peakYearsFor(pos, p.age);
 		                                const valueYrs = valueYearsFor(pos, p.age);
 		                                const peakLabel = peakYrs >= 4 ? 'Rising' : peakYrs >= 1 ? 'Prime' : valueYrs >= 1 ? 'Vet' : 'Post';
@@ -3053,7 +3168,7 @@
                                         // depth_chart_order is 1-based on Sleeper (1 = the starter).
                                         case 'depthChart': return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.depth_chart_order >= 1 ? pos + p.depth_chart_order : '\u2014'}</span>;
                                         case 'injury':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: p.injury_status ? 'var(--bad)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.injury_status || '—'}</span>;
-                                        case 'faab':       return <span title={faab ? 'DHQ bid estimate (formula) — not a market price' : undefined} style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 700 }}>{faab ? '$' + faab.lo + '-' + faab.hi : '\u2014'}</span>;
+                                        case 'faab':       return <span title={faEstTitle(faab)} style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 700 }}>{faab ? faEstText(faab, '-', true) : '\u2014'}</span>;
                                         case 'sig1':
                                         case 'sig2': {
                                             const read = faSigRead(pos, k === 'sig1' ? 0 : 1, pid);
@@ -3134,16 +3249,19 @@
 
                     {/* FAAB Recommendation */}
                     {/* League bid history first (real completed winning bids),
-                        then OUR formula estimate, labelled as one. */}
+                        then OUR model estimate, labelled as one — the same
+                        faModelBid number the hero, rows and FAAB Command show. */}
                     {selFaab && selBidEvidence ? <FaBidEvidence evidence={selBidEvidence} remaining={remaining} /> : null}
-                    {selFaab && <div style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius, 10px)', padding: '14px', marginBottom: '16px' }}>
+                    {selFaab && <div title={faEstTitle(selFaab)} style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius, 10px)', padding: '14px', marginBottom: '16px' }}>
                         <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>DHQ bid estimate</div>
-                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.8rem', fontWeight: 600, color: 'var(--gold)' }}>{'$' + selFaab.lo + ' \u2013 $' + selFaab.hi}</div>
-                        <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginTop: '4px' }}>Formula midpoint: <strong style={{ color: 'var(--white)' }}>{'$' + selFaab.sug}</strong> of ${remaining} remaining — our estimate from player value, not a market price.</div>
+                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.8rem', fontWeight: 600, color: 'var(--gold)' }}>{faEstText(selFaab, ' \u2013 $')}</div>
+                        <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginTop: '4px' }}>Model bid: <strong style={{ color: 'var(--white)' }}>{'$' + selFaab.sug}</strong> of ${remaining} remaining — {selFaab.coldStart
+                                ? 'league-median mode (' + selFaab.sampleSize + ' bid' + (selFaab.sampleSize === 1 ? '' : 's') + ' logged this season); our estimate, not a market price.'
+                                : 'from the ' + selFaab.sampleSize + ' bids this league has placed this season; our estimate, not a market price.'}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
                             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: selFaab.confCol }} />
                             <span style={{ fontSize: 'var(--text-body, 1rem)', color: selFaab.confCol, fontWeight: 600 }}>{selFaab.conf}</span>
-                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6 }}>{selFaab.competitors} other team{selFaab.competitors !== 1 ? 's' : ''} need {selPos}</span>
+                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6 }}>{selFaab.competitors} rival{selFaab.competitors !== 1 ? 's' : ''} with a {selPos} need and the budget</span>
                         </div>
                     </div>}
 

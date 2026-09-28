@@ -99,3 +99,11 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+      # Prove the live site serves THIS build completely: version.json, every
+      # self-updating page, and every script they boot with (200 + matching
+      # content hash, per dist-deploy/version.json). Polls up to 5 min for CDN
+      # propagation, then fails the run with the list of missing / stale files.
+      # This repo has no CNAME, so the Pages URL comes from the deploy step.
+      - name: Verify the live deploy
+        run: node scripts/verify-deploy.cjs --url "${{ steps.deployment.outputs.page_url }}" --expect dist-deploy/version.json --timeout 300 --interval 15

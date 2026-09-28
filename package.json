@@ -40,6 +40,7 @@
     "test:rank-consistency": "npm run build:preview && node tests/rank-consistency-browser-qa.js",
     "test:live-click-paths": "npm run build:preview && node tests/live-click-paths.js",
     "test:launch-browser": "npm run build:preview && node tests/launch-browser-qa.js",
+    "test:e2e-auth": "node tests/e2e-auth/run.cjs",
     "sync:shared": "node scripts/sync-reconai-shared.cjs",
     "verify:deploy": "node ../reconai/scripts/verify-deploy-readiness.cjs",
     "build:preview": "npm run sync:shared && node scripts/build-preview.cjs",
@@ -60,7 +61,7 @@
     "test:faab-engine": "node tests/faab-engine.js",
     "test:chopped": "node tests/chopped.js",
     "test:chop-odds": "node tests/chop-odds.js",
-    "test:engines": "node --test js/shared/*.test.js js/utils/*.test.js"
+    "test:engines": "node --test js/shared/*.test.js js/utils/*.test.js tests/*.test.js"
   },
   "keywords": [
     "fantasy",

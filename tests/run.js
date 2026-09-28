@@ -832,6 +832,128 @@ test('google oauth callback stores the full user record (id included)',
     ok(landing.includes('Object.assign({}, appSession.user || {}'), 'oauth callback must keep the whole user record');
   });
 
+// The index.html pre-paint gate, run for real: extract its inline script and
+// execute it against a fake localStorage/location. Legacy Sleeper logins
+// (login.html) keep their JWT in fw_session_v1 + od_session_v1; users bitten
+// by the 2026-09 refresh bug lost fw_session_v1 and must be re-hydrated from
+// the live od_session_v1 copy instead of being bounced to landing.html.
+function runIndexGate(seed, hostname) {
+  const index = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const m = index.match(/<!-- Early auth gate[\s\S]*?<script>([\s\S]*?)<\/script>/);
+  ok(m, 'index.html must keep the early auth gate script');
+  const store = new Map(Object.entries(seed).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]));
+  const nav = [];
+  const ctx = {
+    localStorage: { getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) },
+    atob: s => Buffer.from(s, 'base64').toString('binary'),
+    Date,
+  };
+  ctx.window = ctx;
+  ctx.location = { hostname: hostname || 'dhqfootball.com', replace: u => nav.push(u) };
+  vm.runInContext(m[1], vm.createContext(ctx));
+  return { store, nav };
+}
+const gateB64 = o => Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const gateJwt = claims => gateB64({ alg: 'HS256' }) + '.' + gateB64(claims) + '.sig';
+const gateLegacy = (exp) => gateJwt({ iss: 'supabase', role: 'anon', sub: 'bob', iat: exp - 7 * 86400, exp, app_metadata: { sleeper_username: 'bob', is_gifted: false } });
+const gateAccount = (exp) => gateJwt({ sub: 'u1', exp, app_metadata: { user_id: 'u1', session_version: 1 } });
+const inFuture = Math.floor(Date.now() / 1000) + 5 * 86400;
+const inPast = Math.floor(Date.now() / 1000) - 86400;
+
+test('index gate: a live legacy token in fw_session_v1 gets in; an expired one is cleared and sent to its login page, handle kept',
+  () => {
+    const live = runIndexGate({ fw_session_v1: { token: gateLegacy(inFuture), user: { sleeperUsername: 'bob' } }, od_auth_v1: { username: 'bob' } });
+    eq(live.nav.length, 0);
+    const dead = runIndexGate({ fw_session_v1: { token: gateLegacy(inPast) }, od_session_v1: { token: gateLegacy(inPast) }, od_auth_v1: { username: 'bob' } });
+    eq(dead.nav[0], 'login.html?for=bob');
+    ok(!dead.store.has('fw_session_v1'), 'dead session cleared');
+    ok(dead.store.has('od_auth_v1'), 'the handle is not a credential: kept');
+  });
+
+test('index gate: an expired account session keeps the identity cache and asks to sign in again (?reauth)',
+  () => {
+    const acct = runIndexGate({ fw_session_v1: { token: gateAccount(inPast), user: { id: 'u1' } }, dhq_identity_owner_v1: 'account:u1',
+      od_auth_v1: { sleeperUsername: 'alice' }, od_profile_v1: { sleeperUsername: 'alice' }, mfl_league_id: '1' });
+    eq(acct.nav[0], 'landing.html?reauth=1');
+    ok(!acct.store.has('fw_session_v1'), 'dead token gone');
+    for (const k of ['od_auth_v1', 'od_profile_v1', 'mfl_league_id', 'dhq_identity_owner_v1']) ok(acct.store.has(k), k + ' kept');
+    // Signed out on an account-stamped device (no token at all): also ?reauth.
+    eq(runIndexGate({ dhq_identity_owner_v1: 'account:u1', od_auth_v1: { username: 'alice' } }).nav[0], 'landing.html?reauth=1');
+    // A device that never signed in: the plain landing page.
+    eq(runIndexGate({}).nav[0], 'landing.html');
+    // A guest whose handle came from the hub ({sleeperUsername} shape) still gets in.
+    eq(runIndexGate({ wr_guest_v1: '1', od_auth_v1: { sleeperUsername: 'g' } }).nav.length, 0);
+  });
+
+test('index gate: a lapsed token on an unstamped device stamps its owner before it is dropped (B1)',
+  () => {
+    const acct = runIndexGate({ fw_session_v1: { token: gateAccount(inPast), user: { id: 'u1' } }, od_auth_v1: { username: 'alice' } });
+    eq(acct.store.get('dhq_identity_owner_v1'), 'account:u1');
+    ok(!acct.store.has('fw_session_v1') && acct.store.has('od_auth_v1'));
+    const leg = runIndexGate({ fw_session_v1: { token: gateLegacy(inPast) } });
+    eq(leg.store.get('dhq_identity_owner_v1'), 'legacy:bob');
+    const stamped = runIndexGate({ fw_session_v1: { token: gateAccount(inPast), user: { id: 'u1' } }, dhq_identity_owner_v1: 'account:uA' });
+    eq(stamped.store.get('dhq_identity_owner_v1'), 'account:uA', 'an existing stamp is never overwritten');
+  });
+
+test('landing honours ?reauth before any signed-in routing (S3 / T11)',
+  () => {
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    const head = landing.slice(0, landing.indexOf('</head>'));
+    const reauthAt = head.indexOf("if (q.has('reauth')) { reveal(); return; }");
+    ok(reauthAt > 0, 'head reveals on ?reauth');
+    ok(reauthAt < head.indexOf("var sess = JSON.parse(localStorage.getItem('fw_session_v1')"), 'before the stored session is read');
+  });
+
+test('index gate: legacy re-hydration only for the stamped owner',
+  () => {
+    const token = gateLegacy(inFuture);
+    const other = runIndexGate({ od_session_v1: { token }, dhq_identity_owner_v1: 'account:uA' });
+    ok(!other.store.has('fw_session_v1'), "another person's leftover legacy copy is not signed in");
+    eq(other.nav[0], 'landing.html?reauth=1');
+    const mine = runIndexGate({ od_session_v1: { token }, dhq_identity_owner_v1: 'legacy:bob' });
+    eq(mine.nav.length, 0);
+    ok(mine.store.has('fw_session_v1'));
+  });
+
+test('index gate: a user bitten by the refresh bug (no fw_session_v1, live legacy od_session_v1) is re-hydrated, not bounced',
+  () => {
+    const token = gateLegacy(inFuture);
+    const expiresAt = new Date(inFuture * 1000).toISOString();
+    const r = runIndexGate({ od_session_v1: { token, expiresAt, isGifted: true }, od_auth_v1: { username: 'bob', passwordHash: 'x' } });
+    eq(r.nav.length, 0, 'stays in the app');
+    const fw = JSON.parse(r.store.get('fw_session_v1'));
+    eq(JSON.stringify(fw), JSON.stringify({ token, expiresAt, user: { sleeperUsername: 'bob', isGifted: true } }), 'login.html shape');
+    ok(r.store.has('od_auth_v1'), 'local login kept');
+    // No expiresAt on the copy → derived from exp.
+    const r2 = runIndexGate({ od_session_v1: { token } });
+    eq(JSON.parse(r2.store.get('fw_session_v1')).expiresAt, expiresAt);
+  });
+
+test('index gate: re-hydration refuses an expired copy, an app-account token, the guest lane, and localhost',
+  () => {
+    const expired = runIndexGate({ od_session_v1: { token: gateLegacy(inPast) }, od_auth_v1: { username: 'bob' } });
+    eq(expired.nav[0], 'landing.html');
+    ok(!expired.store.has('fw_session_v1'), 'never from an expired token');
+    // An account token that merely lacks a JWT shape the gate accepts (expired) is app-account behaviour: untouched.
+    const acct = runIndexGate({ fw_session_v1: { token: gateAccount(inPast), user: { id: 'u1' } }, od_session_v1: { token: gateLegacy(inFuture) } });
+    eq(acct.nav[0], 'landing.html?reauth=1');
+    ok(!acct.store.has('fw_session_v1'), 'expired app session still cleared, not swapped for a legacy one');
+    const notLegacy = runIndexGate({ od_session_v1: { token: gateAccount(inFuture) } });
+    eq(notLegacy.nav[0], 'landing.html');
+    ok(!notLegacy.store.has('fw_session_v1'), 'od_session_v1 must hold a legacy token (sleeper_username, no user_id)');
+    // Guest lane exactly as before: a guest with a league enters as a guest; a guest mid-setup resumes at connect.
+    const guestLeague = runIndexGate({ wr_guest_v1: '1', od_auth_v1: { username: 'g' }, od_session_v1: { token: gateLegacy(inFuture) } });
+    eq(guestLeague.nav.length, 0);
+    ok(!guestLeague.store.has('fw_session_v1'), 'guest tab never becomes a legacy session');
+    const guestSetup = runIndexGate({ wr_guest_v1: '1', od_session_v1: { token: gateLegacy(inFuture) } });
+    eq(guestSetup.nav[0], 'connect-sleeper.html');
+    ok(!guestSetup.store.has('fw_session_v1'));
+    const local = runIndexGate({ od_session_v1: { token: gateLegacy(inFuture) } }, 'localhost');
+    eq(local.nav.length, 0);
+    ok(!local.store.has('fw_session_v1'), 'localhost: gate returns early (the shared client re-hydrates instead)');
+  });
+
 // (The 'session issuers share one entitlements helper' test lives in the dev
 // repo alongside supabase/functions/ — this web-only repo has no backend
 // sources to pin, so that check is intentionally absent here.)
@@ -1138,11 +1260,15 @@ test('league hub brand icon returns to the app front page, which stays put',
     // A brand-new account walks the FULL funnel even on a device where a
     // previous account finished onboarding — that memory is per device, and
     // inheriting it skips plan selection + Sleeper connect entirely.
+    // Since 2026-09-28 the reset is the identity reconcile (DHQ-Shared
+    // identity.js, isNew: a new account starts clean unless it adopts a
+    // guest's own leagues); the old reset stays as the no-identity.js fallback.
     ok(landing.includes('resetDeviceOnboardingForNewAccount'), 'new accounts must reset device onboarding memory');
-    ok(landing.includes('if (signup) resetDeviceOnboardingForNewAccount()'), 'email signup must reset onboarding memory');
+    ok(landing.includes('destAfterSignIn(data, { isNew: signup })'), 'email signup must reconcile as a new account');
+    ok(landing.includes('destAfterSignIn(appSession || null, { isNew: oauthIsNew })'), 'OAuth signup must reconcile as a new account');
     // A fresh OAuth return must never be hijacked by the existing-session
     // redirect before the sync/repair completes.
-    ok(landing.includes('if (FRESH_OAUTH_RETURN) return;'), 'checkSession must yield to the OAuth callback');
+    ok(landing.includes('if (FRESH_OAUTH_RETURN || RESUME_OAUTH) return;'), 'checkSession must yield to the OAuth callback');
   });
 
 test('deploy build stamps the shared-loader cache version',
