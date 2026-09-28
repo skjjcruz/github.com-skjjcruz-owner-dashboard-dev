@@ -15,7 +15,17 @@
  * email, ensures a free subscription, and mints a Dynasty HQ app JWT with the
  * claims the rest of the platform expects. Mirrors fw-signup for an OAuth user.
  *
- * Returns: { token, user: { id, email, displayName, tier, products } }
+ * Returns: { token, isNew, user: { id, email, displayName, tier, products }, platformUsernames }
+ *   platformUsernames: the fw-profile GET shape ({} = none on file, null =
+ *   couldn't read — ask fw-profile). Additive; lets sign-in restore identity.
+ *
+ * Deleted accounts: if no app_users row exists but the email was deleted
+ * through fw-delete-account in the last DELETED_ACCOUNT_WINDOW_DAYS, and the
+ * presented Supabase user was created BEFORE that deletion, the token is a
+ * leftover session (a device that still holds the old Google login). We do
+ * not recreate the account from it: that stale auth user is removed and the
+ * call answers 410 { code: 'account_deleted' }. A Google sign-in made after
+ * the deletion is a new auth user and signs up normally.
  *
  * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET
  */
@@ -31,6 +41,13 @@ import {
   normalizeEmail,
 } from '../_shared/security.ts';
 import { mintAppSessionJWT, resolveEntitlements } from '../_shared/entitlements.ts';
+import { loadPlatformUsernames } from '../_shared/platforms.ts';
+import {
+  clearDeletionTombstone,
+  deleteAuthUserById,
+  findRecentDeletionTombstone,
+  isStaleAuthUserForDeletedAccount,
+} from '../_shared/account-deletion.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -96,6 +113,28 @@ Deno.serve(async (req) => {
 
     let isNew = false;
     if (!appUser) {
+      // Deleted recently? Refuse to resurrect from a pre-deletion session.
+      const tombstone = await findRecentDeletionTombstone(admin, normalizedEmail);
+      if (tombstone) {
+        if (isStaleAuthUserForDeletedAccount({ authUserCreatedAt: authUser.created_at, tombstoneDeletedAt: tombstone.deletedAt })) {
+          // Finish the deletion: this auth user belonged to the deleted
+          // account. Its sessions die with it; a fresh sign-in makes a new one.
+          const authDeleted = await deleteAuthUserById(admin, authUser.id);
+          await auditEvent(admin, req, 'fw_oauth_sync', 'blocked', { email: normalizedEmail }, {
+            reason: 'account_deleted',
+            provider,
+            deletedAt: tombstone.deletedAt,
+            staleAuthUserDeleted: authDeleted,
+          });
+          return json(req, {
+            error: 'This account was deleted. Sign in again to create a new account.',
+            code: 'account_deleted',
+          }, 410);
+        }
+        // A new auth user after the deletion: a deliberate return. Allow it.
+        await clearDeletionTombstone(admin, normalizedEmail);
+      }
+
       isNew = true;
       const { data: created, error: insertErr } = await admin
         .from('app_users')
@@ -143,6 +182,7 @@ Deno.serve(async (req) => {
     const token = await mintAppSessionJWT({ userId: appUser.id, email: appUser.email, tier, products, sessionVersion });
 
     await auditEvent(admin, req, 'fw_oauth_sync', 'success', { userId: appUser.id, email: normalizedEmail }, { provider, isNew });
+    const platformUsernames = isNew ? {} : await loadPlatformUsernames(admin, appUser.id);
 
     return json(req, {
       token,
@@ -156,6 +196,7 @@ Deno.serve(async (req) => {
         tier,
         products,
       },
+      platformUsernames,
     });
 
   } catch (err) {
