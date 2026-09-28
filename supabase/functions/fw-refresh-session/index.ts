@@ -15,7 +15,7 @@
  * requireActiveAppSession checks session_version against app_users on
  * every call, so a bumped version refuses the refresh.
  *
- * Returns: { token, user: { id, email, displayName, tier, products[] } }
+ * Returns: { token, user: { id, email, displayName, tier, products[] }, platformUsernames }
  * (same shape as fw-signin, so clients can store it verbatim)
  *
  * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET
@@ -31,6 +31,7 @@ import {
   requireActiveAppSession,
 } from '../_shared/security.ts';
 import { mintAppSessionJWT, resolveEntitlements } from '../_shared/entitlements.ts';
+import { loadPlatformUsernames } from '../_shared/platforms.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -75,6 +76,7 @@ Deno.serve(async (req) => {
     });
 
     await auditEvent(admin, req, 'fw_refresh_session', 'success', { userId: user.id, email: user.email }, { tier, products });
+    const platformUsernames = await loadPlatformUsernames(admin, user.id);
 
     return json(req, {
       token,
@@ -85,6 +87,7 @@ Deno.serve(async (req) => {
         tier,
         products,
       },
+      platformUsernames,
     });
   } catch (err) {
     console.error('fw-refresh-session error:', err);

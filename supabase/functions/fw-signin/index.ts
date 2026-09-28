@@ -4,7 +4,9 @@
  * POST /functions/v1/fw-signin
  * Body: { email, password }
  *
- * Returns: { token, user: { id, email, displayName, tier, products[] } }
+ * Returns: { token, user: { id, email, displayName, tier, products[] }, platformUsernames }
+ *   platformUsernames: the fw-profile GET shape ({} = none on file, null =
+ *   couldn't read — ask fw-profile). Additive; lets sign-in restore identity.
  *
  * Uses Web Crypto PBKDF2 for password verification (no external deps).
  * Required built-in secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET
@@ -21,6 +23,7 @@ import {
   normalizeEmail,
 } from '../_shared/security.ts';
 import { mintAppSessionJWT, resolveEntitlements } from '../_shared/entitlements.ts';
+import { loadPlatformUsernames } from '../_shared/platforms.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -89,6 +92,7 @@ Deno.serve(async (req) => {
     await admin.from('app_users').update({ last_sign_in_at: new Date().toISOString() }).eq('id', user.id);
     await clearRateLimit(admin, 'fw-signin:email', normalizedEmail);
     await auditEvent(admin, req, 'fw_signin', 'success', { userId: user.id, email: normalizedEmail }, { tier, products });
+    const platformUsernames = await loadPlatformUsernames(admin, user.id);
 
     return json(req, {
       token,
@@ -99,6 +103,7 @@ Deno.serve(async (req) => {
         tier,
         products,
       },
+      platformUsernames,
     });
 
   } catch (err) {

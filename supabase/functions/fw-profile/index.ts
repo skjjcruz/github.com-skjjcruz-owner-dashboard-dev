@@ -5,6 +5,18 @@
  * POST /functions/v1/fw-profile
  *
  * Body for POST: { tutorialState?, platformUsernames? }
+ *
+ * platformUsernames is MERGED into app_users.platform_usernames (it used to
+ * replace the whole object and keep only `sleeper`, so connecting one platform
+ * wiped the others). Accepted keys — see _shared/platforms.ts:
+ *   sleeper        "handle" (as every shipped client sends) or { username, userId }
+ *   sleeperUserId  numeric string, only alongside a valid sleeper handle
+ *   espn           [{ leagueId, year, teamId }]      ≤ 10, full list ([] clears)
+ *   mfl            [{ leagueId, year, franchiseId }] ≤ 10, full list ([] clears)
+ * Pointers only: credential fields (espn_s2, SWID, apiKey, cookies) are never
+ * stored; they are dropped and the attempt is audited. A bad espn/mfl list is
+ * a 400; a bad sleeper handle is ignored, exactly as before.
+ * GET and the POST response return the merged object in the public shape.
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -14,6 +26,11 @@ import {
   json,
   requireActiveAppSession,
 } from '../_shared/security.ts';
+import {
+  mergePlatformUsernames,
+  parsePlatformPatch,
+  publicPlatformUsernames,
+} from '../_shared/platforms.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -52,7 +69,7 @@ Deno.serve(async (req) => {
           products: expandProducts(products.map((p: any) => String(p.product_slug || ''))),
         },
         tutorialState: sanitizeTutorialState(user.tutorial_state || {}),
-        platformUsernames: sanitizePlatformUsernames(user.platform_usernames || {}),
+        platformUsernames: publicPlatformUsernames(user.platform_usernames || {}),
       });
     }
 
@@ -60,11 +77,42 @@ Deno.serve(async (req) => {
       const body = await req.json().catch(() => ({}));
       const hasTutorialState = Object.prototype.hasOwnProperty.call(body || {}, 'tutorialState');
       const tutorialState = sanitizeTutorialState(body?.tutorialState || {});
-      const platformUsernames = sanitizePlatformUsernames(body?.platformUsernames || {});
+      const parsed = parsePlatformPatch(body?.platformUsernames || {});
+      if (parsed.secretFields.length) {
+        // Never stored (entries are rebuilt from whitelisted fields); logged by
+        // field NAME only so a client shipping credentials here gets caught.
+        await auditEvent(admin, req, 'fw_profile_secret_fields', 'blocked', { userId: session.userId, email: session.email }, {
+          reason: 'secret_fields_stripped',
+          secretFields: parsed.secretFields,
+        });
+      }
+      if (!parsed.ok) {
+        await auditEvent(admin, req, 'fw_profile_update', 'failure', { userId: session.userId, email: session.email }, {
+          reason: 'invalid_platforms',
+          error: parsed.error,
+        });
+        return json(req, { error: parsed.error }, 400);
+      }
+      const patchKeys = Object.keys(parsed.patch);
+
       const update: Record<string, unknown> = {};
       if (hasTutorialState) update.tutorial_state = tutorialState;
-      if (Object.keys(platformUsernames).length) update.platform_usernames = platformUsernames;
-      if (!Object.keys(update).length) return json(req, { ok: true, tutorialState, platformUsernames });
+      let storedPlatforms: unknown = null;
+      if (patchKeys.length) {
+        // Read-modify-write: merge into what's stored instead of replacing it.
+        const { data: current, error: readErr } = await admin
+          .from('app_users')
+          .select('platform_usernames')
+          .eq('id', session.userId)
+          .maybeSingle();
+        if (readErr) return json(req, { error: readErr.message }, 500);
+        const platformUsernames = mergePlatformUsernames(current?.platform_usernames || {}, parsed.patch);
+        update.platform_usernames = platformUsernames;
+        storedPlatforms = platformUsernames;
+      }
+      if (!Object.keys(update).length) {
+        return json(req, { ok: true, tutorialState, platformUsernames: {} });
+      }
       const { error } = await admin
         .from('app_users')
         .update(update)
@@ -73,9 +121,17 @@ Deno.serve(async (req) => {
       await auditEvent(admin, req, 'fw_profile_update', 'success', { userId: session.userId, email: session.email }, {
         fields: Object.keys(update),
         products: Object.keys(tutorialState),
-        platformKeys: Object.keys(platformUsernames),
+        platformKeys: patchKeys,
+        ...(parsed.patch.espn ? { espnLeagues: parsed.patch.espn.length } : {}),
+        ...(parsed.patch.mfl ? { mflLeagues: parsed.patch.mfl.length } : {}),
       });
-      return json(req, { ok: true, tutorialState, platformUsernames });
+      return json(req, {
+        ok: true,
+        tutorialState,
+        // The merged result when platforms changed; {} (the old echo of an
+        // empty patch) when only tutorialState was written.
+        platformUsernames: storedPlatforms === null ? {} : publicPlatformUsernames(storedPlatforms),
+      });
     }
 
     return json(req, { error: 'Method not allowed' }, 405);
@@ -122,14 +178,5 @@ function sanitizeTutorialState(value: unknown): Record<string, unknown> {
       skipped: record.skipped === true,
     };
   }
-  return out;
-}
-
-function sanitizePlatformUsernames(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const raw = value as Record<string, unknown>;
-  const out: Record<string, string> = {};
-  const sleeper = String(raw.sleeper || raw.sleeperUsername || '').trim();
-  if (sleeper && /^[A-Za-z0-9_.-]{1,40}$/.test(sleeper)) out.sleeper = sleeper;
   return out;
 }

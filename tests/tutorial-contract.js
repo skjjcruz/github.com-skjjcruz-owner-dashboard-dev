@@ -78,7 +78,11 @@ test('app account tutorial state remains server-mediated', () => {
     'update.tutorial_state = tutorialState',
     'update.platform_usernames = platformUsernames',
     'sanitizeTutorialState',
-    'sanitizePlatformUsernames',
+    // Platforms MERGE into the stored object (a Sleeper connect used to wipe
+    // every other key) and are validated/stripped of secrets in _shared.
+    'parsePlatformPatch',
+    'mergePlatformUsernames',
+    'publicPlatformUsernames',
     'auditEvent',
     'handleOptions',
   ], 'fw-profile');
