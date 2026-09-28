@@ -269,6 +269,9 @@ test('revenuecat webhook mirrors App Store entitlements into subscriptions', () 
     'Purchases.logIn',
   ], 'revenuecat webhook contract');
   ok(rcWebhookSource.includes("'trialing' : 'active'"), 'RC trials must land as trialing, not active');
+  // Restore-on-another-account moves the purchase (RC TRANSFER); ignoring it
+  // left the old account Pro and the restoring one free (audit 2026-09-28).
+  ok(rcWebhookSource.includes("type === 'TRANSFER'") && rcWebhookSource.includes('planTransfer'), 'rc webhook must move entitlements on TRANSFER');
   ok(configToml.includes('[functions.fw-revenuecat-webhook]'), 'rc webhook must pin verify_jwt in config.toml');
   ok((/OWNED="[^"]*\bfw-revenuecat-webhook\b[^"]*"/.test(deployWorkflow) || deployWorkflow.includes('supabase functions deploy fw-revenuecat-webhook')), 'rc webhook must be in the deploy list');
 });

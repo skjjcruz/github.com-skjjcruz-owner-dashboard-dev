@@ -23,6 +23,9 @@
  *                                            until period end)
  *   EXPIRATION                             → downgrade to free
  *   BILLING_ISSUE                          → mark past_due
+ *   TRANSFER                               → move the App Store entitlement
+ *                                            from transferred_from to
+ *                                            transferred_to (see transfer.ts)
  *   TEST                                   → 200 ok (dashboard test button)
  *   Everything else                        → acknowledged, no-op
  *
@@ -39,6 +42,12 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  planTransfer,
+  TRANSFER_ROW_COLUMNS,
+  transferCandidates,
+  type SubscriptionRow,
+} from './transfer.ts';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -120,6 +129,74 @@ function isoFromMs(ms: unknown): string | null {
   return Number.isFinite(n) && n > 0 ? new Date(n).toISOString() : null;
 }
 
+async function existingAppUserIds(ids: string[]): Promise<string[]> {
+  if (!ids.length) return [];
+  const { data, error } = await admin.from('app_users').select('id').in('id', ids);
+  if (error) throw new Error(`app_users lookup failed: ${error.message}`);
+  const found = new Set((data || []).map((r: any) => String(r.id)));
+  return ids.filter((id) => found.has(id));
+}
+
+// TRANSFER: a restore moved the purchase to another app user id. The event
+// has no product/period data, so the sender's row is the source of truth.
+// Writes mirror the handlers below (upsert on user_id,product_slug for the
+// recipient; the EXPIRATION update for senders), recipient FIRST so a
+// failure mid-way never leaves nobody entitled. Errors throw → 500 → RC
+// retries, which is safe because planTransfer is idempotent.
+async function handleTransfer(event: Record<string, any>, eventAt: string): Promise<Record<string, unknown>> {
+  const candidates = transferCandidates(event, UUID_RE);
+  const fromIds = await existingAppUserIds(candidates.from);
+  const toId = (await existingAppUserIds(candidates.to))[0] || null;
+
+  let fromRows: SubscriptionRow[] = [];
+  if (fromIds.length) {
+    const { data, error } = await admin
+      .from('subscriptions')
+      .select(TRANSFER_ROW_COLUMNS)
+      .in('user_id', fromIds)
+      .eq('product_slug', PRODUCT_SLUG);
+    if (error) throw new Error(`sender subscriptions lookup failed: ${error.message}`);
+    fromRows = (data || []) as SubscriptionRow[];
+  }
+  let toRow: SubscriptionRow | null = null;
+  if (toId) {
+    const { data, error } = await admin
+      .from('subscriptions')
+      .select(TRANSFER_ROW_COLUMNS)
+      .eq('user_id', toId)
+      .eq('product_slug', PRODUCT_SLUG)
+      .maybeSingle();
+    if (error) throw new Error(`recipient subscription lookup failed: ${error.message}`);
+    toRow = (data || null) as SubscriptionRow | null;
+  }
+
+  const plan = planTransfer({ productSlug: PRODUCT_SLUG, fromRows, toUserId: toId, toRow, eventAt });
+
+  if (plan.upsertTo) {
+    const { error } = await admin.from('subscriptions').upsert(plan.upsertTo, { onConflict: 'user_id,product_slug' });
+    if (error) throw new Error(`recipient upsert failed: ${error.message}`);
+  }
+  for (const fromId of plan.downgradeFrom) {
+    const { error } = await admin.from('subscriptions')
+      .update({ tier: 'free', status: 'canceled', cancel_at_period_end: false, rc_last_event_at: eventAt, updated_at: new Date().toISOString() })
+      .eq('user_id', fromId)
+      .eq('product_slug', PRODUCT_SLUG);
+    if (error) throw new Error(`sender downgrade failed: ${error.message}`);
+  }
+
+  if (plan.reason !== 'transfer') {
+    console.warn('[rc-webhook] TRANSFER', plan.reason, {
+      transferredFrom: event.transferred_from,
+      transferredTo: event.transferred_to,
+    });
+  }
+  return {
+    result: plan.reason,
+    recipient: plan.upsertTo ? toId : null,
+    downgraded: plan.downgradeFrom.length,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
@@ -146,6 +223,13 @@ Deno.serve(async (req) => {
   if (type === 'TEST') return ack({ test: true });
 
   try {
+    // TRANSFER names users in transferred_from / transferred_to, not
+    // app_user_id, so it is resolved before the single-user path below.
+    if (type === 'TRANSFER') {
+      const eventAt = isoFromMs(event.event_timestamp_ms) || new Date().toISOString();
+      return ack({ type: 'transfer', ...(await handleTransfer(event, eventAt)) });
+    }
+
     const userId = await resolveUserId(event);
     if (!userId) {
       // Retrying cannot fix an unidentified user — acknowledge, but leave a
@@ -219,7 +303,7 @@ Deno.serve(async (req) => {
       }
 
       default:
-        // TRANSFER, SUBSCRIPTION_PAUSED, INVOICE_ISSUANCE, … — acknowledged
+        // SUBSCRIPTION_PAUSED, INVOICE_ISSUANCE, … — acknowledged
         // without a write; add handling if these ever matter for entitlement.
         console.warn('[rc-webhook] Unhandled event type:', type);
         return ack({ ignored: type.toLowerCase() });
