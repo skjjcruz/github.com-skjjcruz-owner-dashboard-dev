@@ -3058,6 +3058,9 @@ Deno.serve(async (req) => {
         // worthless without fresh reporting, and the shared weekly cache amortizes
         // the cost to one search per player per week. Entitlement is enforced below.
         if (type === 'dynasty_read') useWebSearch = true;
+        // Fast-lane notes narrate facts the client already computed: never a
+        // search (live clients flag one when the prompt says "injuries").
+        if (isLatencyRoute(routeType)) useWebSearch = false;
 
         // ── Server-side cache for ambient insight types ───────────────────
         // Cache hits cost nothing and consume no budget. forceRefresh skips
@@ -3071,7 +3074,7 @@ Deno.serve(async (req) => {
         // request-uncounted (countRequest below) and repeat views are free.
         const cacheTtlMs = !genericContext
             ? (CACHEABLE_TYPES[type] || 0)
-            : (type === routeType && !genericContext.useWebSearch ? (GENERIC_CACHEABLE_TYPES[routeType] || 0) : 0);
+            : (type === routeType && !useWebSearch ? (GENERIC_CACHEABLE_TYPES[routeType] || 0) : 0);
         const forceRefresh = parsedContext?.forceRefresh === true;
 
         // Learning loop: fetch the owner's preference summary once per
