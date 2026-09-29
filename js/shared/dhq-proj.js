@@ -14,7 +14,9 @@
 // stays responsive. When a batch lands it fires `wr:proj-updated`, the
 // event every projection surface already re-renders on.
 //
-//   App.DhqProj.get(pid)   → { median, why, grade } | null (and queues pid)
+//   App.DhqProj.get(pid)   → { median, mean, why, grade } | null (and queues pid)
+//     median = the typical week, the number each player shows; mean = the
+//     average week, used for every total and lineup call (it adds up).
 //   App.DhqProj.fmt(pid)   → '12.3' | '…' (working) | '—' (no projection)
 //   App.DhqProj.request(pids)
 // ══════════════════════════════════════════════════════════════════
@@ -22,7 +24,7 @@
     'use strict';
     const App = root.App = root.App || {};
     const SL = 'https://api.sleeper.app/v1';
-    const VERSION = 'LAB126';
+    const VERSION = '20260929proj2';
     const DEPS = [
         'js/shared/matchup-engine.js', 'js/shared/dhq-baseline.js', 'js/shared/matchup-feeds-espn.js',
         'js/shared/matchup-inputs.js', 'data/pff-matchup-snapshot.js', 'data/usage-snapshot.js',
@@ -44,34 +46,75 @@
         deps: null,          // promise: engine files loaded
         shared: {},          // `${season}|${week}` → promise of { statsCur, statsPrior, players }
         key: null,           // `${leagueId}|${week}` the results belong to
-        results: {},         // pid → { median, why, grade } | null (projected, nothing to show)
+        results: {},         // pid → { median, mean, why, grade } | null (projected, nothing to show)
         queue: new Set(),
         running: false,
         ctx: null, ctxKey: null,
         error: null,
+        data: {},            // snapshot src → { ok, built?, why? } (see checkData)
     };
 
     // ── plumbing ──────────────────────────────────────────────────────
+    // The build stamps a content hash of the engine files into the page
+    // (<meta name="dhq-engine-v">, scripts/build-deploy.cjs), so an engine
+    // edit always reaches browsers; VERSION is the fallback off the build.
+    function depVersion() {
+        try {
+            const m = root.document && root.document.querySelector && root.document.querySelector('meta[name="dhq-engine-v"]');
+            if (m && m.content) return m.content;
+        } catch (e) { /* no DOM */ }
+        return VERSION;
+    }
     function loadScript(src) {
         return new Promise((resolve, reject) => {
             const s = document.createElement('script');
-            s.src = depUrl(src) + '?v=' + VERSION;
+            s.src = depUrl(src) + '?v=' + depVersion();
             s.async = false;
             s.onload = () => resolve();
             s.onerror = () => reject(new Error('could not load ' + src));
             document.head.appendChild(s);
         });
     }
+    // The two snapshots are optional; the engine files are not. The data is
+    // served from another origin (the Lab), so it can be missing: a blocked
+    // or failed snapshot used to reject the whole load, and every DHQ number
+    // sat on "…" until some other player was asked for. Now a snapshot that
+    // does not load, or one built for another season, is set aside and the
+    // engine runs without it: that input reads as missing (neutral grade,
+    // league norm) in each player's factors, never a made-up number.
+    const DATA_GLOBAL = { 'data/pff-matchup-snapshot.js': 'DhqPffMatchup', 'data/usage-snapshot.js': 'DhqUsage' };
     function loadDeps() {
         if (st.deps) return st.deps;
         st.deps = (async () => {
             if (!App.MatchupEngine || !App.DhqBaseline || !App.MatchupInputs) {
-                for (const src of DEPS) await loadScript(src);
+                for (const src of DEPS) {
+                    if (DATA_GLOBAL[src]) await loadScript(src).catch(e => { st.data[src] = { ok: false, why: e.message }; });
+                    else await loadScript(src);
+                }
             }
             if (!App.MatchupInputs || !App.MatchupEngine) throw new Error('engine did not load');
         })();
         st.deps.catch(e => { st.deps = null; st.error = e; });
         return st.deps;
+    }
+    // Snapshot status for this season; a snapshot built for another season
+    // is dropped (a 2026 snapshot must not feed 2027's first weeks).
+    function dataStatus() {
+        const wk = week();
+        return Object.assign({}, st.data, { sleeper: { ok: sleeperReady(wk), week: wk || null, why: sleeperReady(wk) ? undefined : 'Sleeper projections for this week not loaded: DHQ numbers are not checked against them' } });
+    }
+    function checkData(yr) {
+        for (const src of Object.keys(DATA_GLOBAL)) {
+            const g = DATA_GLOBAL[src], snap = root[g];
+            if (!snap) { if (!st.data[src]) st.data[src] = { ok: false, why: 'not loaded' }; continue; }
+            if (snap.season != null && Number(snap.season) !== Number(yr)) {
+                st.data[src] = { ok: false, why: 'built for ' + snap.season + ', not ' + yr, built: snap.built || null };
+                root[g] = null;
+                continue;
+            }
+            st.data[src] = { ok: true, built: snap.built || null };
+        }
+        return st.data;
     }
     const getJson = (url) => fetch(url).then(r => { if (!r.ok) throw new Error(r.status + ' ' + url); return r.json(); });
     const S = () => root.S || {};
@@ -173,6 +216,7 @@
                 }
                 const opts = { playersData: shared.players, statsData: shared.statsCur, priorData: shared.statsPrior, scoring: at.lg.scoring, season: yr, baselineMode: 'dhq', weeklyPoints: shared.wpp[at.lg.id] || null };
                 if (st.ctxKey !== at.key) {
+                    checkData(yr);
                     const teams = [...new Set(Object.values(shared.players).map(p => p && p.team).filter(Boolean))];
                     st.ctx = await MI.prepare(teams, at.wk, opts);
                     st.ctxKey = at.key;
@@ -186,7 +230,7 @@
                     try {
                         const p = MI.project(pid, at.wk, opts, st.ctx);
                         if (p && p.points && Number.isFinite(Number(p.points.median))) {
-                            res = { median: p.available === false ? 0 : +Number(p.points.median).toFixed(1), floor: p.available === false ? 0 : +Number(p.points.floor || 0).toFixed(1), ceiling: p.available === false ? 0 : +Number(p.points.ceiling || 0).toFixed(1), grade: p.grade, verdict: p.verdict, why: whyText(p.why) };
+                            res = { median: p.available === false ? 0 : +Number(p.points.median).toFixed(1), mean: p.available === false ? 0 : +Number(p.points.mean != null ? p.points.mean : p.points.median).toFixed(1), floor: p.available === false ? 0 : +Number(p.points.floor || 0).toFixed(1), ceiling: p.available === false ? 0 : +Number(p.points.ceiling || 0).toFixed(1), grade: p.grade, verdict: p.verdict, why: whyText(p.why) };
                         }
                     } catch (e) { res = null; }
                     st.results[pid] = res;
@@ -227,18 +271,55 @@
         });
         if (added) kick();
     }
+    // ── Truth law: if it's not in Sleeper, it's not there ─────────────
+    // Once Sleeper has published this week's projections, a player it gives
+    // no line (or a line with nothing this league scores) projects 0 on DHQ
+    // too, typical and average week alike: DHQ never invents a number for a
+    // player Sleeper isn't projecting (week 4 2026: kickers off every chart
+    // at 8 points, third-string QBs at 5-8, a few dozen idle defenders and
+    // backups). Applied when a number is read, so it holds even when
+    // Sleeper's lines land after DHQ has projected. If Sleeper's week did not
+    // load, nothing is zeroed and dataStatus().sleeper says so.
+    function sleeperReady(wk) {
+        const WP = App.WeeklyProj;
+        return !!(WP && WP.hasProjWeek && WP.projLine && WP.hasProjWeek(wk));
+    }
+    function sleeperProjects(pid, wk, scoring) {
+        const line = App.WeeklyProj.projLine(pid, wk);
+        if (!line) return false;
+        const sc = scoring || {};
+        const scored = Object.keys(sc).filter(k => Number(sc[k]));
+        if (scored.length < 5) return true;   // no Sleeper-keyed scoring to test against: the published line stands
+        return scored.some(k => Number(line[k]));
+    }
+    const gate = { key: null, ready: false, memo: {} };
+    function gated(pid, r) {
+        if (!r) return r;
+        const lg = league(), wk = week();
+        const ready = !!(lg && wk && sleeperReady(wk));
+        const k = (st.key || '') + '|' + wk;
+        if (gate.key !== k || gate.ready !== ready) { gate.key = k; gate.ready = ready; gate.memo = {}; }
+        if (!ready) return r;
+        if (!(pid in gate.memo)) gate.memo[pid] = sleeperProjects(pid, wk, lg.scoring);
+        if (gate.memo[pid]) return r;
+        return { median: 0, mean: 0, floor: 0, ceiling: 0, grade: r.grade, verdict: 'out', why: 'no Sleeper projection this week', noSleeper: true };
+    }
     function get(pid) {
         pid = String(pid || '');
         if (!resetIfMoved() || !pid) return null;
-        if (pid in st.results) return st.results[pid];
+        if (pid in st.results) return gated(pid, st.results[pid]);
         request([pid]);
         return null;
     }
+    // A player's shown number is his typical week; every choice (lineups,
+    // sorts, swaps, THE CALL) and every total uses his average week.
     function fmt(pid) {
         const r = get(pid);
         if (r) return Number(r.median) > 0 ? Number(r.median).toFixed(1) : '0.0';
         return String(pid || '') in st.results ? '—' : '…';
     }
+    // His average week: a number, or null while working / when DHQ has none.
+    function avgOf(pid) { const r = get(pid); return r ? avg(r) : null; }
     // ── The league platform's own projections (MFL) ──────────────────
     // MFL publishes projected points per league, already scored with that
     // league's rules; when the league lives on MFL those become the
@@ -336,7 +417,7 @@
         const list = (roster.players || []).map(String).filter(pid => pid && !skip.has(pid) && !heldPid.has(pid)).map(pid => {
             const r = get(pid), p = players[pid] || {};
             const pos = String((App.normPos && App.normPos(p.position)) || p.position || '').toUpperCase();
-            return { pid, pos, positions: (p.fantasy_positions || []).concat([pos]), available: !!(r && Number(r.median) > 0), pts: r ? Number(r.median) || 0 : 0 };
+            return { pid, pos, positions: (p.fantasy_positions || []).concat([pos]), available: avg(r) > 0, pts: avg(r) };
         });
         const out = SS.optimalLineupWeekly(list, rest);
         held.forEach(x => {
@@ -348,9 +429,11 @@
         return out;
     }
     // Numeric total of several players, or null while any is still working.
+    // A player's average week, for totals and lineup choices.
+    function avg(r) { return r ? (Number(r.mean != null ? r.mean : r.median) || 0) : 0; }
     function totalNum(pids) {
         let t = 0;
-        for (const pid of (pids || [])) { const r = get(pid); if (r) t += Number(r.median) || 0; else if (!(String(pid) in st.results)) return null; }
+        for (const pid of (pids || [])) { const r = get(pid); if (r) t += avg(r); else if (!(String(pid) in st.results)) return null; }
         return +t.toFixed(1);
     }
     // The week's matchup on DHQ's numbers: the lineup you have set against
@@ -372,7 +455,7 @@
         const map = {};
         mine.concat(oppIds, cur).forEach(pid => {
             const r = get(pid); if (!r) return;
-            const med = Number(r.median) || 0;
+            const med = avg(r);
             map[pid] = { available: med > 0, points: { median: med, floor: r.floor != null ? Number(r.floor) : med * 0.7, ceiling: r.ceiling != null ? Number(r.ceiling) : med * 1.35 } };
         });
         const fc = M.forecast(M.dist(mine, map, 'median'), M.dist(cur, map, 'median'));
@@ -388,7 +471,7 @@
         const map = {};
         ids.forEach(pid => {
             const r = get(pid); if (!r) return;
-            const med = Number(r.median) || 0;
+            const med = avg(r);
             map[pid] = { available: med > 0, points: { median: med, floor: r.floor != null ? Number(r.floor) : med * 0.7, ceiling: r.ceiling != null ? Number(r.ceiling) : med * 1.35 } };
         });
         const d = M.dist(ids, map, 'median');
@@ -517,7 +600,7 @@
         const d = Math.round((best.total - cur) * 10) / 10;
         const nameOfSlot = k => { const x = slots.find(y => String(y.idx) === String(k)); return x ? x.slotName : ''; };
         const base = pid => { const l = posList(pid); return l.length ? l[l.length - 1] : ''; };
-        const startInstead = Object.keys(placed).filter(k => !curPids.includes(placed[k])).map(k => ({ pid: placed[k], slot: nameOfSlot(k), pos: base(placed[k]), pts: (get(placed[k]) || {}).median || 0 }));
+        const startInstead = Object.keys(placed).filter(k => !curPids.includes(placed[k])).map(k => ({ pid: placed[k], slot: nameOfSlot(k), pos: base(placed[k]), pts: avg(get(placed[k])) }));
         const benchInstead = curPids.filter(pid => !bestPids.includes(pid));
         const moves = Object.keys(placed).filter(k => curPids.includes(placed[k]) && String(current[k] || '') !== placed[k]).map(k => ({ pid: placed[k], slot: nameOfSlot(k), pos: base(placed[k]), from: nameOfSlot(Object.keys(current).find(c => current[c] === placed[k])) }));
         return {
@@ -528,10 +611,10 @@
     // Total of several players (a lineup), '…' while any is still working.
     // Changes whenever a batch of DHQ numbers lands (or the league or week
     // moves), so a cached result built on DHQ's numbers knows to rebuild.
-    function stamp() { return (st.key || '') + ':' + Object.keys(st.results).length; }
+    function stamp() { return (st.key || '') + ':' + Object.keys(st.results).length + ':' + (sleeperReady(week()) ? 's' : '-'); }
     function sum(pids) {
         let t = 0, waiting = false;
-        (pids || []).forEach(pid => { const r = get(pid); if (r) t += Number(r.median) || 0; else if (!(String(pid) in st.results)) waiting = true; });
+        (pids || []).forEach(pid => { const r = get(pid); if (r) t += avg(r); else if (!(String(pid) in st.results)) waiting = true; });
         return waiting ? '\u2026' : t.toFixed(1);
     }
     // Every rostered player in the league, so rosters, Start/Sit and the
@@ -565,7 +648,7 @@
         root.addEventListener && root.addEventListener('wr:proj-updated', (e) => { if (!(e && e.detail && e.detail.source === 'dhq')) { loadPlatform(); setTimeout(warmLeague, 500); } });
     }
 
-    App.DhqProj = App.DhqProj || { get, fmt, sum, totalNum, stamp, week, teamDist, weekDists, rosterDists, optimalFor, matchup, lineupCheck, slotList, assignSlots, hungarian, posList, provLabel, loadPlatform, request, warmLeague, _st: st, VERSION };
+    App.DhqProj = App.DhqProj || { get, fmt, sum, totalNum, stamp, week, teamDist, weekDists, rosterDists, optimalFor, matchup, lineupCheck, slotList, assignSlots, hungarian, posList, provLabel, loadPlatform, request, warmLeague, avgOf, dataStatus, _checkData: checkData, _loadDeps: loadDeps, _st: st, VERSION };
     if (typeof document !== 'undefined') boot();
     /* global module */
     if (typeof module !== 'undefined' && module.exports) module.exports = App.DhqProj;
