@@ -19,7 +19,7 @@ export type FastProvider = 'gemini' | 'groq';
 // Call types whose answer is a sentence or two the user is waiting on.
 // Provider preference: Groq's small open-weight model on the free tier (its
 // own rate-limit bucket, $0) answers first; the router's next configured
-// provider (Gemini flash-lite) is the timed fallback.
+// provider (Gemini's fast tier) is the timed fallback.
 export const LATENCY_ROUTE_PROVIDER: Record<string, FastProvider> = {
     'start-sit': 'groq',
 };
@@ -63,9 +63,9 @@ export function isLatencyRoute(type: string): boolean {
 }
 
 // Lowest thinking setting a Gemini id accepts on the OpenAI-compatible
-// endpoint: 2.5 Flash / Flash-Lite can turn thinking off ("none"); Gemini 3
-// cannot, "minimal" is its floor; an alias of unknown generation gets "low",
-// which both generations accept. Pro models are never on the fast lane.
+// endpoint: the older fast generation can turn thinking off ("none"); the
+// newer generation cannot, "minimal" is its floor; an alias of unknown
+// generation gets "low", which both accept. Pro-class ids never ride here.
 export function geminiReasoningEffort(model: string): 'none' | 'minimal' | 'low' | null {
     const m = String(model || '').toLowerCase();
     if (!m.startsWith('gemini')) return null;
@@ -97,7 +97,7 @@ export function buildChatCompletionBody(args: ChatBodyArgs): Record<string, unkn
         ],
     };
     if (args.provider === 'groq') {
-        // gpt-oss "thinks" out of the completion budget; low keeps it short.
+        // The Groq model "thinks" out of the completion budget; low keeps it short.
         if (!args.omitReasoning) body.reasoning_effort = 'low';
         if (args.stream) body.stream_options = { include_usage: true };
     } else if (args.latency && !args.omitReasoning) {

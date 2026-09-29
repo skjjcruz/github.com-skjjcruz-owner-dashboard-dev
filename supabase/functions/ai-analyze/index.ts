@@ -20,6 +20,22 @@ import {
     requireActiveAppSession,
     requireSleeperSession,
 } from '../_shared/security.ts';
+import {
+    buildChatCompletionBody,
+    createSSEParser,
+    type FastProvider,
+    formatSSE,
+    GENERIC_CACHEABLE_TYPES,
+    genericCacheMaterial,
+    isLatencyRoute,
+    isReasoningParamError,
+    LATENCY_MAX_OUTPUT_TOKENS,
+    LATENCY_TIMEOUTS_MS,
+    latencyProviderFor,
+    parseChatCompletionChunk,
+    STREAM_TIMEOUTS_MS,
+    STREAM_TOTAL_CAP_MS,
+} from '../_shared/ai-fast.ts';
 
 // ── Rate limiting ─────────────────────────────────────────────
 // Per-user, per-minute burst valve (anti-abuse — NOT the daily allowance,
@@ -116,16 +132,19 @@ async function loadAppAIPlan(
     const fallbackPlan = normalizeAIPlan(metadata.tier);
     const fallbackProducts = Array.isArray(metadata.products) ? metadata.products.map(String) : [];
 
-    const isAdmin = await hasAdminRole(supabase, userId).catch(() => false);
+    // Both reads in parallel: they were two serial DB round trips in front of
+    // every AI call (the subscription read is simply unused for an admin).
+    const [isAdmin, subs] = await Promise.all([
+        hasAdminRole(supabase, userId).catch(() => false),
+        safeSupabaseData(supabase
+            .from('subscriptions')
+            .select('product_slug, tier, status, billing_period')
+            .eq('user_id', userId)
+            .in('status', ['active', 'trialing'])),
+    ]);
     if (isAdmin) {
         return { plan: 'commissioner', billing: null, products: fallbackProducts };
     }
-
-    const subs = await safeSupabaseData(supabase
-        .from('subscriptions')
-        .select('product_slug, tier, status, billing_period')
-        .eq('user_id', userId)
-        .in('status', ['active', 'trialing']));
 
     const activePaid = (subs || []).filter((s: any) => s?.tier === 'pro');
     const paidProducts = activePaid.map((s: any) => String(s.product_slug || ''));
@@ -256,6 +275,31 @@ const MODEL_COSTS: Record<string, { input: number; output: number; cachedInput?:
 // model in-memory once a rung answers.
 const GEMINI_MODEL_FALLBACKS = ['gemini-3-flash-preview', 'gemini-flash-latest', 'gemini-2.5-flash'];
 const geminiModelPins = new Map<string, string>();
+const GEMINI_PIN_TTL_MS = 24 * 60 * 60 * 1000;
+
+// The pin used to live only in isolate memory, and the edge logs show a fresh
+// isolate booting for most AI requests — so nearly every call re-paid the
+// 404 walk. Persist it in Deno KV (read once per isolate, then memory).
+async function pinnedGeminiModel(model: string): Promise<string> {
+    const mem = geminiModelPins.get(model);
+    if (mem) return mem;
+    let pinned = model;
+    try {
+        const kv = await Deno.openKv();
+        const entry = await kv.get<string>(['gemini_pin', model]);
+        if (typeof entry.value === 'string' && entry.value) pinned = entry.value;
+    } catch { /* KV unavailable: walk the ladder as before */ }
+    geminiModelPins.set(model, pinned);
+    return pinned;
+}
+
+function rememberGeminiPin(model: string, served: string): void {
+    if (geminiModelPins.get(model) === served) return;
+    geminiModelPins.set(model, served);
+    Deno.openKv()
+        .then(kv => kv.set(['gemini_pin', model], served, { expireIn: GEMINI_PIN_TTL_MS }))
+        .catch(() => { /* best-effort */ });
+}
 
 const AI_TIER_MODELS: Record<AIWorkloadTier, Partial<Record<AIProvider, string>>> = {
     fast: {
@@ -698,6 +742,7 @@ async function callAIProvider(args: {
     outputTokens: number;
     cachedInputTokens: number;
     webSearchCount?: number;
+    servedModel?: string;
 }> {
     const { route, systemPrompt, userPrompt, maxTokens, useWebSearch } = args;
 
@@ -709,7 +754,7 @@ async function callAIProvider(args: {
         // Gemini 3 — AI Studio, 2026-08-14) while older projects still serve
         // them. On 404 walk the ladder and pin whichever id answers, so one
         // wasted round-trip per cold start at most.
-        const candidates = [geminiModelPins.get(route.model) || route.model, ...GEMINI_MODEL_FALLBACKS]
+        const candidates = [await pinnedGeminiModel(route.model), ...GEMINI_MODEL_FALLBACKS]
             .filter((m, i, a) => a.indexOf(m) === i);
         const askGemini = (m: string) => fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
             method: 'POST',
@@ -733,7 +778,7 @@ async function callAIProvider(args: {
             servedModel = m;
             if (res.status !== 404) break; // 404 = unknown model id — try the next rung
         }
-        if (servedModel !== route.model) geminiModelPins.set(route.model, servedModel);
+        if (res && res.status !== 404) rememberGeminiPin(route.model, servedModel); // the id exists
         // The free Gemini tier sheds load in short 429/503 bursts (a third of
         // one night's answers died this way, 2026-08-25). A brief wait and a
         // re-ask usually lands, so retry twice — ~4.5s worst case, well inside
@@ -758,6 +803,7 @@ async function callAIProvider(args: {
             inputTokens,
             outputTokens,
             cachedInputTokens: 0,
+            servedModel,
         };
     }
 
@@ -915,6 +961,239 @@ async function callAIProvider(args: {
     };
 }
 
+// ── Fast lane: one timed attempt per provider, optional streaming ────────
+// Used for latency-critical call types (LATENCY_ROUTE_PROVIDER) and for any
+// generic call a client asks to stream. Differences from callAIProvider:
+// a hard per-attempt deadline (request → first answer byte), no sleep-and-
+// retry (the chain moves to the next provider instead), minimal thinking on
+// the latency lane, and an onDelta hook fed as text arrives.
+interface FastAttempt {
+    provider: string;
+    model: string;
+    status: number | string;
+    ms: number;
+    firstTokenMs?: number;
+}
+
+interface FastResult {
+    analysis: string;
+    stopReason: string;
+    inputTokens: number;
+    outputTokens: number;
+    cachedInputTokens: number;
+    servedModel: string;
+    firstTokenMs: number | null;
+}
+
+function fastEndpoint(provider: FastProvider): string {
+    return provider === 'groq'
+        ? 'https://api.groq.com/openai/v1/chat/completions'
+        : 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+}
+
+function fastError(message: string, status?: number): Error {
+    const err = new Error(message);
+    (err as any).status = status;
+    return err;
+}
+
+async function callFastProvider(args: {
+    route: AIRoute;
+    systemPrompt: string;
+    userPrompt: string;
+    maxTokens: number;
+    timeoutMs: number;
+    latency: boolean;
+    onDelta?: (text: string) => void;
+    attempts: FastAttempt[];
+}): Promise<FastResult> {
+    const provider = args.route.provider;
+    if (provider !== 'gemini' && provider !== 'groq') throw fastError(`${provider} is not on the fast lane`);
+    const key = await getProviderSecret(provider);
+    if (!key) throw fastError(`${providerSecretName(provider)} not configured`);
+    const stream = typeof args.onDelta === 'function';
+    const models = provider === 'gemini'
+        ? [await pinnedGeminiModel(args.route.model), ...GEMINI_MODEL_FALLBACKS].filter((m, i, a) => a.indexOf(m) === i)
+        : [args.route.model];
+
+    let omitReasoning = false;
+    for (let i = 0; i < models.length; i++) {
+        const model = models[i];
+        const started = Date.now();
+        const ctrl = new AbortController();
+        let timedOut = false;
+        // Deadline to the first answer byte; replaced by the total cap once
+        // text is flowing so a stalled stream still ends.
+        let timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, args.timeoutMs);
+        const attempt: FastAttempt = { provider, model, status: 'pending', ms: 0 };
+        args.attempts.push(attempt);
+        try {
+            const res = await fetch(fastEndpoint(provider), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+                body: JSON.stringify(buildChatCompletionBody({
+                    provider, model,
+                    systemPrompt: args.systemPrompt,
+                    userPrompt: args.userPrompt,
+                    maxTokens: args.maxTokens,
+                    stream,
+                    latency: args.latency,
+                    omitReasoning,
+                })),
+                signal: ctrl.signal,
+            });
+            attempt.status = res.status;
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                const message = (err as any)?.error?.message || `${provider === 'groq' ? 'Groq' : 'Gemini'} API error ${res.status}`;
+                attempt.ms = Date.now() - started;
+                // Unknown model id: next rung of the Gemini ladder (quick 404).
+                if (res.status === 404 && provider === 'gemini' && i < models.length - 1) { clearTimeout(timer); continue; }
+                // The thinking knob refused: resend once without it.
+                if (!omitReasoning && isReasoningParamError(res.status, message)) {
+                    clearTimeout(timer);
+                    omitReasoning = true;
+                    i--;
+                    continue;
+                }
+                throw fastError(message, res.status);
+            }
+            if (provider === 'gemini') rememberGeminiPin(args.route.model, model);
+
+            if (!stream) {
+                const data = await res.json();
+                attempt.ms = Date.now() - started;
+                const usage = (data as any).usage || {};
+                const choice = (data as any).choices?.[0];
+                return {
+                    analysis: choice?.message?.content || '',
+                    stopReason: choice?.finish_reason === 'length' ? 'max_tokens' : '',
+                    inputTokens: usage.prompt_tokens || usage.input_tokens || 0,
+                    outputTokens: usage.completion_tokens || usage.output_tokens || 0,
+                    cachedInputTokens: 0,
+                    servedModel: model,
+                    firstTokenMs: null,
+                };
+            }
+
+            const reader = res.body!.getReader();
+            const decoder = new TextDecoder();
+            const parser = createSSEParser();
+            let text = '';
+            let firstTokenMs: number | null = null;
+            let inputTokens = 0;
+            let outputTokens = 0;
+            let finish = '';
+            let finished = false;
+            const onEvents = (events: { data: string }[]) => {
+                for (const ev of events) {
+                    const chunk = parseChatCompletionChunk(ev.data);
+                    if (!chunk) continue;
+                    if (chunk.done) { finished = true; continue; }
+                    if (chunk.usage) { inputTokens = chunk.usage.inputTokens; outputTokens = chunk.usage.outputTokens; }
+                    if (chunk.finishReason) finish = chunk.finishReason;
+                    if (chunk.text) {
+                        if (firstTokenMs == null) {
+                            firstTokenMs = Date.now() - started;
+                            attempt.firstTokenMs = firstTokenMs;
+                            clearTimeout(timer);
+                            timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, STREAM_TOTAL_CAP_MS);
+                        }
+                        text += chunk.text;
+                        args.onDelta!(chunk.text);
+                    }
+                }
+            };
+            while (!finished) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                onEvents(parser.push(decoder.decode(value, { stream: true })));
+            }
+            onEvents(parser.push(decoder.decode()));
+            onEvents(parser.flush());
+            try { reader.cancel().catch(() => {}); } catch { /* already closed */ }
+            attempt.ms = Date.now() - started;
+            return {
+                analysis: text,
+                stopReason: finish === 'length' ? 'max_tokens' : '',
+                // Gemini's compat stream may omit usage: estimate so accounting
+                // and the cost caps still see the call.
+                inputTokens: inputTokens || estimatePromptTokens(args.systemPrompt + '\n' + args.userPrompt),
+                outputTokens: outputTokens || estimatePromptTokens(text),
+                cachedInputTokens: 0,
+                servedModel: model,
+                firstTokenMs,
+            };
+        } catch (error: any) {
+            attempt.ms = Date.now() - started;
+            if (timedOut) {
+                attempt.status = 'timeout';
+                throw fastError(`${provider} timeout after ${args.timeoutMs}ms`);
+            }
+            if (attempt.status === 'pending') attempt.status = 'network';
+            throw error;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+    throw fastError(`${provider} model unavailable`, 404);
+}
+
+// Try each route once, in order, moving on at the first failure — unless
+// text has already reached the client (a mid-stream failure cannot be
+// retried without duplicating the answer). An empty answer counts as a
+// failure while nothing has been shown.
+async function runFastChain(args: {
+    routes: AIRoute[];
+    systemPrompt: string;
+    userPrompt: string;
+    maxTokens: number;
+    latency: boolean;
+    onDelta?: (text: string) => void;
+    attempts: FastAttempt[];
+}): Promise<FastResult & { route: AIRoute; routeIndex: number }> {
+    const timeouts = args.latency ? LATENCY_TIMEOUTS_MS : STREAM_TIMEOUTS_MS;
+    let emitted = false;
+    const onDelta = args.onDelta ? (t: string) => { emitted = true; args.onDelta!(t); } : undefined;
+    let lastError: any = null;
+    for (let i = 0; i < args.routes.length; i++) {
+        const route = args.routes[i];
+        try {
+            const result = await callFastProvider({
+                route,
+                systemPrompt: args.systemPrompt,
+                userPrompt: args.userPrompt,
+                maxTokens: args.maxTokens,
+                timeoutMs: i === 0 ? timeouts.primary : timeouts.fallback,
+                latency: args.latency,
+                onDelta,
+                attempts: args.attempts,
+            });
+            if (!result.analysis.trim() && !emitted && i < args.routes.length - 1) {
+                lastError = fastError(`${route.provider} returned an empty answer`);
+                continue;
+            }
+            return { ...result, route, routeIndex: i };
+        } catch (error) {
+            lastError = error;
+            if (emitted) throw error;
+        }
+    }
+    throw lastError || fastError('No fast-lane provider available');
+}
+
+// Keep post-response bookkeeping alive without holding the response.
+function runInBackground(task: Promise<unknown>): Promise<unknown> {
+    try {
+        const runtime = (globalThis as any).EdgeRuntime;
+        if (runtime && typeof runtime.waitUntil === 'function') {
+            runtime.waitUntil(task.catch(() => {}));
+            return Promise.resolve();
+        }
+    } catch { /* fall through */ }
+    return task.catch(() => {});
+}
+
 function clampTextToChars(text: string, maxChars: number): { text: string; truncated: boolean } {
     const value = String(text || '');
     if (value.length <= maxChars) return { text: value, truncated: false };
@@ -1039,6 +1318,9 @@ async function recordAIAccounting(args: {
     ecoModeReason: string | null;
     promptTruncated: boolean;
     webSearchDisabled: boolean;
+    // Additive timing telemetry: served model id, per-attempt status/ms,
+    // server pre-work ms, first-token ms, streamed. Never prompt text.
+    timing?: Record<string, unknown>;
 }) {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -1059,7 +1341,8 @@ async function recordAIAccounting(args: {
         if (typeof data === 'number') totalTokensUsed = data;
     }
 
-    const usageData = await safeSupabaseData(supabase.rpc('record_ai_usage_result', {
+    // The usage RPC and the analytics row are independent: one round trip, not two.
+    const usagePromise = safeSupabaseData(supabase.rpc('record_ai_usage_result', {
         p_identifier: args.aiSession.identifier,
         p_user_id: userId,
         p_username: args.aiSession.username,
@@ -1068,9 +1351,8 @@ async function recordAIAccounting(args: {
         p_estimated_cost_usd: args.estimatedCostUsd,
         p_reserved_cost_usd: args.reservedCostUsd,
     }));
-    if (usageData && typeof usageData === 'object') usageCounters = usageData as Record<string, any>;
 
-    await safeSupabaseWrite(supabase.from('analytics_events').insert({
+    const analyticsPromise = safeSupabaseWrite(supabase.from('analytics_events').insert({
         event_id: crypto.randomUUID(),
         username: args.aiSession.username,
         user_id: userId,
@@ -1107,8 +1389,12 @@ async function recordAIAccounting(args: {
             plan: args.aiSession.plan,
             dailyRequestLimit: args.planLimits.dailyRequests,
             monthlyRequestLimit: args.planLimits.monthlyRequests,
+            ...(args.timing || {}),
         },
     }));
+
+    const [usageData] = await Promise.all([usagePromise, analyticsPromise]);
+    if (usageData && typeof usageData === 'object') usageCounters = usageData as Record<string, any>;
 
     return { totalTokensUsed, usageCounters };
 }
@@ -1367,7 +1653,8 @@ const CACHEABLE_TYPES: Record<string, number> = {
 // User-scoped cache types include the caller identity in the key; team
 // diagnosis is keyed purely on league/roster context (same roster state =>
 // same diagnosis, regardless of which league member asks).
-const USER_SCOPED_CACHE_TYPES = new Set(['dashboard_digest', 'insight', 'surface_read']);
+// 'start-sit' is a generic-path type (GENERIC_CACHEABLE_TYPES in _shared/ai-fast.ts).
+const USER_SCOPED_CACHE_TYPES = new Set(['dashboard_digest', 'insight', 'surface_read', 'start-sit']);
 
 function stableStringify(value: any): string {
     if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -1386,6 +1673,19 @@ async function computeCacheKey(type: string, context: any, aiSession: AISession,
     }
     const scope = USER_SCOPED_CACHE_TYPES.has(type) ? aiSession.identifier : 'shared';
     const raw = `${AI_POLICY_VERSION}|${type}|${scope}|${prefsVersion}|${stableStringify(pruned)}`;
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Generic-path cache key: the exact prompt the model would see, per caller.
+async function computeGenericCacheKey(callType: string, aiSession: AISession, systemPrompt: string, userPrompt: string): Promise<string> {
+    const raw = genericCacheMaterial({
+        policyVersion: AI_POLICY_VERSION,
+        callType,
+        identifier: aiSession.identifier,
+        systemPrompt,
+        userPrompt,
+    });
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
     return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -1469,11 +1769,12 @@ async function readAIResponseCache(cacheKey: string): Promise<{ analysis: string
             .maybeSingle()
     );
     if (!row || typeof row.analysis !== 'string') return null;
-    await safeSupabaseWrite(
+    // Hit counter is bookkeeping: never hold the cached answer for it.
+    runInBackground(safeSupabaseWrite(
         supabase.from('ai_response_cache')
             .update({ hit_count: (Number(row.hit_count) || 0) + 1 })
             .eq('cache_key', cacheKey)
-    );
+    ));
     return { analysis: row.analysis, model: row.model || null, usage: row.usage || null };
 }
 
@@ -2660,6 +2961,7 @@ Deno.serve(async (req) => {
     if (options) return options;
 
     const responseHeaders = corsHeaders(req);
+    const requestStartedAt = Date.now();
 
     try {
         const resolvedSession = await resolveAISession(req);
@@ -2680,6 +2982,9 @@ Deno.serve(async (req) => {
 
         const body = await req.json();
         const { type, context } = body;
+        // Opt-in SSE (new clients send stream:true). Old clients never send it
+        // and keep getting exactly one JSON body.
+        const wantsStream = body?.stream === true;
 
         if (!type || !context) {
             return new Response(
@@ -2760,7 +3065,13 @@ Deno.serve(async (req) => {
         // so free regeneration spam is not possible.
         const parsedContext = parseContextPayload(context);
         const contextLeagueId = parsedContext?.leagueId || parsedContext?.currentLeagueId || null;
-        const cacheTtlMs = !genericContext ? (CACHEABLE_TYPES[type] || 0) : 0;
+        // Generic-path types join the cache only when listed in
+        // GENERIC_CACHEABLE_TYPES (start-sit: the Lineup note), keyed on the
+        // exact prompt — so, like the ambient structured types, they are
+        // request-uncounted (countRequest below) and repeat views are free.
+        const cacheTtlMs = !genericContext
+            ? (CACHEABLE_TYPES[type] || 0)
+            : (type === routeType && !genericContext.useWebSearch ? (GENERIC_CACHEABLE_TYPES[routeType] || 0) : 0);
         const forceRefresh = parsedContext?.forceRefresh === true;
 
         // Learning loop: fetch the owner's preference summary once per
@@ -2774,20 +3085,25 @@ Deno.serve(async (req) => {
 
         let cacheKey: string | null = null;
         if (cacheTtlMs > 0) {
-            cacheKey = await computeCacheKey(type, context, aiSession, prefsVersionFor(userPrefs));
+            cacheKey = genericContext
+                ? await computeGenericCacheKey(routeType, aiSession, genericContext.system, userPrompt)
+                : await computeCacheKey(type, context, aiSession, prefsVersionFor(userPrefs));
             if (!forceRefresh) {
                 const cached = await readAIResponseCache(cacheKey);
                 if (cached) {
                     // Free (never touched a model) — give the burst-valve slot back.
-                    await refundRateLimit(aiSession.identifier);
-                    await recordAICacheHit({
-                        req,
-                        aiSession,
-                        routeType,
-                        originalType: type,
-                        leagueId: contextLeagueId,
-                        model: cached.model,
-                    });
+                    // Both are bookkeeping: run together, off the answer's path.
+                    runInBackground(Promise.all([
+                        refundRateLimit(aiSession.identifier),
+                        recordAICacheHit({
+                            req,
+                            aiSession,
+                            routeType,
+                            originalType: type,
+                            leagueId: contextLeagueId,
+                            model: cached.model,
+                        }),
+                    ]));
                     let cachedInsights = JSON_ARRAY_TYPES.has(type) ? parseJsonArray(cached.analysis) : undefined;
                     if (type === 'dashboard_digest') cachedInsights = validateDigestInsights(cachedInsights, context);
                     return new Response(
@@ -2829,7 +3145,11 @@ Deno.serve(async (req) => {
             );
         }
         const globalOutputCap = envNumber('AI_MAX_OUTPUT_TOKENS', 8000);
-        const maxTokens = Math.max(100, Math.min(requestedMaxTokens, routeOutputCap, globalOutputCap));
+        // Fast lane (latency-critical one-liners): a tight output cap bounds
+        // generation time for every client, including the live ones that ask
+        // for 4,000+ tokens to write two sentences.
+        const latencyType = !useWebSearch && isLatencyRoute(routeType);
+        const maxTokens = Math.max(100, Math.min(requestedMaxTokens, routeOutputCap, globalOutputCap, latencyType ? LATENCY_MAX_OUTPUT_TOKENS : Infinity));
         let systemPrompt = genericContext?.system || (isMockDraft
             ? 'You are a dynasty fantasy football draft simulator. Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no prose before or after. Start your response with [ and end with ]. Never repeat a player. Track all prior picks carefully so each player is selected at most once.'
             : type === 'dynasty_read'
@@ -2849,6 +3169,14 @@ Deno.serve(async (req) => {
         }
         const downgradedRoute = downgradeRouteForEntitlement(route, planLimits);
         route = downgradedRoute.route;
+        // Latency-first provider for fast-lane types (Groq's free small model
+        // for start-sit; AI_LATENCY_PROVIDER=gemini|groq|off overrides). The
+        // router below still falls back if its key is missing.
+        const latencyProvider = latencyType ? latencyProviderFor(routeType, Deno.env.get('AI_LATENCY_PROVIDER')) : null;
+        if (latencyProvider) {
+            const latencyRoute = routeForProviderTier('fast', latencyProvider);
+            if (latencyRoute && allowsModelTier(planLimits, latencyRoute.tier)) route = latencyRoute;
+        }
         let webSearchDisabled = false;
         // dynasty_read IS a web-search feature — the synthesis is worthless without
         // fresh reporting, and its cost is already bounded by the shared weekly cache
@@ -2963,6 +3291,16 @@ Deno.serve(async (req) => {
                 { status: 429, headers: { ...responseHeaders, 'Content-Type': 'application/json' } }
             );
         }
+        // Fast lane / streaming. Streaming is opt-in (body.stream) for generic
+        // calls on the OpenAI-compatible free providers; anything else keeps
+        // the classic single-JSON path (web search, mock drafts, paid routes).
+        const fastProviderOK = route.provider === 'gemini' || route.provider === 'groq';
+        const latencyMode = latencyType && !useWebSearch && fastProviderOK;
+        const streamMode = wantsStream && !!genericContext && !useWebSearch && !isMockDraft && fastProviderOK;
+        const fastMode = latencyMode || streamMode;
+        const attempts: FastAttempt[] = [];
+        let firstTokenMs: number | null = null;
+        let servedModel: string | null = null;
         let analysis = '';
         let stopReason = '';
         let inputTokens = 0;
@@ -2995,174 +3333,260 @@ Deno.serve(async (req) => {
             });
         };
 
-        try {
-            const providerResult = await callAIProvider({ route, systemPrompt, userPrompt, maxTokens, useWebSearch });
-            analysis = providerResult.analysis;
-            stopReason = providerResult.stopReason;
-            inputTokens = providerResult.inputTokens;
-            outputTokens = providerResult.outputTokens;
-            cachedInputTokens = providerResult.cachedInputTokens;
-            webSearchCount = providerResult.webSearchCount || 0;
-        } catch (providerError) {
-            if (useWebSearch || !isProviderAvailabilityError(providerError)) {
-                await recordProviderFailure(providerError);
-                throw providerError;
-            }
-            const failedProvider = route.provider;
-            const primaryRoute = route;
-            const fallback = await resolveConfiguredRoute(route, planLimits, false, failedProvider);
-            if (!fallback.route || fallback.route.provider === route.provider) {
-                await recordProviderFailure(providerError);
-                throw providerError;
-            }
-
-            route = fallback.route;
-            providerFallback = true;
-            providerFallbackReason = fallback.providerFallbackReason || `${failedProvider}_provider_error`;
-
-            try {
-                const providerResult = await callAIProvider({ route, systemPrompt, userPrompt, maxTokens, useWebSearch: false });
-                analysis = providerResult.analysis;
-                stopReason = providerResult.stopReason;
-                inputTokens = providerResult.inputTokens;
-                outputTokens = providerResult.outputTokens;
-                cachedInputTokens = providerResult.cachedInputTokens;
-            } catch (fallbackError) {
-                // Third rung (owner-authorized 2026-09-05). The 09-04 morning
-                // loss was a dual throttle: the primary burst-shed, the free
-                // fallback rate-limited, and the request died even though both
-                // lanes were healthy again within minutes. When the fallback
-                // ALSO fails on availability, give the original provider one
-                // final, delayed re-ask before declaring failure.
-                if (!isProviderAvailabilityError(fallbackError) || primaryRoute.provider === route.provider) {
-                    await recordProviderFailure(fallbackError);
-                    throw fallbackError;
+        const completeCall = async (onDelta?: (text: string) => void): Promise<{ status: number; payload: Record<string, any> }> => {
+            if (fastMode) {
+                // One timed attempt per provider, no sleeps: the latency-first
+                // provider, then the router's next configured one.
+                const fallback = await resolveConfiguredRoute(route, planLimits, false, route.provider);
+                const routes: AIRoute[] = [route];
+                if (fallback.route && fallback.route.provider !== route.provider
+                    && (fallback.route.provider === 'gemini' || fallback.route.provider === 'groq')) {
+                    routes.push(fallback.route);
                 }
                 try {
-                    await new Promise((resolve) => setTimeout(resolve, 2500));
-                    const lastResult = await callAIProvider({ route: primaryRoute, systemPrompt, userPrompt, maxTokens, useWebSearch: false });
-                    route = primaryRoute;
-                    providerFallbackReason = `${providerFallbackReason || 'provider_error'}+primary_retry`;
-                    analysis = lastResult.analysis;
-                    stopReason = lastResult.stopReason;
-                    inputTokens = lastResult.inputTokens;
-                    outputTokens = lastResult.outputTokens;
-                    cachedInputTokens = lastResult.cachedInputTokens;
-                } catch (finalError) {
-                    await recordProviderFailure(finalError);
-                    throw finalError;
+                    const fast = await runFastChain({ routes, systemPrompt, userPrompt, maxTokens, latency: latencyMode, onDelta, attempts });
+                    analysis = fast.analysis;
+                    stopReason = fast.stopReason;
+                    inputTokens = fast.inputTokens;
+                    outputTokens = fast.outputTokens;
+                    cachedInputTokens = fast.cachedInputTokens;
+                    servedModel = fast.servedModel;
+                    firstTokenMs = fast.firstTokenMs;
+                    if (fast.routeIndex > 0) {
+                        providerFallback = true;
+                        providerFallbackReason = fallback.providerFallbackReason || `${route.provider}_provider_error`;
+                        route = fast.route;
+                    }
+                } catch (fastError) {
+                    await recordProviderFailure(fastError);
+                    throw fastError;
                 }
+            } else {
+                try {
+                    const providerResult = await callAIProvider({ route, systemPrompt, userPrompt, maxTokens, useWebSearch });
+                    analysis = providerResult.analysis;
+                    stopReason = providerResult.stopReason;
+                    inputTokens = providerResult.inputTokens;
+                    outputTokens = providerResult.outputTokens;
+                    cachedInputTokens = providerResult.cachedInputTokens;
+                    webSearchCount = providerResult.webSearchCount || 0;
+                    servedModel = providerResult.servedModel || null;
+                } catch (providerError) {
+                    if (useWebSearch || !isProviderAvailabilityError(providerError)) {
+                        await recordProviderFailure(providerError);
+                        throw providerError;
+                    }
+                    const failedProvider = route.provider;
+                    const primaryRoute = route;
+                    const fallback = await resolveConfiguredRoute(route, planLimits, false, failedProvider);
+                    if (!fallback.route || fallback.route.provider === route.provider) {
+                        await recordProviderFailure(providerError);
+                        throw providerError;
+                    }
+
+                    route = fallback.route;
+                    providerFallback = true;
+                    providerFallbackReason = fallback.providerFallbackReason || `${failedProvider}_provider_error`;
+
+                    try {
+                        const providerResult = await callAIProvider({ route, systemPrompt, userPrompt, maxTokens, useWebSearch: false });
+                        analysis = providerResult.analysis;
+                        stopReason = providerResult.stopReason;
+                        inputTokens = providerResult.inputTokens;
+                        outputTokens = providerResult.outputTokens;
+                        cachedInputTokens = providerResult.cachedInputTokens;
+                        servedModel = providerResult.servedModel || null;
+                    } catch (fallbackError) {
+                        // Third rung (owner-authorized 2026-09-05). The 09-04 morning
+                        // loss was a dual throttle: the primary burst-shed, the free
+                        // fallback rate-limited, and the request died even though both
+                        // lanes were healthy again within minutes. When the fallback
+                        // ALSO fails on availability, give the original provider one
+                        // final, delayed re-ask before declaring failure.
+                        if (!isProviderAvailabilityError(fallbackError) || primaryRoute.provider === route.provider) {
+                            await recordProviderFailure(fallbackError);
+                            throw fallbackError;
+                        }
+                        try {
+                            await new Promise((resolve) => setTimeout(resolve, 2500));
+                            const lastResult = await callAIProvider({ route: primaryRoute, systemPrompt, userPrompt, maxTokens, useWebSearch: false });
+                            route = primaryRoute;
+                            providerFallbackReason = `${providerFallbackReason || 'provider_error'}+primary_retry`;
+                            analysis = lastResult.analysis;
+                            stopReason = lastResult.stopReason;
+                            inputTokens = lastResult.inputTokens;
+                            outputTokens = lastResult.outputTokens;
+                            cachedInputTokens = lastResult.cachedInputTokens;
+                            servedModel = lastResult.servedModel || null;
+                        } catch (finalError) {
+                            await recordProviderFailure(finalError);
+                            throw finalError;
+                        }
+                    }
+                }
+
             }
-        }
 
-        // Dynasty Read: keep only what's inside <read></read>, dropping any
-        // web-search narration the model emitted around it.
-        if (isDynastyRead) analysis = extractTaggedRead(analysis);
+            // Dynasty Read: keep only what's inside <read></read>, dropping any
+            // web-search narration the model emitted around it.
+            if (isDynastyRead) analysis = extractTaggedRead(analysis);
 
-        const latencyMs = Date.now() - startedAt;
-        const measuredTokensUsed = inputTokens + outputTokens;
-        const tokensUsed = measuredTokensUsed || (estimatedInputTokens + maxTokens);
-        const estimatedCostUsd = measuredTokensUsed
-            ? estimateCostUsd(route.model, inputTokens, outputTokens, cachedInputTokens)
-            : estimatedRequestCostUsd;
-        const accounting = await recordAIAccounting({
-            req,
-            aiSession,
-            planLimits,
-            reservedCostUsd,
-            routeType,
-            originalType: type,
-            context,
-            genericContext,
-            route,
-            inputTokens,
-            outputTokens,
-            cachedInputTokens,
-            tokensUsed,
-            estimatedCostUsd,
-            latencyMs,
-            providerFallback,
-            providerFallbackReason,
-            routeDowngraded: downgradedRoute.downgraded,
-            ecoMode,
-            ecoModeReason,
-            promptTruncated: promptClamp.truncated,
-            webSearchDisabled,
-        });
-
-        // For mock_draft, parse the JSON picks array from the AI response
-        let picks: any[] | undefined;
-        if (isMockDraft) {
-            // Detect truncation before attempting to parse
-            if (stopReason === 'max_tokens') {
-                return new Response(
-                    JSON.stringify({ error: 'Draft simulation response was too long and got cut off. Try reducing the number of rounds or owners.' }),
-                    { status: 422, headers: { ...responseHeaders, 'Content-Type': 'application/json' } }
-                );
-            }
-            picks = parseJsonArray(analysis);
-        }
-
-        // JSON-contract insight types are parsed server-side so every client
-        // gets a ready-to-render array alongside the raw analysis text.
-        let insights = (!genericContext && JSON_ARRAY_TYPES.has(type)) ? parseJsonArray(analysis) : undefined;
-        if (type === 'dashboard_digest') insights = validateDigestInsights(insights, context);
-
-        // Low-coverage ("bad") players make the model search to the cap (≥4 of the 5
-        // allowed) and the resulting depth/stash read barely changes week to week —
-        // so cache it ~4x longer (28d vs 7d) to avoid repeatedly paying for the
-        // expensive search on a player whose read is stable. Well-covered players are
-        // found in 1-2 searches and stay on the normal news-cadence TTL.
-        const effectiveTtlMs = (isDynastyRead && webSearchCount >= 4)
-            ? Math.max(cacheTtlMs, 28 * 24 * 60 * 60 * 1000)
-            : cacheTtlMs;
-        if (cacheTtlMs > 0 && cacheKey && analysis && stopReason !== 'max_tokens') {
-            await writeAIResponseCache({
-                cacheKey,
-                type,
+            const latencyMs = Date.now() - startedAt;
+            const timing: Record<string, unknown> = {
+                servedModel,
+                preWorkMs: startedAt - requestStartedAt,
+                firstTokenMs,
+                streamed: streamMode,
+                fastLane: fastMode,
+                ...(attempts.length ? { attempts } : {}),
+            };
+            const measuredTokensUsed = inputTokens + outputTokens;
+            const tokensUsed = measuredTokensUsed || (estimatedInputTokens + maxTokens);
+            const estimatedCostUsd = measuredTokensUsed
+                ? estimateCostUsd(route.model, inputTokens, outputTokens, cachedInputTokens)
+                : estimatedRequestCostUsd;
+            const accounting = await recordAIAccounting({
+                req,
                 aiSession,
-                leagueId: contextLeagueId,
-                model: route.model,
-                analysis,
-                usage: { inputTokens, outputTokens, estimatedCostUsd },
-                ttlMs: effectiveTtlMs,
+                planLimits,
+                reservedCostUsd,
+                routeType,
+                originalType: type,
+                context,
+                genericContext,
+                route,
+                inputTokens,
+                outputTokens,
+                cachedInputTokens,
+                tokensUsed,
+                estimatedCostUsd,
+                latencyMs,
+                providerFallback,
+                providerFallbackReason,
+                routeDowngraded: downgradedRoute.downgraded,
+                ecoMode,
+                ecoModeReason,
+                promptTruncated: promptClamp.truncated,
+                webSearchDisabled,
+                timing,
+            });
+
+            // For mock_draft, parse the JSON picks array from the AI response
+            let picks: any[] | undefined;
+            if (isMockDraft) {
+                // Detect truncation before attempting to parse
+                if (stopReason === 'max_tokens') {
+                    return { status: 422, payload: { error: 'Draft simulation response was too long and got cut off. Try reducing the number of rounds or owners.' } };
+                }
+                picks = parseJsonArray(analysis);
+            }
+
+            // JSON-contract insight types are parsed server-side so every client
+            // gets a ready-to-render array alongside the raw analysis text.
+            let insights = (!genericContext && JSON_ARRAY_TYPES.has(type)) ? parseJsonArray(analysis) : undefined;
+            if (type === 'dashboard_digest') insights = validateDigestInsights(insights, context);
+
+            // Low-coverage ("bad") players make the model search to the cap (≥4 of the 5
+            // allowed) and the resulting depth/stash read barely changes week to week —
+            // so cache it ~4x longer (28d vs 7d) to avoid repeatedly paying for the
+            // expensive search on a player whose read is stable. Well-covered players are
+            // found in 1-2 searches and stay on the normal news-cadence TTL.
+            const effectiveTtlMs = (isDynastyRead && webSearchCount >= 4)
+                ? Math.max(cacheTtlMs, 28 * 24 * 60 * 60 * 1000)
+                : cacheTtlMs;
+            if (cacheTtlMs > 0 && cacheKey && analysis && stopReason !== 'max_tokens') {
+                runInBackground(writeAIResponseCache({
+                    cacheKey,
+                    type,
+                    aiSession,
+                    leagueId: contextLeagueId,
+                    model: route.model,
+                    analysis,
+                    usage: { inputTokens, outputTokens, estimatedCostUsd },
+                    ttlMs: effectiveTtlMs,
+                }));
+            }
+
+            return {
+                status: 200,
+                payload: {
+                    analysis,
+                    ...(picks ? { picks } : {}),
+                    ...(insights ? { insights } : {}),
+                    provider: route.provider,
+                    model: route.model,
+                    usage: {
+                        aiPolicyVersion: AI_POLICY_VERSION,
+                        routeTier: route.tier,
+                        inputTokens,
+                        outputTokens,
+                        cachedInputTokens,
+                        tokensUsed,
+                        totalTokensUsed: accounting.totalTokensUsed,
+                        estimatedCostUsd,
+                        latencyMs,
+                        providerFallback,
+                        providerFallbackReason,
+                        routeDowngraded: downgradedRoute.downgraded,
+                        ecoMode,
+                        ecoModeReason,
+                        promptTruncated: promptClamp.truncated,
+                        webSearchDisabled,
+                        plan: aiSession.plan,
+                        dailyRequests: accounting.usageCounters?.dailyRequests ?? usageReservation.dailyRequests ?? null,
+                        dailyRequestLimit: usageReservation.dailyRequestLimit ?? planLimits.dailyRequests,
+                        monthlyRequests: accounting.usageCounters?.monthlyRequests ?? usageReservation.monthlyRequests ?? null,
+                        monthlyRequestLimit: usageReservation.monthlyRequestLimit ?? planLimits.monthlyRequests,
+                        dailyCostUsd: accounting.usageCounters?.dailyCostUsd ?? usageReservation.dailyCostUsd ?? null,
+                        monthlyCostUsd: accounting.usageCounters?.monthlyCostUsd ?? usageReservation.monthlyCostUsd ?? null,
+                        servedModel,
+                        preWorkMs: timing.preWorkMs,
+                        firstTokenMs,
+                        streamed: streamMode,
+                    },
+                },
+            };
+        };
+
+        if (streamMode) {
+            const encoder = new TextEncoder();
+            const stream = new ReadableStream({
+                async start(controller) {
+                    let open = true;
+                    const write = (text: string) => {
+                        if (!open) return;
+                        try { controller.enqueue(encoder.encode(text)); } catch { open = false; }
+                    };
+                    const send = (event: string, data: unknown) => write(formatSSE(event, data));
+                    // Flush headers now: the client knows the answer is on its way.
+                    write(': ok\n\n');
+                    send('meta', { provider: route.provider, model: route.model, routeTier: route.tier });
+                    try {
+                        const outcome = await completeCall((text) => send('delta', { text }));
+                        if (outcome.status === 200) send('done', outcome.payload);
+                        else send('error', { ...outcome.payload, status: outcome.status });
+                    } catch (error: any) {
+                        console.error('[ai-analyze] stream error:', error);
+                        send('error', { error: error?.message || 'Internal server error', status: 500 });
+                    } finally {
+                        if (open) { try { controller.close(); } catch { /* closed */ } }
+                    }
+                },
+            });
+            return new Response(stream, {
+                headers: {
+                    ...responseHeaders,
+                    'Content-Type': 'text/event-stream; charset=utf-8',
+                    'Cache-Control': 'no-cache, no-transform',
+                    'X-Accel-Buffering': 'no',
+                },
             });
         }
 
+        const outcome = await completeCall();
         return new Response(
-            JSON.stringify({
-                analysis,
-                ...(picks ? { picks } : {}),
-                ...(insights ? { insights } : {}),
-                provider: route.provider,
-                model: route.model,
-                usage: {
-                    aiPolicyVersion: AI_POLICY_VERSION,
-                    routeTier: route.tier,
-                    inputTokens,
-                    outputTokens,
-                    cachedInputTokens,
-                    tokensUsed,
-                    totalTokensUsed: accounting.totalTokensUsed,
-                    estimatedCostUsd,
-                    latencyMs,
-                    providerFallback,
-                    providerFallbackReason,
-                    routeDowngraded: downgradedRoute.downgraded,
-                    ecoMode,
-                    ecoModeReason,
-                    promptTruncated: promptClamp.truncated,
-                    webSearchDisabled,
-                    plan: aiSession.plan,
-                    dailyRequests: accounting.usageCounters?.dailyRequests ?? usageReservation.dailyRequests ?? null,
-                    dailyRequestLimit: usageReservation.dailyRequestLimit ?? planLimits.dailyRequests,
-                    monthlyRequests: accounting.usageCounters?.monthlyRequests ?? usageReservation.monthlyRequests ?? null,
-                    monthlyRequestLimit: usageReservation.monthlyRequestLimit ?? planLimits.monthlyRequests,
-                    dailyCostUsd: accounting.usageCounters?.dailyCostUsd ?? usageReservation.dailyCostUsd ?? null,
-                    monthlyCostUsd: accounting.usageCounters?.monthlyCostUsd ?? usageReservation.monthlyCostUsd ?? null,
-                },
-            }),
-            { headers: { ...responseHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify(outcome.payload),
+            { status: outcome.status, headers: { ...responseHeaders, 'Content-Type': 'application/json' } }
         );
     } catch (error: any) {
         console.error('[ai-analyze] error:', error);
