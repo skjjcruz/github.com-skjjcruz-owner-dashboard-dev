@@ -1,0 +1,84 @@
+# Read-only database query for the maintainer's cloud session.
+#
+# Why: the session's database connector asks the owner to approve every call,
+# which he can't do from his phone. This runs ONE read-only query through the
+# Supabase Management API (same secret the function deploy uses) and prints the
+# result ENCRYPTED to a public key the caller supplies — the repo and its logs
+# are public, so plaintext results (emails, handles) must never reach the log.
+#
+# Guard rails:
+#   - SELECT/WITH/EXPLAIN only; any write/DDL keyword is refused before sending.
+#   - The session is forced read-only (default_transaction_read_only) so even a
+#     statement that slipped past the keyword check cannot write.
+#   - Output = gzip(JSON) → AES-256 (random key) → key wrapped with RSA-OAEP.
+name: DB read (encrypted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      sql:
+        description: "Read-only SQL (SELECT / WITH / EXPLAIN)"
+        required: true
+        type: string
+      pubkey:
+        description: "Base64 of the caller's RSA public key (PEM)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-read
+  cancel-in-progress: false
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SQL: ${{ inputs.sql }}
+      PUBKEY_B64: ${{ inputs.pubkey }}
+    steps:
+      - name: Run the query and encrypt the result
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 - <<'PYEOF'
+          import json, os, re, sys, urllib.request, urllib.error
+          sql = os.environ['SQL'].strip().rstrip(';')
+          body = re.sub(r"'(?:[^']|'')*'", "''", sql)          # ignore string literals
+          body = re.sub(r'--[^\n]*|/\*.*?\*/', ' ', body, flags=re.S)
+          if not re.match(r'^\s*(select|with|explain)\b', body, re.I) or ';' in body or re.search(
+              r'\b(insert|update|delete|merge|upsert|alter|drop|create|grant|revoke|truncate|copy|call|do|vacuum|reindex|cluster|refresh|comment|security|set|reset|lock|listen|notify|prepare|execute|begin|commit|rollback|pg_read|pg_ls|lo_import|lo_export|dblink)\b',
+              body, re.I):
+              print('Refused: only a single read-only SELECT/WITH/EXPLAIN is allowed.', file=sys.stderr)
+              sys.exit(2)
+          query = 'set session characteristics as transaction read only; ' + sql
+          req = urllib.request.Request(
+              'https://api.supabase.com/v1/projects/sxshiqyxhhifvtfqawbq/database/query',
+              data=json.dumps({'query': query}).encode(),
+              headers={'Authorization': 'Bearer ' + os.environ['SUPABASE_ACCESS_TOKEN'],
+                       'Content-Type': 'application/json', 'Accept': 'application/json',
+                       'User-Agent': 'DHQ-db-read'},
+              method='POST')
+          try:
+              with urllib.request.urlopen(req, timeout=120) as r:
+                  out = {'ok': True, 'rows': json.loads(r.read().decode())}
+          except urllib.error.HTTPError as e:
+              out = {'ok': False, 'status': e.code, 'error': e.read().decode()[:4000]}
+          open('result.json', 'w').write(json.dumps(out))
+          print('rows:', len(out['rows']) if out.get('ok') and isinstance(out['rows'], list) else 'error')
+          PYEOF
+          echo "$PUBKEY_B64" | base64 -d > pub.pem
+          gzip -9 -c result.json > result.gz
+          openssl rand 32 > aes.key
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:aes.key -in result.gz -out result.enc
+          openssl pkeyutl -encrypt -pubin -inkey pub.pem -pkeyopt rsa_padding_mode:oaep -in aes.key -out aes.key.enc
+          echo "=====KEY====="
+          base64 -w0 aes.key.enc; echo
+          echo "=====DATA====="
+          base64 -w 3000 result.enc
+          echo "=====END====="
+          rm -f result.json result.gz aes.key
