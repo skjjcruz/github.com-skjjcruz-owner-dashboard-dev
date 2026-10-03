@@ -28,7 +28,7 @@ import {
     json,
 } from '../_shared/security.ts';
 
-const TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
+const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days (owner ruling 2026-10-03; was 7)
 const BCRYPT_ROUNDS     = 12;
 
 // Detect legacy SHA-256 hash (64 lowercase hex chars, not a bcrypt hash)

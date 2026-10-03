@@ -4,7 +4,7 @@
  * POST /functions/v1/fw-refresh-session
  * Header: Authorization: Bearer <current, still-valid app JWT>
  *
- * Why this exists: app JWTs live 7 days and nothing renewed them, so any
+ * Why this exists: app JWTs expire (7 days then, 30 now) and nothing renewed them, so any
  * user who stayed signed in longer than a week silently degraded to the
  * free tier when authenticated calls started failing. The shared client
  * calls this on boot when the stored token is more than a day old (or the

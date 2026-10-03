@@ -44,6 +44,13 @@ export async function resolveEntitlements(
   return { tier, products };
 }
 
+// How long a sign-in lasts without a visit. Every visit more than a day after
+// the token was minted slides it forward (fw-refresh-session), so this is the
+// idle limit, not a hard cap. 30 days (owner ruling 2026-10-03): at 7 days,
+// returning members kept getting bounced to the front page. Revocation is
+// unchanged — session_version is checked on every call.
+export const APP_SESSION_TTL = '30d';
+
 // One JWT mint for every session issuer (fw-signup / fw-signin /
 // fw-oauth-sync / fw-refresh-session) so claims can never drift apart.
 export async function mintAppSessionJWT(args: {
@@ -68,6 +75,6 @@ export async function mintAppSessionJWT(args: {
     .setIssuer(Deno.env.get('SUPABASE_URL')! + '/auth/v1')
     .setSubject(args.userId)
     .setIssuedAt()
-    .setExpirationTime('7d')
+    .setExpirationTime(APP_SESSION_TTL)
     .sign(secret);
 }
