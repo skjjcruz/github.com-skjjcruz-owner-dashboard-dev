@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     if (req.method === 'GET') {
       const { data: user, error } = await admin
         .from('app_users')
-        .select('id, email, display_name, tutorial_state, platform_usernames')
+        .select('id, email, display_name, tutorial_state, platform_usernames, created_at')
         .eq('id', session.userId)
         .maybeSingle();
       if (error) return json(req, { error: error.message }, 500);
@@ -65,6 +65,8 @@ Deno.serve(async (req) => {
           id: user.id,
           email: user.email,
           displayName: user.display_name,
+          // "Member since" on My Profile (2026-10-04).
+          createdAt: user.created_at || null,
           tier,
           products: expandProducts(products.map((p: any) => String(p.product_slug || ''))),
         },
