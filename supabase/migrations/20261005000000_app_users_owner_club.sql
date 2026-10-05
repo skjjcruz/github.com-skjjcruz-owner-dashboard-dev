@@ -1,0 +1,11 @@
+-- Account-owned avatar (owner ruling 2026-10-05): "anytime a user signs into
+-- their account, the avatar is present". The avatar used to live only in the
+-- device's localStorage (dhq_owner_club_v1), which sign-in/sign-out clean-ups
+-- wipe; now it is saved on the account and restored on every sign-in, on any
+-- device.
+--
+-- owner_club: { avatarId, avatarData, updatedAt } — validated by fw-profile
+-- (initials 'b:XX:#rrggbb', NFL helmet 'h:KC', or an uploaded photo 'u' with a
+-- small data: URL). Written and read only through fw-profile (service role).
+-- Additive and nullable: nothing else reads it.
+alter table public.app_users add column if not exists owner_club jsonb;

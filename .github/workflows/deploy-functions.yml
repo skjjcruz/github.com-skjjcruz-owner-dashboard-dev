@@ -71,6 +71,7 @@ jobs:
               '20260927000000': 'supabase/migrations/20260927000000_analytics_test_traffic_fence.sql',
               '20260918030000': 'supabase/migrations/20260918030000_account_password_change.sql',
               '20260928000000': 'supabase/migrations/20260928000000_deleted_account_tombstones.sql',
+              '20261005000000': 'supabase/migrations/20261005000000_app_users_owner_club.sql',
           }
 
           def run_query(query):
@@ -146,6 +147,7 @@ jobs:
               '20260927000000': 'supabase/migrations/20260927000000_analytics_test_traffic_fence.sql',
               '20260918030000': 'supabase/migrations/20260918030000_account_password_change.sql',
               '20260928000000': 'supabase/migrations/20260928000000_deleted_account_tombstones.sql',
+              '20261005000000': 'supabase/migrations/20261005000000_app_users_owner_club.sql',
           }
 
           for path in expected.values():
