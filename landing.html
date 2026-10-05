@@ -1225,7 +1225,21 @@
           if (sessionHealthy(s)) return;
         } catch {}
       }
-      try { openAuthSheet('signin'); } catch {}
+      // ?signin=new: a guest's "Create free account" opens on the sign-up side.
+      try { openAuthSheet(q.get('signin') === 'new' ? 'signup' : 'signin'); } catch {}
+      // &via=google|apple: the app's My Profile buttons go straight to that
+      // provider, through this page's own handlers (same OAuth return, same
+      // guest-league adoption). The flag is dropped from the URL first so a
+      // back-swipe from the provider can't fire it twice.
+      const via = q.get('via');
+      if (via === 'google' || via === 'apple') {
+        try { q.delete('via'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '') + location.hash); } catch {}
+        let tries = 0;
+        (function go() {
+          if (getSbClient()) { try { (via === 'google' ? handleGoogle : handleApple)(); } catch {} return; }
+          if (++tries < 40) setTimeout(go, 150);
+        })();
+      }
       if (q.has('reauth')) { try { showAlert('success', 'Your session ended. Sign in to pick up where you left off.'); } catch {} }
     })();
 
@@ -1302,26 +1316,91 @@
         }
       }
       note.hidden = true;
-      // A device that belongs to an account (owner stamp): a returning
-      // account holder typing here would silently become a guest and lose
-      // their account's leagues. Offer the sign-in sheet first; a second
-      // submit continues as a guest (the guest never sees the account's
-      // leagues — beginGuest clears them).
-      var idn = window.OD && window.OD.identity;
-      var stamp = idn ? idn.getStamp() : null;
-      // Also an unstamped device that remembers a league (a signed-out user
-      // of an older build) — becoming a guest would clear it.
-      var remembers = !!(idn && !stamp && localStorage.getItem('wr_guest_v1') !== '1' && idn.localOnboarded());
-      if (((stamp && stamp !== 'guest') || remembers) && !form.dataset.guestOk) {
-        form.dataset.guestOk = '1';
-        try { openAuthSheet('signin'); } catch (err) {}
-        try { showAlert('success', 'Welcome back \u2014 sign in to your account. Not you? Close this and tap Go again to look around as a guest.'); } catch (err) {}
-        return;
+      // No "Welcome back — sign in" detour, for anyone (owner ruling
+      // 2026-10-05): Go continues straight in.
+      //
+      // A member still signed in on this device (the hub's DHQ icon opens
+      // this page): their own Sleeper name goes straight back in as the
+      // member; an MFL / ESPN id connects to the account; any other Sleeper
+      // name signs the member out FIRST — and waits for the sign-out to
+      // finish — so the guest's league can never be written onto the
+      // member's account (2026-10-05 incident).
+      var idnL = window.OD && window.OD.identity;
+      if (idnL && typeof idnL.currentOwner === 'function') {
+        var liveOwner = null;
+        try { liveOwner = idnL.currentOwner(); } catch (err) { liveOwner = null; }
+        var liveSess = null;
+        try { liveSess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null'); } catch (err) { liveSess = null; }
+        var liveTok = liveSess && liveSess.token && String(liveSess.token).split('.')[1];
+        var liveClaims = null;
+        try { liveClaims = liveTok ? JSON.parse(atob(liveTok.replace(/-/g, '+').replace(/_/g, '/'))) : null; } catch (err) { liveClaims = null; }
+        var liveOk = !!(liveClaims && (!liveClaims.exp || Number(liveClaims.exp) * 1000 > Date.now()));
+        // Any stored member login — live OR expired — is handled here: an
+        // expired one must be cleared too, or the next app load would adopt
+        // this guest's league onto that account (b154 review).
+        if (liveOwner && liveOwner !== 'guest' && liveSess && liveSess.token) {
+          var meta = (liveClaims && liveClaims.app_metadata) || {};
+          var sessHandle = (typeof meta.sleeper_username === 'string' && meta.sleeper_username) || (liveSess.user && liveSess.user.sleeperUsername) || null;
+          var myHandle = ((idnL.getStamp && idnL.getStamp() === liveOwner && idnL.localHandle) ? idnL.localHandle() : null) || sessHandle;
+          if (liveOk && platform !== 'sleeper') {
+            // A member adding an MFL / ESPN league: connect it to the account
+            // (?reconnect lets a member with leagues through the connect gate).
+            try { sessionStorage.setItem('dhq_connect_prefill', JSON.stringify({ platform: platform, value: v, ts: Date.now() })); } catch (err) {}
+            window.location.href = 'connect-sleeper.html?reconnect=' + platform;
+            return;
+          }
+          if (liveOk && myHandle && String(myHandle).toLowerCase() === v.toLowerCase()) { window.location.href = 'index.html'; return; }
+          try { localStorage.removeItem('dhq_remembered_member_v1'); } catch (err) {}
+          var outDone = null;
+          try { if (typeof idnL.signOutClear === 'function') outDone = idnL.signOutClear({ supabase: (typeof getSbClient === 'function' ? getSbClient() : null) }); } catch (err) { outDone = null; }
+          try { localStorage.removeItem('fw_session_v1'); localStorage.removeItem('od_session_v1'); } catch (err) {}
+          var resumed = false;
+          var resume = function () { if (resumed) return; resumed = true; continueIn(platform, v); };
+          Promise.resolve(outDone).then(resume, resume);
+          setTimeout(resume, 2000);
+          return;
+        }
       }
-      try { sessionStorage.setItem('dhq_connect_prefill', JSON.stringify({ platform: platform, value: v, ts: Date.now() })); } catch (err) {}
-      try { if (idn) idn.beginGuest(); } catch (err) {}
-      try{localStorage.setItem('wr_guest_v1','1')}catch(e){};window.location.href='connect-sleeper.html';
+      continueIn(platform, v);
     });
+
+    // Signed out (or just signed out): a member who signed out on this
+    // device and types their own Sleeper name is signed back in as that
+    // member (js/core.js remembers them); anyone else comes in as a guest.
+    function continueIn(platform, v) {
+      var idnC = window.OD && window.OD.identity;
+      try {
+        var rem = JSON.parse(localStorage.getItem('dhq_remembered_member_v1') || 'null');
+        var tok = rem && rem.session && rem.session.token;
+        var part = tok && String(tok).split('.')[1];
+        var claims = part ? JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))) : null;
+        var remMeta = (claims && claims.app_metadata) || {};
+        var remOwner = remMeta.user_id ? 'account:' + remMeta.user_id
+          : (typeof remMeta.sleeper_username === 'string' && remMeta.sleeper_username ? 'legacy:' + remMeta.sleeper_username.toLowerCase() : null);
+        // Restore only when the device still belongs to that member (no
+        // other guest has used it since — their leagues must never be
+        // adopted onto this account).
+        var stampNow = idnC && typeof idnC.getStamp === 'function' ? idnC.getStamp() : null;
+        if (platform === 'sleeper' && claims && Number(claims.exp) * 1000 > Date.now() && rem.handle
+            && String(rem.handle).toLowerCase() === v.toLowerCase() && remOwner && stampNow === remOwner) {
+          localStorage.setItem('fw_session_v1', JSON.stringify(rem.session));
+          localStorage.removeItem('wr_guest_v1');
+          localStorage.removeItem('dhq_remembered_member_v1');
+          window.location.href = 'index.html';
+          return;
+        }
+        // Any other entry — expired, another name, an MFL / ESPN guest —
+        // forgets the remembered member.
+        if (rem) localStorage.removeItem('dhq_remembered_member_v1');
+      } catch (err) { /* fall through to guest */ }
+      // The guest lane never runs on top of a stored member login.
+      try { localStorage.removeItem('fw_session_v1'); localStorage.removeItem('od_session_v1'); } catch (err) {}
+      var idn = window.OD && window.OD.identity;
+      try { sessionStorage.setItem('dhq_connect_prefill', JSON.stringify({ platform: platform, value: v, ts: Date.now() })); } catch (err) {}
+      // The Sleeper name goes along: the same person keeps their stuff.
+      try { if (idn) idn.beginGuest(platform === 'sleeper' ? v : undefined); } catch (err) {}
+      try{localStorage.setItem('wr_guest_v1','1')}catch(e){};window.location.href='connect-sleeper.html';
+    }
   })();
 </script>
 <script>

@@ -59,6 +59,25 @@
     const DHQ_HOME_URL = 'landing.html?home';
     window.App.DHQ_HOME_URL = DHQ_HOME_URL;
 
+    // ── Hub v2 — the "Welcome back" home (Lab 2026-10-02, live b154) ──
+    // Component + styles: js/hub-v2.js, js/hub-v2.css (deferred group 'hubv2').
+    // b154 (2026-10-05): the new home is live for everyone, website and app
+    // (owner ruling: no switch back). HUB_V2 stays as the one name every
+    // new-home path keys off.
+    const HUB_V2 = true;
+    window.App.HUB_V2 = HUB_V2;
+    // Lab: a guest's wordmark reads "DYNASTY HQ · GUEST", not "· PRO"
+    // (everything is free, so the shared tier gate marks everyone Pro; owner
+    // ask 2026-10-05). body.is-guest is kept in step by OwnerDashboard.
+    if (HUB_V2) {
+        try {
+            const st = document.createElement('style');
+            st.id = 'hv2-guest-wordmark';
+            st.textContent = 'body.is-guest .wr-wordmark::after, body.is-guest .header .wr-wordmark::after { content: " \\00B7 GUEST" !important; color: var(--silver, #98A1AD) !important; }';
+            (document.head || document.documentElement).appendChild(st);
+        } catch (e) { /* no style, no badge change */ }
+    }
+
     // ── Owner default: bigloco's locked-in MFL franchise in the "MLS Dynasty
     // League" (id 41969). Used to auto-select the team on rehydrate when no
     // mfl_franchise_id is persisted yet. Matched by NAME in loadMflData so the
@@ -289,11 +308,160 @@
         const raw = AppStorage.get(OWNER_CLUB_KEY);
         return { ...OWNER_CLUB_DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
     }
-    function saveOwnerClub(patch) {
+    function saveOwnerClub(patch, opts) {
         const next = { ...getOwnerClub(), ...patch };
+        // Lab: an avatar change (set OR removed) is stamped with who and when,
+        // kept in this device's avatar memory and saved on the account.
+        const avatarChanged = HUB_V2 && patch && (Object.prototype.hasOwnProperty.call(patch, 'avatarId') || Object.prototype.hasOwnProperty.call(patch, 'avatarData'));
+        const userChange = avatarChanged && !(opts && opts.fromSync);
+        let owner = null;
+        if (userChange) {
+            owner = avatarSyncOwner();
+            next.avatarUpdatedAt = Date.now();
+            next.avatarOwner = owner;
+        }
         AppStorage.set(OWNER_CLUB_KEY, next);
+        if (userChange && owner) {
+            const entry = avatarEntryOf(next);
+            writeAvatarVault(owner, entry);
+            if (owner.indexOf('account:') === 0) pushAvatarToAccount(entry);
+        }
         try { window.dispatchEvent(new CustomEvent('dhq:owner-club-changed')); } catch (e) { /* non-fatal */ }
         return next;
+    }
+
+    // ── Lab: the avatar belongs to the person, not to the device's state ──
+    // (owner ruling 2026-10-05: "anytime a user signs into their account, the
+    // avatar is present"). Sign-in / sign-out / guest clean-ups wipe the club
+    // key above, so the avatar is also kept where they never reach:
+    //   1. the account (fw-profile ownerClub) — every sign-in, any device;
+    //   2. this device's avatar memory (dhq_avatar_vault_v1), one entry per
+    //      owner: 'account:<id>' / 'legacy:<handle>' for members,
+    //      'sleeper:<handle>' for guests only.
+    // A member's avatar comes ONLY from their own account's copies: a Sleeper
+    // name is public, so a name-keyed copy never feeds an account (review
+    // 2026-10-05). Removals are entries too ({ avatarId: null }), newest wins.
+    const AVATAR_VAULT_KEY = 'dhq_avatar_vault_v1';
+    // Whose avatar is on screen right now, or null while the device is not
+    // settled (its identity cache belongs to someone else until the sign-in
+    // reconcile finishes — never read or write then).
+    function avatarSyncOwner() {
+        try {
+            const idn = window.OD && window.OD.identity;
+            if (!idn || typeof idn.currentOwner !== 'function') return null;
+            const owner = idn.currentOwner();
+            if (!owner) return null;
+            if (owner === 'guest') {
+                const h = typeof idn.localHandle === 'function' ? idn.localHandle() : null;
+                return h ? 'sleeper:' + String(h).toLowerCase() : null;
+            }
+            const stamp = typeof idn.getStamp === 'function' ? idn.getStamp() : null;
+            return stamp === owner ? owner : null;
+        } catch (e) { return null; }
+    }
+    function avatarEntryOf(club) {
+        if (!club) return null;
+        if (club.avatarId) return { avatarId: club.avatarId, avatarData: club.avatarId === 'u' ? (club.avatarData || null) : null, updatedAt: Number(club.avatarUpdatedAt) || 0 };
+        // A recorded removal (back to the default initials).
+        if (Number(club.avatarUpdatedAt) > 0) return { avatarId: null, avatarData: null, updatedAt: Number(club.avatarUpdatedAt) };
+        return null;
+    }
+    function readAvatarVault() {
+        try { const v = JSON.parse(localStorage.getItem(AVATAR_VAULT_KEY) || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch (e) { return {}; }
+    }
+    function writeAvatarVault(owner, entry) {
+        if (!owner || !entry) return;
+        const v = readAvatarVault();
+        v[owner] = entry;
+        try { localStorage.setItem(AVATAR_VAULT_KEY, JSON.stringify(v)); } catch (e) { /* storage full / blocked */ }
+    }
+    function accountAppToken() {
+        try {
+            const owner = window.OD && window.OD.identity && window.OD.identity.currentOwner ? window.OD.identity.currentOwner() : null;
+            if (!owner || owner.indexOf('account:') !== 0) return null;
+            const s = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
+            return (s && s.token) || null;
+        } catch (e) { return null; }
+    }
+    // Saved on the account shortly after a change. The token is captured now
+    // (a sign-out right after must not lose the change) and the request
+    // survives a page change (keepalive); a pending one is sent on pagehide.
+    let avatarPush = null;
+    function sendAvatarPush() {
+        if (!avatarPush) return;
+        const { token, entry } = avatarPush;
+        avatarPush = null;
+        clearTimeout(avatarPushTimer);
+        const OD = window.OD || {};
+        const url = (OD.BACKEND_ENDPOINTS && OD.BACKEND_ENDPOINTS.fwProfile) || ((OD.SUPABASE_URL || '') + '/functions/v1/fw-profile');
+        try {
+            fetch(url, { method: 'POST', keepalive: true, headers: { 'Authorization': 'Bearer ' + token, 'apikey': OD.SUPABASE_ANON || '', 'Content-Type': 'application/json' }, body: JSON.stringify({ ownerClub: entry }) })
+                .catch(err => window.wrLog && window.wrLog('avatar.push', err));
+        } catch (err) { window.wrLog && window.wrLog('avatar.push', err); }
+    }
+    let avatarPushTimer = null;
+    function pushAvatarToAccount(entry) {
+        if (!HUB_V2 || !entry) return;
+        const token = accountAppToken();
+        if (!token) return;
+        avatarPush = { token, entry };
+        clearTimeout(avatarPushTimer);
+        avatarPushTimer = setTimeout(sendAvatarPush, 600);
+    }
+    if (HUB_V2) { try { window.addEventListener('pagehide', sendAvatarPush); } catch (e) { /* no window */ } }
+
+    let avatarSyncing = false;
+    let avatarSyncAgain = false;
+    async function syncAvatarMemory() {
+        if (!HUB_V2) return;
+        if (avatarSyncing) { avatarSyncAgain = true; return; }
+        avatarSyncing = true;
+        try {
+            const owner = avatarSyncOwner();
+            if (!owner) return;
+            const isAccount = owner.indexOf('account:') === 0;
+            let server, serverRead = false;
+            if (isAccount && window.OD && typeof window.OD.loadProfile === 'function') {
+                try {
+                    const p = await window.OD.loadProfile();
+                    // A failed read falls back without ownerClub: never treat
+                    // that as "nothing on the account".
+                    if (p && Object.prototype.hasOwnProperty.call(p, 'ownerClub')) { serverRead = true; server = p.ownerClub || null; }
+                } catch (e) { serverRead = false; }
+            }
+            // The device may have changed hands while we waited.
+            if (avatarSyncOwner() !== owner) { avatarSyncAgain = true; return; }
+            const club = getOwnerClub();
+            const vault = readAvatarVault();
+            const candidates = [];
+            const local = avatarEntryOf(club);
+            // The device's own copy: this owner's stamp, or an untagged club
+            // on a device whose identity cache is verified to be theirs.
+            const localMine = !!local && (club.avatarOwner ? club.avatarOwner === owner : true);
+            if (localMine) candidates.push(local);
+            if (vault[owner]) candidates.push(vault[owner]);
+            if (server) candidates.push(server);
+            if (!candidates.length) {
+                // Someone else's avatar is on screen and this person has none:
+                // back to the default initials.
+                if (club.avatarId && club.avatarOwner && club.avatarOwner !== owner) saveOwnerClub({ avatarId: null, avatarData: null, avatarUpdatedAt: 0, avatarOwner: owner }, { fromSync: true });
+                return;
+            }
+            const best = candidates.reduce((a, b) => ((Number(b.updatedAt) || 0) > (Number(a.updatedAt) || 0) ? b : a));
+            const shownData = club.avatarId === 'u' ? (club.avatarData || null) : null;
+            if ((best.avatarId || null) !== (club.avatarId || null) || (best.avatarData || null) !== shownData || club.avatarOwner !== owner) {
+                saveOwnerClub({ avatarId: best.avatarId || null, avatarData: best.avatarData || null, avatarUpdatedAt: Number(best.updatedAt) || 0, avatarOwner: owner }, { fromSync: true });
+            }
+            writeAvatarVault(owner, best);
+            // Only after a successful read: the server keeps whichever is newer.
+            const serverBehind = serverRead && (!server || (server.avatarId || null) !== (best.avatarId || null) || (Number(server.updatedAt) || 0) < (Number(best.updatedAt) || 0));
+            if (isAccount && serverBehind) pushAvatarToAccount(best);
+        } catch (e) {
+            window.wrLog && window.wrLog('avatar.sync', e);
+        } finally {
+            avatarSyncing = false;
+            if (avatarSyncAgain) { avatarSyncAgain = false; setTimeout(syncAvatarMemory, 300); }
+        }
     }
     // Hook: live view of the club object, synced across every mounted surface.
     function useOwnerClub() {
@@ -380,14 +548,50 @@
             + '<circle cx="35" cy="17" r="1.7" fill="' + s + '"/>'
             + '<path d="M42 21h4M40 26h5M37 31h5" stroke="#9aa0a6" stroke-width="1.7" fill="none"/></svg>';
     }
+    // Lab (hub v2): real NFL helmets — the team's own logo on a helmet in its
+    // colors (owner ruling 2026-10-04: use the real marks). img/nfl-helmets/.
+    function nflHelmetImgSrc(ab) { return dhqAssetPath('img/nfl-helmets/' + String(ab).toLowerCase() + '.webp'); }
+    // Lab (hub v2): no pick yet = your initials in gold (owner ruling
+    // 2026-10-04: initials are the default avatar).
+    // A guest (no account) defaults to "G" (owner ruling 2026-10-04).
+    function isGuestOwner() { try { return window.OD?.identity?.currentOwner?.() === 'guest'; } catch (e) { return false; } }
+    // Members: first + last initial of the account's real name (display name,
+    // else the email, e.g. steven.crusinberry -> SC); one-word names take two
+    // letters; no account -> the Sleeper name (owner ask 2026-10-04).
+    function initialsFromName(raw) {
+        const parts = String(raw || '').split(/[\s._-]+/).map(w => w.replace(/[^A-Za-z0-9]/g, '')).filter(Boolean);
+        if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        return parts.length ? parts[0].slice(0, 2).toUpperCase() : '';
+    }
+    function defaultOwnerInitials(name) {
+        if (isGuestOwner()) return 'G';
+        let acct = '';
+        try {
+            const u = (JSON.parse(localStorage.getItem('fw_session_v1') || 'null') || {}).user || {};
+            // A real first + last name wins: a one-word display name (often
+            // the Sleeper handle) yields to an email like first.last.
+            const emailLocal = String(u.email || '').split('@')[0];
+            const twoPart = (raw) => String(raw || '').split(/[\s._-]+/).filter(w => /[A-Za-z0-9]/.test(w)).length >= 2 ? initialsFromName(raw) : '';
+            acct = twoPart(u.displayName) || twoPart(emailLocal) || initialsFromName(u.displayName) || initialsFromName(emailLocal);
+        } catch (e) { acct = ''; }
+        return acct || initialsFromName(name) || 'DH';
+    }
+    function withDefaultAvatar(club, name) {
+        return club && club.avatarId ? club : Object.assign({}, club, { avatarId: 'b:' + defaultOwnerInitials(name) + ':#D4AF37' });
+    }
     // Small badge rendering the selected owner avatar (masthead meta row).
-    function OwnerAvatarBadge({ club, size }) {
+    // round: a circle (the hub v2 My Profile button).
+    function OwnerAvatarBadge({ club, size, round }) {
         const px = size || 22;
         const id = club && club.avatarId;
         if (!id) return null;
         const box = { width: px + 'px', height: px + 'px', borderRadius: Math.round(px * 0.28) + 'px', overflow: 'hidden', flexShrink: 0, border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', background: 'var(--black)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', verticalAlign: 'middle' };
+        if (round) { box.borderRadius = '50%'; }
         if (id === 'u' && club.avatarData) {
             return <img src={club.avatarData} alt="" style={{ ...box, objectFit: 'cover' }} />;
+        }
+        if (HUB_V2 && id.indexOf('h:') === 0 && NFL_HELMETS.some(x => x[0] === id.slice(2))) {
+            return <img src={nflHelmetImgSrc(id.slice(2))} alt="" style={{ ...box, objectFit: 'contain', background: '#16161b', padding: Math.round(px * 0.08) + 'px', boxSizing: 'border-box' }} />;
         }
         if (id.indexOf('b:') === 0) {
             const parts = id.split(':');
@@ -549,6 +753,14 @@
         const [deleteBusy, setDeleteBusy] = React.useState(false);
         const [copied, setCopied] = React.useState(false);
         const fileRef = React.useRef(null);
+        // Lab: "Member since" from the account record (fw-profile createdAt).
+        const [memberSince, setMemberSince] = React.useState(null);
+        React.useEffect(() => {
+            if (!HUB_V2 || !window.OD || typeof window.OD.loadProfile !== 'function') return undefined;
+            let alive = true;
+            window.OD.loadProfile().then(p => { if (alive && p && p.memberSince) setMemberSince(p.memberSince); }).catch(() => {});
+            return () => { alive = false; };
+        }, []);
 
         const tierLabel = { free: 'Dynasty HQ Scout — Free', trial: 'Dynasty HQ Trial', scout: 'Dynasty HQ Scout', warroom: 'Dynasty HQ Pro', pro: 'Dynasty HQ Pro', commissioner: 'Dynasty HQ Commissioner' };
 
@@ -600,11 +812,11 @@
 
         // Builder (initials + color) state, seeded from a saved builder avatar.
         const savedBuilder = (club.avatarId || '').indexOf('b:') === 0 ? club.avatarId.split(':') : null;
-        const [bInit, setBInit] = React.useState(savedBuilder ? (savedBuilder[1] || '') : (String(username || 'DH').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()));
+        const [bInit, setBInit] = React.useState(savedBuilder ? (savedBuilder[1] || '') : (HUB_V2 ? defaultOwnerInitials(username) : String(username || 'DH').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()));
         const [bColor, setBColor] = React.useState(savedBuilder ? (savedBuilder[2] || '#D4AF37') : '#D4AF37');
         const BUILDER_COLORS = ['#D4AF37', '#E74C3C', '#2ECC71', '#3B82F6', '#A855F7', '#F97316', '#14B8A6', '#EC4899'];
         function applyBuilder(ini, col) {
-            const cleanIni = (ini || 'DH').toUpperCase().slice(0, 3);
+            const cleanIni = HUB_V2 ? (String(ini || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || 'DH') : (ini || 'DH').toUpperCase().slice(0, 3);
             setClub({ avatarId: 'b:' + cleanIni + ':' + col });
         }
 
@@ -637,6 +849,225 @@
 
         const avCellBase = { aspectRatio: '1', borderRadius: '12px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', overflow: 'hidden', padding: 0, transition: 'all .13s', background: 'var(--black)', cursor: 'pointer' };
         const selRing = { borderColor: 'var(--gold)', boxShadow: '0 0 0 1px var(--gold), 0 0 12px rgba(212,175,55,0.35)' };
+
+        // Share + community, and the owner avatar: the same cards in both views.
+        const shareCard = (
+            <div style={card}>
+                <div style={cardH}>Share With Friends</div>
+                <div style={{ ...hint, margin: '0 0 8px' }}>Bring your leaguemates in — the trash talk is better when everyone can see the numbers.</div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <input style={{ ...tin, flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--silver)' }} readOnly value={inviteUrl} onFocus={e => e.target.select()} />
+                    <button onClick={copyInvite}
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', letterSpacing: '0.1em', color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: '9px', padding: '0 16px', transition: 'all .14s', flexShrink: 0, background: 'none', cursor: 'pointer' }}>
+                        {copied ? 'COPIED!' : 'COPY'}
+                    </button>
+                </div>
+
+                <div style={{ ...cardH, marginTop: '22px' }}>Community</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <a style={commBtn} href={WR_DISCORD_URL} target="_blank" rel="noopener">
+                        <svg viewBox="0 0 24 24" width="19" height="19" fill="var(--black)"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4c1.8.5 2.6 1.1 3.5 1.9a16.2 16.2 0 0 0-13.4 0c.9-.8 1.9-1.5 3.5-1.9L8.6 3a19.8 19.8 0 0 0-4.9 1.4A20.3 20.3 0 0 0 .4 18.1a19.9 19.9 0 0 0 6 3l.5-.7a12.3 12.3 0 0 1-2.4-1.2l.6-.4a14.2 14.2 0 0 0 12.2 0l.6.4c-.8.5-1.6.9-2.4 1.2l.5.7a19.9 19.9 0 0 0 6-3A20.3 20.3 0 0 0 20.3 4.4zM8.7 15.3c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2z"/></svg>
+                        Join the Discord
+                    </a>
+                    <a style={xBtn} href={DHQ_X_URL} target="_blank" rel="noopener">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18.9 2H22l-6.8 7.8L23.3 22h-6.3l-4.9-6.4L6.5 22H3.4l7.3-8.3L1 2h6.5l4.5 5.9zM17.8 20.1h1.7L7.6 3.8H5.7z"/></svg>
+                        Follow @DHQfootball
+                    </a>
+                </div>
+            </div>
+        );
+        const avatarCard = (
+            <div style={{ ...card, gridColumn: '1 / -1' }}>
+                <div style={cardH}>Owner Avatar</div>
+                <div style={fLabelFirst}>Football set</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))', gap: '8px' }}>
+                    {OWNER_GLYPHS.map((g, i) => {
+                        const isSel = club.avatarId === 'g:' + g;
+                        return (
+                            <button key={g} aria-label={g + ' avatar'}
+                                onClick={() => setClub({ avatarId: isSel ? null : 'g:' + g })}
+                                style={isSel ? { ...avCellBase, ...selRing } : avCellBase}
+                                dangerouslySetInnerHTML={{ __html: ownerGlyphSvg(OWNER_GLYPH_HUES[i], g) }} />
+                        );
+                    })}
+                </div>
+                <div style={{ ...fLabel, marginTop: '16px' }}>Rep your NFL team</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(62px, 1fr))', gap: '8px' }}>
+                    {NFL_HELMETS.map(([ab, p, s]) => {
+                        const isSel = club.avatarId === 'h:' + ab;
+                        return (
+                            <button key={ab} aria-label={ab + ' helmet'}
+                                onClick={() => setClub({ avatarId: isSel ? null : 'h:' + ab })}
+                                style={{ borderRadius: '12px', border: '1px solid ' + (isSel ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'), boxShadow: isSel ? '0 0 0 1px var(--gold)' : 'none', padding: '6px 3px 4px', transition: 'all .13s', background: 'var(--black)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
+                                <span style={{ display: 'block', width: '38px', height: '30px' }} dangerouslySetInnerHTML={{ __html: nflHelmetSvg(p, s) }} />
+                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.56rem', letterSpacing: '0.06em', color: 'var(--silver)' }}>{ab}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+                <div style={{ ...fLabel, marginTop: '16px' }}>…or create your own</div>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: '13px', padding: '14px', background: 'var(--black)', flexWrap: 'wrap' }}>
+                    <div style={{ width: '64px', height: '64px', borderRadius: '14px', border: '1.5px solid ' + bColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1.4rem', flexShrink: 0, color: bColor, background: bColor + '22', boxShadow: (club.avatarId || '').indexOf('b:') === 0 ? '0 0 0 1px ' + bColor : 'none' }}>
+                        {(bInit || 'DH').toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                        <input value={bInit} maxLength={3} aria-label="Initials"
+                            onChange={e => { const v = e.target.value; setBInit(v); applyBuilder(v, bColor); }}
+                            style={{ width: '100px', background: 'var(--charcoal, #17171d)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: '8px', color: 'var(--white)', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1rem', letterSpacing: '0.14em', padding: '6px 10px', outline: 'none', textTransform: 'uppercase', textAlign: 'center' }} />
+                        <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
+                            {BUILDER_COLORS.map(c => (
+                                <button key={c} aria-label={'color ' + c}
+                                    onClick={() => { setBColor(c); applyBuilder(bInit, c); }}
+                                    style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid ' + (bColor === c && (club.avatarId || '').indexOf('b:') === 0 ? 'var(--white)' : 'transparent'), transition: 'all .12s', padding: 0, background: c, cursor: 'pointer', transform: bColor === c && (club.avatarId || '').indexOf('b:') === 0 ? 'scale(1.12)' : 'none' }} />
+                            ))}
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', letterSpacing: '0.08em', color: club.avatarId === 'u' ? 'var(--gold)' : 'var(--silver)', border: '1px dashed ' + (club.avatarId === 'u' ? 'var(--gold)' : 'var(--acc-line2, rgba(212,175,55,0.3))'), borderRadius: '9px', padding: '8px 13px', transition: 'all .14s', width: 'fit-content', cursor: 'pointer' }}>
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                            {club.avatarId === 'u' && club.avatarData ? 'Uploaded — pick a new image' : 'Upload your own image'}
+                            <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }} />
+                        </label>
+                        {club.avatarId === 'u' && club.avatarData && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <img src={club.avatarData} alt="Your avatar" style={{ width: '40px', height: '40px', borderRadius: '10px', objectFit: 'cover', border: '1px solid var(--gold)' }} />
+                                <button onClick={() => setClub({ avatarId: null, avatarData: null })}
+                                    style={{ background: 'none', border: 'none', color: 'var(--silver)', fontSize: '0.72rem', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>Remove</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                <div style={hint}>Your avatar shows next to your club name on the masthead. Helmets are drawn in team colors only — no NFL marks.</div>
+            </div>
+        );
+
+        // ── Lab (hub v2): "My Profile" (owner ask 2026-10-03) ──
+        // Everything is free and Alex is retired, so the Lab drops the
+        // membership/billing box, and the notification and trade-psychology
+        // switches (nothing reads them). Club name/motto and the owner avatar
+        // are out too (owner ruling 2026-10-04: they don't show anywhere). Guests get the founding-member offer
+        // instead of a password they don't have. Delete account stays for
+        // members (Apple requires it in the app), tucked into the small print.
+        if (HUB_V2) {
+            const owner = (function () { try { return window.OD?.identity?.currentOwner?.() || null; } catch (e) { return null; } })();
+            const isGuest = owner === 'guest';
+            const isMember = !!owner && !isGuest;
+            const initialsOn = !club.avatarId || club.avatarId.indexOf('b:') === 0;
+            const small = { color: 'var(--silver)', textDecoration: 'underline', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' };
+            return (
+                <div style={{ padding: '0 0 40px', maxWidth: '900px', margin: '0 auto' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '22px 16px 16px', borderBottom: '1px solid var(--acc-line2, rgba(212,175,55,0.3))' }}>
+                        <button onClick={onBack}
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', letterSpacing: '0.12em', color: 'var(--silver)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px 14px', minHeight: '40px', transition: 'all .14s', textTransform: 'uppercase', background: 'none', cursor: 'pointer' }}>
+                            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="15 18 9 12 15 6"/></svg>
+                            Back
+                        </button>
+                        <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1.6rem', letterSpacing: '0.12em', color: 'var(--gold)', textTransform: 'uppercase' }}>My Profile</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '18px', padding: '22px 16px 10px', alignItems: 'start' }}>
+                        {shareCard}
+
+                        {/* ── Account ── */}
+                        <div style={card}>
+                            <div style={cardH}>Your Account</div>
+                            {isMember && accountEmail && <div style={{ ...hint, marginTop: 0, marginBottom: '12px', opacity: 0.85 }}>Signed in as <span style={{ color: 'var(--white)' }}>{accountEmail}</span></div>}
+                            {isMember && (() => {
+                                const since = memberSince ? new Date(memberSince) : null;
+                                const sinceOk = since && !isNaN(since.getTime());
+                                const founding = sinceOk && since.getTime() < Date.UTC(2027, 2, 1);
+                                return (
+                                    <div style={{ border: '1px solid var(--gold)', borderRadius: 'var(--card-radius-sm, 8px)', padding: '12px 14px', marginBottom: '12px', background: 'linear-gradient(135deg, rgba(212,175,55,0.14), rgba(212,175,55,0.03))' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.08em', color: isPaid ? 'var(--black)' : 'var(--silver)', background: isPaid ? 'var(--gold)' : 'rgba(192,192,192,0.15)', borderRadius: 'var(--card-radius-xs, 5px)', padding: '2px 7px' }}>{isPaid ? 'PRO' : 'SCOUT'}</span>
+                                            <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1rem', letterSpacing: '0.04em', color: 'var(--white)' }}>{(tierLabel[tier] || 'Dynasty HQ').replace(' — Free', '')}</span>
+                                        </div>
+                                        {(founding || sinceOk) && <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginTop: '7px' }}>
+                                            {founding && <span style={{ color: 'var(--gold)', fontWeight: 600 }}>★ Founding Member</span>}
+                                            {founding && sinceOk && ' · '}
+                                            {sinceOk && 'Member since ' + since.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                        </div>}
+                                    </div>
+                                );
+                            })()}
+                            {!isMember && <>
+                                <div style={{ ...hint, marginTop: 0, marginBottom: '10px', opacity: 0.85 }}>Signed in as <span style={{ color: 'var(--white)' }}>Guest</span></div>
+                                <div style={{ fontSize: '0.86rem', color: 'var(--white)', lineHeight: 1.55, marginBottom: '14px' }}>
+                                    <strong style={{ color: 'var(--gold)' }}>Make it yours — it’s free.</strong> Save your leagues and picks on every device, and lock in founding-member status: sign up before March 1, 2027 and your first year of full DHQ is free when paid plans start. Your leagues come with you.
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                                    <button type="button" onClick={() => { window.location.href = 'landing.html?signin=new&via=google'; }}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', width: '100%', minHeight: '46px', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', background: '#fff', color: '#1f1f1f', font: '600 0.92rem var(--font-body)', cursor: 'pointer' }}>
+                                        <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.1 0-11-4.9-11-11s4.9-11 11-11c2.8 0 5.4 1.1 7.3 2.8l5.7-5.7C33.6 6.1 29.1 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c2.8 0 5.4 1.1 7.3 2.8l5.7-5.7C33.6 6.1 29.1 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35 26.7 36 24 36c-5.3 0-9.7-2.6-11.3-7l-6.6 5.1C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.2 5.2C39.9 36 44 30.6 44 24c0-1.3-.1-2.3-.4-3.5z"/></svg>
+                                        Continue with Google
+                                    </button>
+                                    <button type="button" onClick={() => { window.location.href = 'landing.html?signin=new&via=apple'; }}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', width: '100%', minHeight: '46px', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 'var(--card-radius-sm, 8px)', background: '#000', color: '#fff', font: '600 0.92rem var(--font-body)', cursor: 'pointer' }}>
+                                        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="currentColor"><path d="M17.05 12.04c-.03-2.65 2.16-3.92 2.26-3.98-1.23-1.8-3.15-2.05-3.83-2.08-1.63-.16-3.18.96-4.01.96-.82 0-2.1-.94-3.46-.91-1.78.03-3.42 1.03-4.34 2.62-1.85 3.21-.47 7.95 1.33 10.55.88 1.27 1.93 2.7 3.3 2.65 1.32-.05 1.82-.85 3.42-.85 1.59 0 2.04.85 3.44.82 1.42-.02 2.32-1.3 3.19-2.58 1-1.47 1.42-2.89 1.44-2.97-.03-.01-2.76-1.06-2.79-4.2zM14.6 4.48c.73-.89 1.22-2.12 1.08-3.35-1.05.04-2.32.7-3.07 1.58-.67.78-1.26 2.03-1.1 3.23 1.17.09 2.36-.6 3.09-1.46z"/></svg>
+                                        Continue with Apple
+                                    </button>
+                                    <button type="button" style={{ ...small, alignSelf: 'center', marginTop: '2px', fontSize: '0.78rem' }} onClick={() => { window.location.href = 'landing.html?signin=new'; }}>or sign up with email</button>
+                                </div>
+                            </>}
+                            {(isMember || isGuest) && <div style={{ marginTop: isMember ? 0 : '14px' }}><button style={btnLine} onClick={signOut}>Sign out</button></div>}
+                            <div style={{ ...hint, display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '14px' }}>
+                                <a href="legal/terms-of-service.html" target="_blank" rel="noopener" style={{ color: 'var(--silver)', textDecoration: 'underline' }}>Terms of Service</a>
+                                <a href="legal/privacy-policy.html" target="_blank" rel="noopener" style={{ color: 'var(--silver)', textDecoration: 'underline' }}>Privacy Policy</a>
+                                {isMember && <button type="button" style={small} onClick={deleteAccount} disabled={deleteBusy}>{deleteBusy ? 'Deleting…' : 'Delete account'}</button>}
+                            </div>
+                        </div>
+
+                        {/* ── Your avatar: initials (default), a real NFL helmet, or upload your own ── */}
+                        <div style={{ ...card, gridColumn: '1 / -1' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px' }}>
+                                <div style={cardH}>Your Avatar</div>
+                                <div style={{ marginLeft: 'auto' }}><OwnerAvatarBadge club={withDefaultAvatar(club, username)} size={40} round /></div>
+                            </div>
+                            <div style={fLabelFirst}>Your initials (the default)</div>
+                            <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '6px' }}>
+                                <button type="button" aria-label="Use your initials" aria-pressed={initialsOn ? 'true' : 'false'} onClick={() => applyBuilder(bInit, bColor)}
+                                    style={{ width: '64px', height: '64px', borderRadius: '50%', border: '1.5px solid ' + bColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1.35rem', letterSpacing: '0.04em', flexShrink: 0, color: bColor, background: 'rgba(0,0,0,0.4)', boxShadow: initialsOn ? '0 0 0 2px var(--black), 0 0 0 3px var(--gold)' : 'none', cursor: 'pointer', padding: 0 }}>
+                                    {(bInit || defaultOwnerInitials(username)).toUpperCase()}
+                                </button>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                                    <input value={bInit} maxLength={3} aria-label="Initials"
+                                        onChange={e => { const v = e.target.value; setBInit(v); applyBuilder(v, bColor); }}
+                                        style={{ width: '100px', background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--white)', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1rem', letterSpacing: '0.14em', padding: '8px 10px', outline: 'none', textTransform: 'uppercase', textAlign: 'center' }} />
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        {BUILDER_COLORS.map(c => (
+                                            <button key={c} type="button" aria-label={'initials color ' + c}
+                                                onClick={() => { setBColor(c); applyBuilder(bInit, c); }}
+                                                style={{ width: '26px', height: '26px', borderRadius: '50%', border: '2px solid ' + (bColor === c && initialsOn ? 'var(--white)' : 'transparent'), padding: 0, background: c, cursor: 'pointer' }} />
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ ...fLabel, marginTop: '16px' }}>…or rep your NFL team</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: '8px' }}>
+                                {NFL_HELMETS.map(([ab]) => {
+                                    const isSel = club.avatarId === 'h:' + ab;
+                                    return (
+                                        <button key={ab} type="button" aria-label={ab + ' helmet'} aria-pressed={isSel ? 'true' : 'false'}
+                                            onClick={() => setClub({ avatarId: isSel ? null : 'h:' + ab })}
+                                            style={{ borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid ' + (isSel ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'), boxShadow: isSel ? '0 0 0 1px var(--gold), 0 0 12px rgba(212,175,55,0.3)' : 'none', padding: '8px 4px 5px', transition: 'all .13s', background: 'var(--black)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', minHeight: '64px' }}>
+                                            <img src={nflHelmetImgSrc(ab)} alt="" loading="lazy" style={{ width: '54px', height: '43px', objectFit: 'contain' }} />
+                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.56rem', letterSpacing: '0.06em', color: isSel ? 'var(--gold)' : 'var(--silver)' }}>{ab}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <div style={{ ...fLabel, marginTop: '16px' }}>…or upload your own</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', letterSpacing: '0.08em', color: club.avatarId === 'u' ? 'var(--gold)' : 'var(--silver)', border: '1px dashed ' + (club.avatarId === 'u' ? 'var(--gold)' : 'var(--acc-line2, rgba(212,175,55,0.3))'), borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 14px', minHeight: '44px', boxSizing: 'border-box', cursor: 'pointer' }}>
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                                    {club.avatarId === 'u' && club.avatarData ? 'Uploaded — pick a new image' : 'Upload a photo'}
+                                    <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }} />
+                                </label>
+                            </div>
+                            <div style={hint}>Your avatar shows on your My Profile button. Tap your initials to switch back any time.</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
         return (
             <div style={{ padding: '0 0 40px' }}>
@@ -732,91 +1163,10 @@
                     </div>
 
                     {/* ── Share + community ── */}
-                    <div style={card}>
-                        <div style={cardH}>Share With Friends</div>
-                        <div style={{ ...hint, margin: '0 0 8px' }}>Bring your leaguemates in — the trash talk is better when everyone can see the numbers.</div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            <input style={{ ...tin, flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--silver)' }} readOnly value={inviteUrl} onFocus={e => e.target.select()} />
-                            <button onClick={copyInvite}
-                                style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', letterSpacing: '0.1em', color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: '9px', padding: '0 16px', transition: 'all .14s', flexShrink: 0, background: 'none', cursor: 'pointer' }}>
-                                {copied ? 'COPIED!' : 'COPY'}
-                            </button>
-                        </div>
-
-                        <div style={{ ...cardH, marginTop: '22px' }}>Community</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <a style={commBtn} href={WR_DISCORD_URL} target="_blank" rel="noopener">
-                                <svg viewBox="0 0 24 24" width="19" height="19" fill="var(--black)"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4c1.8.5 2.6 1.1 3.5 1.9a16.2 16.2 0 0 0-13.4 0c.9-.8 1.9-1.5 3.5-1.9L8.6 3a19.8 19.8 0 0 0-4.9 1.4A20.3 20.3 0 0 0 .4 18.1a19.9 19.9 0 0 0 6 3l.5-.7a12.3 12.3 0 0 1-2.4-1.2l.6-.4a14.2 14.2 0 0 0 12.2 0l.6.4c-.8.5-1.6.9-2.4 1.2l.5.7a19.9 19.9 0 0 0 6-3A20.3 20.3 0 0 0 20.3 4.4zM8.7 15.3c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2z"/></svg>
-                                Join the Discord
-                            </a>
-                            <a style={xBtn} href={DHQ_X_URL} target="_blank" rel="noopener">
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18.9 2H22l-6.8 7.8L23.3 22h-6.3l-4.9-6.4L6.5 22H3.4l7.3-8.3L1 2h6.5l4.5 5.9zM17.8 20.1h1.7L7.6 3.8H5.7z"/></svg>
-                                Follow @DHQfootball
-                            </a>
-                        </div>
-                    </div>
+                    {shareCard}
 
                     {/* ── Owner avatar ── */}
-                    <div style={{ ...card, gridColumn: '1 / -1' }}>
-                        <div style={cardH}>Owner Avatar</div>
-                        <div style={fLabelFirst}>Football set</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))', gap: '8px' }}>
-                            {OWNER_GLYPHS.map((g, i) => {
-                                const isSel = club.avatarId === 'g:' + g;
-                                return (
-                                    <button key={g} aria-label={g + ' avatar'}
-                                        onClick={() => setClub({ avatarId: isSel ? null : 'g:' + g })}
-                                        style={isSel ? { ...avCellBase, ...selRing } : avCellBase}
-                                        dangerouslySetInnerHTML={{ __html: ownerGlyphSvg(OWNER_GLYPH_HUES[i], g) }} />
-                                );
-                            })}
-                        </div>
-                        <div style={{ ...fLabel, marginTop: '16px' }}>Rep your NFL team</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(62px, 1fr))', gap: '8px' }}>
-                            {NFL_HELMETS.map(([ab, p, s]) => {
-                                const isSel = club.avatarId === 'h:' + ab;
-                                return (
-                                    <button key={ab} aria-label={ab + ' helmet'}
-                                        onClick={() => setClub({ avatarId: isSel ? null : 'h:' + ab })}
-                                        style={{ borderRadius: '12px', border: '1px solid ' + (isSel ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.18))'), boxShadow: isSel ? '0 0 0 1px var(--gold)' : 'none', padding: '6px 3px 4px', transition: 'all .13s', background: 'var(--black)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer' }}>
-                                        <span style={{ display: 'block', width: '38px', height: '30px' }} dangerouslySetInnerHTML={{ __html: nflHelmetSvg(p, s) }} />
-                                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.56rem', letterSpacing: '0.06em', color: 'var(--silver)' }}>{ab}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        <div style={{ ...fLabel, marginTop: '16px' }}>…or create your own</div>
-                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: '13px', padding: '14px', background: 'var(--black)', flexWrap: 'wrap' }}>
-                            <div style={{ width: '64px', height: '64px', borderRadius: '14px', border: '1.5px solid ' + bColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1.4rem', flexShrink: 0, color: bColor, background: bColor + '22', boxShadow: (club.avatarId || '').indexOf('b:') === 0 ? '0 0 0 1px ' + bColor : 'none' }}>
-                                {(bInit || 'DH').toUpperCase()}
-                            </div>
-                            <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
-                                <input value={bInit} maxLength={3} aria-label="Initials"
-                                    onChange={e => { const v = e.target.value; setBInit(v); applyBuilder(v, bColor); }}
-                                    style={{ width: '100px', background: 'var(--charcoal, #17171d)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.18))', borderRadius: '8px', color: 'var(--white)', fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1rem', letterSpacing: '0.14em', padding: '6px 10px', outline: 'none', textTransform: 'uppercase', textAlign: 'center' }} />
-                                <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
-                                    {BUILDER_COLORS.map(c => (
-                                        <button key={c} aria-label={'color ' + c}
-                                            onClick={() => { setBColor(c); applyBuilder(bInit, c); }}
-                                            style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid ' + (bColor === c && (club.avatarId || '').indexOf('b:') === 0 ? 'var(--white)' : 'transparent'), transition: 'all .12s', padding: 0, background: c, cursor: 'pointer', transform: bColor === c && (club.avatarId || '').indexOf('b:') === 0 ? 'scale(1.12)' : 'none' }} />
-                                    ))}
-                                </div>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', letterSpacing: '0.08em', color: club.avatarId === 'u' ? 'var(--gold)' : 'var(--silver)', border: '1px dashed ' + (club.avatarId === 'u' ? 'var(--gold)' : 'var(--acc-line2, rgba(212,175,55,0.3))'), borderRadius: '9px', padding: '8px 13px', transition: 'all .14s', width: 'fit-content', cursor: 'pointer' }}>
-                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-                                    {club.avatarId === 'u' && club.avatarData ? 'Uploaded — pick a new image' : 'Upload your own image'}
-                                    <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }} />
-                                </label>
-                                {club.avatarId === 'u' && club.avatarData && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <img src={club.avatarData} alt="Your avatar" style={{ width: '40px', height: '40px', borderRadius: '10px', objectFit: 'cover', border: '1px solid var(--gold)' }} />
-                                        <button onClick={() => setClub({ avatarId: null, avatarData: null })}
-                                            style={{ background: 'none', border: 'none', color: 'var(--silver)', fontSize: '0.72rem', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>Remove</button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div style={hint}>Your avatar shows next to your club name on the masthead. Helmets are drawn in team colors only — no NFL marks.</div>
-                    </div>
+                    {avatarCard}
                 </div>
             </div>
         );
@@ -835,6 +1185,9 @@
         const [proMode, setProMode] = useState(false); // Empire Dashboard mode
         const [showConnect, setShowConnect] = useState(false); // hub: show platform connect / add-league view
         const [showOwnerSettings, setShowOwnerSettings] = useState(false); // hub: full-page Owner Settings view
+        // Lab: guest wordmark (see HUB_V2 above). Every render: identity can
+        // settle after boot, and the class is a cheap toggle.
+        useEffect(() => { if (HUB_V2) { try { document.body.classList.toggle('is-guest', isGuestOwner()); } catch (e) { /* ignore */ } } });
         // Hub toolbar (10+ leagues): search + sort. Lives here (not in
         // FranchisePicker) so the controlled inputs survive hub re-renders.
         const [hubQuery, setHubQuery] = useState('');
@@ -955,6 +1308,12 @@
             })();
             return () => { alive = false; };
         }, [reconcileNonce]);
+        // Lab: put this person's avatar back (account, then device memory),
+        // after the boot sign-in reconcile, and again when the handle settles.
+        // Below every hook it reads (a hook above sleeperUsername crashed LAB176).
+        useEffect(() => { if (HUB_V2) syncAvatarMemory(); }, [sleeperUsername, reconcileNonce]);
+        // Re-render when the avatar is restored (the hub reads the club store).
+        const [hubClub] = useOwnerClub();
 
         // Display name state
         const [customDisplayName, setCustomDisplayName] = useState(() => {
@@ -1340,6 +1699,21 @@
 
         // Hook must be above the early return to maintain consistent hook order
         const [reconLeagueId, setReconLeagueId] = useState(null);
+
+        // Hub v2 (Lab only — see HUB_V2): load the deferred 'hubv2' group and
+        // its stylesheet once. 'off' everywhere the flag is off (no request);
+        // 'error' falls back to the old hub rather than a blank page.
+        const [hubV2Phase, setHubV2Phase] = useState(HUB_V2 ? 'loading' : 'off');
+        useEffect(() => {
+            if (!HUB_V2) return undefined;
+            let alive = true;
+            const loader = window.wrLoadModuleGroup ? window.wrLoadModuleGroup('hubv2') : Promise.resolve();
+            loader
+                .then(() => (typeof window.DhqHubV2 === 'function' ? window.DhqHubV2.loadStyles() : Promise.reject(new Error('DhqHubV2 missing'))))
+                .then(() => { if (alive) setHubV2Phase('ready'); })
+                .catch(e => { window.wrLog?.('app.hubV2', e); if (alive) setHubV2Phase('error'); });
+            return () => { alive = false; };
+        }, []);
 
         // ── Championship titles for the masthead banner row ──
         // Authoritative source: DhqTitleSweep, which walks the ACCOUNT season
@@ -2191,6 +2565,50 @@
         const hubSyncing = loading && !!sleeperUsername;
         const hubCtrlStyle = { fontFamily: 'var(--font-mono)', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '.12em', color: 'var(--silver)', background: 'transparent', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', padding: '7px 11px', cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', lineHeight: 1 };
 
+        // ── Hub v2 (Lab only — HUB_V2). Same data and the same destinations
+        // as the hub below: leagues, Add a league (the connect sheet), Owner
+        // Settings, upgrade.html, ai-setup.html, Empire (only where enabled),
+        // the all-leagues Wire, and the same stall / reconnect notices. ──
+        const hubV2On = HUB_V2 && hubV2Phase !== 'error';
+        let hubV2 = null;
+        if (hubV2On) {
+            const notices = [];
+            if (hubStall) notices.push({ key: 'stall', text: hubStall === 'sleeper' ? 'Sleeper is taking too long to answer.' : 'We couldn’t reach your account to load your leagues.',
+                action: { label: 'Try again', onClick: () => { if (hubStall === 'sleeper' && sleeperUsername) loadSleeperData(); else { setHubStall(null); setLoading(true); setReconcileNonce(n => n + 1); } } } });
+            else if (error && sleeperUsername && !sleeperLeagues.length && !loading) notices.push({ key: 'sleeper', text: error, action: { label: 'Manage connection', onClick: () => setShowConnect(true) } });
+            if (espnError && localStorage.getItem('espn_league_id')) notices.push({ key: 'espn', text: espnError, action: { label: 'Reconnect ESPN', href: 'connect-sleeper.html?reconnect=espn' } });
+            if (mflError && !mflFranchises && localStorage.getItem('mfl_league_id')) notices.push({ key: 'mfl', text: mflError, action: { label: 'Reconnect MFL', href: 'connect-sleeper.html?reconnect=mfl' } });
+            // Raw read: WrStorage JSON-parses a bare 19-digit Sleeper id into a
+            // rounded Number, which then never matches the league's string id.
+            let lastRaw = null;
+            try { lastRaw = localStorage.getItem(APP_WR_KEYS.LAST_LEAGUE_ID); } catch (e) { lastRaw = null; }
+            const HubV2 = window.DhqHubV2;
+            hubV2 = hubV2Phase !== 'ready' ? <div style={{ minHeight: '100dvh' }} aria-busy="true" /> : (
+                <HubV2
+                    leagues={allLeagues}
+                    sleeperLeagues={sleeperLeagues}
+                    sleeperUserId={sleeperUser?.user_id || null}
+                    lastLeagueId={lastRaw}
+                    displayName={String(displayName)}
+                    syncing={hubSyncing}
+                    notices={notices}
+                    onSelect={handleSelectLeague}
+                    onAddLeague={() => setShowConnect(true)}
+                    onOpenSettings={() => setShowOwnerSettings(true)}
+                    avatar={<OwnerAvatarBadge club={withDefaultAvatar(hubClub, sleeperUsername || (sleeperUser && sleeperUser.username) || '')} size={30} round />}
+                    guest={isGuestOwner()}
+                    returning={(() => { try { const o = window.OD && window.OD.identity && window.OD.identity.currentOwner(); return !!o && (o.indexOf('account:') === 0 || o.indexOf('legacy:') === 0); } catch (e) { return false; } })()}
+                    links={{ home: DHQ_HOME_URL, discord: WR_DISCORD_URL, signup: 'landing.html?signin=new', signin: 'landing.html?signin' }}
+                    iconSrc={iconSrc}
+                    empire={EMPIRE_ENABLED ? {
+                        freePrelive: EMPIRE_FREE_PRELIVE,
+                        onOpen: () => setProMode(true),
+                        onExplore: () => { if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage(); else window.location.href = 'landing.html'; },
+                    } : null}
+                />
+            );
+        }
+
         return (
             <div className="app-container">
                 {/* ── PHONE TIER (≤767), hub view only — iPhone plan Phase 2 item 14.
@@ -2248,6 +2666,7 @@
                         .app-container { padding-bottom: calc(78px + var(--sab, 0px)) !important; }
                     }
                 `}</style>
+                {hubV2On ? hubV2 : <>
                 {/* ── Header ── */}
                 <header className="header">
                     <div className="header-brand" role="link" aria-label="Dynasty HQ home"
@@ -2360,6 +2779,8 @@
                         </div>
                     </div>
                 )}
+
+                </>}
 
                 {/* ── Add-a-league / connect — pops up over the franchise picker.
                      This is the only entry to the platform connectors now; the
