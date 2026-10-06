@@ -2578,6 +2578,16 @@ WRShared.preloadMany(WR_SHARED_FILES);
            right stays visible instead of scrolling off. */
         .tc-ta-roster-list-tall { overflow-x: hidden; }
         .tc-ta-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        /* Phone builder SHEET (Live deal) is one scroller: YOU SEND above
+           YOU GET at full width, the roster list opens inline behind the
+           "Add player or pick" toggle (no nested 300px scroller trapping the
+           finger), and the verdict scrolls under the pinned score bar instead
+           of sticking. The desk's own builder layout above is unchanged. */
+        .wr-sheet .tc-builder-sides { grid-template-columns:minmax(0,1fr) !important; gap:12px !important; }
+        .wr-sheet .tc-ta-side { padding:0.6rem 0.7rem; gap:0.45rem; font-size:0.8rem; }
+        .wr-sheet .tc-ta-roster-inline { max-height:none; overflow:visible; margin-top:6px; border-top:1px solid rgba(212,175,55,0.2); border-radius:var(--card-radius-sm, 8px); }
+        .wr-sheet .tc-ta-sticky-summary { position:static; box-shadow:none; }
+        .tc-ta-picker-toggle { display:flex; align-items:center; justify-content:center; width:100%; min-height:44px; margin-top:6px; background:transparent; border:1px dashed var(--acc-line2, rgba(212,175,55,0.35)); border-radius:var(--card-radius-sm, 8px); color:var(--gold); font-family:var(--font-body); font-size:0.78rem; font-weight:700; letter-spacing:0.03em; cursor:pointer; }
 
         /* Trade Desk touch bump: intent/partner chips, deal-card actions,
            Why?/Browse toggles, show-more — all ~22-29px tall from the shared
@@ -3153,7 +3163,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/components.js?v=20260928auth1"></script>
 <!-- 2b. Unified Player Card (SI-2) — window.WR.openPlayerCard — replaces CDN modal -->
 <!-- Shared visual primitives (WR.Card / Badge / Chip / ConfChip / DeltaLine / Kpi / InsightCard) -->
-<script type="text/babel" src="js/components/wr-primitives.js?v=20260926b134a"></script>
+<script type="text/babel" src="js/components/wr-primitives.js?v=20261005sheet1a"></script>
     <script type="text/babel" src="js/components/player-card.js?v=20260927b135a"></script>
 <!-- 2c. Saved List Views (SI-1) — window.WR.SavedViews — shared across list surfaces -->
 <script type="text/babel" src="js/shared/saved-views.js?v=20260427font1"></script>
@@ -3231,7 +3241,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
      group, when the owning surface first calls wrLoadModuleGroup('<group>'). -->
 <script src="js/module-loader.js?v=20260927fix3a"></script>
 <script type="text/babel" src="js/settings.js?v=20261005avat1a"></script>
-<script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20261001tier1a"></script>
+<script type="text/babel" data-wr-defer="trade" src="js/trade-calc.js?v=20261005deal1a"></script>
 <script type="text/babel" src="js/post-draft.js?v=20260907b112a"></script>
 <!-- FA waiver tools (C2 wave): stat catalog + stat math, market display helpers, waiver engine (fa group, before free-agency.js) -->
 <script type="text/babel" data-wr-defer="fa" src="js/shared/stat-catalog.js?v=20260927waivers1a"></script>
@@ -3326,7 +3336,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- League Calendar widget — depends on window.WrCalendar (js/tabs/calendar.js) -->
 <script type="text/babel" src="js/widgets/league-calendar.js?v=20260827cal4"></script>
 <script type="text/babel" src="js/tabs/dashboard.js?v=20261001tier1a"></script>
-<script type="text/babel" src="js/tabs/flash-brief.js?v=20261001tier1a"></script>
+<script type="text/babel" src="js/tabs/flash-brief.js?v=20261006win1a"></script>
 <!-- Group "analysis": analytics.js embeds LeagueMapTab, so both defer together
      (league-map.js first — DOM order is execution order within a group). -->
 <script type="text/babel" data-wr-defer="analysis" src="js/tabs/league-map.js?v=20261001tier1a"></script>
@@ -3423,7 +3433,7 @@ window.addEventListener('appinstalled', () => {
 <!-- Deploy tag (owner ask 2026-08-19): a tiny always-visible build code so the
      owner can read back exactly which version his device is running before
      testing — kills the stale-cache guessing game. Bump the code every deploy. -->
-<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b154a</div>
+<div id="dhq-build-tag" style="position:fixed;bottom:2px;right:6px;z-index:2147483647;font:700 9px/1.4 monospace;color:rgba(255,255,255,0.30);pointer-events:none;user-select:none;">b155a</div>
 </body>
 </html>
 <!-- build 1774212614 -->
