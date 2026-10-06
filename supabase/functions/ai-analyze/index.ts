@@ -296,9 +296,17 @@ async function pinnedGeminiModel(model: string): Promise<string> {
 function rememberGeminiPin(model: string, served: string): void {
     if (geminiModelPins.get(model) === served) return;
     geminiModelPins.set(model, served);
-    Deno.openKv()
-        .then(kv => kv.set(['gemini_pin', model], served, { expireIn: GEMINI_PIN_TTL_MS }))
-        .catch(() => { /* best-effort */ });
+    // Supabase's edge runtime has no Deno KV — Deno.openKv is undefined, so
+    // the bare call threw synchronously (past the .catch) and failed a request
+    // that had already been answered ("Deno.openKv is not a function"), on the
+    // first AI call of every fresh isolate. Memory pin only when KV is absent.
+    try {
+        const openKv = (Deno as unknown as { openKv?: () => Promise<{ set: (key: unknown[], value: unknown, opts?: { expireIn?: number }) => Promise<unknown> }> }).openKv;
+        if (typeof openKv !== 'function') return;
+        openKv.call(Deno)
+            .then(kv => kv.set(['gemini_pin', model], served, { expireIn: GEMINI_PIN_TTL_MS }))
+            .catch(() => { /* best-effort */ });
+    } catch { /* best-effort */ }
 }
 
 const AI_TIER_MODELS: Record<AIWorkloadTier, Partial<Record<AIProvider, string>>> = {
