@@ -714,6 +714,12 @@ function CompareTab({
         if ((roster.starters || []).some(x => String(x) === sid && sid !== '0')) return 'ST';
         return 'BN';
     };
+    // Full Roster stacking (owner ruling 2026-10-06, same as My Roster):
+    // inside each position, starters first, then bench, taxi, IR last —
+    // each band by DHQ, high to low.
+    const SLOT_RACK = { ST: 0, BN: 1, TX: 2, IR: 3 };
+    const rackBySlot = (rows) => (rows || []).slice().sort((a, b) =>
+        ((SLOT_RACK[a.slot] ?? 1) - (SLOT_RACK[b.slot] ?? 1)) || ((b.dhq || 0) - (a.dhq || 0)));
     const slotChip = (slot) => {
         if (!slot) return null;
         const cfg = slot === 'ST' ? { color: 'var(--good)', title: 'Starter' }
@@ -2444,6 +2450,84 @@ function CompareTab({
                     </div>
                 </div>
 
+                {/* Full roster sits right under the matchup read card (owner
+                    ask 2026-10-06) — was at the page bottom. */}
+                <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
+                        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                            Full Roster Comparison by Position Grouping{histSeason ? (histGridActive ? ' — ' + histSeason + ' rosters' : ' — ' + histSeason + ' rosters unavailable, showing current') : ''}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.62 }}>{isPhone ? 'Tap' : 'Click'} any player to open the player card.</div>
+                    </div>
+                    {gridSummaries.map(summary => {
+                        const mineRack = rackBySlot(summary.myAtPos);
+                        const theirsRack = rackBySlot(summary.theirAtPos);
+                        const maxLen = Math.max(summary.myAtPos.length, summary.theirAtPos.length);
+                        const total = Math.max(1, summary.myPosDHQ + summary.theirPosDHQ);
+                        const myPosPct = summary.myPosDHQ / total * 100;
+                        const isTargetRoom = gmTargetPositions.has(String(summary.pos));
+                        return (
+                            <div key={summary.pos} style={{ marginBottom: '12px', ...panelStyle, overflow: 'hidden', border: isTargetRoom ? '1px solid var(--acc-line2, rgba(212,175,55,0.35))' : panelStyle.border }}>
+                                <div style={{ padding: '9px 10px 10px', background: isTargetRoom ? 'var(--acc-fill1, rgba(212,175,55,0.06))' : (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '10px' }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                                            <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: isTargetRoom ? 'var(--gold)' : posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
+                                            {isTargetRoom ? <span title="Target room from your GM Strategy — win this matchup here" style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850, color: 'var(--gold)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', letterSpacing: '0.04em' }}>TARGET</span> : null}
+                                        </span>
+                                        <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                            <span style={{ color: isTargetRoom ? 'var(--gold)' : summary.myPosDHQ >= summary.theirPosDHQ ? 'var(--good)' : 'var(--silver)', fontWeight: isTargetRoom ? 800 : 400 }}>You: {summary.myPosDHQ.toLocaleString()}</span>
+                                            <span style={{ color: summary.theirPosDHQ >= summary.myPosDHQ ? 'var(--good)' : 'var(--silver)' }}>Them: {summary.theirPosDHQ.toLocaleString()}</span>
+                                            <span style={{ fontWeight: 800, color: summary.diff > 0 ? 'var(--good)' : summary.diff < 0 ? 'var(--bad)' : 'var(--silver)' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                    {/* The 11px % labels can't fit inside a 6px bar (they
+                                        rendered half-cut) — they flank the bar instead, on
+                                        every tier (desktop too, fit pass 2026-09-26). */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--gold)', flexShrink: 0, minWidth: '28px' }}>{Math.round(myPosPct)}%</span>
+                                    <div style={{ display: 'flex', height: '6px', borderRadius: '3px', overflow: 'hidden', background: 'var(--ov-3, rgba(255,255,255,0.04))', flex: 1, minWidth: 0 }}>
+                                        <div title={'You: ' + Math.round(myPosPct) + '%'} style={{ width: myPosPct + '%', background: 'linear-gradient(90deg, var(--gold), var(--acc-line4, rgba(212,175,55,0.78)))' }} />
+                                        <div title={'Them: ' + Math.round(100 - myPosPct) + '%'} style={{ width: (100 - myPosPct) + '%', background: 'linear-gradient(90deg, rgba(124,107,248,0.76), var(--k-7c6bf8, #7c6bf8))' }} />
+                                    </div>
+                                    <span style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--k-7c6bf8, #7c6bf8)', flexShrink: 0, minWidth: '28px', textAlign: 'right' }}>{Math.round(100 - myPosPct)}%</span>
+                                    </div>
+                                </div>
+                                {(() => {
+                                    // Top rows per room + per-position expander at EVERY tier
+                                    // (phone crossover, owner ask 2026-07-13): uncapped, 30-man
+                                    // IDP rosters made this section scroll forever on desktop
+                                    // too. Phone shows the top 4; desktop/iPad get more room,
+                                    // so the cap is 6 there.
+                                    const ROW_CAP = isPhone ? 4 : 6;
+                                    const capped = !expandedRosterPos.has(summary.pos) && maxLen > ROW_CAP + 1;
+                                    const shownLen = capped ? ROW_CAP : maxLen;
+                                    return (
+                                        <React.Fragment>
+                                            {Array.from({ length: shownLen }).map((_, i) => {
+                                                const mine = mineRack[i];
+                                                const theirs = theirsRack[i];
+                                                return (
+                                                    <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))' }}>
+                                                        {renderRosterCell(mine, false, theirs)}
+                                                        {renderRosterCell(theirs, true, mine)}
+                                                    </div>
+                                                );
+                                            })}
+                                            {maxLen > ROW_CAP + 1 && (
+                                                <button type="button"
+                                                    onClick={() => setExpandedRosterPos(prev => { const next = new Set(prev); if (next.has(summary.pos)) next.delete(summary.pos); else next.add(summary.pos); return next; })}
+                                                    style={{ width: '100%', minHeight: '40px', background: 'var(--ov-1, rgba(255,255,255,0.015))', border: 'none', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.04))', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                                                    {capped ? ('Show all ' + maxLen + ' ▾') : ('Show top ' + ROW_CAP + ' ▴')}
+                                                </button>
+                                            )}
+                                        </React.Fragment>
+                                    );
+                                })()}
+                            </div>
+                        );
+                    })}
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: '14px', marginBottom: '16px' }}>
                     <div style={{ ...panelStyle, padding: '14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -2597,79 +2681,6 @@ function CompareTab({
                     </div>
                 </div>
 
-                <div style={{ marginTop: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                            Full Roster by Position{histSeason ? (histGridActive ? ' — ' + histSeason + ' rosters' : ' — ' + histSeason + ' rosters unavailable, showing current') : ''}
-                        </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.62 }}>{isPhone ? 'Tap' : 'Click'} any player to open the player card.</div>
-                    </div>
-                    {gridSummaries.map(summary => {
-                        const maxLen = Math.max(summary.myAtPos.length, summary.theirAtPos.length);
-                        const total = Math.max(1, summary.myPosDHQ + summary.theirPosDHQ);
-                        const myPosPct = summary.myPosDHQ / total * 100;
-                        const isTargetRoom = gmTargetPositions.has(String(summary.pos));
-                        return (
-                            <div key={summary.pos} style={{ marginBottom: '12px', ...panelStyle, overflow: 'hidden', border: isTargetRoom ? '1px solid var(--acc-line2, rgba(212,175,55,0.35))' : panelStyle.border }}>
-                                <div style={{ padding: '9px 10px 10px', background: isTargetRoom ? 'var(--acc-fill1, rgba(212,175,55,0.06))' : (posColors[summary.pos] || 'var(--k-666666, #666666)') + '14', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '10px' }}>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-                                            <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: isTargetRoom ? 'var(--gold)' : posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
-                                            {isTargetRoom ? <span title="Target room from your GM Strategy — win this matchup here" style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850, color: 'var(--gold)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', letterSpacing: '0.04em' }}>TARGET</span> : null}
-                                        </span>
-                                        <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                            <span style={{ color: isTargetRoom ? 'var(--gold)' : summary.myPosDHQ >= summary.theirPosDHQ ? 'var(--good)' : 'var(--silver)', fontWeight: isTargetRoom ? 800 : 400 }}>You: {summary.myPosDHQ.toLocaleString()}</span>
-                                            <span style={{ color: summary.theirPosDHQ >= summary.myPosDHQ ? 'var(--good)' : 'var(--silver)' }}>Them: {summary.theirPosDHQ.toLocaleString()}</span>
-                                            <span style={{ fontWeight: 800, color: summary.diff > 0 ? 'var(--good)' : summary.diff < 0 ? 'var(--bad)' : 'var(--silver)' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
-                                        </div>
-                                    </div>
-                                    {/* The 11px % labels can't fit inside a 6px bar (they
-                                        rendered half-cut) — they flank the bar instead, on
-                                        every tier (desktop too, fit pass 2026-09-26). */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--gold)', flexShrink: 0, minWidth: '28px' }}>{Math.round(myPosPct)}%</span>
-                                    <div style={{ display: 'flex', height: '6px', borderRadius: '3px', overflow: 'hidden', background: 'var(--ov-3, rgba(255,255,255,0.04))', flex: 1, minWidth: 0 }}>
-                                        <div title={'You: ' + Math.round(myPosPct) + '%'} style={{ width: myPosPct + '%', background: 'linear-gradient(90deg, var(--gold), var(--acc-line4, rgba(212,175,55,0.78)))' }} />
-                                        <div title={'Them: ' + Math.round(100 - myPosPct) + '%'} style={{ width: (100 - myPosPct) + '%', background: 'linear-gradient(90deg, rgba(124,107,248,0.76), var(--k-7c6bf8, #7c6bf8))' }} />
-                                    </div>
-                                    <span style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--k-7c6bf8, #7c6bf8)', flexShrink: 0, minWidth: '28px', textAlign: 'right' }}>{Math.round(100 - myPosPct)}%</span>
-                                    </div>
-                                </div>
-                                {(() => {
-                                    // Top rows per room + per-position expander at EVERY tier
-                                    // (phone crossover, owner ask 2026-07-13): uncapped, 30-man
-                                    // IDP rosters made this section scroll forever on desktop
-                                    // too. Phone shows the top 4; desktop/iPad get more room,
-                                    // so the cap is 6 there.
-                                    const ROW_CAP = isPhone ? 4 : 6;
-                                    const capped = !expandedRosterPos.has(summary.pos) && maxLen > ROW_CAP + 1;
-                                    const shownLen = capped ? ROW_CAP : maxLen;
-                                    return (
-                                        <React.Fragment>
-                                            {Array.from({ length: shownLen }).map((_, i) => {
-                                                const mine = summary.myAtPos[i];
-                                                const theirs = summary.theirAtPos[i];
-                                                return (
-                                                    <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))' }}>
-                                                        {renderRosterCell(mine, false, theirs)}
-                                                        {renderRosterCell(theirs, true, mine)}
-                                                    </div>
-                                                );
-                                            })}
-                                            {maxLen > ROW_CAP + 1 && (
-                                                <button type="button"
-                                                    onClick={() => setExpandedRosterPos(prev => { const next = new Set(prev); if (next.has(summary.pos)) next.delete(summary.pos); else next.add(summary.pos); return next; })}
-                                                    style={{ width: '100%', minHeight: '40px', background: 'var(--ov-1, rgba(255,255,255,0.015))', border: 'none', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.04))', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                                                    {capped ? ('Show all ' + maxLen + ' ▾') : ('Show top ' + ROW_CAP + ' ▴')}
-                                                </button>
-                                            )}
-                                        </React.Fragment>
-                                    );
-                                })()}
-                            </div>
-                        );
-                    })}
-                </div>
               </div>
             );
           })()}
