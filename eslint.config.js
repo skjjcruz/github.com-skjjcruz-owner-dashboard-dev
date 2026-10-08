@@ -255,6 +255,8 @@ module.exports = [
         process: "readonly",
         fetch: "readonly",
         Response: "readonly",
+        Request: "readonly",
+        Headers: "readonly",
         structuredClone: "readonly",
         queueMicrotask: "readonly",
       },
