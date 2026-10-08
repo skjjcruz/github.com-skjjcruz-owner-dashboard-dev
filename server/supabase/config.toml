@@ -1,0 +1,7 @@
+# The engine project (separate from the live app's project). The serving
+# endpoint authenticates with DHQ Connect keys itself, so the gateway JWT
+# check must stay off — same reason as the app's supabase/config.toml.
+project_id = "hovnqztlbsgsywrbidbh"
+
+[functions.dhq-tools]
+verify_jwt = false

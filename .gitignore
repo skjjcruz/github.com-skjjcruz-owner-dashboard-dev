@@ -27,3 +27,4 @@ pr-*.png
 
 # server-side engine dry-run output
 server/engine/out/
+server/supabase/functions/*/vendor/

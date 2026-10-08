@@ -129,6 +129,36 @@ function slimIntel(LI) {
   return out;
 }
 
+// Draft picks each roster owns for the next three drafts not yet held, each
+// priced by the engine (slot-aware when Sleeper knows the order).
+function picksByRoster(W, S, league) {
+  const cur = parseInt(S.season, 10) || new Date().getFullYear();
+  const n = S.nflState || {};
+  const draftDone = n.season_type === 'regular' || n.season_type === 'post' || league.status === 'in_season' || league.status === 'complete';
+  const years = [0, 1, 2].map(i => cur + (draftDone ? 1 : 0) + i);
+  const rounds = Number((league.settings || {}).draft_rounds) || 4;
+  const away = new Set(), acq = {};
+  (S.tradedPicks || []).forEach(p => {
+    if (String(p.owner_id) === String(p.roster_id) || typeof p.round !== 'number') return;
+    away.add(p.season + '|' + p.round + '|' + p.roster_id);
+    const k = p.season + '|' + p.round + '|' + p.owner_id;
+    (acq[k] = acq[k] || []).push(p.roster_id);
+  });
+  const PV = W.App.PlayerValue;
+  const value = (y, rd, from) => { try { return Math.round((PV.resolvePickValue(y, rd, from, S.rosters) || {}).value || 0); } catch (e) { return 0; } };
+  const out = {};
+  (S.rosters || []).forEach(r => {
+    const rid = r.roster_id; out[rid] = [];
+    years.forEach(y => {
+      for (let rd = 1; rd <= rounds; rd++) {
+        if (!away.has(y + '|' + rd + '|' + rid)) out[rid].push({ year: y, round: rd, from: rid, value: value(y, rd, rid) });
+        (acq[y + '|' + rd + '|' + rid] || []).forEach(o => out[rid].push({ year: y, round: rd, from: o, value: value(y, rd, o) }));
+      }
+    });
+  });
+  return out;
+}
+
 // Build one league. `shared` comes from loadShared(); `histCache` is an
 // optional {get(key), set(key, value)} that stands in for the browser's
 // IndexedDB so past seasons' trades/drafts/brackets are not re-fetched.
@@ -170,6 +200,7 @@ async function buildLeague(leagueId, shared, histCache) {
   if (!LI || !LI.playerScores || !Object.keys(LI.playerScores).length) throw new Error('engine produced no values for ' + leagueId);
 
   const assessments = W.assessAllTeamsFromGlobal();
+  const picks = picksByRoster(W, S, league);
   const dna = {};
   (rosters || []).forEach(r => { try { dna[r.roster_id] = W.computeWeightedDNA(r.roster_id) || null; } catch (e) { dna[r.roster_id] = null; } });
 
@@ -178,6 +209,7 @@ async function buildLeague(leagueId, shared, histCache) {
     rosters: (rosters || []).map(r => ({ roster_id: r.roster_id, owner_id: r.owner_id, co_owners: r.co_owners || null, players: r.players || [], starters: r.starters || [], reserve: r.reserve || [], taxi: r.taxi || [], settings: r.settings || {}, metadata: r.metadata ? { team_name: r.metadata.team_name } : null })),
     users: (users || []).map(u => ({ user_id: u.user_id, display_name: u.display_name, avatar: u.avatar || null, team_name: (u.metadata && u.metadata.team_name) || null, team_avatar: (u.metadata && u.metadata.avatar) || null })),
     traded_picks: S.tradedPicks,
+    picks,
     matchups: (matchups || []).map(m => ({ roster_id: m.roster_id, matchup_id: m.matchup_id, points: m.points, starters: m.starters })),
     nfl_state: { week, season, season_type: nfl.season_type, display_week: nfl.display_week, leg: nfl.leg },
   };

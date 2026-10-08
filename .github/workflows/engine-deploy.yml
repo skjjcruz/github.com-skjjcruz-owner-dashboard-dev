@@ -1,0 +1,81 @@
+# Deploy the DHQ serving endpoint (dhq-tools) to the ENGINE project — the
+# vacant Supabase project the engine builder writes to, not the live app's.
+# The app's own function deploy (deploy-functions.yml) never touches this
+# project, and this workflow never touches that one.
+name: Engine deploy (serving endpoint)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "server/supabase/**"
+      - "server/engine/schema.sql"
+      - ".github/workflows/engine-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository == 'skjjcruz/github.com-skjjcruz-owner-dashboard-dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      ENGINE_PROJECT_REF: hovnqztlbsgsywrbidbh
+    steps:
+      - uses: actions/checkout@v6
+      - name: Checkout DHQ-Shared (canonical engine)
+        uses: actions/checkout@v6
+        with:
+          repository: skjjcruz/DHQ-Shared
+          path: dhq-shared-src
+      - uses: supabase/setup-cli@v2.0.0
+        with:
+          version: latest
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # The trade math is the engine's own trade-engine.js, vendored into the
+      # function so the endpoint and the app can never disagree on a grade.
+      - name: Vendor the trade engine into the function
+        run: |
+          set -euo pipefail
+          mkdir -p server/supabase/functions/dhq-tools/vendor
+          { echo 'globalThis.window = globalThis;'; cat dhq-shared-src/trade-engine.js; } > server/supabase/functions/dhq-tools/vendor/trade-engine.js
+
+      - name: Type check
+        run: deno check server/supabase/functions/dhq-tools/index.ts
+
+      - name: Apply schema to the engine project
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+          ref = os.environ['ENGINE_PROJECT_REF']
+          sql = open('server/engine/schema.sql').read()
+          req = urllib.request.Request('https://api.supabase.com/v1/projects/' + ref + '/database/query',
+              data=json.dumps({'query': sql}).encode(),
+              headers={'Authorization': 'Bearer ' + os.environ['SUPABASE_ACCESS_TOKEN'], 'Content-Type': 'application/json'}, method='POST')
+          with urllib.request.urlopen(req, timeout=120) as r:
+              print('schema applied:', r.status)
+          req = urllib.request.Request('https://api.supabase.com/v1/projects/' + ref + '/database/query',
+              data=json.dumps({'query': "notify pgrst, 'reload schema'"}).encode(),
+              headers={'Authorization': 'Bearer ' + os.environ['SUPABASE_ACCESS_TOKEN'], 'Content-Type': 'application/json'}, method='POST')
+          urllib.request.urlopen(req, timeout=60).read()
+          PYEOF
+
+      - name: Deploy dhq-tools
+        run: supabase functions deploy dhq-tools --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+
+      - name: Smoke test
+        run: |
+          curl -sS "https://$ENGINE_PROJECT_REF.supabase.co/functions/v1/dhq-tools" | head -c 400; echo
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "https://$ENGINE_PROJECT_REF.supabase.co/functions/v1/dhq-tools" -H 'Content-Type: application/json' -d '{"tool":"list_leagues"}')
+          echo "unauthenticated tool call → HTTP $code (expect 401)"
+          [ "$code" = "401" ]

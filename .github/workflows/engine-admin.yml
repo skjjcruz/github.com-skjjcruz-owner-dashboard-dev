@@ -1,0 +1,99 @@
+# Admin chores on the ENGINE project (the vacant Supabase project) that need
+# the management token: mint a DHQ Connect key for a member, or run SQL there.
+#
+# Secrets never reach the log: a minted key is printed only encrypted to the
+# caller's RSA public key (same scheme as db-read.yml); SQL results likewise.
+# This workflow cannot reach the live app's project — the ref is fixed.
+name: Engine admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        required: true
+        type: choice
+        options: [mint-key, sql]
+      sleeper_user_id:
+        description: "mint-key: the member's Sleeper user id"
+        required: false
+        type: string
+        default: ""
+      label:
+        description: "mint-key: a label for the key (e.g. 'Claude', 'ChatGPT')"
+        required: false
+        type: string
+        default: "connect"
+      sql:
+        description: "sql: one statement to run on the engine project"
+        required: false
+        type: string
+        default: ""
+      pubkey:
+        description: "Base64 of the caller's RSA public key (PEM) — results are encrypted to it"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-admin
+  cancel-in-progress: false
+
+jobs:
+  admin:
+    if: github.repository == 'skjjcruz/github.com-skjjcruz-owner-dashboard-dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      ENGINE_PROJECT_REF: hovnqztlbsgsywrbidbh
+      ACTION: ${{ inputs.action }}
+      MEMBER: ${{ inputs.sleeper_user_id }}
+      LABEL: ${{ inputs.label }}
+      SQL: ${{ inputs.sql }}
+      PUBKEY_B64: ${{ inputs.pubkey }}
+    steps:
+      - name: Run
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 - <<'PYEOF'
+          import json, os, secrets, hashlib, urllib.request, sys
+          ref = os.environ['ENGINE_PROJECT_REF']
+          def query(sql):
+              req = urllib.request.Request('https://api.supabase.com/v1/projects/' + ref + '/database/query',
+                  data=json.dumps({'query': sql}).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['SUPABASE_ACCESS_TOKEN'], 'Content-Type': 'application/json', 'Accept': 'application/json'}, method='POST')
+              with urllib.request.urlopen(req, timeout=120) as r:
+                  return json.loads(r.read().decode() or 'null')
+          action = os.environ['ACTION']
+          if action == 'mint-key':
+              member = os.environ['MEMBER'].strip()
+              if not member.isdigit():
+                  print('mint-key needs a numeric sleeper_user_id', file=sys.stderr); sys.exit(2)
+              key = 'dhq_ck_' + secrets.token_urlsafe(32)
+              h = hashlib.sha256(key.encode()).hexdigest()
+              label = os.environ['LABEL'].replace("'", "''")[:60]
+              query("insert into public.connect_keys (key_hash, sleeper_user_id, label) values ('%s', '%s', '%s')" % (h, member, label))
+              out = {'ok': True, 'key': key, 'sleeper_user_id': member, 'label': label}
+          else:
+              sql = os.environ['SQL'].strip().rstrip(';')
+              if not sql:
+                  print('sql action needs sql', file=sys.stderr); sys.exit(2)
+              out = {'ok': True, 'rows': query(sql)}
+          open('result.json', 'w').write(json.dumps(out))
+          print('done:', action)
+          PYEOF
+          echo "$PUBKEY_B64" | base64 -d > pub.pem
+          gzip -9 -c result.json > result.gz
+          openssl rand 32 > aes.key
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:aes.key -in result.gz -out result.enc
+          openssl pkeyutl -encrypt -pubin -inkey pub.pem -pkeyopt rsa_padding_mode:oaep -in aes.key -out aes.key.enc
+          echo "=====KEY====="
+          base64 -w0 aes.key.enc; echo
+          echo "=====DATA====="
+          base64 -w 3000 result.enc
+          echo "=====END====="
+          rm -f result.json result.gz aes.key

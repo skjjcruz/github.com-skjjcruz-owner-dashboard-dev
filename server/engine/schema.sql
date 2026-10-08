@@ -47,6 +47,19 @@ create table if not exists public.engine_runs (
 );
 alter table public.engine_runs enable row level security;
 
+-- Connect keys: what a member's AI presents to the serving endpoint. Only
+-- the SHA-256 of the key is stored; the plaintext is shown once when minted.
+create table if not exists public.connect_keys (
+  key_hash         text primary key,
+  sleeper_user_id  text not null,
+  label            text,
+  scopes           text not null default 'read',
+  created_at       timestamptz not null default now(),
+  last_used_at     timestamptz,
+  revoked          boolean not null default false
+);
+alter table public.connect_keys enable row level security;
+
 -- The owner's leagues, so the first scheduled run has something to build.
 -- Members' leagues are added here by the connect flow later.
 insert into public.connect_leagues (league_id, sleeper_user_id, label) values
