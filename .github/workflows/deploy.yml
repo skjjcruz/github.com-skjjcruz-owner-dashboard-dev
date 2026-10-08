@@ -3,6 +3,11 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: ["main"]
+    # The server-side engine (server/, its workflow) is not part of the app
+    # page; a change there must not redeploy the app.
+    paths-ignore:
+      - "server/**"
+      - ".github/workflows/engine-build.yml"
   workflow_dispatch:
     inputs:
       critical:

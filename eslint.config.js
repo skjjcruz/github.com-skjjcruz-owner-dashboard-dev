@@ -243,6 +243,24 @@ module.exports = [
     },
   },
 
+  // ── Server-side engine runner (Node/CJS, see server/engine/README.md) ─────
+  {
+    files: ["server/**/*.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: {
+        require: "readonly",
+        module: "readonly",
+        __dirname: "readonly",
+        process: "readonly",
+        fetch: "readonly",
+        Response: "readonly",
+        structuredClone: "readonly",
+        queueMicrotask: "readonly",
+      },
+    },
+  },
+
   // ── eslint.config.js itself (Node/CJS) ────────────────────────────────────
   {
     files: ["eslint.config.js"],
