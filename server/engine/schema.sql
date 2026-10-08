@@ -69,3 +69,55 @@ insert into public.connect_leagues (league_id, sleeper_user_id, label) values
   ('1389388885716385792', '540392203863576576', 'CTB Shootout League Year 6'),
   ('1402444299487985664', '540392203863576576', 'DHQ')
 on conflict (league_id) do nothing;
+
+-- ── Sign-in (OAuth 2.1 for the member's AI) ──────────────────────────────
+-- Clients register themselves (dynamic client registration); a member signs
+-- in with their DHQ login, picks leagues, and the client gets a code it
+-- exchanges for tokens. Tokens live in connect_keys (hashed) like keys do.
+create table if not exists public.oauth_clients (
+  client_id        text primary key,
+  client_name      text,
+  redirect_uris    jsonb not null default '[]'::jsonb,
+  client_uri       text,
+  created_at       timestamptz not null default now()
+);
+alter table public.oauth_clients enable row level security;
+
+create table if not exists public.oauth_pending (
+  id               text primary key,
+  client_id        text not null,
+  redirect_uri     text not null,
+  state            text,
+  code_challenge   text not null,
+  scope            text,
+  resource         text,
+  app_user_id      text,
+  email            text,
+  sleeper_user_id  text,
+  sleeper_username text,
+  leagues          jsonb not null default '[]'::jsonb,
+  expires_at       timestamptz not null
+);
+alter table public.oauth_pending enable row level security;
+
+create table if not exists public.oauth_codes (
+  code             text primary key,
+  client_id        text not null,
+  redirect_uri     text not null,
+  code_challenge   text not null,
+  scope            text,
+  app_user_id      text,
+  email            text,
+  sleeper_user_id  text not null,
+  leagues          jsonb not null default '[]'::jsonb,
+  used             boolean not null default false,
+  expires_at       timestamptz not null
+);
+alter table public.oauth_codes enable row level security;
+
+alter table public.connect_keys add column if not exists kind text not null default 'key';
+alter table public.connect_keys add column if not exists client_id text;
+alter table public.connect_keys add column if not exists app_user_id text;
+alter table public.connect_keys add column if not exists email text;
+alter table public.connect_keys add column if not exists expires_at timestamptz;
+alter table public.connect_leagues add column if not exists added_by text;

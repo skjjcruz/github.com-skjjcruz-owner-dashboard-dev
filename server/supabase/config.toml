@@ -5,3 +5,6 @@ project_id = "hovnqztlbsgsywrbidbh"
 
 [functions.dhq-tools]
 verify_jwt = false
+
+[functions.dhq-auth]
+verify_jwt = false

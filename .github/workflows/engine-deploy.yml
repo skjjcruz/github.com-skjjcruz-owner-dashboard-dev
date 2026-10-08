@@ -51,7 +51,9 @@ jobs:
           { echo 'globalThis.window = globalThis;'; cat dhq-shared-src/trade-engine.js; } > server/supabase/functions/dhq-tools/vendor/trade-engine.js
 
       - name: Type check
-        run: deno check server/supabase/functions/dhq-tools/index.ts
+        run: |
+          deno check server/supabase/functions/dhq-tools/index.ts
+          deno check server/supabase/functions/dhq-auth/index.ts
 
       - name: Apply schema to the engine project
         run: |
@@ -70,8 +72,10 @@ jobs:
           urllib.request.urlopen(req, timeout=60).read()
           PYEOF
 
-      - name: Deploy dhq-tools
-        run: supabase functions deploy dhq-tools --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+      - name: Deploy dhq-tools and dhq-auth
+        run: |
+          supabase functions deploy dhq-tools --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          supabase functions deploy dhq-auth --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
 
       - name: Smoke test
         run: |
@@ -79,3 +83,4 @@ jobs:
           code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "https://$ENGINE_PROJECT_REF.supabase.co/functions/v1/dhq-tools" -H 'Content-Type: application/json' -d '{"tool":"list_leagues"}')
           echo "unauthenticated tool call → HTTP $code (expect 401)"
           [ "$code" = "401" ]
+          curl -sS "https://$ENGINE_PROJECT_REF.supabase.co/functions/v1/dhq-auth/.well-known/oauth-authorization-server" | head -c 300; echo

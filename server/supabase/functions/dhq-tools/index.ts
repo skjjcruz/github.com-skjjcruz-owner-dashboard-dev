@@ -47,13 +47,24 @@ async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
 }
+// Minted keys (dhq_ck_…) and sign-in access tokens (dhq_at_…) both land in
+// connect_keys; refresh tokens never open the door.
 async function memberFor(req: Request): Promise<{ id: string; label: string; scopes: string } | null> {
   const m = (req.headers.get('authorization') || '').match(/^Bearer\s+(\S+)$/i);
   if (!m) return null;
-  const rows = await rest('connect_keys?select=sleeper_user_id,label,scopes,revoked&key_hash=eq.' + await sha256Hex(m[1])) as Array<{ sleeper_user_id: string; label: string; scopes: string; revoked: boolean }>;
+  const hash = await sha256Hex(m[1]);
+  const rows = await rest('connect_keys?select=sleeper_user_id,label,scopes,revoked,kind,expires_at&key_hash=eq.' + hash) as Array<{ sleeper_user_id: string; label: string; scopes: string; revoked: boolean; kind: string; expires_at: string | null }>;
   const k = rows[0];
   if (!k || k.revoked) return null;
+  if (k.kind && k.kind !== 'key' && k.kind !== 'access') return null;
+  if (k.expires_at && new Date(k.expires_at).getTime() < Date.now()) return null;
+  fetch(SUPABASE_URL + '/rest/v1/connect_keys?key_hash=eq.' + hash, { method: 'PATCH', headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ last_used_at: new Date().toISOString() }) }).catch(() => {});
   return { id: k.sleeper_user_id, label: k.label, scopes: k.scopes };
+}
+// Where an unauthenticated client goes to sign the member in (RFC 9728).
+function authChallenge(req: Request): string {
+  const u = new URL(req.url); const i = u.pathname.indexOf('/dhq-tools');
+  return 'Bearer realm="Dynasty HQ", resource_metadata="' + u.origin + u.pathname.slice(0, i) + '/dhq-auth/.well-known/oauth-protected-resource"';
 }
 function inLeague(L: { snapshot: { rosters: Array<{ owner_id: string; co_owners: string[] | null }> } }, memberId: string): boolean {
   return (L.snapshot?.rosters || []).some(r => r.owner_id === memberId || (r.co_owners || []).includes(memberId));
@@ -119,6 +130,10 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const url = new URL(req.url);
   if (req.method === 'GET') {
+    if (url.pathname.endsWith('/.well-known/oauth-protected-resource')) {
+      const i = url.pathname.indexOf('/dhq-tools'); const root = url.origin + url.pathname.slice(0, i);
+      return json({ resource: root + '/dhq-tools', authorization_servers: [root + '/dhq-auth'], bearer_methods_supported: ['header'], scopes_supported: ['read'], resource_name: 'Dynasty HQ' });
+    }
     if ((req.headers.get('accept') || '').includes('text/event-stream')) return new Response('This server does not open server-sent streams.', { status: 405, headers: CORS });
     return json({ name: 'Dynasty HQ tools', version: VERSION, mcp: 'POST JSON-RPC (initialize, tools/list, tools/call) to this URL', rest: 'POST {"tool": "...", "args": {...}}', auth: 'Authorization: Bearer <DHQ Connect key>', tools: TOOL_DEFS.map(t => t.name) });
   }
@@ -157,10 +172,9 @@ Deno.serve(async (req: Request) => {
       throw e;
     }
   } catch (e) {
-    if (e instanceof AuthError) return json({ error: 'A DHQ Connect key is required: Authorization: Bearer dhq_ck_…' }, 401, { 'WWW-Authenticate': 'Bearer realm="Dynasty HQ"' });
+    if (e instanceof AuthError) return json({ error: 'Sign in to Dynasty HQ to use these tools (OAuth), or send a DHQ Connect key: Authorization: Bearer dhq_ck_…' }, 401, { 'WWW-Authenticate': authChallenge(req) });
     console.error(e);
     return json({ error: 'Server error: ' + (e as Error).message }, 500);
   }
-  void url;
 });
 class AuthError extends Error {}
