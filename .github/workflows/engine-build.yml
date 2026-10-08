@@ -39,9 +39,18 @@ jobs:
       ENGINE_PROJECT_REF: hovnqztlbsgsywrbidbh
       LEAGUES: ${{ inputs.leagues }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      # reconai-shared/ is gitignored: the engine files come from the canonical
+      # DHQ-Shared repo at run time, exactly as the app deploy does.
+      - name: Checkout DHQ-Shared (canonical engine)
+        uses: actions/checkout@v6
+        with:
+          repository: skjjcruz/DHQ-Shared
+          path: dhq-shared-src
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
+      - name: Sync shared modules from DHQ-Shared
+        run: DHQ_SHARED_SOURCE="$GITHUB_WORKSPACE/dhq-shared-src" node scripts/sync-reconai-shared.cjs
       - name: Build and store
         run: node server/engine/run.js
