@@ -25,6 +25,7 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const LIVE_FUNCTIONS = 'https://sxshiqyxhhifvtfqawbq.supabase.co/functions/v1';
 const LIVE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4c2hpcXl4aGhpZnZ0ZnFhd2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MTExMzAsImV4cCI6MjA4ODI4NzEzMH0.zJi9W986ZLaANiZN6pt6ReFwaQU6yPeidsERIWo2ibI';
 const SLEEPER = 'https://api.sleeper.app/v1';
+const PUBLIC_FUNCTIONS = (Deno.env.get('SUPABASE_URL') || 'https://hovnqztlbsgsywrbidbh.supabase.co').replace(/\/$/, '') + '/functions/v1';
 const ACCESS_TTL_S = 30 * 24 * 3600;      // 30 days
 const REFRESH_TTL_S = 180 * 24 * 3600;    // 180 days
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -144,9 +145,11 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const url = new URL(req.url);
   const i = url.pathname.indexOf('/dhq-auth');
-  const base = url.origin + url.pathname.slice(0, i) + '/dhq-auth';
+  // The runtime hands the function an internal URL (http, without the
+  // /functions/v1 prefix); the addresses we publish must be the public ones.
+  const base = PUBLIC_FUNCTIONS + '/dhq-auth';
   const route = url.pathname.slice(i + '/dhq-auth'.length).replace(/\/+$/, '') || '/';
-  const tools = url.origin + url.pathname.slice(0, i) + '/dhq-tools';
+  const tools = PUBLIC_FUNCTIONS + '/dhq-tools';
   try {
     if (req.method === 'GET' && route === '/.well-known/oauth-authorization-server') {
       return json({ issuer: base, authorization_endpoint: base + '/authorize', token_endpoint: base + '/token', registration_endpoint: base + '/register', response_types_supported: ['code'], response_modes_supported: ['query'], grant_types_supported: ['authorization_code', 'refresh_token'], code_challenge_methods_supported: ['S256'], token_endpoint_auth_methods_supported: ['none'], scopes_supported: ['read'], service_documentation: 'https://dhqfootball.com' });

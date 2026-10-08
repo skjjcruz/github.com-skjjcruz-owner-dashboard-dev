@@ -62,9 +62,9 @@ async function memberFor(req: Request): Promise<{ id: string; label: string; sco
   return { id: k.sleeper_user_id, label: k.label, scopes: k.scopes };
 }
 // Where an unauthenticated client goes to sign the member in (RFC 9728).
-function authChallenge(req: Request): string {
-  const u = new URL(req.url); const i = u.pathname.indexOf('/dhq-tools');
-  return 'Bearer realm="Dynasty HQ", resource_metadata="' + u.origin + u.pathname.slice(0, i) + '/dhq-auth/.well-known/oauth-protected-resource"';
+const PUBLIC_FUNCTIONS = (SUPABASE_URL || 'https://hovnqztlbsgsywrbidbh.supabase.co').replace(/\/$/, '') + '/functions/v1';
+function authChallenge(): string {
+  return 'Bearer realm="Dynasty HQ", resource_metadata="' + PUBLIC_FUNCTIONS + '/dhq-auth/.well-known/oauth-protected-resource"';
 }
 function inLeague(L: { snapshot: { rosters: Array<{ owner_id: string; co_owners: string[] | null }> } }, memberId: string): boolean {
   return (L.snapshot?.rosters || []).some(r => r.owner_id === memberId || (r.co_owners || []).includes(memberId));
@@ -131,8 +131,7 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   if (req.method === 'GET') {
     if (url.pathname.endsWith('/.well-known/oauth-protected-resource')) {
-      const i = url.pathname.indexOf('/dhq-tools'); const root = url.origin + url.pathname.slice(0, i);
-      return json({ resource: root + '/dhq-tools', authorization_servers: [root + '/dhq-auth'], bearer_methods_supported: ['header'], scopes_supported: ['read'], resource_name: 'Dynasty HQ' });
+      return json({ resource: PUBLIC_FUNCTIONS + '/dhq-tools', authorization_servers: [PUBLIC_FUNCTIONS + '/dhq-auth'], bearer_methods_supported: ['header'], scopes_supported: ['read'], resource_name: 'Dynasty HQ' });
     }
     if ((req.headers.get('accept') || '').includes('text/event-stream')) return new Response('This server does not open server-sent streams.', { status: 405, headers: CORS });
     return json({ name: 'Dynasty HQ tools', version: VERSION, mcp: 'POST JSON-RPC (initialize, tools/list, tools/call) to this URL', rest: 'POST {"tool": "...", "args": {...}}', auth: 'Authorization: Bearer <DHQ Connect key>', tools: TOOL_DEFS.map(t => t.name) });
@@ -172,7 +171,7 @@ Deno.serve(async (req: Request) => {
       throw e;
     }
   } catch (e) {
-    if (e instanceof AuthError) return json({ error: 'Sign in to Dynasty HQ to use these tools (OAuth), or send a DHQ Connect key: Authorization: Bearer dhq_ck_…' }, 401, { 'WWW-Authenticate': authChallenge(req) });
+    if (e instanceof AuthError) return json({ error: 'Sign in to Dynasty HQ to use these tools (OAuth), or send a DHQ Connect key: Authorization: Bearer dhq_ck_…' }, 401, { 'WWW-Authenticate': authChallenge() });
     console.error(e);
     return json({ error: 'Server error: ' + (e as Error).message }, 500);
   }
