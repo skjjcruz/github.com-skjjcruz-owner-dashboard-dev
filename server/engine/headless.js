@@ -36,7 +36,9 @@ function storage() {
 // inside the engine itself.
 function buildContext() {
   const ctx = {
-    console: { log() {}, info() {}, debug() {}, warn: (...a) => console.warn(...a), error: (...a) => console.error(...a) },
+    // The engine's own logging is browser-console chatter (per-player factor
+    // dumps); only real errors reach the job log.
+    console: { log() {}, info() {}, debug() {}, warn() {}, error: (...a) => console.error(...a) },
     fetch, setTimeout, clearTimeout, setInterval, clearInterval, performance,
     Date, Math, Object, Array, Number, String, Boolean, JSON, RegExp, Symbol, Map, Set, WeakMap, WeakSet, Promise, Error, TypeError, RangeError,
     parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent, encodeURI, decodeURI, URLSearchParams, URL, TextEncoder, TextDecoder, structuredClone, queueMicrotask,
