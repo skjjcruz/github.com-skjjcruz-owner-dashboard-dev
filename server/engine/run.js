@@ -74,7 +74,13 @@ function rest(key) {
     if (!REF || !TOKEN) throw new Error('ENGINE_PROJECT_REF and SUPABASE_ACCESS_TOKEN are required (or pass --dry)');
     await ensureAwake();
     await sql(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+    // New tables reach the REST layer only after its schema cache reloads.
+    await sql("notify pgrst, 'reload schema'").catch(() => {});
     db = rest(await serviceKey());
+    for (let i = 0; ; i++) {
+      try { await db.select('connect_leagues', 'select=league_id&limit=1'); break; }
+      catch (e) { if (i >= 12 || !/PGRST205|schema cache/.test(e.message)) throw e; await new Promise(r => setTimeout(r, 5000)); }
+    }
   } else {
     fs.mkdirSync(OUT, { recursive: true });
   }
