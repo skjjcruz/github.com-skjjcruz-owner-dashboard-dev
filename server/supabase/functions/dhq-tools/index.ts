@@ -16,7 +16,7 @@ import { TOOL_DEFS, runTool, ToolError, type Ctx, type LeagueRow } from './tools
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const VERSION = 'dhq-tools 0.2';
+const VERSION = 'dhq-tools 0.2.1';
 const PROTOCOL_DEFAULT = '2025-06-18';
 
 const CORS: Record<string, string> = {
@@ -33,7 +33,8 @@ const INSTRUCTIONS = [
   'The truth rule: league facts come from Sleeper through these tools. If something is not there, say so plainly instead of filling the gap from memory.',
   'DHQ value is this app\'s dynasty trade value for the league in question (higher is better; roughly 7,000+ is elite, 3,000+ a solid starter, under 1,000 a depth piece). Values are league-specific and refresh every couple of hours; "numbers_as_of" says when.',
   'Think like a sharp, honest dynasty GM: weigh this season against the long game, the member\'s competitive window (contender vs rebuilding), and the other owner\'s habits (DNA). Have an opinion and give the reasons with the key numbers.',
-  'Two kinds of numbers, do not mix them up: dhq_value / dhq_rate_ppg are DYNASTY valuation numbers (dhq_rate_ppg is a long-run production rate: 75% last season, 25% career), while proj_this_week, season_avg and game_log are THIS SEASON in the league\'s scoring. For any start/sit or "who plays this week" question use get_weekly_projections or get_my_matchup and read the injury field; never use dhq_rate_ppg as current form.',
+  'Two kinds of numbers, do not mix them up: dhq_value / dhq_rate_ppg are DYNASTY valuation numbers (dhq_rate_ppg is a long-run production rate: 75% last season, 25% career), while proj_this_week, season_avg and game_log are THIS SEASON in the league\'s scoring. For any start/sit or "who plays this week" question call get_weekly_projections with EVERY player being compared (or get_my_matchup) and read the injury field; never use dhq_rate_ppg as current form.',
+  'Never send the member to look something up in Sleeper, on a website, or anywhere else. These tools already have every player\'s projection, injury status and game log; fetch the numbers yourself and give a straight answer. Do not suggest "one quick check you can do".',
   'Start with list_leagues when the league is unknown. The member\'s own team is the default for get_team, evaluate_trade and get_my_matchup.',
   'You cannot make moves in Sleeper. Tell the member exactly what to do.',
 ].join('\n');
