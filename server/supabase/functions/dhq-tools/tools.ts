@@ -1,8 +1,11 @@
 // dhq-tools/tools.ts — the DHQ tools, computed over what the engine builder
-// stored (league_intel, engine_cache). Pure: everything comes in through
-// `Ctx`, nothing here talks to the network, so it is testable with the
-// builder's dry-run JSON. The trade math is the engine's own trade-engine.js
-// (vendored at deploy time), passed in as `te`.
+// stored (league_intel, engine_cache). Everything comes in through `Ctx`, so
+// it is testable with the builder's dry-run JSON; the only network calls are
+// the small game-day fetches in live.ts (scores, lineups, injuries) and a
+// player's latest news blurb, and every one of them falls back to the cache.
+// The trade math is the engine's own trade-engine.js (vendored at deploy
+// time), passed in as `te`.
+import { fetchLive, type LiveState } from './live.ts';
 
 export interface PlayerSlim { n: string; pos: string; fp?: string[]; t: string | null; age: number | null; yrs: number | null; st: string | null; inj: string | null; injp: string | null; dc: string | null; dco: number | null; col: string | null; num: number | null; act: boolean; e?: number | null }
 export interface Roster { roster_id: number; owner_id: string; co_owners: string[] | null; players: string[]; starters: string[]; reserve: string[]; taxi: string[]; settings: Record<string, number>; metadata: { team_name?: string } | null }
@@ -29,7 +32,27 @@ export interface Ctx {
   trending: Array<{ player_id: string; count: number }>;
   nflWeek?: { week: number; games: Record<string, { opp: string; date: string | null; played?: boolean }> };   // who each NFL team plays this week, and whether that game already happened
   news?: { fetched_at: string | null; teams: Record<string, Array<{ d: string; h: string; s?: string }>> };   // last week of headlines per NFL team
+  live?: LiveState;                        // game-day facts fetched at answer time (see live.ts)
   te: TradeEngine;
+}
+// Fetch the live bits for a league and the players an answer is about.
+async function goLive(ctx: Ctx, L: LeagueRow | null, pids: string[]): Promise<string | null> {
+  const season = String((L && L.season) || ctx.nflState?.season || ''); const week = Number((L && L.snapshot.proj_week) || ctx.nflState?.week || 0);
+  if (!season || !week) return null;
+  ctx.live = await fetchLive(ctx.live, L ? L.league_id : null, season, week, pids);
+  return ctx.live.at;
+}
+// A player's injury designation and depth chart: fresh when we have it, else from the two-hour build.
+function fresh(ctx: Ctx, pid: string): Partial<PlayerSlim> {
+  const p = ctx.players[pid] || ({} as Partial<PlayerSlim>);
+  const f = ctx.live && ctx.live.injuries[pid];
+  return f ? { ...p, inj: f.inj, injp: f.injp, st: f.st || p.st, dc: f.dc || p.dc, dco: f.dco ?? p.dco, t: f.t || p.t } : p;
+}
+function livePoints(ctx: Ctx, L: LeagueRow, pid: string): number | null {
+  const rows = ctx.live && ctx.live.matchups[L.league_id];
+  if (!rows) return null;
+  for (const r of rows) if (r.players_points && pid in r.players_points) return Number(r.players_points[pid]) || 0;
+  return null;
 }
 
 export class ToolError extends Error {}
@@ -83,7 +106,7 @@ function standings(L: LeagueRow, memberId: string) {
   }).sort((a, b) => b.wins - a.wins || b.points_for - a.points_for).map((t, i) => ({ standing: i + 1, ...t }));
 }
 function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<string, unknown>) {
-  const p = ctx.players[pid] || ({} as Partial<PlayerSlim>); const m = L ? ((L.intel.playerMeta || {})[pid] || {}) : {};
+  const p = fresh(ctx, pid); const m = L ? ((L.intel.playerMeta || {})[pid] || {}) : {};
   const row: Record<string, unknown> = { id: pid, name: p.n || pid, pos: m.pos || p.pos || '', nfl_team: p.t || 'FA', age: p.age ?? m.age ?? null };
   if (L) row.dhq_value = dhq(L, pid);
   if (m.ppg != null) row.dhq_rate_ppg = round1(m.ppg);
@@ -99,12 +122,29 @@ function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<st
 }
 // This week's NFL game for a team: opponent and date, or BYE.
 function gameBits(ctx: Ctx, team: string | null | undefined): { nfl_opponent?: string; game_date?: string | null; game_status?: string } {
-  if (!ctx.nflWeek || !team) return {};
+  if (!team) return {};
+  const s = ctx.live && ctx.live.scores;
+  if (s) {
+    const g = s[team];
+    if (!g) return { nfl_opponent: 'BYE' };
+    const date = g.kick ? new Date(g.kick).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : null;
+    const status = g.over ? 'final' + (g.score ? ' (' + g.score + ')' : '') + ', locked'
+      : g.in_progress ? 'in progress' + (g.clock ? ' (' + g.clock.trim() + (g.score ? ', ' + g.score : '') + ')' : '') + ', locked'
+      : g.started ? 'started, locked' : 'upcoming';
+    return { nfl_opponent: (g.home ? 'vs ' : 'at ') + g.opp, game_date: date, game_status: status };
+  }
+  if (!ctx.nflWeek) return {};
   const g = ctx.nflWeek.games[team];
   return g ? { nfl_opponent: g.opp, game_date: g.date, game_status: g.played ? 'already played (locked in Sleeper)' : 'upcoming' } : { nfl_opponent: 'BYE' };
 }
 function teamPlayed(ctx: Ctx, team: string | null | undefined): boolean {
-  return !!(ctx.nflWeek && team && ctx.nflWeek.games[team] && ctx.nflWeek.games[team].played);
+  if (!team) return false;
+  if (ctx.live && ctx.live.scores) return !!(ctx.live.scores[team] && ctx.live.scores[team].started);
+  return !!(ctx.nflWeek && ctx.nflWeek.games[team] && ctx.nflWeek.games[team].played);
+}
+function teamOver(ctx: Ctx, team: string | null | undefined): boolean {
+  if (ctx.live && ctx.live.scores && team) return !!(ctx.live.scores[team] && ctx.live.scores[team].over);
+  return teamPlayed(ctx, team);   // the two-hour build only knows "has a stat line", so treat it as done
 }
 // ── News ──────────────────────────────────────────────────────────────────
 // Team headlines come from the engine's cache (refreshed with every build).
@@ -147,13 +187,19 @@ function seasonBits(ctx: Ctx, L: LeagueRow, pid: string) {
     const past = wk ? log.slice(0, wk - 1) : log;
     out.game_log = past.map((x, i) => 'W' + (i + 1) + ' ' + (x == null ? 'DNP' : round1(x))).join(', ') || 'no games before this week';
   }
-  const team = (ctx.players[pid] || {}).t;
-  if (thisWeekPts != null) {
+  const team = fresh(ctx, pid).t;
+  const lp = livePoints(ctx, L, pid);
+  if (teamPlayed(ctx, team)) {
+    const pts = lp != null ? lp : thisWeekPts;
+    const over = teamOver(ctx, team);
+    out.scored_this_week = round1(pts || 0);
+    out.this_week = over
+      ? (pts != null && (pts !== 0 || thisWeekPts != null) ? 'ALREADY PLAYED: scored ' + round1(pts) + ' (final, locked, cannot be swapped)' : 'DID NOT PLAY: his team already played this week (locked, cannot be swapped)')
+      : 'IN PROGRESS: ' + round1(pts || 0) + ' so far (locked, cannot be swapped)';
+  } else if (thisWeekPts != null) {
+    // The build saw a stat line but the live scoreboard says the game has not started: trust the scoreboard, keep the number visible.
     out.scored_this_week = round1(thisWeekPts);
-    out.this_week = 'ALREADY PLAYED: scored ' + round1(thisWeekPts) + ' (locked, cannot be swapped)';
-  } else if (teamPlayed(ctx, team)) {
-    out.scored_this_week = 0;
-    out.this_week = 'DID NOT PLAY: his team already played this week (locked, cannot be swapped)';
+    out.this_week = 'scored ' + round1(thisWeekPts) + ' this week';
   } else {
     const pr = (L.snapshot.proj || {})[pid];
     if (pr != null) out.proj_this_week = round1(pr);
@@ -266,12 +312,14 @@ function getLeague(ctx: Ctx, L: LeagueRow) {
   const me = myRoster(L, ctx.memberId);
   return { league_id: L.league_id, league: L.name, season: L.season, status: L.snapshot.league.status, nfl_week: L.snapshot.nfl_state?.week, format: leagueFormat(L), my_roster_id: me ? me.roster_id : null, my_team: me ? teamName(L, me.roster_id) : null, standings: standings(L, ctx.memberId), numbers_as_of: L.built_at };
 }
-function getTeam(ctx: Ctx, L: LeagueRow, args: any) {
+async function getTeam(ctx: Ctx, L: LeagueRow, args: any) {
   const me = myRoster(L, ctx.memberId);
   const rid = args.roster_id != null ? args.roster_id : (me ? me.roster_id : null);
   const r = rosterOf(L, rid);
   if (!r) throw new ToolError('No roster ' + rid + ' in ' + L.name + '. Use get_league for roster ids.');
-  const starters = new Set(r.starters || []), ir = new Set(r.reserve || []), taxi = new Set(r.taxi || []);
+  const liveAt = await goLive(ctx, L, r.starters || []);
+  const liveRow = ctx.live && ctx.live.matchups[L.league_id] && ctx.live.matchups[L.league_id].find(m => String(m.roster_id) === String(r.roster_id));
+  const starters = new Set(((liveRow && liveRow.starters) || r.starters || []).filter(x => x && x !== '0')), ir = new Set(r.reserve || []), taxi = new Set(r.taxi || []);
   const rows = (r.players || []).map(pid => { const lr = leagueRank(L, pid); return playerRow(ctx, L, pid, { slot: starters.has(pid) ? 'starter' : ir.has(pid) ? 'IR' : taxi.has(pid) ? 'taxi' : 'bench', league_rank: lr ? lr.overall : undefined, pos_rank: lr ? lr.pos : undefined }); })
     .sort((a: any, b: any) => b.dhq_value - a.dhq_value);
   const picks = ((L.snapshot.picks || {})[String(r.roster_id)] || []).map(pk => pickLabel(pk, r.roster_id, L) + ' · DHQ ' + pk.value);
@@ -281,7 +329,7 @@ function getTeam(ctx: Ctx, L: LeagueRow, args: any) {
     record: (s.wins || 0) + '-' + (s.losses || 0) + (s.ties ? '-' + s.ties : ''), points_for: round1((s.fpts || 0) + (s.fpts_decimal || 0) / 100),
     assessment: assessBrief(a), total_dhq_value: rows.reduce((t: number, p: any) => t + p.dhq_value, 0),
     players_key: 'name pos NFL-team | age | DHQ dynasty value (league rank, position rank) | this week\'s NFL opponent (or BYE) | this week\'s Sleeper projection in this league\'s scoring | this season\'s average and games played | peak years left, age phase | value trend | injury | slot',
-    players: rows.map(compactRow), picks, numbers_as_of: L.built_at,
+    players: rows.map(compactRow), picks, live_as_of: liveAt, numbers_as_of: L.built_at,
   };
 }
 async function findPlayersTool(ctx: Ctx, args: any) {
@@ -295,9 +343,9 @@ async function getPlayer(ctx: Ctx, args: any) {
   const p = ctx.players[pid]; const m = L ? ((L.intel.playerMeta || {})[pid] || {}) : {};
   const rid = L ? whoRosters(L, pid) : null; const lr = L ? leagueRank(L, pid) : null;
   const trades = L ? (L.intel.tradeHistory || []).filter((t: any) => Object.values(t.sides || {}).some((s: any) => (s.players || []).includes(pid))).sort((a: any, b: any) => (b.ts || 0) - (a.ts || 0)).slice(0, 5) : [];
-  const blurbs = await latestBlurbs(ctx, [pid]);
+  const [blurbs, liveAt] = await Promise.all([latestBlurbs(ctx, [pid]), goLive(ctx, L, [pid])]);
   return Object.assign(playerRow(ctx, L, pid), {
-    latest_news: blurbs[pid], team_news: teamNews(ctx, p.t),
+    latest_news: blurbs[pid], team_news: teamNews(ctx, fresh(ctx, pid).t), live_as_of: liveAt,
     rostered_by: L ? (rid ? teamName(L, rid) + ' (roster ' + rid + ')' : 'free agent') : undefined, league_rank: lr ? lr.overall : undefined, pos_rank: lr ? lr.pos : undefined,
     years_exp: p.yrs, college: p.col, status: p.st, last_season_ppg: m.lastYearPPG != null ? round1(m.lastYearPPG) : undefined, career_ppg: m.careerPPG != null ? round1(m.careerPPG) : undefined, games_recent: m.recentGP, status_note: m.statusReason || undefined,
     traded_in_this_league: L ? trades.map((t: any) => ({ date: t.ts ? new Date(t.ts).toISOString().slice(0, 10) : t.season, to: Object.entries(t.sides || {}).filter(([, s]: any) => (s.players || []).includes(pid)).map(([r]) => teamName(L, r))[0], value_then: Object.values(t.sides || {}).find((s: any) => (s.players || []).includes(pid)) && (Object.values(t.sides || {}).find((s: any) => (s.players || []).includes(pid)) as any).totalValue })) : undefined,
@@ -390,31 +438,35 @@ function pickValues(ctx: Ctx, L: LeagueRow, args: any) {
 const NEWS_STEP = 'Before you answer, read latest_news (the player\'s own most recent report) and team_news (his team\'s headlines from the last 7 days) for EACH player and lead with the biggest item on each side: a new play-caller or head coach, a quarterback change, a teammate trade or injury that shifts targets or carries, a role change, practice status. A coaching or play-calling change outranks a cold stretch of box scores. If you can also search the web, add anything newer. Never tell the member to go check something themselves.';
 type ProjLine = { id: string; name: string; pos: string; nfl_team: string; nfl_opponent?: string; game_date?: string | null; game_status?: string; injury?: string; proj_this_week?: number | null; scored_this_week?: number; this_week?: string; season_games?: number; season_avg?: number | null; game_log?: string };
 function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
-  const p = ctx.players[pid] || ({} as Partial<PlayerSlim>);
+  const p = fresh(ctx, pid);
   const bits = seasonBits(ctx, L, pid) as Partial<ProjLine>;
   return { id: pid, name: p.n || pid, pos: ((L.intel.playerMeta || {})[pid] || {}).pos || p.pos || '?', nfl_team: p.t || 'FA', ...gameBits(ctx, p.t), injury: p.inj ? p.inj + (p.injp ? ' (' + p.injp + ')' : '') : undefined, ...bits };
 }
 async function weeklyProjections(ctx: Ctx, L: LeagueRow, args: any) {
   const ids: string[] = [], unknown: string[] = [];
   (args.players || []).slice(0, 20).forEach((q: unknown) => { const pid = resolveOne(ctx, L, q); if (pid) ids.push(pid); else unknown.push(String(q)); });
-  const blurbs = await latestBlurbs(ctx, ids);
-  const withNews = (pid: string) => ({ ...projLine(ctx, L, pid), latest_news: blurbs[pid], team_news: teamNews(ctx, (ctx.players[pid] || {}).t) });
-  return { league_id: L.league_id, week: L.snapshot.proj_week, scoring: 'this league\'s scoring', before_you_answer: NEWS_STEP, news_as_of: ctx.news ? ctx.news.fetched_at : undefined, note: 'proj_this_week is Sleeper\'s projection; game_log is points scored each week this season (DNP = did not play). A null projection means Sleeper is not projecting him this week.', players: ids.map(withNews), not_found: unknown.length ? unknown : undefined, numbers_as_of: L.built_at };
+  const [blurbs, liveAt] = await Promise.all([latestBlurbs(ctx, ids), goLive(ctx, L, ids)]);
+  const withNews = (pid: string) => ({ ...projLine(ctx, L, pid), latest_news: blurbs[pid], team_news: teamNews(ctx, fresh(ctx, pid).t) });
+  return { league_id: L.league_id, week: L.snapshot.proj_week, scoring: 'this league\'s scoring', before_you_answer: NEWS_STEP, news_as_of: ctx.news ? ctx.news.fetched_at : undefined, live_as_of: liveAt, note: 'proj_this_week is Sleeper\'s projection; game_log is points scored each week this season (DNP = did not play). A null projection means Sleeper is not projecting him this week.', players: ids.map(withNews), not_found: unknown.length ? unknown : undefined, numbers_as_of: L.built_at };
 }
-function myMatchup(ctx: Ctx, L: LeagueRow) {
+async function myMatchup(ctx: Ctx, L: LeagueRow) {
   const me = myRoster(L, ctx.memberId);
   if (!me) throw new ToolError('You do not have a team in ' + L.name + '.');
-  const rows = L.snapshot.matchups || [];
+  const bench = (me.players || []).filter(pid => !(me.starters || []).includes(pid) && !(me.reserve || []).includes(pid) && !(me.taxi || []).includes(pid));
+  const liveAt = await goLive(ctx, L, (me.starters || []).concat(bench));
+  // Live matchups carry the lineup as set right now and live points; the build's copy is the fallback.
+  const rows = (ctx.live && ctx.live.matchups[L.league_id]) || L.snapshot.matchups || [];
   const mine = rows.find(m => String(m.roster_id) === String(me.roster_id));
   if (!mine || mine.matchup_id == null) return { league_id: L.league_id, week: L.snapshot.proj_week, note: 'No head-to-head matchup for you this week (bye or playoffs).' };
   const opp = rows.find(m => m.matchup_id === mine.matchup_id && String(m.roster_id) !== String(me.roster_id));
   const oppR = opp ? rosterOf(L, opp.roster_id) : null;
   const proj = L.snapshot.proj || {};
-  const lineup = (r: Roster | null) => (r ? (r.starters || []).filter(x => x && x !== '0') : []).map(pid => projLine(ctx, L, pid));
+  const startersOf = (row: { starters?: string[] } | null | undefined, r: Roster | null) => ((row && row.starters) || (r && r.starters) || []).filter(x => x && x !== '0');
+  const lineup = (row: { starters?: string[] } | null | undefined, r: Roster | null) => startersOf(row, r).map(pid => projLine(ctx, L, pid));
   const pts = (x: ProjLine) => x.scored_this_week != null ? Number(x.scored_this_week) : (Number(x.proj_this_week) || 0);
   const total = (list: ProjLine[]) => round1(list.reduce((t, x) => t + pts(x), 0));
-  const myLine = lineup(me), oppLine = lineup(oppR);
-  const starters = new Set(me.starters || []);
+  const myLine = lineup(mine, me), oppLine = lineup(opp, oppR);
+  const starters = new Set(startersOf(mine, me));
   const open = (x: ProjLine) => x.scored_this_week == null;   // game not started yet, so the slot can still change
   const benchBetter = (me.players || []).filter(pid => !starters.has(pid) && !(me.reserve || []).includes(pid) && !(me.taxi || []).includes(pid) && proj[pid] != null)
     .map(pid => projLine(ctx, L, pid)).filter(b => open(b) && myLine.some(s => open(s) && s.pos === b.pos && (Number(s.proj_this_week) || 0) < (Number(b.proj_this_week) || 0)))
@@ -423,7 +475,8 @@ function myMatchup(ctx: Ctx, L: LeagueRow) {
     league_id: L.league_id, week: L.snapshot.proj_week, opponent: opp ? teamName(L, opp.roster_id) + ' (roster ' + opp.roster_id + ')' : 'unknown',
     live_score: mine.points || (opp && opp.points) ? { me: round1(mine.points), them: round1(opp && opp.points) } : undefined,
     my_projected_total: total(myLine), their_projected_total: total(oppLine),
-    totals_note: 'Totals use actual points for players whose game already happened and projections for the rest. A player marked ALREADY PLAYED or DID NOT PLAY is locked and cannot be moved.',
+    totals_note: 'Totals use actual points for players whose game has started or finished and projections for the rest. A player marked ALREADY PLAYED, IN PROGRESS or DID NOT PLAY is locked and cannot be moved.',
+    live_as_of: liveAt,
     my_lineup: myLine, their_lineup: oppLine,
     bench_projected_above_a_starter_at_same_position: benchBetter,
     team_news_for_my_players: Object.fromEntries([...new Set(myLine.concat(benchBetter).map(x => x.nfl_team))].map(t => [t, teamNews(ctx, t, 3)]).filter(([, v]) => v)),
