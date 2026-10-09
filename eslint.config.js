@@ -259,6 +259,8 @@ module.exports = [
         Headers: "readonly",
         structuredClone: "readonly",
         queueMicrotask: "readonly",
+        AbortSignal: "readonly",
+        AbortController: "readonly",
       },
     },
   },
