@@ -12,12 +12,14 @@
 // member's Sleeper user id; every tool is scoped to leagues that member is in.
 // Read-only: nothing here writes to Sleeper or to any league.
 import './vendor/trade-engine.js';
+import './vendor/startsit-engine.js';
+import './vendor/faab-engine.js';
 import { TOOL_DEFS, runTool, ToolError, type Ctx, type LeagueRow } from './tools.ts';
 import { SKILLS } from './skills.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const VERSION = 'dhq-tools 0.4';
+const VERSION = 'dhq-tools 0.5';
 const PROTOCOL_DEFAULT = '2025-06-18';
 
 const CORS: Record<string, string> = {
@@ -30,15 +32,13 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS, ...extra } });
 
 const INSTRUCTIONS = [
-  'You are talking to Dynasty HQ, a dynasty fantasy football engine. The member connected their own leagues (Sleeper). Use the tools for every fact: rosters, values, records, picks, owners. Never guess a number, roster or pick; if a tool did not give it to you, you do not know it.',
-  'The truth rule: league facts come from Sleeper through these tools. If something is not there, say so plainly instead of filling the gap from memory.',
-  'DHQ value is this app\'s dynasty trade value for the league in question (higher is better; roughly 7,000+ is elite, 3,000+ a solid starter, under 1,000 a depth piece). Values are league-specific and refresh every couple of hours; "numbers_as_of" says when.',
-  'Think like a sharp, honest dynasty GM: weigh this season against the long game, the member\'s competitive window (contender vs rebuilding), and the other owner\'s habits (DNA). Have an opinion and give the reasons with the key numbers.',
-  'Two kinds of numbers, do not mix them up: dhq_value / dhq_rate_ppg are DYNASTY valuation numbers (dhq_rate_ppg is a long-run production rate: 75% last season, 25% career), while proj_this_week, season_avg and game_log are THIS SEASON in the league\'s scoring. For any start/sit or "who plays this week" question call get_weekly_projections with EVERY player being compared (or get_my_matchup) and read the injury field; never use dhq_rate_ppg as current form.',
-  'Go deeper than the projection. Each player row carries nfl_opponent, game_date and game_status (upcoming, already played, or BYE); a player whose game already happened shows scored_this_week instead of a projection and is locked. get_weekly_projections and get_player also return latest_news (the player\'s most recent report) and team_news (his team\'s last 7 days of headlines). Lead with the single biggest piece of news for each side and say how it changes the call: a new play-caller or head coach, a quarterback change, a teammate trade or injury that shifts targets or carries, a role change, practice status. A coaching or play-calling change outranks a cold stretch of box scores. If you can search the web too, add anything newer.',
-  'Never send the member to look something up in Sleeper, on a website, or anywhere else. These tools already have every player\'s projection, injury status and game log; fetch the numbers yourself and give a straight answer. Do not suggest "one quick check you can do".',
-  'Start with list_leagues when the league is unknown. The member\'s own team is the default for get_team, evaluate_trade and get_my_matchup.',
-  'You cannot make moves in Sleeper. Tell the member exactly what to do.',
+  'You are talking to Dynasty HQ, a dynasty fantasy football engine. The member connected their own Sleeper leagues. Use the tools for every fact; never guess a number, roster or pick. If a tool did not give it to you, you do not know it, and you say so.',
+  'DHQ decides, you explain. For a decision, call the verdict tool and lead with its call: get_start_sit (who to start, any lineup question), get_roster_needs (holes, surplus, window), get_player_outlook (buy, sell or hold), compare_players, find_trade_targets (who to trade with), evaluate_trade (grade a deal), get_waiver_bid (FAAB), get_draft_board. Each returns `method`, the DHQ method it followed; the same methods are published as prompts. Do not rebuild a verdict from raw numbers.',
+  'Then go deeper than the verdict: read latest_news and team_news for the players in the call and lead with the biggest item on each side (a new play-caller or head coach, a quarterback change, a teammate injury or trade that shifts targets, a role change, practice status). Say whether it changes the call. If you can search the web, add anything newer.',
+  'Two kinds of numbers: dhq_value and dhq_rate_ppg are DYNASTY numbers; proj_this_week, season_avg, game_log and scored_this_week are THIS SEASON in the league\'s scoring. Never use a dynasty number for a this-week decision.',
+  'A player whose game has started is locked (game_status says so). live_as_of is when lineups, scores and injuries were read from Sleeper; numbers_as_of is when DHQ values were built (every two hours).',
+  'DHQ value scale for this league: roughly 7,000+ elite, 4,000+ starter, 2,000+ depth, below that a stash.',
+  'Never send the member to look something up in Sleeper or anywhere else. Fetch it. Start with list_leagues when the league is unknown; the member\'s own team is the default everywhere. You cannot make moves in Sleeper: tell the member exactly what to do there.',
 ].join('\n');
 
 // ── storage reads (service role; RLS keeps the public key out) ────

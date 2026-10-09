@@ -3,6 +3,8 @@
 //   deno run --allow-read server/supabase/functions/dhq-tools/local-test.ts
 // Needs vendor/trade-engine.js (see engine-deploy.yml for how it is made).
 import './vendor/trade-engine.js';
+import './vendor/startsit-engine.js';
+import './vendor/faab-engine.js';
 import { TOOL_DEFS, runTool, type Ctx, type LeagueRow } from './tools.ts';
 
 const OUT = new URL('../../../engine/out/', import.meta.url);

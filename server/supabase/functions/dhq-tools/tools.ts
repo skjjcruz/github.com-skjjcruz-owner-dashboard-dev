@@ -6,6 +6,7 @@
 // The trade math is the engine's own trade-engine.js (vendored at deploy
 // time), passed in as `te`.
 import { fetchLive, type LiveState } from './live.ts';
+import { VERDICT_DEFS, VERDICT_NAMES, runVerdict } from './verdicts.ts';
 
 export interface PlayerSlim { n: string; pos: string; fp?: string[]; t: string | null; age: number | null; yrs: number | null; st: string | null; inj: string | null; injp: string | null; dc: string | null; dco: number | null; col: string | null; num: number | null; act: boolean; e?: number | null }
 export interface Roster { roster_id: number; owner_id: string; co_owners: string[] | null; players: string[]; starters: string[]; reserve: string[]; taxi: string[]; settings: Record<string, number>; metadata: { team_name?: string } | null }
@@ -14,7 +15,7 @@ export interface Pick { year: number; round: number; from: number; value: number
 export interface LeagueRow {
   league_id: string; season: string; name: string; built_at: string; engine_version: string;
   intel: Record<string, any>; assessments: any[]; dna: Record<string, any>;
-  snapshot: { league: any; rosters: Roster[]; users: User[]; traded_picks: any[]; matchups: any[]; nfl_state: any; picks?: Record<string, Pick[]>; games?: Record<string, Array<number | null>>; proj?: Record<string, number>; proj_week?: number };
+  snapshot: { league: any; rosters: Roster[]; users: User[]; traded_picks: any[]; matchups: any[]; nfl_state: any; picks?: Record<string, Pick[]>; games?: Record<string, Array<number | null>>; proj?: Record<string, number>; proj_week?: number; txns?: any[] };
 }
 export interface TradeEngine {
   fairnessGrade(give: number, get: number): { grade: string; label: string };
@@ -36,19 +37,19 @@ export interface Ctx {
   te: TradeEngine;
 }
 // Fetch the live bits for a league and the players an answer is about.
-async function goLive(ctx: Ctx, L: LeagueRow | null, pids: string[]): Promise<string | null> {
+export async function goLive(ctx: Ctx, L: LeagueRow | null, pids: string[]): Promise<string | null> {
   const season = String((L && L.season) || ctx.nflState?.season || ''); const week = Number((L && L.snapshot.proj_week) || ctx.nflState?.week || 0);
   if (!season || !week) return null;
   ctx.live = await fetchLive(ctx.live, L ? L.league_id : null, season, week, pids);
   return ctx.live.at;
 }
 // A player's injury designation and depth chart: fresh when we have it, else from the two-hour build.
-function fresh(ctx: Ctx, pid: string): Partial<PlayerSlim> {
+export function fresh(ctx: Ctx, pid: string): Partial<PlayerSlim> {
   const p = ctx.players[pid] || ({} as Partial<PlayerSlim>);
   const f = ctx.live && ctx.live.injuries[pid];
   return f ? { ...p, inj: f.inj, injp: f.injp, st: f.st || p.st, dc: f.dc || p.dc, dco: f.dco ?? p.dco, t: f.t || p.t } : p;
 }
-function livePoints(ctx: Ctx, L: LeagueRow, pid: string): number | null {
+export function livePoints(ctx: Ctx, L: LeagueRow, pid: string): number | null {
   const rows = ctx.live && ctx.live.matchups[L.league_id];
   if (!rows) return null;
   for (const r of rows) if (r.players_points && pid in r.players_points) return Number(r.players_points[pid]) || 0;
@@ -57,28 +58,28 @@ function livePoints(ctx: Ctx, L: LeagueRow, pid: string): number | null {
 
 export class ToolError extends Error {}
 
-const round1 = (n: unknown) => Math.round(Number(n || 0) * 10) / 10;
+export const round1 = (n: unknown) => Math.round(Number(n || 0) * 10) / 10;
 const norm = (s: unknown) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const ord = (n: number) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
 
 // ── league helpers ─────────────────────────────────────────────────
-function myRoster(L: LeagueRow, memberId: string): Roster | null {
+export function myRoster(L: LeagueRow, memberId: string): Roster | null {
   return L.snapshot.rosters.find(r => r.owner_id === memberId || (r.co_owners || []).includes(memberId)) || null;
 }
-function rosterOf(L: LeagueRow, rid: unknown): Roster | null {
+export function rosterOf(L: LeagueRow, rid: unknown): Roster | null {
   return L.snapshot.rosters.find(r => String(r.roster_id) === String(rid)) || null;
 }
 function userOf(L: LeagueRow, r: Roster | null): User | null {
   return r ? (L.snapshot.users.find(u => u.user_id === r.owner_id) || null) : null;
 }
-function teamName(L: LeagueRow, rid: unknown): string {
+export function teamName(L: LeagueRow, rid: unknown): string {
   const r = rosterOf(L, rid); const u = userOf(L, r);
   return (r && r.metadata && r.metadata.team_name) || (u && (u.team_name || u.display_name)) || ('Team ' + rid);
 }
-function ownerName(L: LeagueRow, rid: unknown): string { const u = userOf(L, rosterOf(L, rid)); return u ? u.display_name : ''; }
-function dhq(L: LeagueRow, pid: string): number { const v = (L.intel.playerScores || {})[pid]; return v > 0 ? Math.round(v) : 0; }
-function whoRosters(L: LeagueRow, pid: string): number | null { const r = L.snapshot.rosters.find(x => (x.players || []).includes(pid)); return r ? r.roster_id : null; }
-function assessOf(L: LeagueRow, rid: unknown) { return (L.assessments || []).find(a => String(a.rosterId) === String(rid)) || null; }
+export function ownerName(L: LeagueRow, rid: unknown): string { const u = userOf(L, rosterOf(L, rid)); return u ? u.display_name : ''; }
+export function dhq(L: LeagueRow, pid: string): number { const v = (L.intel.playerScores || {})[pid]; return v > 0 ? Math.round(v) : 0; }
+export function whoRosters(L: LeagueRow, pid: string): number | null { const r = L.snapshot.rosters.find(x => (x.players || []).includes(pid)); return r ? r.roster_id : null; }
+export function assessOf(L: LeagueRow, rid: unknown) { return (L.assessments || []).find(a => String(a.rosterId) === String(rid)) || null; }
 function assessBrief(a: any) {
   if (!a) return null;
   return {
@@ -87,7 +88,7 @@ function assessBrief(a: any) {
     strengths: a.strengths || [], faab_left: a.faabRemaining ?? undefined,
   };
 }
-function leagueFormat(L: LeagueRow) {
+export function leagueFormat(L: LeagueRow) {
   const lg = L.snapshot.league; const sc = lg.scoring_settings || {}; const pos: string[] = lg.roster_positions || [];
   const starters = pos.filter(p => !['BN', 'IR', 'TAXI'].includes(p));
   return {
@@ -105,7 +106,7 @@ function standings(L: LeagueRow, memberId: string) {
     return { roster_id: r.roster_id, team: teamName(L, r.roster_id), owner: ownerName(L, r.roster_id), wins: s.wins || 0, losses: s.losses || 0, ties: s.ties || 0, points_for: round1((s.fpts || 0) + (s.fpts_decimal || 0) / 100), tier: a ? a.tier : undefined, power_rank: a ? a.powerRank : undefined, mine: me && me.roster_id === r.roster_id ? true : undefined };
   }).sort((a, b) => b.wins - a.wins || b.points_for - a.points_for).map((t, i) => ({ standing: i + 1, ...t }));
 }
-function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<string, unknown>) {
+export function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<string, unknown>) {
   const p = fresh(ctx, pid); const m = L ? ((L.intel.playerMeta || {})[pid] || {}) : {};
   const row: Record<string, unknown> = { id: pid, name: p.n || pid, pos: m.pos || p.pos || '', nfl_team: p.t || 'FA', age: p.age ?? m.age ?? null };
   if (L) row.dhq_value = dhq(L, pid);
@@ -121,7 +122,7 @@ function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<st
   return Object.assign(row, extra || {});
 }
 // This week's NFL game for a team: opponent and date, or BYE.
-function gameBits(ctx: Ctx, team: string | null | undefined): { nfl_opponent?: string; game_date?: string | null; game_status?: string } {
+export function gameBits(ctx: Ctx, team: string | null | undefined): { nfl_opponent?: string; game_date?: string | null; game_status?: string } {
   if (!team) return {};
   const s = ctx.live && ctx.live.scores;
   if (s) {
@@ -137,12 +138,12 @@ function gameBits(ctx: Ctx, team: string | null | undefined): { nfl_opponent?: s
   const g = ctx.nflWeek.games[team];
   return g ? { nfl_opponent: g.opp, game_date: g.date, game_status: g.played ? 'already played (locked in Sleeper)' : 'upcoming' } : { nfl_opponent: 'BYE' };
 }
-function teamPlayed(ctx: Ctx, team: string | null | undefined): boolean {
+export function teamPlayed(ctx: Ctx, team: string | null | undefined): boolean {
   if (!team) return false;
   if (ctx.live && ctx.live.scores) return !!(ctx.live.scores[team] && ctx.live.scores[team].started);
   return !!(ctx.nflWeek && ctx.nflWeek.games[team] && ctx.nflWeek.games[team].played);
 }
-function teamOver(ctx: Ctx, team: string | null | undefined): boolean {
+export function teamOver(ctx: Ctx, team: string | null | undefined): boolean {
   if (ctx.live && ctx.live.scores && team) return !!(ctx.live.scores[team] && ctx.live.scores[team].over);
   return teamPlayed(ctx, team);   // the two-hour build only knows "has a stat line", so treat it as done
 }
@@ -152,13 +153,13 @@ function teamOver(ctx: Ctx, team: string | null | undefined): boolean {
 // Sleeper or the roster match gave us his ESPN id.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function dateLabel(d: string) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d); return m ? MONTHS[Number(m[2]) - 1] + ' ' + Number(m[3]) : d; }
-function teamNews(ctx: Ctx, team: string | null | undefined, limit = 6): string[] | undefined {
+export function teamNews(ctx: Ctx, team: string | null | undefined, limit = 6): string[] | undefined {
   const list = ctx.news && team ? ctx.news.teams[team] : null;
   if (!list || !list.length) return undefined;
   return list.slice(0, limit).map(i => dateLabel(i.d) + ': ' + i.h + (i.s ? ' — ' + i.s : ''));
 }
 type Blurb = { published?: string; headline?: string; story?: string };
-async function latestBlurbs(ctx: Ctx, pids: string[]): Promise<Record<string, Blurb>> {
+export async function latestBlurbs(ctx: Ctx, pids: string[]): Promise<Record<string, Blurb>> {
   const out: Record<string, Blurb> = {};
   const want = [...new Set(pids)].filter(pid => ctx.players[pid] && ctx.players[pid].e).slice(0, 12);
   await Promise.all(want.map(async pid => {
@@ -173,7 +174,7 @@ async function latestBlurbs(ctx: Ctx, pids: string[]): Promise<Record<string, Bl
   return out;
 }
 // This season so far and this week, in the league's scoring.
-function seasonBits(ctx: Ctx, L: LeagueRow, pid: string) {
+export function seasonBits(ctx: Ctx, L: LeagueRow, pid: string) {
   const out: Record<string, unknown> = {};
   const wk = Number(L.snapshot.proj_week) || 0;
   const log = (L.snapshot.games || {})[pid];
@@ -207,7 +208,7 @@ function seasonBits(ctx: Ctx, L: LeagueRow, pid: string) {
   }
   return out;
 }
-function compactRow(x: Record<string, any>): string {
+export function compactRow(x: Record<string, any>): string {
   return [
     x.name + ' ' + x.pos + ' ' + x.nfl_team, x.age != null ? 'age ' + x.age : '',
     x.dhq_value != null ? 'DHQ ' + x.dhq_value + (x.league_rank ? ' (#' + x.league_rank + ', ' + x.pos + x.pos_rank + ')' : '') : '',
@@ -218,7 +219,7 @@ function compactRow(x: Record<string, any>): string {
     x.value_trend_pct ? 'trend ' + (x.value_trend_pct > 0 ? '+' : '') + x.value_trend_pct + '%' : '', x.injury ? 'INJ ' + x.injury : '', x.slot || '',
   ].filter(Boolean).join(' | ');
 }
-function leagueRank(L: LeagueRow, pid: string) {
+export function leagueRank(L: LeagueRow, pid: string) {
   const rostered = new Set<string>(); L.snapshot.rosters.forEach(r => r.players.forEach(x => rostered.add(x)));
   const all = Object.entries(L.intel.playerScores || {}).filter(([id]) => rostered.has(id)).sort((a, b) => (b[1] as number) - (a[1] as number));
   const overall = all.findIndex(([id]) => id === pid) + 1;
@@ -242,8 +243,8 @@ function findPlayers(ctx: Ctx, L: LeagueRow | null, q: unknown, limit = 5): stri
   hits.sort((a, b) => b.score - a.score || b.ros - a.ros || b.v - a.v);
   return hits.slice(0, limit).map(h => h.pid);
 }
-const resolveOne = (ctx: Ctx, L: LeagueRow | null, q: unknown) => findPlayers(ctx, L, q, 1)[0] || null;
-function pickLabel(pk: Pick, holder: number, L: LeagueRow) { return pk.year + ' ' + ord(pk.round) + (pk.from !== holder ? ' (from ' + teamName(L, pk.from) + ')' : ''); }
+export const resolveOne = (ctx: Ctx, L: LeagueRow | null, q: unknown) => findPlayers(ctx, L, q, 1)[0] || null;
+export function pickLabel(pk: Pick, holder: number, L: LeagueRow) { return pk.year + ' ' + ord(pk.round) + (pk.from !== holder ? ' (from ' + teamName(L, pk.from) + ')' : ''); }
 
 // Which league a tool means: the given id, else the member's only league.
 async function league(ctx: Ctx, args: any): Promise<LeagueRow> {
@@ -270,7 +271,8 @@ export const TOOL_DEFS = [
   def('get_waiver_options', 'Best available free agents by DHQ value, Sleeper\'s trending adds, the member\'s FAAB left, and what this league usually pays by position.', { league_id: S('League id'), position: S('QB, RB, WR, TE, K, DL, LB, DB (optional)'), limit: N('How many (default 8, max 15)') }),
   def('get_pick_values', 'What draft picks are worth in this league (DHQ pick values by round and slot), plus who owns which picks.', { league_id: S('League id'), roster_id: N('Only this roster\'s picks (optional)') }),
   def('get_weekly_projections', 'START/SIT: this week\'s Sleeper projection for each player in this league\'s scoring, with injury status and this season\'s game log. Use this (not dynasty value or long-run rates) to decide who to start, and always include every player being compared so you never have to send the member elsewhere for a number. Then search the web for the last week of news on each player and his team (play-caller, coaching or QB changes, teammate injuries, role changes, weather) and lead with the biggest item.', { league_id: S('League id'), players: A('Player names or ids (up to 20)') }, ['players']),
-  def('get_my_matchup', 'This week\'s head-to-head matchup for the member: opponent, both set lineups with each starter\'s projection and injury, projected totals, and the bench players projected higher than a starter. Then search the web for the last week of news on the players in question and lead with the biggest item.', { league_id: S('League id') }),
+  def('get_my_matchup', 'This week\'s head-to-head matchup for the member: opponent, both set lineups with each starter\'s projection and injury, projected totals, and the bench players projected higher than a starter. For the lineup decision itself call get_start_sit.', { league_id: S('League id') }),
+  ...VERDICT_DEFS,
 ];
 function def(name: string, description: string, properties: Record<string, unknown>, required: string[] = []) {
   return { name, description, inputSchema: { type: 'object', properties, required }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } };
@@ -294,7 +296,9 @@ export async function runTool(ctx: Ctx, name: string, args: any): Promise<unknow
     case 'get_pick_values': return pickValues(ctx, await league(ctx, args), args);
     case 'get_weekly_projections': return weeklyProjections(ctx, await league(ctx, args), args);
     case 'get_my_matchup': return myMatchup(ctx, await league(ctx, args));
-    default: throw new ToolError('Unknown tool ' + name);
+    default:
+      if (VERDICT_NAMES.has(name)) return runVerdict(ctx, await league(ctx, args), name, args);
+      throw new ToolError('Unknown tool ' + name);
   }
 }
 
@@ -435,9 +439,9 @@ function pickValues(ctx: Ctx, L: LeagueRow, args: any) {
   return { league_id: L.league_id, teams, draft_rounds: rounds, value_by_round: byRound, first_round_by_slot: top, picks_owned: owned, note: 'Values for the next draft; later years are discounted 12% per year. A pick\'s slot comes from Sleeper\'s draft order when known, else the owner\'s standing.' };
 }
 
-const NEWS_STEP = 'Before you answer, read latest_news (the player\'s own most recent report) and team_news (his team\'s headlines from the last 7 days) for EACH player and lead with the biggest item on each side: a new play-caller or head coach, a quarterback change, a teammate trade or injury that shifts targets or carries, a role change, practice status. A coaching or play-calling change outranks a cold stretch of box scores. If you can also search the web, add anything newer. Never tell the member to go check something themselves.';
-type ProjLine = { id: string; name: string; pos: string; nfl_team: string; nfl_opponent?: string; game_date?: string | null; game_status?: string; injury?: string; proj_this_week?: number | null; scored_this_week?: number; this_week?: string; season_games?: number; season_avg?: number | null; game_log?: string };
-function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
+export const NEWS_STEP = 'Before you answer, read latest_news (the player\'s own most recent report) and team_news (his team\'s headlines from the last 7 days) for EACH player and lead with the biggest item on each side: a new play-caller or head coach, a quarterback change, a teammate trade or injury that shifts targets or carries, a role change, practice status. A coaching or play-calling change outranks a cold stretch of box scores. If you can also search the web, add anything newer. Never tell the member to go check something themselves.';
+export type ProjLine = { id: string; name: string; pos: string; nfl_team: string; nfl_opponent?: string; game_date?: string | null; game_status?: string; injury?: string; proj_this_week?: number | null; scored_this_week?: number; this_week?: string; season_games?: number; season_avg?: number | null; game_log?: string };
+export function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
   const p = fresh(ctx, pid);
   const bits = seasonBits(ctx, L, pid) as Partial<ProjLine>;
   return { id: pid, name: p.n || pid, pos: ((L.intel.playerMeta || {})[pid] || {}).pos || p.pos || '?', nfl_team: p.t || 'FA', ...gameBits(ctx, p.t), injury: p.inj ? p.inj + (p.injp ? ' (' + p.injp + ')' : '') : undefined, ...bits };

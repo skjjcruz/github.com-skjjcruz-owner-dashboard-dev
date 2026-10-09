@@ -6,6 +6,8 @@
 //   LEAGUES=1312100327931019264 node server/engine/run.js --dry
 //   deno run --allow-read --allow-env --allow-net server/supabase/functions/dhq-tools/question-bank.ts
 import './vendor/trade-engine.js';
+import './vendor/startsit-engine.js';
+import './vendor/faab-engine.js';
 import { runTool, type Ctx, type LeagueRow } from './tools.ts';
 
 const OUT = new URL('../../../engine/out/', import.meta.url);
@@ -85,6 +87,42 @@ const BANK: Q[] = [
   ] },
   { q: 'What are this league\'s pick values?', tool: 'get_pick_values', args: { league_id: lid }, must: r => [
     ...miss(r.value_by_round && Object.keys(r.value_by_round).length > 0, 'values by round'),
+  ] },
+  { q: 'Should I start Chig Okonkwo or Courtland Sutton?', tool: 'get_start_sit', args: { league_id: lid, players: ['Chig Okonkwo', 'Courtland Sutton'] }, must: r => [
+    ...miss(typeof r.verdict === 'string' && r.verdict.length > 10, 'a lineup verdict is stated'),
+    ...miss(r.head_to_head && /Start|TOSS-UP|None of them/.test(r.head_to_head.call), 'a head-to-head call between the named players'),
+    ...miss(r.head_to_head && r.head_to_head.players.every((p: Any) => p.injury !== undefined || p.available !== undefined), 'each named player shows availability'),
+    ...miss(typeof r.method === 'string' && /Doubtful counts as out/.test(r.method), 'the start/sit method is attached'),
+    ...miss(!r.swaps.some((x: Any) => /locked/i.test(String(x.sit_reason || ''))), 'no swap moves a locked player'),
+    ...miss(num(r.optimal_total) && r.optimal_total >= r.current_total, 'optimal total is at least the current total'),
+  ] },
+  { q: 'What does my team need?', tool: 'get_roster_needs', args: { league_id: lid }, must: r => [
+    ...miss(r.tier && r.window, 'tier and window stated'),
+    ...miss(Array.isArray(r.positions) && r.positions.every((p: Any) => /deficit|thin|ok|surplus/.test(p.status)), 'every position has a status'),
+    ...miss(Array.isArray(r.what_to_do) && r.what_to_do.length > 0, 'concrete things to do'),
+  ] },
+  { q: 'Should I sell Courtland Sutton?', tool: 'get_player_outlook', args: { league_id: lid, player: 'Courtland Sutton' }, must: r => [
+    ...miss(r.outlook && /BUY|SELL|SELL_HIGH|HOLD|STASH|CORE/.test(r.outlook.action), 'a buy/sell/hold call'),
+    ...miss(r.outlook && r.outlook.reason, 'the reason for the call'),
+    ...miss(/injur|news/i.test(r.inputs_note || ''), 'warns the call does not read injuries or news'),
+  ] },
+  { q: 'Compare Jonathan Taylor and Derrick Henry', tool: 'compare_players', args: { league_id: lid, players: ['Jonathan Taylor', 'Derrick Henry'] }, must: r => [
+    ...miss(typeof r.verdict === 'string', 'a verdict'),
+    ...miss(r.by_metric && r.by_metric.length >= 4, 'measure-by-measure leaders'),
+  ] },
+  { q: 'Who should I trade with?', tool: 'find_trade_targets', args: { league_id: lid }, must: r => [
+    ...miss(Array.isArray(r.partners) && r.partners.length > 0, 'partners listed'),
+    ...miss(r.partners.every((p: Any) => num(p.score) && p.tag && Array.isArray(p.reasons)), 'each partner has a score, tag and reasons'),
+    ...miss(r.partners.some((p: Any) => p.targets_for_you.length > 0), 'at least one partner has specific targets'),
+  ] },
+  { q: 'What does the draft look like?', tool: 'get_draft_board', args: { league_id: lid }, must: r => [
+    ...miss(num(r.draft_year), 'draft year'),
+    ...miss(Array.isArray(r.picks_by_team) && r.picks_by_team.length > 0, 'picks by team'),
+  ] },
+  { q: 'How much should I bid on a free agent?', tool: 'get_waiver_bid', args: { league_id: lid, player: (L.snapshot.rosters.flatMap(x => x.players || []).includes('7607') ? 'nobody' : 'Michael Carter') }, must: r => [
+    ...miss(num(r.suggested_bid), 'a suggested bid'),
+    ...miss(r.range && num(r.range.low) && num(r.range.high), 'a range'),
+    ...miss(typeof r.cold_start === 'boolean', 'says whether the league has enough bid history'),
   ] },
   { q: 'An unknown league is refused clearly', tool: 'get_team', args: { league_id: 'nope' }, must: () => ['should have thrown'] },
 ];

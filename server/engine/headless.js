@@ -236,11 +236,17 @@ async function buildLeague(leagueId, shared, histCache) {
 
   const { nfl, season, players } = shared;
   const week = Number(nfl.display_week || nfl.week || 1);
-  const [league, rosters, users, tradedPicks, matchups] = await Promise.all([
+  const weeksSoFar = []; for (let w = 1; w <= Math.min(18, week); w++) weeksSoFar.push(w);
+  const [league, rosters, users, tradedPicks, matchups, ...txnWeeks] = await Promise.all([
     sleeper('/league/' + leagueId), sleeper('/league/' + leagueId + '/rosters'), sleeper('/league/' + leagueId + '/users'),
     sleeper('/league/' + leagueId + '/traded_picks'), sleeper('/league/' + leagueId + '/matchups/' + week),
-  ]);
+  ].concat(weeksSoFar.map(w => sleeper('/league/' + leagueId + '/transactions/' + w).catch(() => []))));
   if (!league) throw new Error('league not found: ' + leagueId);
+  // This season's waiver and free-agent moves, trimmed: what the FAAB bid
+  // model reads (winning and losing bids, who made them).
+  const txns = [].concat(...txnWeeks.map(list => list || []))
+    .filter(t => t && (t.type === 'waiver' || t.type === 'free_agent'))
+    .map(t => ({ type: t.type, status: t.status, created: t.created, leg: t.leg, settings: t.settings ? { waiver_bid: t.settings.waiver_bid, seq: t.settings.seq } : null, adds: t.adds || null, drops: t.drops || null, roster_ids: t.roster_ids || [] }));
   const leagueSeason = String(league.season || season);
   const S = {
     platform: 'sleeper', players, playerStats: playerStatsFor(shared.statsByYear, leagueSeason, W.calcRawPts),
@@ -266,7 +272,7 @@ async function buildLeague(leagueId, shared, histCache) {
     league: { league_id: league.league_id, name: league.name, season: leagueSeason, status: league.status, scoring_settings: league.scoring_settings, roster_positions: league.roster_positions, settings: league.settings, previous_league_id: league.previous_league_id || null, avatar: league.avatar || null },
     rosters: (rosters || []).map(r => ({ roster_id: r.roster_id, owner_id: r.owner_id, co_owners: r.co_owners || null, players: r.players || [], starters: r.starters || [], reserve: r.reserve || [], taxi: r.taxi || [], settings: r.settings || {}, metadata: r.metadata ? { team_name: r.metadata.team_name } : null })),
     users: (users || []).map(u => ({ user_id: u.user_id, display_name: u.display_name, avatar: u.avatar || null, team_name: (u.metadata && u.metadata.team_name) || null, team_avatar: (u.metadata && u.metadata.avatar) || null })),
-    traded_picks: S.tradedPicks,
+    traded_picks: S.tradedPicks, txns,
     picks,
     games: lines.games,           // pid -> points by week this season (null = did not play)
     proj: lines.proj,             // pid -> this week's Sleeper projection in this league's scoring

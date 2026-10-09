@@ -49,6 +49,11 @@ jobs:
           set -euo pipefail
           mkdir -p server/supabase/functions/dhq-tools/vendor
           { echo 'globalThis.window = globalThis;'; cat dhq-shared-src/trade-engine.js; } > server/supabase/functions/dhq-tools/vendor/trade-engine.js
+          # The lineup solver and the FAAB bid model are the app's own copies
+          # (js/shared), so a start/sit or bid answer matches the Lineup and
+          # Free Agency screens exactly.
+          { echo 'globalThis.window = globalThis;'; cat js/shared/startsit-engine.js; } > server/supabase/functions/dhq-tools/vendor/startsit-engine.js
+          { echo 'globalThis.window = globalThis;'; cat js/shared/faab-engine.js; } > server/supabase/functions/dhq-tools/vendor/faab-engine.js
 
       - name: Type check
         run: |
