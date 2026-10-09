@@ -55,6 +55,19 @@ jobs:
           deno check server/supabase/functions/dhq-tools/index.ts
           deno check server/supabase/functions/dhq-auth/index.ts
 
+      # The question bank: build one league for real (dry run, nothing
+      # stored) and make sure every question still comes back with the facts
+      # a good answer needs. A missing fact stops the deploy.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sync shared modules from DHQ-Shared
+        run: DHQ_SHARED_SOURCE="$GITHUB_WORKSPACE/dhq-shared-src" node scripts/sync-reconai-shared.cjs
+      - name: Dry-run build of the test league
+        run: LEAGUES=1312100327931019264 node server/engine/run.js --dry
+      - name: Question bank
+        run: deno run --allow-read --allow-env --allow-net server/supabase/functions/dhq-tools/question-bank.ts
+
       - name: Apply schema to the engine project
         run: |
           python3 - <<'PYEOF'
