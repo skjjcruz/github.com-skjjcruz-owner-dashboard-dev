@@ -121,3 +121,23 @@ alter table public.connect_keys add column if not exists app_user_id text;
 alter table public.connect_keys add column if not exists email text;
 alter table public.connect_keys add column if not exists expires_at timestamptz;
 alter table public.connect_leagues add column if not exists added_by text;
+
+-- Every tool call a member's AI makes: what, for which league, how long,
+-- whether it worked. Read by us to learn how DHQ Connect is used; also the
+-- source for the per-key rate limit (calls in the last minute).
+create table if not exists public.connect_usage (
+  id               bigint generated always as identity primary key,
+  at               timestamptz not null default now(),
+  key_hash         text not null,
+  sleeper_user_id  text,
+  client_id        text,
+  tool             text not null,
+  league_id        text,
+  ms               integer,
+  ok               boolean not null default true,
+  error            text,
+  via              text
+);
+create index if not exists connect_usage_key_at on public.connect_usage (key_hash, at desc);
+create index if not exists connect_usage_at on public.connect_usage (at desc);
+alter table public.connect_usage enable row level security;
