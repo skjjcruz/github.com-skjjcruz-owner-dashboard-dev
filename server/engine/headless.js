@@ -16,7 +16,7 @@ const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const API = 'https://api.sleeper.app/v1';
-const ENGINE_VERSION = 'headless-1';
+const ENGINE_VERSION = 'headless-2';
 
 // The shared engine files, in the order index.html loads them (only the
 // ones the valuation path needs — no auth, UI or AI modules).
@@ -83,9 +83,44 @@ async function loadShared() {
   const season = String(nfl.league_season || nfl.season);
   const cur = Number(season);
   const years = [cur - 4, cur - 3, cur - 2, cur - 1, cur];
-  const [players, ...stats] = await Promise.all([sleeper('/players/nfl')].concat(years.map(y => sleeper('/stats/nfl/regular/' + y).catch(() => ({})))));
-  const statsByYear = {}; years.forEach((y, i) => { statsByYear[y] = stats[i] || {}; });
-  return { nfl, season, players, statsByYear };
+  const week = Number(nfl.display_week || nfl.week || 1);
+  const weeks = []; for (let w = 1; w <= Math.min(18, week); w++) weeks.push(w);
+  const [players, projWeek, ...rest] = await Promise.all([
+    sleeper('/players/nfl'),
+    sleeper('/projections/nfl/regular/' + season + '/' + week).catch(() => ({})),
+  ].concat(years.map(y => sleeper('/stats/nfl/regular/' + y).catch(() => ({})))).concat(weeks.map(w => sleeper('/stats/nfl/regular/' + season + '/' + w).catch(() => ({})))));
+  const statsByYear = {}; years.forEach((y, i) => { statsByYear[y] = rest[i] || {}; });
+  const weeklyStats = {}; weeks.forEach((w, i) => { weeklyStats[w] = rest[years.length + i] || {}; });
+  return { nfl, season, week, players, statsByYear, weeklyStats, projWeek: projWeek || {} };
+}
+
+// Points for one stat line in a league's scoring (the engine's own dot
+// product, plus the TE-premium bonus Sleeper keys on receptions).
+function leaguePoints(W, line, scoring, pos) {
+  if (!line) return null;
+  let pts = Number(W.calcRawPts(line, scoring)) || 0;
+  if (pos === 'TE' && scoring && Number(scoring.bonus_rec_te)) pts += (Number(line.rec) || 0) * Number(scoring.bonus_rec_te);
+  return Math.round(pts * 100) / 100;
+}
+
+// This season's game log and this week's projection, in this league's
+// scoring, for every player the league cares about (valued or rostered).
+function seasonLines(W, S, shared, LI, league) {
+  const scoring = league.scoring_settings || {};
+  const want = new Set(Object.keys(LI.playerScores || {}));
+  (S.rosters || []).forEach(r => (r.players || []).forEach(pid => want.add(String(pid))));
+  Object.keys(shared.projWeek || {}).forEach(pid => { if ((shared.projWeek[pid] || {}).pts_ppr > 3) want.add(pid); });
+  const games = {}, proj = {};
+  const weeks = Object.keys(shared.weeklyStats).map(Number).sort((a, b) => a - b);
+  for (const pid of want) {
+    const p = S.players[pid]; if (!p) continue;
+    const pos = String(p.position || '').toUpperCase();
+    const log = weeks.map(w => { const line = shared.weeklyStats[w][pid]; return line && (Number(line.gp) > 0 || Number(line.off_snp) > 0 || Number(line.def_snp) > 0) ? leaguePoints(W, line, scoring, pos) : null; });
+    if (log.some(x => x != null)) games[pid] = log;
+    const pl = shared.projWeek[pid];
+    if (pl) { const v = leaguePoints(W, pl, scoring, pos); if (v != null && v > 0) proj[pid] = v; }
+  }
+  return { week: shared.week, games, proj };
 }
 
 // Per-player row the tools need, without the 15 MB of everything else.
@@ -201,6 +236,7 @@ async function buildLeague(leagueId, shared, histCache) {
 
   const assessments = W.assessAllTeamsFromGlobal();
   const picks = picksByRoster(W, S, league);
+  const lines = seasonLines(W, S, shared, LI, league);
   const dna = {};
   (rosters || []).forEach(r => { try { dna[r.roster_id] = W.computeWeightedDNA(r.roster_id) || null; } catch (e) { dna[r.roster_id] = null; } });
 
@@ -210,6 +246,9 @@ async function buildLeague(leagueId, shared, histCache) {
     users: (users || []).map(u => ({ user_id: u.user_id, display_name: u.display_name, avatar: u.avatar || null, team_name: (u.metadata && u.metadata.team_name) || null, team_avatar: (u.metadata && u.metadata.avatar) || null })),
     traded_picks: S.tradedPicks,
     picks,
+    games: lines.games,           // pid -> points by week this season (null = did not play)
+    proj: lines.proj,             // pid -> this week's Sleeper projection in this league's scoring
+    proj_week: lines.week,
     matchups: (matchups || []).map(m => ({ roster_id: m.roster_id, matchup_id: m.matchup_id, points: m.points, starters: m.starters })),
     nfl_state: { week, season, season_type: nfl.season_type, display_week: nfl.display_week, leg: nfl.leg },
   };

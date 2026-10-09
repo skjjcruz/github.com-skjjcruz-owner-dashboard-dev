@@ -11,7 +11,7 @@ export interface Pick { year: number; round: number; from: number; value: number
 export interface LeagueRow {
   league_id: string; season: string; name: string; built_at: string; engine_version: string;
   intel: Record<string, any>; assessments: any[]; dna: Record<string, any>;
-  snapshot: { league: any; rosters: Roster[]; users: User[]; traded_picks: any[]; matchups: any[]; nfl_state: any; picks?: Record<string, Pick[]> };
+  snapshot: { league: any; rosters: Roster[]; users: User[]; traded_picks: any[]; matchups: any[]; nfl_state: any; picks?: Record<string, Pick[]>; games?: Record<string, Array<number | null>>; proj?: Record<string, number>; proj_week?: number };
 }
 export interface TradeEngine {
   fairnessGrade(give: number, get: number): { grade: string; label: string };
@@ -84,7 +84,8 @@ function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<st
   const p = ctx.players[pid] || ({} as Partial<PlayerSlim>); const m = L ? ((L.intel.playerMeta || {})[pid] || {}) : {};
   const row: Record<string, unknown> = { id: pid, name: p.n || pid, pos: m.pos || p.pos || '', nfl_team: p.t || 'FA', age: p.age ?? m.age ?? null };
   if (L) row.dhq_value = dhq(L, pid);
-  if (m.ppg != null) row.ppg = round1(m.ppg);
+  if (m.ppg != null) row.dhq_rate_ppg = round1(m.ppg);
+  if (L) Object.assign(row, seasonBits(L, pid));
   if (m.peakYrsLeft != null) row.peak_years_left = m.peakYrsLeft;
   if (m.ageCurvePhase) row.age_phase = m.ageCurvePhase;
   if (m.trend) row.value_trend_pct = m.trend;
@@ -93,11 +94,28 @@ function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<st
   if (p.dc && p.dco != null) row.depth_chart = p.dc + ' #' + p.dco;
   return Object.assign(row, extra || {});
 }
+// This season so far and this week, in the league's scoring.
+function seasonBits(L: LeagueRow, pid: string) {
+  const out: Record<string, unknown> = {};
+  const log = (L.snapshot.games || {})[pid];
+  if (log) {
+    const played = log.filter((x): x is number => x != null);
+    out.season_games = played.length;
+    out.season_avg = played.length ? round1(played.reduce((t, x) => t + x, 0) / played.length) : null;
+    out.game_log = log.map((x, i) => 'W' + (i + 1) + ' ' + (x == null ? 'DNP' : round1(x))).join(', ');
+  }
+  const pr = (L.snapshot.proj || {})[pid];
+  if (pr != null) out.proj_this_week = round1(pr);
+  else if (L.snapshot.proj_week) out.proj_this_week = null;
+  return out;
+}
 function compactRow(x: Record<string, any>): string {
   return [
     x.name + ' ' + x.pos + ' ' + x.nfl_team, x.age != null ? 'age ' + x.age : '',
     x.dhq_value != null ? 'DHQ ' + x.dhq_value + (x.league_rank ? ' (#' + x.league_rank + ', ' + x.pos + x.pos_rank + ')' : '') : '',
-    x.ppg != null ? x.ppg + ' ppg' : '', x.peak_years_left != null ? x.peak_years_left + ' peak yrs, ' + (x.age_phase || '') : '',
+    x.proj_this_week != null ? 'this wk proj ' + x.proj_this_week : (x.proj_this_week === null ? 'this wk: no projection' : ''),
+    x.season_games != null ? 'season ' + x.season_avg + ' avg (' + x.season_games + ' gp)' : 'season: no games',
+    x.peak_years_left != null ? x.peak_years_left + ' peak yrs, ' + (x.age_phase || '') : '',
     x.value_trend_pct ? 'trend ' + (x.value_trend_pct > 0 ? '+' : '') + x.value_trend_pct + '%' : '', x.injury ? 'INJ ' + x.injury : '', x.slot || '',
   ].filter(Boolean).join(' | ');
 }
@@ -152,6 +170,8 @@ export const TOOL_DEFS = [
   def('get_recent_trades', 'Completed trades in the league, newest first, with what each side got and who won on DHQ value.', { league_id: S('League id'), days: N('Look-back window in days (default 30)'), roster_id: N('Only trades involving this roster (optional)') }),
   def('get_waiver_options', 'Best available free agents by DHQ value, Sleeper\'s trending adds, the member\'s FAAB left, and what this league usually pays by position.', { league_id: S('League id'), position: S('QB, RB, WR, TE, K, DL, LB, DB (optional)'), limit: N('How many (default 8, max 15)') }),
   def('get_pick_values', 'What draft picks are worth in this league (DHQ pick values by round and slot), plus who owns which picks.', { league_id: S('League id'), roster_id: N('Only this roster\'s picks (optional)') }),
+  def('get_weekly_projections', 'START/SIT: this week\'s Sleeper projection for each player in this league\'s scoring, with injury status and this season\'s game log. Use this (not dynasty value or long-run rates) to decide who to start.', { league_id: S('League id'), players: A('Player names or ids (up to 20)') }, ['players']),
+  def('get_my_matchup', 'This week\'s head-to-head matchup for the member: opponent, both set lineups with each starter\'s projection and injury, projected totals, and the bench players projected higher than a starter.', { league_id: S('League id') }),
 ];
 function def(name: string, description: string, properties: Record<string, unknown>, required: string[] = []) {
   return { name, description, inputSchema: { type: 'object', properties, required }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } };
@@ -173,6 +193,8 @@ export async function runTool(ctx: Ctx, name: string, args: any): Promise<unknow
     case 'get_recent_trades': return recentTrades(ctx, await league(ctx, args), args);
     case 'get_waiver_options': return waiverOptions(ctx, await league(ctx, args), args);
     case 'get_pick_values': return pickValues(ctx, await league(ctx, args), args);
+    case 'get_weekly_projections': return weeklyProjections(ctx, await league(ctx, args), args);
+    case 'get_my_matchup': return myMatchup(ctx, await league(ctx, args));
     default: throw new ToolError('Unknown tool ' + name);
   }
 }
@@ -205,7 +227,7 @@ function getTeam(ctx: Ctx, L: LeagueRow, args: any) {
     league_id: L.league_id, roster_id: r.roster_id, team: teamName(L, r.roster_id), owner: ownerName(L, r.roster_id), is_mine: !!(me && me.roster_id === r.roster_id),
     record: (s.wins || 0) + '-' + (s.losses || 0) + (s.ties ? '-' + s.ties : ''), points_for: round1((s.fpts || 0) + (s.fpts_decimal || 0) / 100),
     assessment: assessBrief(a), total_dhq_value: rows.reduce((t: number, p: any) => t + p.dhq_value, 0),
-    players_key: 'name pos NFL-team | age | DHQ value (league rank, position rank) | points per game | peak years left, age phase | value trend | injury | slot',
+    players_key: 'name pos NFL-team | age | DHQ dynasty value (league rank, position rank) | this week\'s Sleeper projection in this league\'s scoring | this season\'s average and games played | peak years left, age phase | value trend | injury | slot',
     players: rows.map(compactRow), picks, numbers_as_of: L.built_at,
   };
 }
@@ -308,4 +330,42 @@ function pickValues(ctx: Ctx, L: LeagueRow, args: any) {
   const rid = args.roster_id != null ? Number(args.roster_id) : null;
   const owned = Object.entries(L.snapshot.picks || {}).filter(([r]) => rid == null || Number(r) === rid).map(([r, list]) => ({ team: teamName(L, r), roster_id: Number(r), picks: (list as Pick[]).map(pk => pickLabel(pk, Number(r), L) + ' · ' + pk.value) }));
   return { league_id: L.league_id, teams, draft_rounds: rounds, value_by_round: byRound, first_round_by_slot: top, picks_owned: owned, note: 'Values for the next draft; later years are discounted 12% per year. A pick\'s slot comes from Sleeper\'s draft order when known, else the owner\'s standing.' };
+}
+
+type ProjLine = { id: string; name: string; pos: string; nfl_team: string; injury?: string; proj_this_week?: number | null; season_games?: number; season_avg?: number | null; game_log?: string };
+function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
+  const p = ctx.players[pid] || ({} as Partial<PlayerSlim>);
+  const bits = seasonBits(L, pid) as Partial<ProjLine>;
+  return { id: pid, name: p.n || pid, pos: ((L.intel.playerMeta || {})[pid] || {}).pos || p.pos || '?', nfl_team: p.t || 'FA', injury: p.inj ? p.inj + (p.injp ? ' (' + p.injp + ')' : '') : undefined, ...bits };
+}
+function weeklyProjections(ctx: Ctx, L: LeagueRow, args: any) {
+  const ids: string[] = [], unknown: string[] = [];
+  (args.players || []).slice(0, 20).forEach((q: unknown) => { const pid = resolveOne(ctx, L, q); if (pid) ids.push(pid); else unknown.push(String(q)); });
+  return { league_id: L.league_id, week: L.snapshot.proj_week, scoring: 'this league\'s scoring', note: 'proj_this_week is Sleeper\'s projection; game_log is points scored each week this season (DNP = did not play). A null projection means Sleeper is not projecting him this week.', players: ids.map(pid => projLine(ctx, L, pid)), not_found: unknown.length ? unknown : undefined, numbers_as_of: L.built_at };
+}
+function myMatchup(ctx: Ctx, L: LeagueRow) {
+  const me = myRoster(L, ctx.memberId);
+  if (!me) throw new ToolError('You do not have a team in ' + L.name + '.');
+  const rows = L.snapshot.matchups || [];
+  const mine = rows.find(m => String(m.roster_id) === String(me.roster_id));
+  if (!mine || mine.matchup_id == null) return { league_id: L.league_id, week: L.snapshot.proj_week, note: 'No head-to-head matchup for you this week (bye or playoffs).' };
+  const opp = rows.find(m => m.matchup_id === mine.matchup_id && String(m.roster_id) !== String(me.roster_id));
+  const oppR = opp ? rosterOf(L, opp.roster_id) : null;
+  const proj = L.snapshot.proj || {};
+  const lineup = (r: Roster | null) => (r ? (r.starters || []).filter(x => x && x !== '0') : []).map(pid => projLine(ctx, L, pid));
+  const total = (list: Array<{ proj_this_week?: unknown }>) => round1(list.reduce((t, x) => t + (Number(x.proj_this_week) || 0), 0));
+  const myLine = lineup(me), oppLine = lineup(oppR);
+  const starters = new Set(me.starters || []);
+  const benchBetter = (me.players || []).filter(pid => !starters.has(pid) && !(me.reserve || []).includes(pid) && !(me.taxi || []).includes(pid) && proj[pid] != null)
+    .map(pid => projLine(ctx, L, pid)).filter(b => myLine.some(s => s.pos === b.pos && (Number(s.proj_this_week) || 0) < (Number(b.proj_this_week) || 0)))
+    .sort((a, b) => (Number(b.proj_this_week) || 0) - (Number(a.proj_this_week) || 0)).slice(0, 6);
+  return {
+    league_id: L.league_id, week: L.snapshot.proj_week, opponent: opp ? teamName(L, opp.roster_id) + ' (roster ' + opp.roster_id + ')' : 'unknown',
+    live_score: mine.points || (opp && opp.points) ? { me: round1(mine.points), them: round1(opp && opp.points) } : undefined,
+    my_projected_total: total(myLine), their_projected_total: total(oppLine),
+    my_lineup: myLine, their_lineup: oppLine,
+    bench_projected_above_a_starter_at_same_position: benchBetter,
+    note: 'Projections are Sleeper\'s, in this league\'s scoring. Lineups are as set in Sleeper right now.',
+    numbers_as_of: L.built_at,
+  };
 }

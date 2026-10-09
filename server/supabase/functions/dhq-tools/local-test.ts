@@ -25,6 +25,9 @@ const calls: Array<[string, Record<string, unknown>]> = [
   ['evaluate_trade', { league_id: lid, give: ['Jonathan Taylor', '2027 1st'], get: ['Puka Nacua'] }],
   ['get_owner_profile', { league_id: lid, roster_id: 7 }], ['get_recent_trades', { league_id: lid, days: 14 }],
   ['get_waiver_options', { league_id: lid, position: 'RB', limit: 5 }], ['get_pick_values', { league_id: lid, roster_id: psycho.snapshot.rosters.find(r => r.owner_id === memberId)!.roster_id }],
+  ['get_player', { player: 'Chig Okonkwo', league_id: lid }],
+  ['get_weekly_projections', { league_id: lid, players: ['Chig Okonkwo', 'Jonathan Taylor', 'nobody here'] }],
+  ['get_my_matchup', { league_id: lid }],
   ['get_team', { league_id: 'nope' }],
 ];
 console.log('tools:', TOOL_DEFS.map(t => t.name).join(', '));
