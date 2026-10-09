@@ -179,8 +179,8 @@ export const TOOL_DEFS = [
   def('get_recent_trades', 'Completed trades in the league, newest first, with what each side got and who won on DHQ value.', { league_id: S('League id'), days: N('Look-back window in days (default 30)'), roster_id: N('Only trades involving this roster (optional)') }),
   def('get_waiver_options', 'Best available free agents by DHQ value, Sleeper\'s trending adds, the member\'s FAAB left, and what this league usually pays by position.', { league_id: S('League id'), position: S('QB, RB, WR, TE, K, DL, LB, DB (optional)'), limit: N('How many (default 8, max 15)') }),
   def('get_pick_values', 'What draft picks are worth in this league (DHQ pick values by round and slot), plus who owns which picks.', { league_id: S('League id'), roster_id: N('Only this roster\'s picks (optional)') }),
-  def('get_weekly_projections', 'START/SIT: this week\'s Sleeper projection for each player in this league\'s scoring, with injury status and this season\'s game log. Use this (not dynasty value or long-run rates) to decide who to start, and always include every player being compared so you never have to send the member elsewhere for a number.', { league_id: S('League id'), players: A('Player names or ids (up to 20)') }, ['players']),
-  def('get_my_matchup', 'This week\'s head-to-head matchup for the member: opponent, both set lineups with each starter\'s projection and injury, projected totals, and the bench players projected higher than a starter.', { league_id: S('League id') }),
+  def('get_weekly_projections', 'START/SIT: this week\'s Sleeper projection for each player in this league\'s scoring, with injury status and this season\'s game log. Use this (not dynasty value or long-run rates) to decide who to start, and always include every player being compared so you never have to send the member elsewhere for a number. Then search the web for the last week of news on each player and his team (play-caller, coaching or QB changes, teammate injuries, role changes, weather) and lead with the biggest item.', { league_id: S('League id'), players: A('Player names or ids (up to 20)') }, ['players']),
+  def('get_my_matchup', 'This week\'s head-to-head matchup for the member: opponent, both set lineups with each starter\'s projection and injury, projected totals, and the bench players projected higher than a starter. Then search the web for the last week of news on the players in question and lead with the biggest item.', { league_id: S('League id') }),
 ];
 function def(name: string, description: string, properties: Record<string, unknown>, required: string[] = []) {
   return { name, description, inputSchema: { type: 'object', properties, required }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } };
@@ -341,6 +341,7 @@ function pickValues(ctx: Ctx, L: LeagueRow, args: any) {
   return { league_id: L.league_id, teams, draft_rounds: rounds, value_by_round: byRound, first_round_by_slot: top, picks_owned: owned, note: 'Values for the next draft; later years are discounted 12% per year. A pick\'s slot comes from Sleeper\'s draft order when known, else the owner\'s standing.' };
 }
 
+const NEWS_STEP = 'Before you answer: if you can search the web, search the last 7 days of news for EACH of these players and his NFL team (new play-caller or head coach, quarterback change, teammate trade or injury that shifts targets or carries, role or snap-share change, practice status, weather) and lead with the biggest item for each side. A coaching or play-calling change outranks a cold stretch of box scores. Never tell the member to go check something themselves.';
 type ProjLine = { id: string; name: string; pos: string; nfl_team: string; nfl_opponent?: string; game_date?: string | null; injury?: string; proj_this_week?: number | null; season_games?: number; season_avg?: number | null; game_log?: string };
 function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
   const p = ctx.players[pid] || ({} as Partial<PlayerSlim>);
@@ -350,7 +351,7 @@ function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
 function weeklyProjections(ctx: Ctx, L: LeagueRow, args: any) {
   const ids: string[] = [], unknown: string[] = [];
   (args.players || []).slice(0, 20).forEach((q: unknown) => { const pid = resolveOne(ctx, L, q); if (pid) ids.push(pid); else unknown.push(String(q)); });
-  return { league_id: L.league_id, week: L.snapshot.proj_week, scoring: 'this league\'s scoring', note: 'proj_this_week is Sleeper\'s projection; game_log is points scored each week this season (DNP = did not play). A null projection means Sleeper is not projecting him this week.', players: ids.map(pid => projLine(ctx, L, pid)), not_found: unknown.length ? unknown : undefined, numbers_as_of: L.built_at };
+  return { league_id: L.league_id, week: L.snapshot.proj_week, scoring: 'this league\'s scoring', before_you_answer: NEWS_STEP, note: 'proj_this_week is Sleeper\'s projection; game_log is points scored each week this season (DNP = did not play). A null projection means Sleeper is not projecting him this week.', players: ids.map(pid => projLine(ctx, L, pid)), not_found: unknown.length ? unknown : undefined, numbers_as_of: L.built_at };
 }
 function myMatchup(ctx: Ctx, L: LeagueRow) {
   const me = myRoster(L, ctx.memberId);
@@ -374,6 +375,7 @@ function myMatchup(ctx: Ctx, L: LeagueRow) {
     my_projected_total: total(myLine), their_projected_total: total(oppLine),
     my_lineup: myLine, their_lineup: oppLine,
     bench_projected_above_a_starter_at_same_position: benchBetter,
+    before_you_answer: NEWS_STEP,
     note: 'Projections are Sleeper\'s, in this league\'s scoring. Lineups are as set in Sleeper right now.',
     numbers_as_of: L.built_at,
   };

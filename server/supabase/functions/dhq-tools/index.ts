@@ -16,7 +16,7 @@ import { TOOL_DEFS, runTool, ToolError, type Ctx, type LeagueRow } from './tools
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const VERSION = 'dhq-tools 0.3';
+const VERSION = 'dhq-tools 0.3.1';
 const PROTOCOL_DEFAULT = '2025-06-18';
 
 const CORS: Record<string, string> = {
