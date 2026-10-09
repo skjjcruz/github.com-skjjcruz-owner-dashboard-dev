@@ -11,7 +11,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { ENGINE_VERSION, loadShared, buildLeague, slimPlayers, sleeper } = require('./headless');
+const { ENGINE_VERSION, loadShared, buildLeague, slimPlayers, sleeper, espnTeamData } = require('./headless');
 
 const DRY = process.argv.includes('--dry');
 const REF = process.env.ENGINE_PROJECT_REF || '';
@@ -121,17 +121,25 @@ function rest(key) {
   // Shared lookups the server needs beside the leagues.
   const players = slimPlayers(shared.players);
   const trending = await sleeper('/players/nfl/trending/add?lookback_hours=24&limit=50').catch(() => []);
+  const espn = await espnTeamData(shared.players).catch(e => { console.warn('espn news:', e.message); return null; });
+  if (espn) {
+    Object.entries(espn.ids).forEach(([pid, id]) => { if (players[pid]) players[pid].e = id; });
+    console.log('news:', espn.teams, 'teams,', Object.values(espn.news).reduce((t, l) => t + l.length, 0), 'headlines,', Object.keys(espn.ids).length, 'player ids matched by name');
+  }
+  const news = { fetched_at: espn ? espn.fetched_at : null, teams: espn ? espn.news : {} };
   if (db) {
     await db.upsert('engine_cache', [
       { key: 'players', data: players, updated_at: new Date().toISOString() },
       { key: 'nfl_state', data: shared.nfl, updated_at: new Date().toISOString() },
       { key: 'trending_add', data: trending || [], updated_at: new Date().toISOString() },
       { key: 'nfl_week', data: { week: shared.week, games: shared.weekGames || {} }, updated_at: new Date().toISOString() },
+      { key: 'news', data: news, updated_at: new Date().toISOString() },
     ]);
     await db.upsert('engine_runs', [{ started_at: started, finished_at: new Date().toISOString(), engine_version: ENGINE_VERSION, leagues_ok: ok, leagues_failed: failed, notes: null }]).catch(e => console.warn('run log:', e.message));
   } else {
     fs.writeFileSync(path.join(OUT, 'players.json'), JSON.stringify(players));
     fs.writeFileSync(path.join(OUT, 'nfl_week.json'), JSON.stringify({ week: shared.week, games: shared.weekGames || {} }));
+    fs.writeFileSync(path.join(OUT, 'news.json'), JSON.stringify(news));
   }
   console.log('done:', ok, 'built,', failed, 'failed, total', ((Date.now() - t0) / 1000).toFixed(1) + 's; players table', Object.keys(players).length);
   process.exit(failed && !ok ? 1 : 0);

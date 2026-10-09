@@ -16,7 +16,7 @@ const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const API = 'https://api.sleeper.app/v1';
-const ENGINE_VERSION = 'headless-2';
+const ENGINE_VERSION = 'headless-3';
 
 // The shared engine files, in the order index.html loads them (only the
 // ones the valuation path needs — no auth, UI or AI modules).
@@ -92,6 +92,10 @@ async function loadShared() {
   const statsByYear = {}; years.forEach((y, i) => { statsByYear[y] = rest[i] || {}; });
   const weeklyStats = {}; weeks.forEach((w, i) => { weeklyStats[w] = rest[years.length + i] || {}; });
   const weekGames = await nflWeekGames(season, week).catch(() => ({}));
+  // A team whose players already have a stat line this week has played
+  // (or is on the field right now): its players are locked in Sleeper.
+  const thisWeek = weeklyStats[week] || {};
+  Object.keys(thisWeek).forEach(pid => { const t = players[pid] && players[pid].team; if (t && Number(thisWeek[pid].gp) > 0 && weekGames[t]) weekGames[t].played = true; });
   return { nfl, season, week, players, statsByYear, weeklyStats, projWeek: projWeek || {}, weekGames };
 }
 
@@ -151,6 +155,7 @@ function slimPlayers(players) {
       n: p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim(), pos: p.position, fp: p.fantasy_positions || undefined, t: p.team || null,
       age: p.age ?? null, yrs: p.years_exp ?? null, st: p.status || null, inj: p.injury_status || null, injp: p.injury_body_part || null,
       dc: p.depth_chart_position || null, dco: p.depth_chart_order ?? null, col: p.college || null, num: p.number ?? null, act: !!p.active,
+      e: p.espn_id ? Number(p.espn_id) : null,
     };
   }
   return out;
@@ -276,4 +281,42 @@ async function buildLeague(leagueId, shared, histCache) {
   };
 }
 
-module.exports = { ENGINE_VERSION, loadShared, buildLeague, slimPlayers, sleeper };
+// ── News (ESPN's public site feed, free, no key) ─────────────────────────
+// Per team: the last week of headlines, and the roster so players Sleeper
+// has no ESPN id for can still be matched by name. The serving endpoint
+// uses the id to pull a player's latest blurb at answer time.
+const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
+const ESPN_ABBR = { WSH: 'WAS' };   // ESPN spellings that differ from Sleeper's
+const normName = s => String(s || '').toLowerCase().replace(/\b(jr|sr|ii|iii|iv)\b/g, '').replace(/[^a-z]/g, '');
+async function espnJson(url) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { const r = await fetch(url, { signal: AbortSignal.timeout(15000) }); if (r.ok) return await r.json(); } catch { /* retry once */ }
+  }
+  return null;
+}
+async function espnTeamData(players) {
+  const out = { ids: {}, news: {}, fetched_at: new Date().toISOString(), teams: 0 };
+  const t = await espnJson(ESPN + '/teams?limit=40');
+  const teams = ((((t || {}).sports || [])[0] || {}).leagues || [{}])[0].teams || [];
+  const since = Date.now() - 7 * 864e5;
+  const byKey = {};
+  Object.values(players).forEach(p => { if (p && p.team && p.position) byKey[p.team + '|' + normName((p.first_name || '') + (p.last_name || ''))] = p.player_id; });
+  const one = async ({ team }) => {
+    const abbr = ESPN_ABBR[team.abbreviation] || team.abbreviation;
+    const [roster, news] = await Promise.all([espnJson(ESPN + '/teams/' + team.id + '/roster'), espnJson(ESPN + '/news?limit=30&team=' + team.id)]);
+    ((roster || {}).athletes || []).forEach(group => (group.items || []).forEach(a => {
+      const pid = byKey[abbr + '|' + normName(a.fullName || ((a.firstName || '') + (a.lastName || '')))];
+      if (pid && !players[pid].espn_id && a.id) out.ids[pid] = Number(a.id);
+    }));
+    const items = ((news || {}).articles || [])
+      .filter(a => a && a.headline && a.type !== 'Media' && Date.parse(a.published) >= since && (a.categories || []).filter(c => c.type === 'team').length === 1)
+      .map(a => ({ d: String(a.published).slice(0, 10), h: a.headline, s: a.description && a.description !== a.headline ? String(a.description).slice(0, 240) : undefined }));
+    const seen = new Set();
+    out.news[abbr] = items.filter(i => { const k = normName(i.h).slice(0, 40); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 10);
+    out.teams++;
+  };
+  for (let i = 0; i < teams.length; i += 4) await Promise.all(teams.slice(i, i + 4).map(one));
+  return out;
+}
+
+module.exports = { ENGINE_VERSION, loadShared, buildLeague, slimPlayers, sleeper, espnTeamData };

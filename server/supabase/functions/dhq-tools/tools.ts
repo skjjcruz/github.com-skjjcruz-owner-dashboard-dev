@@ -4,7 +4,7 @@
 // builder's dry-run JSON. The trade math is the engine's own trade-engine.js
 // (vendored at deploy time), passed in as `te`.
 
-export interface PlayerSlim { n: string; pos: string; fp?: string[]; t: string | null; age: number | null; yrs: number | null; st: string | null; inj: string | null; injp: string | null; dc: string | null; dco: number | null; col: string | null; num: number | null; act: boolean }
+export interface PlayerSlim { n: string; pos: string; fp?: string[]; t: string | null; age: number | null; yrs: number | null; st: string | null; inj: string | null; injp: string | null; dc: string | null; dco: number | null; col: string | null; num: number | null; act: boolean; e?: number | null }
 export interface Roster { roster_id: number; owner_id: string; co_owners: string[] | null; players: string[]; starters: string[]; reserve: string[]; taxi: string[]; settings: Record<string, number>; metadata: { team_name?: string } | null }
 export interface User { user_id: string; display_name: string; avatar: string | null; team_name: string | null; team_avatar: string | null }
 export interface Pick { year: number; round: number; from: number; value: number }
@@ -27,7 +27,8 @@ export interface Ctx {
   players: Record<string, PlayerSlim>;
   nflState: any;
   trending: Array<{ player_id: string; count: number }>;
-  nflWeek?: { week: number; games: Record<string, { opp: string; date: string | null }> };   // who each NFL team plays this week
+  nflWeek?: { week: number; games: Record<string, { opp: string; date: string | null; played?: boolean }> };   // who each NFL team plays this week, and whether that game already happened
+  news?: { fetched_at: string | null; teams: Record<string, Array<{ d: string; h: string; s?: string }>> };   // last week of headlines per NFL team
   te: TradeEngine;
 }
 
@@ -86,7 +87,7 @@ function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<st
   const row: Record<string, unknown> = { id: pid, name: p.n || pid, pos: m.pos || p.pos || '', nfl_team: p.t || 'FA', age: p.age ?? m.age ?? null };
   if (L) row.dhq_value = dhq(L, pid);
   if (m.ppg != null) row.dhq_rate_ppg = round1(m.ppg);
-  if (L) Object.assign(row, seasonBits(L, pid));
+  if (L) Object.assign(row, seasonBits(ctx, L, pid));
   if (m.peakYrsLeft != null) row.peak_years_left = m.peakYrsLeft;
   if (m.ageCurvePhase) row.age_phase = m.ageCurvePhase;
   if (m.trend) row.value_trend_pct = m.trend;
@@ -97,24 +98,67 @@ function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<st
   return Object.assign(row, extra || {});
 }
 // This week's NFL game for a team: opponent and date, or BYE.
-function gameBits(ctx: Ctx, team: string | null | undefined): { nfl_opponent?: string; game_date?: string | null } {
+function gameBits(ctx: Ctx, team: string | null | undefined): { nfl_opponent?: string; game_date?: string | null; game_status?: string } {
   if (!ctx.nflWeek || !team) return {};
   const g = ctx.nflWeek.games[team];
-  return g ? { nfl_opponent: g.opp, game_date: g.date } : { nfl_opponent: 'BYE' };
+  return g ? { nfl_opponent: g.opp, game_date: g.date, game_status: g.played ? 'already played (locked in Sleeper)' : 'upcoming' } : { nfl_opponent: 'BYE' };
+}
+function teamPlayed(ctx: Ctx, team: string | null | undefined): boolean {
+  return !!(ctx.nflWeek && team && ctx.nflWeek.games[team] && ctx.nflWeek.games[team].played);
+}
+// ── News ──────────────────────────────────────────────────────────────────
+// Team headlines come from the engine's cache (refreshed with every build).
+// A player's own latest blurb is fetched live from ESPN's public feed when
+// Sleeper or the roster match gave us his ESPN id.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function dateLabel(d: string) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d); return m ? MONTHS[Number(m[2]) - 1] + ' ' + Number(m[3]) : d; }
+function teamNews(ctx: Ctx, team: string | null | undefined, limit = 6): string[] | undefined {
+  const list = ctx.news && team ? ctx.news.teams[team] : null;
+  if (!list || !list.length) return undefined;
+  return list.slice(0, limit).map(i => dateLabel(i.d) + ': ' + i.h + (i.s ? ' — ' + i.s : ''));
+}
+type Blurb = { published?: string; headline?: string; story?: string };
+async function latestBlurbs(ctx: Ctx, pids: string[]): Promise<Record<string, Blurb>> {
+  const out: Record<string, Blurb> = {};
+  const want = [...new Set(pids)].filter(pid => ctx.players[pid] && ctx.players[pid].e).slice(0, 12);
+  await Promise.all(want.map(async pid => {
+    try {
+      const r = await fetch('https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/' + ctx.players[pid].e + '/overview', { signal: AbortSignal.timeout(3500) });
+      if (!r.ok) return;
+      const j = await r.json();
+      const rw = j && j.rotowire;
+      if (rw && (rw.headline || rw.story)) out[pid] = { published: rw.published ? String(rw.published).replace(/\s\d\d:\d\d:\d\d\s\w+\s/, ' ') : undefined, headline: rw.headline, story: rw.story ? String(rw.story).slice(0, 600) : undefined };
+    } catch { /* no blurb this time */ }
+  }));
+  return out;
 }
 // This season so far and this week, in the league's scoring.
-function seasonBits(L: LeagueRow, pid: string) {
+function seasonBits(ctx: Ctx, L: LeagueRow, pid: string) {
   const out: Record<string, unknown> = {};
+  const wk = Number(L.snapshot.proj_week) || 0;
   const log = (L.snapshot.games || {})[pid];
+  // This week's game, if it already happened, is reported on its own, not
+  // as a projection: the member cannot change a player whose game started.
+  const thisWeekPts = log && wk && log.length >= wk ? log[wk - 1] : null;
   if (log) {
     const played = log.filter((x): x is number => x != null);
     out.season_games = played.length;
     out.season_avg = played.length ? round1(played.reduce((t, x) => t + x, 0) / played.length) : null;
-    out.game_log = log.map((x, i) => 'W' + (i + 1) + ' ' + (x == null ? 'DNP' : round1(x))).join(', ');
+    const past = wk ? log.slice(0, wk - 1) : log;
+    out.game_log = past.map((x, i) => 'W' + (i + 1) + ' ' + (x == null ? 'DNP' : round1(x))).join(', ') || 'no games before this week';
   }
-  const pr = (L.snapshot.proj || {})[pid];
-  if (pr != null) out.proj_this_week = round1(pr);
-  else if (L.snapshot.proj_week) out.proj_this_week = null;
+  const team = (ctx.players[pid] || {}).t;
+  if (thisWeekPts != null) {
+    out.scored_this_week = round1(thisWeekPts);
+    out.this_week = 'ALREADY PLAYED: scored ' + round1(thisWeekPts) + ' (locked, cannot be swapped)';
+  } else if (teamPlayed(ctx, team)) {
+    out.scored_this_week = 0;
+    out.this_week = 'DID NOT PLAY: his team already played this week (locked, cannot be swapped)';
+  } else {
+    const pr = (L.snapshot.proj || {})[pid];
+    if (pr != null) out.proj_this_week = round1(pr);
+    else if (wk) out.proj_this_week = null;
+  }
   return out;
 }
 function compactRow(x: Record<string, any>): string {
@@ -122,7 +166,7 @@ function compactRow(x: Record<string, any>): string {
     x.name + ' ' + x.pos + ' ' + x.nfl_team, x.age != null ? 'age ' + x.age : '',
     x.dhq_value != null ? 'DHQ ' + x.dhq_value + (x.league_rank ? ' (#' + x.league_rank + ', ' + x.pos + x.pos_rank + ')' : '') : '',
     x.nfl_opponent ? (x.nfl_opponent === 'BYE' ? 'BYE this wk' : 'vs ' + x.nfl_opponent) : '',
-    x.proj_this_week != null ? 'this wk proj ' + x.proj_this_week : (x.proj_this_week === null ? 'this wk: no projection' : ''),
+    x.scored_this_week != null ? 'this wk: ' + (x.scored_this_week ? 'scored ' + x.scored_this_week : 'did not play') + ' (already played, locked)' : x.proj_this_week != null ? 'this wk proj ' + x.proj_this_week : (x.proj_this_week === null ? 'this wk: no projection' : ''),
     x.season_games != null ? 'season ' + x.season_avg + ' avg (' + x.season_games + ' gp)' : 'season: no games',
     x.peak_years_left != null ? x.peak_years_left + ' peak yrs, ' + (x.age_phase || '') : '',
     x.value_trend_pct ? 'trend ' + (x.value_trend_pct > 0 ? '+' : '') + x.value_trend_pct + '%' : '', x.injury ? 'INJ ' + x.injury : '', x.slot || '',
@@ -251,7 +295,9 @@ async function getPlayer(ctx: Ctx, args: any) {
   const p = ctx.players[pid]; const m = L ? ((L.intel.playerMeta || {})[pid] || {}) : {};
   const rid = L ? whoRosters(L, pid) : null; const lr = L ? leagueRank(L, pid) : null;
   const trades = L ? (L.intel.tradeHistory || []).filter((t: any) => Object.values(t.sides || {}).some((s: any) => (s.players || []).includes(pid))).sort((a: any, b: any) => (b.ts || 0) - (a.ts || 0)).slice(0, 5) : [];
+  const blurbs = await latestBlurbs(ctx, [pid]);
   return Object.assign(playerRow(ctx, L, pid), {
+    latest_news: blurbs[pid], team_news: teamNews(ctx, p.t),
     rostered_by: L ? (rid ? teamName(L, rid) + ' (roster ' + rid + ')' : 'free agent') : undefined, league_rank: lr ? lr.overall : undefined, pos_rank: lr ? lr.pos : undefined,
     years_exp: p.yrs, college: p.col, status: p.st, last_season_ppg: m.lastYearPPG != null ? round1(m.lastYearPPG) : undefined, career_ppg: m.careerPPG != null ? round1(m.careerPPG) : undefined, games_recent: m.recentGP, status_note: m.statusReason || undefined,
     traded_in_this_league: L ? trades.map((t: any) => ({ date: t.ts ? new Date(t.ts).toISOString().slice(0, 10) : t.season, to: Object.entries(t.sides || {}).filter(([, s]: any) => (s.players || []).includes(pid)).map(([r]) => teamName(L, r))[0], value_then: Object.values(t.sides || {}).find((s: any) => (s.players || []).includes(pid)) && (Object.values(t.sides || {}).find((s: any) => (s.players || []).includes(pid)) as any).totalValue })) : undefined,
@@ -341,17 +387,19 @@ function pickValues(ctx: Ctx, L: LeagueRow, args: any) {
   return { league_id: L.league_id, teams, draft_rounds: rounds, value_by_round: byRound, first_round_by_slot: top, picks_owned: owned, note: 'Values for the next draft; later years are discounted 12% per year. A pick\'s slot comes from Sleeper\'s draft order when known, else the owner\'s standing.' };
 }
 
-const NEWS_STEP = 'Before you answer: if you can search the web, search the last 7 days of news for EACH of these players and his NFL team (new play-caller or head coach, quarterback change, teammate trade or injury that shifts targets or carries, role or snap-share change, practice status, weather) and lead with the biggest item for each side. A coaching or play-calling change outranks a cold stretch of box scores. Never tell the member to go check something themselves.';
-type ProjLine = { id: string; name: string; pos: string; nfl_team: string; nfl_opponent?: string; game_date?: string | null; injury?: string; proj_this_week?: number | null; season_games?: number; season_avg?: number | null; game_log?: string };
+const NEWS_STEP = 'Before you answer, read latest_news (the player\'s own most recent report) and team_news (his team\'s headlines from the last 7 days) for EACH player and lead with the biggest item on each side: a new play-caller or head coach, a quarterback change, a teammate trade or injury that shifts targets or carries, a role change, practice status. A coaching or play-calling change outranks a cold stretch of box scores. If you can also search the web, add anything newer. Never tell the member to go check something themselves.';
+type ProjLine = { id: string; name: string; pos: string; nfl_team: string; nfl_opponent?: string; game_date?: string | null; game_status?: string; injury?: string; proj_this_week?: number | null; scored_this_week?: number; this_week?: string; season_games?: number; season_avg?: number | null; game_log?: string };
 function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
   const p = ctx.players[pid] || ({} as Partial<PlayerSlim>);
-  const bits = seasonBits(L, pid) as Partial<ProjLine>;
+  const bits = seasonBits(ctx, L, pid) as Partial<ProjLine>;
   return { id: pid, name: p.n || pid, pos: ((L.intel.playerMeta || {})[pid] || {}).pos || p.pos || '?', nfl_team: p.t || 'FA', ...gameBits(ctx, p.t), injury: p.inj ? p.inj + (p.injp ? ' (' + p.injp + ')' : '') : undefined, ...bits };
 }
-function weeklyProjections(ctx: Ctx, L: LeagueRow, args: any) {
+async function weeklyProjections(ctx: Ctx, L: LeagueRow, args: any) {
   const ids: string[] = [], unknown: string[] = [];
   (args.players || []).slice(0, 20).forEach((q: unknown) => { const pid = resolveOne(ctx, L, q); if (pid) ids.push(pid); else unknown.push(String(q)); });
-  return { league_id: L.league_id, week: L.snapshot.proj_week, scoring: 'this league\'s scoring', before_you_answer: NEWS_STEP, note: 'proj_this_week is Sleeper\'s projection; game_log is points scored each week this season (DNP = did not play). A null projection means Sleeper is not projecting him this week.', players: ids.map(pid => projLine(ctx, L, pid)), not_found: unknown.length ? unknown : undefined, numbers_as_of: L.built_at };
+  const blurbs = await latestBlurbs(ctx, ids);
+  const withNews = (pid: string) => ({ ...projLine(ctx, L, pid), latest_news: blurbs[pid], team_news: teamNews(ctx, (ctx.players[pid] || {}).t) });
+  return { league_id: L.league_id, week: L.snapshot.proj_week, scoring: 'this league\'s scoring', before_you_answer: NEWS_STEP, news_as_of: ctx.news ? ctx.news.fetched_at : undefined, note: 'proj_this_week is Sleeper\'s projection; game_log is points scored each week this season (DNP = did not play). A null projection means Sleeper is not projecting him this week.', players: ids.map(withNews), not_found: unknown.length ? unknown : undefined, numbers_as_of: L.built_at };
 }
 function myMatchup(ctx: Ctx, L: LeagueRow) {
   const me = myRoster(L, ctx.memberId);
@@ -363,18 +411,22 @@ function myMatchup(ctx: Ctx, L: LeagueRow) {
   const oppR = opp ? rosterOf(L, opp.roster_id) : null;
   const proj = L.snapshot.proj || {};
   const lineup = (r: Roster | null) => (r ? (r.starters || []).filter(x => x && x !== '0') : []).map(pid => projLine(ctx, L, pid));
-  const total = (list: Array<{ proj_this_week?: unknown }>) => round1(list.reduce((t, x) => t + (Number(x.proj_this_week) || 0), 0));
+  const pts = (x: ProjLine) => x.scored_this_week != null ? Number(x.scored_this_week) : (Number(x.proj_this_week) || 0);
+  const total = (list: ProjLine[]) => round1(list.reduce((t, x) => t + pts(x), 0));
   const myLine = lineup(me), oppLine = lineup(oppR);
   const starters = new Set(me.starters || []);
+  const open = (x: ProjLine) => x.scored_this_week == null;   // game not started yet, so the slot can still change
   const benchBetter = (me.players || []).filter(pid => !starters.has(pid) && !(me.reserve || []).includes(pid) && !(me.taxi || []).includes(pid) && proj[pid] != null)
-    .map(pid => projLine(ctx, L, pid)).filter(b => myLine.some(s => s.pos === b.pos && (Number(s.proj_this_week) || 0) < (Number(b.proj_this_week) || 0)))
+    .map(pid => projLine(ctx, L, pid)).filter(b => open(b) && myLine.some(s => open(s) && s.pos === b.pos && (Number(s.proj_this_week) || 0) < (Number(b.proj_this_week) || 0)))
     .sort((a, b) => (Number(b.proj_this_week) || 0) - (Number(a.proj_this_week) || 0)).slice(0, 6);
   return {
     league_id: L.league_id, week: L.snapshot.proj_week, opponent: opp ? teamName(L, opp.roster_id) + ' (roster ' + opp.roster_id + ')' : 'unknown',
     live_score: mine.points || (opp && opp.points) ? { me: round1(mine.points), them: round1(opp && opp.points) } : undefined,
     my_projected_total: total(myLine), their_projected_total: total(oppLine),
+    totals_note: 'Totals use actual points for players whose game already happened and projections for the rest. A player marked ALREADY PLAYED or DID NOT PLAY is locked and cannot be moved.',
     my_lineup: myLine, their_lineup: oppLine,
     bench_projected_above_a_starter_at_same_position: benchBetter,
+    team_news_for_my_players: Object.fromEntries([...new Set(myLine.concat(benchBetter).map(x => x.nfl_team))].map(t => [t, teamNews(ctx, t, 3)]).filter(([, v]) => v)),
     before_you_answer: NEWS_STEP,
     note: 'Projections are Sleeper\'s, in this league\'s scoring. Lineups are as set in Sleeper right now.',
     numbers_as_of: L.built_at,

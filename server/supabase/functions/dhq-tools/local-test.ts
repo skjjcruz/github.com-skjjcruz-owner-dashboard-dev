@@ -12,10 +12,11 @@ const rows: LeagueRow[] = files.map(n => JSON.parse(Deno.readTextFileSync(new UR
 const players = JSON.parse(Deno.readTextFileSync(new URL('players.json', OUT)));
 const memberId = Deno.env.get('MEMBER') || '540392203863576576';
 let nflWeek; try { nflWeek = JSON.parse(Deno.readTextFileSync(new URL('nfl_week.json', OUT))); } catch { nflWeek = undefined; }
+let news; try { news = JSON.parse(Deno.readTextFileSync(new URL('news.json', OUT))); } catch { news = undefined; }
 // deno-lint-ignore no-explicit-any
 const te = (globalThis as any).App.TradeEngine;
 const ctx: Ctx = {
-  memberId, leagues: rows.filter(L => L.snapshot.rosters.some(r => r.owner_id === memberId)), players, nflState: rows[0].snapshot.nfl_state, trending: [], nflWeek, te,
+  memberId, leagues: rows.filter(L => L.snapshot.rosters.some(r => r.owner_id === memberId)), players, nflState: rows[0].snapshot.nfl_state, trending: [], nflWeek, news, te,
   loadLeague: async id => rows.find(L => L.league_id === id) || null,
 };
 const psycho = ctx.leagues.find(L => L.league_id === '1312100327931019264') || ctx.leagues[0];
@@ -27,7 +28,7 @@ const calls: Array<[string, Record<string, unknown>]> = [
   ['get_owner_profile', { league_id: lid, roster_id: 7 }], ['get_recent_trades', { league_id: lid, days: 14 }],
   ['get_waiver_options', { league_id: lid, position: 'RB', limit: 5 }], ['get_pick_values', { league_id: lid, roster_id: psycho.snapshot.rosters.find(r => r.owner_id === memberId)!.roster_id }],
   ['get_player', { player: 'Chig Okonkwo', league_id: lid }],
-  ['get_weekly_projections', { league_id: lid, players: ['Chig Okonkwo', 'Jonathan Taylor', 'nobody here'] }],
+  ['get_weekly_projections', { league_id: lid, players: ['Chig Okonkwo', 'Courtland Sutton', 'KaVontae Turpin', 'nobody here'] }],
   ['get_my_matchup', { league_id: lid }],
   ['get_team', { league_id: 'nope' }],
 ];
