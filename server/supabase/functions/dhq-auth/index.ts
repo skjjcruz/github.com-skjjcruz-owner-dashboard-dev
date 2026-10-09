@@ -151,7 +151,7 @@ Deno.serve(async (req: Request) => {
   const route = url.pathname.slice(i + '/dhq-auth'.length).replace(/\/+$/, '') || '/';
   const tools = PUBLIC_FUNCTIONS + '/dhq-tools';
   try {
-    if (req.method === 'GET' && route === '/.well-known/oauth-authorization-server') {
+    if (req.method === 'GET' && (route === '/.well-known/oauth-authorization-server' || route === '/.well-known/openid-configuration')) {
       return json({ issuer: base, authorization_endpoint: base + '/authorize', token_endpoint: base + '/token', registration_endpoint: base + '/register', response_types_supported: ['code'], response_modes_supported: ['query'], grant_types_supported: ['authorization_code', 'refresh_token'], code_challenge_methods_supported: ['S256'], token_endpoint_auth_methods_supported: ['none'], scopes_supported: ['read'], service_documentation: 'https://dhqfootball.com' });
     }
     if (req.method === 'GET' && route === '/.well-known/oauth-protected-resource') {

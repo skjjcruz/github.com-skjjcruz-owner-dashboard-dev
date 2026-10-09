@@ -144,8 +144,9 @@ Deno.serve(async (req: Request) => {
   const batch = Array.isArray(body);
   const msgs: any[] = batch ? body : [body];
 
-  // Unauthenticated callers may still initialize and list tools (that is how
-  // clients discover the server); anything that reads data needs a key.
+  // Every call, including the first "initialize", needs a member: the 401
+  // (with its WWW-Authenticate pointer) is how ChatGPT and Claude learn that
+  // this server has a sign-in and where it lives.
   let member: { id: string; label: string; scopes: string } | null | undefined;
   const needMember = async () => {
     if (member === undefined) member = await memberFor(req);
@@ -156,6 +157,7 @@ Deno.serve(async (req: Request) => {
   const ctx = async () => { const m = await needMember(); if (!ctxPromise) ctxPromise = buildCtx(m.id); return ctxPromise; };
 
   try {
+    await needMember();
     if (msgs.every(isRpc)) {
       const out: Array<Record<string, unknown>> = [];
       for (const m of msgs) { const r = await rpc(m, ctx); if (r) out.push(r); }
