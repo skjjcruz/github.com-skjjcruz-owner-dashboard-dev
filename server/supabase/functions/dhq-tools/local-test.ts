@@ -11,10 +11,11 @@ if (!files.length) { console.error('no dry-run output in server/engine/out'); De
 const rows: LeagueRow[] = files.map(n => JSON.parse(Deno.readTextFileSync(new URL(n, OUT))));
 const players = JSON.parse(Deno.readTextFileSync(new URL('players.json', OUT)));
 const memberId = Deno.env.get('MEMBER') || '540392203863576576';
+let nflWeek; try { nflWeek = JSON.parse(Deno.readTextFileSync(new URL('nfl_week.json', OUT))); } catch { nflWeek = undefined; }
 // deno-lint-ignore no-explicit-any
 const te = (globalThis as any).App.TradeEngine;
 const ctx: Ctx = {
-  memberId, leagues: rows.filter(L => L.snapshot.rosters.some(r => r.owner_id === memberId)), players, nflState: rows[0].snapshot.nfl_state, trending: [], te,
+  memberId, leagues: rows.filter(L => L.snapshot.rosters.some(r => r.owner_id === memberId)), players, nflState: rows[0].snapshot.nfl_state, trending: [], nflWeek, te,
   loadLeague: async id => rows.find(L => L.league_id === id) || null,
 };
 const psycho = ctx.leagues.find(L => L.league_id === '1312100327931019264') || ctx.leagues[0];

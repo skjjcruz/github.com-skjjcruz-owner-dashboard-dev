@@ -27,6 +27,7 @@ export interface Ctx {
   players: Record<string, PlayerSlim>;
   nflState: any;
   trending: Array<{ player_id: string; count: number }>;
+  nflWeek?: { week: number; games: Record<string, { opp: string; date: string | null }> };   // who each NFL team plays this week
   te: TradeEngine;
 }
 
@@ -92,7 +93,14 @@ function playerRow(ctx: Ctx, L: LeagueRow | null, pid: string, extra?: Record<st
   if (m.roleLabel) row.role = m.roleLabel;
   if (p.inj) row.injury = p.inj + (p.injp ? ' (' + p.injp + ')' : '');
   if (p.dc && p.dco != null) row.depth_chart = p.dc + ' #' + p.dco;
+  Object.assign(row, gameBits(ctx, p.t));
   return Object.assign(row, extra || {});
+}
+// This week's NFL game for a team: opponent and date, or BYE.
+function gameBits(ctx: Ctx, team: string | null | undefined): { nfl_opponent?: string; game_date?: string | null } {
+  if (!ctx.nflWeek || !team) return {};
+  const g = ctx.nflWeek.games[team];
+  return g ? { nfl_opponent: g.opp, game_date: g.date } : { nfl_opponent: 'BYE' };
 }
 // This season so far and this week, in the league's scoring.
 function seasonBits(L: LeagueRow, pid: string) {
@@ -113,6 +121,7 @@ function compactRow(x: Record<string, any>): string {
   return [
     x.name + ' ' + x.pos + ' ' + x.nfl_team, x.age != null ? 'age ' + x.age : '',
     x.dhq_value != null ? 'DHQ ' + x.dhq_value + (x.league_rank ? ' (#' + x.league_rank + ', ' + x.pos + x.pos_rank + ')' : '') : '',
+    x.nfl_opponent ? (x.nfl_opponent === 'BYE' ? 'BYE this wk' : 'vs ' + x.nfl_opponent) : '',
     x.proj_this_week != null ? 'this wk proj ' + x.proj_this_week : (x.proj_this_week === null ? 'this wk: no projection' : ''),
     x.season_games != null ? 'season ' + x.season_avg + ' avg (' + x.season_games + ' gp)' : 'season: no games',
     x.peak_years_left != null ? x.peak_years_left + ' peak yrs, ' + (x.age_phase || '') : '',
@@ -227,7 +236,7 @@ function getTeam(ctx: Ctx, L: LeagueRow, args: any) {
     league_id: L.league_id, roster_id: r.roster_id, team: teamName(L, r.roster_id), owner: ownerName(L, r.roster_id), is_mine: !!(me && me.roster_id === r.roster_id),
     record: (s.wins || 0) + '-' + (s.losses || 0) + (s.ties ? '-' + s.ties : ''), points_for: round1((s.fpts || 0) + (s.fpts_decimal || 0) / 100),
     assessment: assessBrief(a), total_dhq_value: rows.reduce((t: number, p: any) => t + p.dhq_value, 0),
-    players_key: 'name pos NFL-team | age | DHQ dynasty value (league rank, position rank) | this week\'s Sleeper projection in this league\'s scoring | this season\'s average and games played | peak years left, age phase | value trend | injury | slot',
+    players_key: 'name pos NFL-team | age | DHQ dynasty value (league rank, position rank) | this week\'s NFL opponent (or BYE) | this week\'s Sleeper projection in this league\'s scoring | this season\'s average and games played | peak years left, age phase | value trend | injury | slot',
     players: rows.map(compactRow), picks, numbers_as_of: L.built_at,
   };
 }
@@ -332,11 +341,11 @@ function pickValues(ctx: Ctx, L: LeagueRow, args: any) {
   return { league_id: L.league_id, teams, draft_rounds: rounds, value_by_round: byRound, first_round_by_slot: top, picks_owned: owned, note: 'Values for the next draft; later years are discounted 12% per year. A pick\'s slot comes from Sleeper\'s draft order when known, else the owner\'s standing.' };
 }
 
-type ProjLine = { id: string; name: string; pos: string; nfl_team: string; injury?: string; proj_this_week?: number | null; season_games?: number; season_avg?: number | null; game_log?: string };
+type ProjLine = { id: string; name: string; pos: string; nfl_team: string; nfl_opponent?: string; game_date?: string | null; injury?: string; proj_this_week?: number | null; season_games?: number; season_avg?: number | null; game_log?: string };
 function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
   const p = ctx.players[pid] || ({} as Partial<PlayerSlim>);
   const bits = seasonBits(L, pid) as Partial<ProjLine>;
-  return { id: pid, name: p.n || pid, pos: ((L.intel.playerMeta || {})[pid] || {}).pos || p.pos || '?', nfl_team: p.t || 'FA', injury: p.inj ? p.inj + (p.injp ? ' (' + p.injp + ')' : '') : undefined, ...bits };
+  return { id: pid, name: p.n || pid, pos: ((L.intel.playerMeta || {})[pid] || {}).pos || p.pos || '?', nfl_team: p.t || 'FA', ...gameBits(ctx, p.t), injury: p.inj ? p.inj + (p.injp ? ' (' + p.injp + ')' : '') : undefined, ...bits };
 }
 function weeklyProjections(ctx: Ctx, L: LeagueRow, args: any) {
   const ids: string[] = [], unknown: string[] = [];

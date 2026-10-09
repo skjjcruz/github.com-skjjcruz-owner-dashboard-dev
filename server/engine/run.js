@@ -126,10 +126,12 @@ function rest(key) {
       { key: 'players', data: players, updated_at: new Date().toISOString() },
       { key: 'nfl_state', data: shared.nfl, updated_at: new Date().toISOString() },
       { key: 'trending_add', data: trending || [], updated_at: new Date().toISOString() },
+      { key: 'nfl_week', data: { week: shared.week, games: shared.weekGames || {} }, updated_at: new Date().toISOString() },
     ]);
     await db.upsert('engine_runs', [{ started_at: started, finished_at: new Date().toISOString(), engine_version: ENGINE_VERSION, leagues_ok: ok, leagues_failed: failed, notes: null }]).catch(e => console.warn('run log:', e.message));
   } else {
     fs.writeFileSync(path.join(OUT, 'players.json'), JSON.stringify(players));
+    fs.writeFileSync(path.join(OUT, 'nfl_week.json'), JSON.stringify({ week: shared.week, games: shared.weekGames || {} }));
   }
   console.log('done:', ok, 'built,', failed, 'failed, total', ((Date.now() - t0) / 1000).toFixed(1) + 's; players table', Object.keys(players).length);
   process.exit(failed && !ok ? 1 : 0);

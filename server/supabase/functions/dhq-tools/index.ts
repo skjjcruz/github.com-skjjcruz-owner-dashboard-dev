@@ -16,7 +16,7 @@ import { TOOL_DEFS, runTool, ToolError, type Ctx, type LeagueRow } from './tools
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const VERSION = 'dhq-tools 0.2.1';
+const VERSION = 'dhq-tools 0.3';
 const PROTOCOL_DEFAULT = '2025-06-18';
 
 const CORS: Record<string, string> = {
@@ -34,6 +34,7 @@ const INSTRUCTIONS = [
   'DHQ value is this app\'s dynasty trade value for the league in question (higher is better; roughly 7,000+ is elite, 3,000+ a solid starter, under 1,000 a depth piece). Values are league-specific and refresh every couple of hours; "numbers_as_of" says when.',
   'Think like a sharp, honest dynasty GM: weigh this season against the long game, the member\'s competitive window (contender vs rebuilding), and the other owner\'s habits (DNA). Have an opinion and give the reasons with the key numbers.',
   'Two kinds of numbers, do not mix them up: dhq_value / dhq_rate_ppg are DYNASTY valuation numbers (dhq_rate_ppg is a long-run production rate: 75% last season, 25% career), while proj_this_week, season_avg and game_log are THIS SEASON in the league\'s scoring. For any start/sit or "who plays this week" question call get_weekly_projections with EVERY player being compared (or get_my_matchup) and read the injury field; never use dhq_rate_ppg as current form.',
+  'Go deeper than the projection. Each player row carries nfl_opponent and game_date (or BYE). If you can search the web, do it for every player in a start/sit question before answering, looking for the last 7 days of news on the player AND his team: a new play-caller or head coach, a quarterback change, a trade or injury to a teammate that shifts targets or carries, a role or snap-share change, the player\'s own practice status, and weather. Lead with the single biggest piece of news for each side and say how it changes the call; a coaching or play-calling change outranks a cold stretch of box scores.',
   'Never send the member to look something up in Sleeper, on a website, or anywhere else. These tools already have every player\'s projection, injury status and game log; fetch the numbers yourself and give a straight answer. Do not suggest "one quick check you can do".',
   'Start with list_leagues when the league is unknown. The member\'s own team is the default for get_team, evaluate_trade and get_my_matchup.',
   'You cannot make moves in Sleeper. Tell the member exactly what to do.',
@@ -75,7 +76,7 @@ async function buildCtx(memberId: string): Promise<Ctx> {
   // Light rows for the member's league list; the full row loads on demand.
   const [all, cache] = await Promise.all([
     rest('league_intel?select=league_id,season,name,built_at,engine_version,assessments,snapshot&error=is.null') as Promise<LeagueRow[]>,
-    rest('engine_cache?select=key,data&key=in.(players,nfl_state,trending_add)') as Promise<Array<{ key: string; data: any }>>,
+    rest('engine_cache?select=key,data&key=in.(players,nfl_state,trending_add,nfl_week)') as Promise<Array<{ key: string; data: any }>>,
   ]);
   const leagues = all.filter(L => inLeague(L, memberId)).map(L => ({ ...L, intel: L.intel || {}, dna: L.dna || {} }));
   const full = new Map<string, LeagueRow>();
@@ -84,7 +85,7 @@ async function buildCtx(memberId: string): Promise<Ctx> {
   const te = (globalThis as any).App?.TradeEngine;
   if (!te) throw new Error('trade engine not loaded');
   return {
-    memberId, leagues, players: get('players') || {}, nflState: get('nfl_state') || {}, trending: get('trending_add') || [], te,
+    memberId, leagues, players: get('players') || {}, nflState: get('nfl_state') || {}, trending: get('trending_add') || [], nflWeek: get('nfl_week') || undefined, te,
     async loadLeague(id: string) {
       if (full.has(id)) return full.get(id)!;
       if (!leagues.some(L => L.league_id === id)) return null;

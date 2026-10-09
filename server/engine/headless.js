@@ -91,7 +91,24 @@ async function loadShared() {
   ].concat(years.map(y => sleeper('/stats/nfl/regular/' + y).catch(() => ({})))).concat(weeks.map(w => sleeper('/stats/nfl/regular/' + season + '/' + w).catch(() => ({})))));
   const statsByYear = {}; years.forEach((y, i) => { statsByYear[y] = rest[i] || {}; });
   const weeklyStats = {}; weeks.forEach((w, i) => { weeklyStats[w] = rest[years.length + i] || {}; });
-  return { nfl, season, week, players, statsByYear, weeklyStats, projWeek: projWeek || {} };
+  const weekGames = await nflWeekGames(season, week).catch(() => ({}));
+  return { nfl, season, week, players, statsByYear, weeklyStats, projWeek: projWeek || {}, weekGames };
+}
+
+// Who each NFL team plays this week (and when), from Sleeper's projection
+// feed, which carries the opponent on every projected player. Teams with no
+// opponent in the feed are on bye.
+async function nflWeekGames(season, week) {
+  const url = 'https://api.sleeper.com/projections/nfl/' + season + '/' + week + '?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE&position[]=K&position[]=DEF';
+  let rows = null;
+  for (let attempt = 0; attempt < 3 && !rows; attempt++) {
+    const r = await fetch(url);
+    if (r.ok) rows = await r.json();
+    else await new Promise(res => setTimeout(res, 1500 * (attempt + 1)));
+  }
+  const games = {};
+  (rows || []).forEach(e => { if (e && e.team && e.opponent && !games[e.team]) games[e.team] = { opp: e.opponent, date: e.date || null }; });
+  return games;
 }
 
 // Points for one stat line in a league's scoring (the engine's own dot
