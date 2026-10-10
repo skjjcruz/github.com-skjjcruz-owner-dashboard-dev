@@ -72,7 +72,9 @@ const BANK: Q[] = [
   // ── Decision tools (Lab parity, 2026-10-10) ─────────────────────────
   { q: 'How do I get a young starting QB? (trade_plan)', tool: 'trade_plan', args: { league_id: lid, target: youngTarget ? nm(youngTarget) : 'nobody' }, must: r => [
     ...miss(!!youngTarget, 'a young front-line target exists on another team'),
-    ...miss(['offer', 'counter', 'pass', 'no_fit'].includes(r.decision) && typeof r.recommendation === 'string', 'a decision and a recommendation first'),
+    ...miss(['offer', 'tough', 'counter', 'pass', 'no_fit'].includes(r.decision) && typeof r.recommendation === 'string', 'a decision and a recommendation first'),
+    ...miss(!/Nothing you own|can't|cannot/i.test(r.recommendation), 'never says a deal can\'t be done'),
+    ...miss(r.offers.every((o: Any) => !o.give.some((g: string) => { const n = g.replace(/ \(.*$/, ''); const pid = (myRoster.players || []).map(String).find(x => nm(x) === n); return pid && (starterSet.has(pid) || valueOf(pid) >= 4000); }) || /key piece of your lineup/.test(o.lineup_cost || '')), 'an offer that takes a key player says what it costs the lineup'),
     ...miss(JSON.stringify(Object.keys(r).slice(0, 3)) === JSON.stringify(['decision', 'confidence', 'recommendation']), 'verdict-first shape'),
     ...miss(['rebuilding', 'contending', 'middle'].includes(r.partner && r.partner.mode) && Array.isArray(r.partner.why), 'the partner\'s mode with evidence'),
     ...miss(r.price_floor && /^(a|two) \d{4} 1sts?\b/.test(r.price_floor.headliner_needed), 'a young starter\'s going rate is a next-draft 1st (headliner)'),

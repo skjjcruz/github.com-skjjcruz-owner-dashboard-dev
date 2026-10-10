@@ -257,7 +257,7 @@ Deno.test('trade: a pick with an unknown holder is never treated as mine', async
     const e = await tr('evaluate_trade', { give: ['2029 1st'], get: ['Jordan Love'] });
     eq(e.headliner.offer_has_it, false); eq(e.verdict.confidence, 'low'); ok(e.warnings.some((w: string) => /Couldn't confirm you own 2029 1st/.test(w)));
     const p = await tr('trade_plan', { target: 'Jordan Love' });
-    eq(p.my_assets.picks, []); eq(p.offers.length, 0); eq(p.decision, 'no_fit'); eq(p.confidence, 'low');
+    eq(p.my_assets.picks, []); eq(p.offers.length, 0); eq(p.decision, 'tough'); eq(p.confidence, 'low');
   } finally { TL.snapshot.picks = keep; }
 });
 // Owner ruling 2026-10-10 (Love test): a rebuilder won't trade a young
@@ -266,9 +266,13 @@ Deno.test('trade: a pick with an unknown holder is never treated as mine', async
 Deno.test('trade: young SF starting QB from a rebuilder: a next-draft 1st plus a little more; a far-off 1st is not the headliner', async () => {
   const r = await tr('trade_plan', { target: 'Jordan Love' });
   match(r.price_floor.headliner_needed, /^a 2027 1st \(a rebuilder also wants a 2nd or a solid young player on top\)/); match(r.price_floor.rule, /superflex/);
-  // The member's only 1st is a 2029: nothing he owns meets the price.
-  eq(r.offers.length, 0); eq(r.decision, 'no_fit');
-  match(r.recommendation, /Your 2029 1st is too far off for a rebuilder/); match(r.recommendation, /2027 1st/);
+  // The member's only 1st is a 2029: no pick-led deal. Owner ruling: the
+  // realistic path is one of his top players plus a pick, said as a tough
+  // deal that costs a key piece of the lineup, never "can't be done".
+  ok(r.offers.length >= 1);
+  r.offers.forEach((o: any) => { ok(o.give.some((g: string) => /George Pickens|Jonathan Taylor/.test(g)), o.give.join(' + ')); match(o.lineup_cost, /key piece of your lineup/); ok(!o.give.some((g: string) => /^2029 1st/.test(g))); });
+  eq(r.decision, 'tough'); match(r.recommendation, /^This will be a tough deal to pull off/); match(r.recommendation, /may consider/); match(r.recommendation, /looks to be rebuilding/);
+  ok(!/Nothing you own|can't/i.test(r.recommendation), r.recommendation);
   const far = await tr('evaluate_trade', { give: ['2029 1st', '2027 2nd from TWhy123'], get: ['Jordan Love'] });
   eq(far.headliner.offer_has_it, false); ok(far.headliner.notes.some((n: string) => /too far off/.test(n)), JSON.stringify(far.headliner));
   // The rule itself: a next-draft 1st alone isn't enough from a rebuilder; plus a 2nd it is.
@@ -286,17 +290,17 @@ Deno.test('trade: young SF starting QB from a rebuilder: a next-draft 1st plus a
 });
 Deno.test('trade: Stafford + Andrews for Love: a rebuilder doesn\'t want aging vets, low chance, counter with my 2029 1st', async () => {
   const r = await tr('trade_plan', { target: 'Jordan Love', give: ['Matthew Stafford', 'Mark Andrews'] });
-  eq(r.partner.mode, 'rebuilding'); eq(r.decision, 'pass'); ok(r.your_offer.accept_chance_pct <= 10, String(r.your_offer.accept_chance_pct)); eq(r.your_offer.headliner_met, false);
+  eq(r.partner.mode, 'rebuilding'); eq(r.decision, 'counter'); ok(r.your_offer.accept_chance_pct <= 10, String(r.your_offer.accept_chance_pct)); eq(r.your_offer.headliner_met, false);
   for (const n of ['Matthew Stafford', 'Mark Andrews']) ok(r.do_not_offer.some((d: any) => d.asset.startsWith(n)), n);
   ok(r.partner.wont_take.some((w: string) => /age cliff/.test(w)));
-  r.offers.forEach((o: any) => ok(!o.give.some((g: string) => /Stafford|Andrews|Jonathan Taylor/.test(g)), o.give.join(' + ')));
-  match(r.recommendation, /^Don't send Matthew Stafford \+ Mark Andrews/); match(r.recommendation, /2027 1st/);
+  r.offers.forEach((o: any) => ok(!o.give.some((g: string) => /Stafford|Andrews/.test(g)), o.give.join(' + ')));
+  match(r.recommendation, /^Don't send Matthew Stafford \+ Mark Andrews/); match(r.recommendation, /tough one/);
   const e = await tr('evaluate_trade', { give: ['Matthew Stafford', 'Mark Andrews'], get: ['Jordan Love'] });
   eq(e.verdict.decision, 'counter'); ok(e.verdict.accept_chance_pct <= 10); match(e.partner_view.verdict, /not appealing/);
 });
 Deno.test('trade: acceptance runs on what the partner values: piling on vets doesn\'t raise it', async () => {
-  const e = await tr('evaluate_trade', { give: ['Matthew Stafford', 'Mark Andrews', 'Jonathan Taylor'], get: ['Jordan Love'] });
-  eq(e.acceptance_on_value_only_pct, 95); ok(e.acceptance_chance_pct <= 10); ok(e.partner_view.worth_to_them < e.partner_view.what_they_give_up_as_they_see_it);
+  // (Owner ruling: Jonathan Taylor at 27 is a top player at the age line, not a relic, so this pile is Stafford + Andrews alone.)
+  const e = await tr('evaluate_trade', { give: ['Matthew Stafford', 'Mark Andrews'], get: ['Jordan Love'] }); ok(e.acceptance_chance_pct <= 10); ok(e.partner_view.worth_to_them < e.partner_view.what_they_give_up_as_they_see_it);
   const young = await tr('evaluate_trade', { give: ['Jaylen Williams'], get: ['Michael Pittman'] });
   const vets = await tr('evaluate_trade', { give: ['Mark Andrews', 'Matthew Stafford'], get: ['Michael Pittman'] });
   ok(young.acceptance_chance_pct >= vets.acceptance_chance_pct, young.acceptance_chance_pct + ' vs ' + vets.acceptance_chance_pct);
