@@ -338,20 +338,50 @@ export function headlinerRuleFor(ctx: Ctx, L: LeagueRow, x: Piece | null) {
   const anchor = (x.value >= SCALE.STARTER && age <= 28) || (qb && sf && age <= 29 && (nflStarter || x.value >= SCALE.STARTER));
   if (!anchor) return null;
   const firsts = qb && sf && x.value >= SCALE.ELITE ? 2 : 1;
+  // Owner ruling 2026-10-10 (Love test): "A person rebuilding is not going
+  // to trade a starting QB, like Jordan Love, who's young, for a 1st rounder
+  // three years down the line. He may accept a first rounder this year plus
+  // a little something like a second or a nice player." So the headline 1st
+  // is a NEXT-draft 1st; one a draft further out only counts with a real
+  // add; a rebuilder doesn't count one two or more drafts out at all. A
+  // young starting QB in superflex also needs that "little something" on top.
+  const plus = qb && sf ? 1 : 0;
+  const nd = nextDraftYear(L);
+  const firstWords = firsts === 2 ? 'two ' + nd + ' 1sts' : 'a ' + nd + ' 1st';
   return {
-    qb, sf, firsts, young_player_min_value: Math.round(x.value * 0.7),
-    needed: (firsts === 2 ? 'two 1st-round picks' : 'a 1st-round pick') + (qb ? ', or a young QB of similar standing' : ', or one young player (28 or under) worth ' + Math.round(x.value * 0.7) + '+'),
-    rule: qb ? 'A young starting QB costs at least ' + (firsts === 2 ? 'two 1st-round picks' : 'a 1st-round pick') + (sf ? ' in a superflex league' : '') + ', or a young QB of similar standing.'
-      : 'A young starter costs one real headline piece: a 1st-round pick or a young player worth about 70%+ of him. Several lesser pieces don\'t add up to one.',
+    qb, sf, firsts, plus, next_draft: nd, young_player_min_value: Math.round(x.value * 0.7),
+    needed: firstWords + (plus ? ' (a rebuilder also wants a 2nd or a solid young player on top)' : '') + (qb ? ', or a young QB of similar standing' : ', or one young player (28 or under) worth ' + Math.round(x.value * 0.7) + '+'),
+    rule: (qb ? 'A young starting QB costs ' + firstWords + ' (the next draft)' + (plus ? ', and a rebuilder wants a little more on top, a 2nd or a solid young player,' : '') + (sf ? ' in a superflex league' : '') + ', or a young QB of similar standing.'
+      : 'A young starter costs one real headline piece: ' + firstWords + ' (the next draft) or a young player worth about 70%+ of him. Several lesser pieces don\'t add up to one.')
+      + ' A 1st a draft further out only counts with a real add; a rebuilder won\'t take one two or more drafts away as the headliner.',
   };
 }
-// Only 1sts the member verifiably holds count (fix 2).
-export function headlinerMet(rule: any, target: Piece, give: Piece[], meRid: unknown) {
-  const firsts = give.filter(x => x.kind === 'pick' && x.round === 1 && x.holder != null && String(x.holder) === String(meRid));
+// Only 1sts the member verifiably holds count (fix 2). A 1st's credit as
+// the headline piece depends on how far off it is (owner ruling above):
+// next draft = full; one draft further = only with a real add; two or more
+// = none for a rebuilder, add-only for anyone else. The superflex-QB "plus"
+// is a rebuilder's ask only. nd: the next draft (rule.next_draft).
+export function headlinerMet(rule: any, target: Piece, give: Piece[], meRid: unknown, mode?: string) {
+  const nd = rule.next_draft != null ? Number(rule.next_draft) : null;
+  const mine = (x: Piece) => x.kind === 'pick' && x.holder != null && String(x.holder) === String(meRid);
+  const firsts = give.filter(x => mine(x) && x.round === 1);
+  const ahead = (x: Piece) => nd == null ? 0 : (Number(x.year) || nd) - nd;
+  const full = firsts.filter(x => ahead(x) <= 0);
+  const later = firsts.filter(x => ahead(x) === 1 || (ahead(x) > 1 && mode !== 'REBUILDING'));
+  const tooFar = firsts.filter(x => !full.includes(x) && !later.includes(x));
+  const sweet = give.filter(x => (mine(x) && x.round === 2 && ahead(x) <= 1) || (x.kind === 'player' && x.value >= SCALE.DEPTH && !(mode === 'REBUILDING' && isVet(x.pos, x.age))));
+  let spare = sweet.length, credit = full.length;
+  later.forEach(() => { if (spare > 0) { credit++; spare--; } });
+  const plus = mode === 'REBUILDING' ? (rule.plus || 0) : 0;
+  const picksOk = credit >= rule.firsts && spare >= plus;
   const big = give.filter(x => x.kind === 'player').sort((p, q) => q.value - p.value)[0];
-  const playerOk = !!big && big.value >= target.value * 0.7 && (Number(big.age) || 99) <= 28;
-  const ok = firsts.length >= rule.firsts || (playerOk && (!rule.qb || firsts.length >= 1 || big.pos === 'QB'));
-  return { ok, firsts: firsts.length, via: firsts.length >= rule.firsts ? firsts.map(x => x.label).join(' + ') : ok ? big.label : null };
+  const playerOk = !!big && big.value >= target.value * 0.7 && (Number(big.age) || 99) <= 28 && (!rule.qb || big.pos === 'QB');
+  const ok = picksOk || playerOk;
+  const notes: string[] = [];
+  if (tooFar.length) notes.push(tooFar.map(x => x.label).join(' + ') + ' is too far off for a rebuilder to count as the headliner; it takes a ' + nd + ' 1st.');
+  if (!ok && credit >= rule.firsts && plus) notes.push('The 1st is there; add a 2nd or a solid young player on top.');
+  if (!ok && later.length && credit < rule.firsts) notes.push('A ' + later.map(x => x.year).join('/') + ' 1st needs a real add (a 2nd or a solid young player) to stand in for a ' + nd + ' 1st.');
+  return { ok, firsts: firsts.length, via: picksOk ? firsts.concat(sweet).map(x => x.label).join(' + ') : playerOk ? big.label : null, notes };
 }
 // What one piece the partner gives up costs THEM (fix 1): a listed piece
 // takes 15% off, a listed veteran counts at most half his value.
@@ -459,23 +489,22 @@ export async function evaluateTrade(ctx: Ctx, L: LeagueRow, args: any) {
   let headliner: Record<string, any> | null = null;
   if (anchors.length) {
     const top = anchors[0].x, rule = anchors[0].rule!;
-    const met = headlinerMet(rule, top, give, me.roster_id);
-    headliner = { target: top.label + ' (' + top.pos + ', ' + (top.age || '?') + ', value ' + top.value + ')', rule: rule.rule, offer_has_it: met.ok, via: met.via || undefined };
+    const met = headlinerMet(rule, top, give, me.roster_id, intent ? intent.mode : 'NEUTRAL');
+    headliner = { target: top.label + ' (' + top.pos + ', ' + (top.age || '?') + ', value ' + top.value + ')', rule: rule.rule, offer_has_it: met.ok, via: met.via || undefined, notes: met.notes.length ? met.notes : undefined };
     if (!met.ok) {
       if (acceptPct != null) acceptPct = Math.min(acceptPct, 10);
       warnings.push('No headliner: ' + rule.rule + ' This offer won\'t start the conversation.');
     } else headliner.market = 'This is the going rate: the headliner is the floor for a young starter. A value gap of this size is not an overpay to be clawed back.';
   }
-  // Balance: a rebuilding seller never gives picks back; at market there's no gap to claw back.
+  // Balance: a rebuilding seller never gives picks back. At market there is
+  // nothing to balance, and no optional throw-ins (owner ruling 2026-10-10).
   let balance: Record<string, any> | null = null;
   if (partner && partnerView && intent && net < 0 && !(headliner && !headliner.offer_has_it)) {
     const gap = Math.abs(net);
     const rebuilding = intent.mode === 'REBUILDING';
     const exclude = new Set(get.map(x => x.pid).filter(Boolean) as string[]);
-    if (headliner && headliner.offer_has_it) {
-      const opts = rebuilding ? theirVetsToShed(ctx, L, partner, intent, exclude, gap) : [];
-      if (opts.length) balance = { optional: true, how: 'At market: no gap to claw back. If you want a throw-in, the only thing to ask a rebuilder for is a veteran they want gone:', options: opts };
-    } else if (rebuilding) balance = { you_overpay_by: gap, how: 'A rebuilder won\'t give picks back. Ask them to add a veteran they want gone, ideally one from their trade block:', options: theirVetsToShed(ctx, L, partner, intent, exclude, gap) };
+    if (headliner && headliner.offer_has_it) balance = null;
+    else if (rebuilding) balance = { you_overpay_by: gap, how: 'A rebuilder won\'t give picks back. Ask them to add a veteran they want gone, ideally one from their trade block:', options: theirVetsToShed(ctx, L, partner, intent, exclude, gap) };
     else balance = { you_overpay_by: gap, how: 'Ask for a pick or a depth player back, or trim what you send.' };
   }
   const v = reconcile({ ownIssues, headliner: headliner ? { ok: headliner.offer_has_it, rule: headliner.rule } : null, pv, mode: intent ? intent.mode : 'NEUTRAL', tg, tt, accept: acceptPct, partnerName: partner ? label(L, partner.roster_id) : null });
@@ -640,13 +669,13 @@ export async function tradePlan(ctx: Ctx, L: LeagueRow, args: any) {
   const pool = assets.filter(x => !relic(x) && !lowLiquidity(x) && x.to_them >= 150);
   const score = (pieces: any[], tag: string) => {
     const pv = priceDeal(L, intent, pieces, [tgt]);
-    const hl = rule ? headlinerMet(rule, tgt, pieces, meRid) : null;
+    const hl = rule ? headlinerMet(rule, tgt, pieces, meRid, mode) : null;
     const extra = Math.max(0, pieces.filter(x => x.kind === 'player').length - (tgt.kind === 'player' ? 1 : 0));
     let acc = acceptFor(ctx, read, pv.toThem, pv.theirCost, pieces.length + 1, extra);
     if (hl && !hl.ok) acc = Math.min(acc, 10);
     const rawGive = pieces.reduce((n, x) => n + x.value, 0);
     let balance: Record<string, unknown> | undefined;
-    if (pv.toThem > pv.theirCost * 1.15) {
+    if (!(hl && hl.ok) && pv.toThem > pv.theirCost * 1.35) {
       if (mode === 'REBUILDING') { const opts = theirVetsToShed(ctx, L, p, intent, new Set([tgt.pid].filter(Boolean)), pv.toThem - pv.theirCost); if (opts.length) balance = { optional: true, ask_them_to_add: opts, never: 'Don\'t ask a rebuilder for picks back.' }; }
       else balance = { optional: true, ask_for: 'a pick or a depth player back, or trim what you send' };
     }
@@ -681,6 +710,10 @@ export async function tradePlan(ctx: Ctx, L: LeagueRow, args: any) {
     if (firsts.length >= rule.firsts) {
       bases.push({ tag: 'Leads with ' + (rule.firsts === 2 ? 'two 1sts' : 'a 1st') + ', the headliner ' + (rule.qb ? 'a young starting QB needs' : 'a young starter needs'), base: firsts.slice(0, rule.firsts) });
       if (firsts.length > rule.firsts) bases.push({ tag: 'Leads with a different 1st', base: firsts.slice(1, 1 + rule.firsts) });
+      // The "little something" on top: the nearest 2nd, or a solid young player they'd want.
+      const sweets = pool.filter(x => (x.kind === 'pick' && x.round === 2) || (x.kind === 'player' && x.value >= SCALE.DEPTH && !(mode === 'REBUILDING' && isVet(x.pos, x.age))))
+        .sort((a, b) => (Number(a.year) || 9999) - (Number(b.year) || 9999) || b.to_them - a.to_them).slice(0, 2);
+      sweets.forEach(sw => bases.push({ tag: 'A 1st plus ' + (sw.kind === 'pick' ? 'a 2nd' : 'a solid young player'), base: firsts.slice(0, rule.firsts).concat([sw]) }));
     }
     const heads = pool.filter(x => x.kind === 'player' && x.value >= tgt.value * 0.7 && (Number(x.age) || 99) <= 28 && (!rule.qb || x.pos === 'QB')).sort((a, b) => a.value - b.value);
     if (heads[0]) bases.push({ tag: 'Leads with a young ' + heads[0].pos + ' of similar standing', base: [heads[0]] });
@@ -720,8 +753,11 @@ export async function tradePlan(ctx: Ctx, L: LeagueRow, args: any) {
     decision = 'offer';
     recommendation = 'Send your package (' + yourOffer!.give.join(' + ') + ') for ' + tgt.label + ': about ' + ys.acc + '% to be accepted.' + leadWith;
   } else if (!best) {
-    decision = 'no_fit';
-    recommendation = 'Nothing you own meets the price for ' + tgt.label + ': ' + (rule ? 'it takes ' + rule.needed + (picksLoaded ? '' : ', and your picks aren\'t stored') : 'nothing you own is worth enough to a ' + mw + ' owner') + '.';
+    decision = yourOffer ? 'pass' : 'no_fit';
+    const myFirsts = assets.filter(x => x.kind === 'pick' && x.round === 1).map(x => String(x.label).replace(/\s*\(own\)$/, ''));
+    const dont = yourOffer ? 'Don\'t send ' + giveIn.join(' + ') + (ys && rule && !(ys.hl && ys.hl.ok) ? ' (no headliner)' : '') + '. ' : '';
+    recommendation = dont + 'Nothing you own meets the price for ' + tgt.label + ': ' + (rule ? 'it takes ' + rule.needed + (picksLoaded ? '' : ', and your picks aren\'t stored') : 'nothing you own is worth enough to a ' + mw + ' owner') + '.'
+      + (rule && myFirsts.length ? ' Your ' + myFirsts.join(' and ') + ' ' + (myFirsts.length > 1 ? 'are' : 'is') + ' too far off for ' + (mode === 'REBUILDING' ? 'a rebuilder' : 'this') + ' to headline the deal. To get him you\'d first need a ' + rule.next_draft + ' 1st (buy one from a contender) or a young QB to lead with.' : '');
   } else if (yourOffer) {
     decision = 'counter';
     const whyNot = !yourOffer.valid ? yourOffer.problems.join('; ') : (rule && !(ys!.hl && ys!.hl.ok)) ? 'no headliner: it takes ' + rule.needed : ys!.pv.ratio < 0.95 ? 'worth only about ' + ys!.pv.toThem + ' to ' + who + ' against ' + ys!.pv.theirCost : 'too little appeal';
