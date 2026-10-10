@@ -15,7 +15,7 @@ import './vendor/faab-engine.js';
 import { runTool, type Ctx, type LeagueRow } from './tools.ts';
 import { solveLineup, startSitCall } from './decide-lineup.ts';
 import { ownerIntent, pickValue, nextDraftYear, projectedSlot, isVet, costToOwner, headlinerMet, postureFor, appealFor } from './decide-trade.ts';
-import { valueRead, cutPlan } from './decide-roster.ts';
+import { valueRead, cutPlan, faabInputs } from './decide-roster.ts';
 import { SCALE } from './decide-common.ts';
 
 const App = (globalThis as any).App;
@@ -491,5 +491,19 @@ Deno.test('free-agent lists only show positions this league can start', async ()
   eq(w.best_available.length, 0); match(w.note, /no DEF slot/);
   const all = await rr('search_players', { sort: 'value', limit: 40 });
   ok(all.players.some((p: any) => p.pos === 'DEF'), 'league-wide rankings still list everyone');
+});
+Deno.test('bid model gets normalised positions: raw CB/S/DE rivals bid the same as DB/DL ones', async () => {
+  // The model counts a rival's healthy players at the position through
+  // App.normPos, which the edge function does not define; raw Sleeper
+  // positions made every rival look empty at DB and inflated the bid.
+  const before = await rr('get_waiver_bid', { player: 'Jacob Parrish' });
+  const raw: Record<string, string> = { anderson: 'DE', hutch: 'DE', crosby: 'DE', hunter: 'DE', bosa: 'DE', jha: 'DE', masses: 'CB', lassiter: 'S', gsmith: 'S', sneed: 'CB' };
+  const saved = Object.fromEntries(Object.keys(raw).map(k => [k, rosterPlayers[k].pos]));
+  Object.entries(raw).forEach(([k, v]) => { rosterPlayers[k].pos = v; });
+  try {
+    eq(faabInputs(rctx, RL, me13 as any).playersData.masses.position, 'DB');
+    const after = await rr('get_waiver_bid', { player: 'Jacob Parrish' });
+    eq([after.suggested_bid, after.range, after.rivals.map((r: any) => r.need)], [before.suggested_bid, before.range, before.rivals.map((r: any) => r.need)]);
+  } finally { Object.entries(saved).forEach(([k, v]) => { rosterPlayers[k].pos = v; }); }
 });
 Deno.test({ name: 'restore fetch', fn: () => { globalThis.fetch = realFetch; } });

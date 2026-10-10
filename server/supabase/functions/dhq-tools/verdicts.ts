@@ -16,7 +16,7 @@ import {
 import { skillText } from './skills.ts';
 import { solveLineup, startSitCall, TAG_REASON } from './decide-lineup.ts';
 import { tradePlan } from './decide-trade.ts';
-import { rosterPlan, waiverPlan, inSeason, bidStats, posComps, compSummary } from './decide-roster.ts';
+import { rosterPlan, waiverPlan, inSeason, bidStats, posComps, compSummary, faabInputs } from './decide-roster.ts';
 import { normPos } from './decide-common.ts';
 
 const engines = () => (globalThis as any).App || {};
@@ -348,14 +348,11 @@ export function waiverBid(ctx: Ctx, L: LeagueRow, args: any) {
   const F = engines().Faab;
   if (!F) throw new Error('bid model not loaded');
   if (!L.snapshot.txns) throw new ToolError('This league\'s waiver history is not stored yet; the bid model will work after the next engine build (within two hours).');
-  const playersData: Record<string, any> = {};
-  for (const [id, p] of Object.entries(ctx.players)) { const f = fresh(ctx, id); playersData[id] = { player_id: id, position: p.pos, fantasy_positions: p.fp || [p.pos], injury_status: f.inj, team: f.t, status: f.st }; }
-  const league = { settings: (L.snapshot.league && L.snapshot.league.settings) || {}, rosters: L.snapshot.rosters, roster_positions: (L.snapshot.league && L.snapshot.league.roster_positions) || [], users: L.snapshot.users };
   const pos = posOf(ctx, L, pid);
   // In-season bids only (decide-roster.ts inSeason): Sleeper files every
   // offseason claim under week 1, which drags the league's bid levels down.
   const ins = inSeason(ctx, L, L.snapshot.txns as any[]);
-  const est = F.estimate({ league, myRosterId: me.roster_id, txns: ins.txns, playersData, targetPid: pid, targetPos: pos, dhq: dhq(L, pid), playerValue: (id: string) => dhq(L, id) });
+  const est = F.estimate({ ...faabInputs(ctx, L, me), txns: ins.txns, targetPid: pid, targetPos: pos, dhq: dhq(L, pid), playerValue: (id: string) => dhq(L, id) });
   if (!est) throw new ToolError('No bid estimate: this is not a FAAB league, or the budget is spent.');
   const an = est.analysis || {};
   const pays = (L.intel.faabByPos || {})[pos];

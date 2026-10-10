@@ -33,7 +33,7 @@
 // left out.
 // deno-lint-ignore-file no-explicit-any
 import { type Ctx, type LeagueRow, type Roster, ToolError, myRoster, assessOf, dhq, fresh, round1 } from './tools.ts';
-import { metaOf, posOf, pname, valueOf, label, holderOf, injuryText, weekPts, gameStarted, weekNow, leaguePositions, posSet, POS_ALL } from './decide-common.ts';
+import { normPos, metaOf, posOf, pname, valueOf, label, holderOf, injuryText, weekPts, gameStarted, weekNow, leaguePositions, posSet, POS_ALL } from './decide-common.ts';
 import { skillText } from './skills.ts';
 
 const engines = () => (globalThis as any).App || {};
@@ -344,10 +344,14 @@ export function compSummary(comps: Array<{ bid: number }>) {
   const b = (comps || []).map(c => c.bid).sort((x, y) => x - y);
   return b.length ? { wins: b.length, median: Math.round(quant(b, 0.5)), p75: Math.round(quant(b, 0.75)), max: b[b.length - 1] } : undefined;
 }
-// The FAAB bid model's inputs, built once per call.
+// The FAAB bid model's inputs, built once per call. Positions go in already
+// normalised (CB/S → DB, DE/DT → DL): the model counts each rival's healthy
+// players at the position with App.normPos, which the app and the Lab define
+// and the edge function does not, so raw Sleeper positions made every rival
+// look empty at DB/DL/LB and over-priced IDP bids.
 export function faabInputs(ctx: Ctx, L: LeagueRow, me: Roster) {
   const playersData: Record<string, any> = {};
-  for (const [id, p] of Object.entries(ctx.players)) { const f = fresh(ctx, id); playersData[id] = { player_id: id, position: p.pos, fantasy_positions: p.fp || [p.pos], injury_status: f.inj, team: f.t, status: f.st }; }
+  for (const [id, p] of Object.entries(ctx.players)) { const f = fresh(ctx, id); playersData[id] = { player_id: id, position: normPos(p.pos), fantasy_positions: p.fp || [normPos(p.pos)], injury_status: f.inj, team: f.t, status: f.st }; }
   const league = { settings: settingsOf(L), rosters: L.snapshot.rosters, roster_positions: (L.snapshot.league && L.snapshot.league.roster_positions) || [], users: L.snapshot.users };
   return { league, myRosterId: me.roster_id, playersData };
 }
