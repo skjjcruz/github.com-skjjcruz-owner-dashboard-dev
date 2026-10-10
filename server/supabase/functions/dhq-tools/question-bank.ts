@@ -115,6 +115,8 @@ const BANK: Q[] = [
     ...miss(r.do_not_start.every((d: Any) => typeof d.reason === 'string' && d.reason.length > 0), 'every do-not-start says why'),
     ...miss(new Set(r.optimal_lineup.filter((x: Any) => x.player !== '(empty)').map((x: Any) => x.player)).size === r.optimal_lineup.filter((x: Any) => x.player !== '(empty)').length, 'nobody counted twice in the best lineup'),
     ...miss(!r.changes.some((c: Any) => r.optimal_lineup.some((x: Any) => x.locked && (x.player === c.start))), 'no change moves a locked player'),
+    ...miss(r.projection && (L.snapshot as Any).dhq_proj ? /DHQ weekly projection/.test(r.projection.source) : /Sleeper weekly projection/.test((r.projection || {}).source || ''), 'ranks on DHQ\'s weekly projection when the build stored it (Sleeper otherwise), and says which'),
+    ...miss(!(L.snapshot as Any).dhq_proj || r.optimal_lineup.filter((x: Any) => x.player !== '(empty)' && !x.locked).every((x: Any) => x.source === 'dhq' || x.source === 'sleeper'), 'every open starter says where his number comes from'),
   ] },
   { q: 'Which leagues am I in?', tool: 'list_leagues', args: {}, must: r => [
     ...miss(Array.isArray(r.leagues) && r.leagues.length >= 1, 'lists at least one league'),

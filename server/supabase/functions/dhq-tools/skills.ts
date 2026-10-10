@@ -18,11 +18,11 @@ export const SKILLS: Skill[] = [
     text: [
       'DHQ START / SIT METHOD (the Lineup screen\'s rule, with the exact solver and the coin-flip rules).',
       '1. Call get_start_sit FIRST for any lineup question. Pass the players the member named. Lead with `recommendation`; explain with `changes`, `close_calls`, `do_not_start` (current starters who must come out, plus anyone the member named) and `questionable`. Do not rebuild the lineup yourself, and don\'t tell the member to bench players who are already on the bench.',
-      '2. The number is Sleeper\'s weekly projection scored in this league\'s settings (TE premium included). A player Sleeper is not projecting has no number and cannot be started; every 0 says why (`zero_reason`: bye, out, doubtful, IR, no NFL team, no_sleeper_line, no_role).',
+      '2. The number is DHQ\'s weekly projection (its average week, the same number the app\'s Lineup screen ranks on) in this league\'s scoring; Sleeper\'s line stands in for anyone DHQ has no number for (`source` says which). A player Sleeper is not projecting this week reads 0 and cannot be started; every 0 says why (`zero_reason`: bye, out, doubtful, IR, no NFL team, no_sleeper_line, no_role).',
       '3. Out, IR, PUP, suspended and bye players cannot start. Doubtful counts as out. Questionable plays at his projection; a Questionable starter in a late game needs a pivot on the bench who plays as late (`questionable` names him).',
       '4. A player whose game has kicked off is locked where he is and counts his actual points. Never suggest moving a locked player.',
       '5. The solver fills the open slots for the most projected points: narrowest slots first, then an exact assignment check, so a player listed at two positions (DL and LB) is counted at both. No positional premium.',
-      '6. Within 1.5 points or 10% is a coin flip: say so, then decide on health and news (the tiebreak keeps the higher projection when no win chance is available).',
+      '6. Within 1.5 points or 10% is a coin flip: say so, then decide on health and news (the tiebreak: favored at 55%+ takes the higher floor, underdog at 45% or less the higher ceiling, an even game the higher projection).',
       '7. Then read latest_news and team_news for each player in the call. A new play-caller, a QB change, a teammate injury that frees targets, or a limited practice can move a coin flip; it does not overturn a gap of several points unless the player may not play.',
       '8. Do not use dhq_value or dhq_rate_ppg for this decision. Those are dynasty numbers.',
       ANSWER,

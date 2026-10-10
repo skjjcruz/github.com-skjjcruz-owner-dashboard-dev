@@ -35,7 +35,18 @@ const posOf = (ctx: Ctx, L: LeagueRow, pid: string) => normPos(((L.intel.playerM
 // call (decide-lineup.ts startSitCall, the Lab's rules): changes with their
 // gain, coin flips within 1.5 pts or 10% with the tiebreak, who must not
 // start and why, Questionable starters in late games with a pivot.
-type Line = ProjLine & { pts: number | null; available: boolean; locked: boolean; why_unavailable?: string; zero_reason?: string };
+type Line = ProjLine & { pts: number | null; available: boolean; locked: boolean; why_unavailable?: string; zero_reason?: string; source?: 'dhq' | 'sleeper'; dhq_proj?: number; floor?: number | null; ceiling?: number | null };
+// DHQ's weekly projection for this week (the engine build runs the app's own
+// projection engine and stores snapshot.dhq_proj): { mean, median, floor,
+// ceiling, no_line } per rostered player. The Lab ranks every lineup call on
+// `mean` (DHQ's average week); a player with no Sleeper line reads 0 (the
+// truth law). Null when the build didn't store this week's projections.
+type DhqLine = { mean: number; median: number; floor: number; ceiling: number; no_line?: boolean };
+export function dhqProjOn(L: LeagueRow): boolean {
+  const d = (L.snapshot as any).dhq_proj;
+  return !!(d && d.players && Object.keys(d.players).length && Number(d.week) === Number(L.snapshot.proj_week));
+}
+function dhqLine(L: LeagueRow, pid: string): DhqLine | null { return dhqProjOn(L) ? ((L.snapshot as any).dhq_proj.players[pid] || null) : null; }
 function lineFor(ctx: Ctx, L: LeagueRow, pid: string): Line {
   const p = projLine(ctx, L, pid);
   const f = fresh(ctx, pid);
@@ -48,8 +59,48 @@ function lineFor(ctx: Ctx, L: LeagueRow, pid: string): Line {
   else if (inj === 'DOUBTFUL' || inj === 'D') { available = false; why = 'Doubtful: DHQ treats doubtful as out (he misses far more often than he plays)'; zero = 'doubtful'; }
   else if (!locked && p.proj_this_week == null) { available = false; why = 'Sleeper is not projecting him this week'; zero = 'no_sleeper_line'; }
   else if (!locked && Number(p.proj_this_week) <= 0) zero = 'no_role';
+  // DHQ's number when the build stored one for him; Sleeper's line otherwise.
+  const d = dhqLine(L, pid);
+  if (d && !locked) {
+    const dq = { source: 'dhq' as const, dhq_proj: d.mean, floor: d.floor, ceiling: d.ceiling };
+    if (available && !(d.mean > 0)) {
+      available = false;
+      why = d.no_line ? 'Sleeper is not projecting him this week' : 'DHQ projects him for 0 this week';
+      zero = d.no_line ? 'no_sleeper_line' : 'no_role';
+    } else if (available && zero === 'no_sleeper_line') zero = undefined;
+    return { ...p, pts: available ? d.mean : null, available, locked, why_unavailable: why, zero_reason: zero, ...dq };
+  }
   const pts = locked ? Number(p.scored_this_week) : (available ? Number(p.proj_this_week) : null);
-  return { ...p, pts, available, locked, why_unavailable: why, zero_reason: locked ? undefined : zero };
+  return { ...p, pts, available, locked, why_unavailable: why, zero_reason: locked ? undefined : zero, source: 'sleeper', floor: null, ceiling: null };
+}
+// The Lab's win chance (App.Matchup dist/forecast via DhqProj.matchup): each
+// lineup's mean is the sum of DHQ average weeks (actual points once locked),
+// its spread half of each player's floor-to-ceiling band; P(win) from the
+// normal curve. My best lineup against the opponent's current one.
+function normCdf(z: number) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989422804014327 * Math.exp(-z * z / 2);
+  const p = d * t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return z > 0 ? 1 - p : p;
+}
+function lineupDist(lines: Line[]) {
+  let mean = 0, varSum = 0, n = 0;
+  lines.forEach(x => {
+    if (!x) return;
+    let med: number, f: number, c: number;
+    if (x.locked) { med = f = c = Number(x.pts) || 0; }
+    else if (x.source === 'dhq') { if (!x.available) return; med = Number(x.pts) || 0; f = x.floor != null ? Number(x.floor) : med * 0.7; c = x.ceiling != null ? Number(x.ceiling) : med * 1.35; }
+    else return;   // no DHQ number: left out, as the Lab does
+    const sd = Math.max(0.5, (c - f) / 2);
+    mean += med; varSum += sd * sd; n++;
+  });
+  return { mean: Math.round(mean * 10) / 10, sd: Math.sqrt(varSum), n };
+}
+function winChance(mine: Line[], theirs: Line[]): number | null {
+  const a = lineupDist(mine), b = lineupDist(theirs);
+  if (!a.n || !b.n) return null;
+  const z = (a.mean - b.mean) / (Math.sqrt(a.sd * a.sd + b.sd * b.sd) || 1);
+  return Math.max(1, Math.min(99, Math.round(normCdf(z) * 100)));
 }
 export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
   const me = myRoster(L, ctx.memberId);
@@ -65,7 +116,10 @@ export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
   asked.map((x: unknown) => String(x || '').trim()).filter(Boolean).slice(0, 6).forEach((q: string) => { const pid = resolveOne(ctx, L, q); if (pid) { if (!named.includes(pid)) named.push(pid); } else unknown.push(q); });
   const reserve = (r.reserve || []).map(String), taxi = (r.taxi || []).map(String);
   const pool = (r.players || []).map(String).filter(pid => !reserve.includes(pid) && !taxi.includes(pid));
-  const liveAt = await goLive(ctx, L, pool.concat(named));
+  const rows0 = L.snapshot.matchups || [];
+  const myRow0 = rows0.find((m: any) => String(m.roster_id) === String(r.roster_id));
+  const oppRow0 = myRow0 && myRow0.matchup_id != null ? rows0.find((m: any) => m.matchup_id === myRow0.matchup_id && String(m.roster_id) !== String(r.roster_id)) : null;
+  const liveAt = await goLive(ctx, L, pool.concat(named, ((oppRow0 && oppRow0.starters) || []).map(String)));
   const liveRow = ctx.live && ctx.live.matchups[L.league_id] && ctx.live.matchups[L.league_id].find(m => String(m.roster_id) === String(r.roster_id));
   const slotNames: string[] = ((L.snapshot.league && L.snapshot.league.roster_positions) || []).filter((s: string) => !BENCH.has(String(s).toUpperCase()));
   const current: string[] = ((liveRow && liveRow.starters) || r.starters || []).slice(0, slotNames.length).map((x: string) => (x && x !== '0' ? String(x) : ''));
@@ -96,7 +150,7 @@ export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
   for (const pid of new Set(Object.keys(lines).concat(named))) {
     const x = lines[pid] || lineFor(ctx, L, pid);
     lines[pid] = x;
-    facts[pid] = { name: x.name, positions: positionsOf(pid), proj: x.locked ? val(pid) : x.available ? val(pid) : 0, floor: null, ceiling: null, locked: x.locked, kick: kickOf(pid), injury_status: fresh(ctx, pid).inj || null, zero_reason: x.zero_reason || null, why: null, roster_slot: slotOfRoster(pid) };
+    facts[pid] = { name: x.name, positions: positionsOf(pid), proj: x.locked ? val(pid) : x.available ? val(pid) : 0, floor: x.locked ? null : x.floor ?? null, ceiling: x.locked ? null : x.ceiling ?? null, locked: x.locked, kick: kickOf(pid), injury_status: fresh(ctx, pid).inj || null, zero_reason: x.zero_reason || null, why: null, roster_slot: slotOfRoster(pid) };
   }
   const elig = (s: string) => { const n = SS.normSlot(s); return SS.FLEX_ALLOWED[n] || [n]; };
   const gameKicks: number[] = [];
@@ -104,13 +158,24 @@ export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
     const seen = new Set<string>();
     Object.entries(ctx.live.scores).forEach(([t, g]) => { if (!g || g.started || !(Number(g.kick) > 0)) return; const k = [t, g.opp].sort().join('@'); if (seen.has(k)) return; seen.add(k); gameKicks.push(Number(g.kick)); });
   }
+  // Win chance (the close-call tiebreak): my best lineup vs the opponent's current one.
+  const useDhq = dhqProjOn(L);
+  let winPct: number | null = null;
+  if (useDhq) {
+    const liveRows = (ctx.live && ctx.live.matchups[L.league_id]) || L.snapshot.matchups || [];
+    const myRow = liveRows.find((m: any) => String(m.roster_id) === String(r.roster_id));
+    const opp = myRow && myRow.matchup_id != null ? liveRows.find((m: any) => m.matchup_id === myRow.matchup_id && String(m.roster_id) !== String(r.roster_id)) : null;
+    const oppStarters = ((opp && opp.starters) || []).filter((x: string) => x && x !== '0').map(String);
+    if (oppStarters.length) winPct = winChance(Object.values(placed).map(pid => lines[pid] || lineFor(ctx, L, pid)), oppStarters.map((pid: string) => lineFor(ctx, L, pid)));
+  }
   const call = startSitCall({
     week: wkNow, slots: slotNames.map((s, i) => ({ idx: i, slotName: s, elig: elig(s) })),
     current: Object.fromEntries(current.map((pid, i) => [i, pid]).filter(([, pid]) => pid)), placed,
     current_total: currentTotal, best_total: optimalTotal,
     locks_loaded: !!(ctx.live && ctx.live.scores), sleeper_loaded: Object.keys(L.snapshot.proj || {}).length > 0,
-    win_pct: null, players: facts, asked: named, not_found: unknown, game_kicks: gameKicks,
-    stat_word: 'projection', source_note: 'Sleeper\'s weekly projection in this league\'s scoring',
+    win_pct: winPct, players: facts, asked: named, not_found: unknown, game_kicks: gameKicks,
+    stat_word: useDhq ? 'DHQ projection' : 'projection',
+    source_note: useDhq ? 'DHQ\'s weekly projection (average week) in this league\'s scoring; Sleeper\'s line for anyone DHQ has no number for' : 'Sleeper\'s weekly projection in this league\'s scoring (DHQ\'s projections were not in this build)',
   });
 
   // Head to head, when the member named players: the call plus each player's line and news.
@@ -129,7 +194,7 @@ export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
     head_to_head = { ...(h || {}), call: text, coin_flip: h ? !!h.close_call : undefined, players: rows.map(x => ({ ...x, in_optimal_lineup: optimalSet.has(x.id), on_my_roster: pool.includes(x.id) || reserve.includes(x.id) || taxi.includes(x.id), latest_news: blurbs[x.id], team_news: teamNews(ctx, x.nfl_team) })) };
   }
   const slotOf = (pid: string) => { const i = current.indexOf(pid); return i >= 0 ? slotNames[i] : 'bench'; };
-  const lineup = (pids: Array<{ pid: string; slot: string }>) => pids.map(x => ({ slot: x.slot, player: x.pid ? name(ctx, x.pid) : '(empty)', pos: x.pid ? posOf(ctx, L, x.pid) : undefined, pts: x.pid ? round1(val(x.pid)) : 0, locked: x.pid && lines[x.pid] ? lines[x.pid].locked : undefined, status: x.pid && lines[x.pid] ? (lines[x.pid].locked ? lines[x.pid].this_week : lines[x.pid].available ? 'projected' : 'NOT STARTABLE: ' + lines[x.pid].why_unavailable) : undefined, injury: x.pid && lines[x.pid] ? lines[x.pid].injury : undefined }));
+  const lineup = (pids: Array<{ pid: string; slot: string }>) => pids.map(x => ({ slot: x.slot, player: x.pid ? name(ctx, x.pid) : '(empty)', pos: x.pid ? posOf(ctx, L, x.pid) : undefined, pts: x.pid ? round1(val(x.pid)) : 0, source: x.pid && lines[x.pid] && !lines[x.pid].locked ? lines[x.pid].source : undefined, locked: x.pid && lines[x.pid] ? lines[x.pid].locked : undefined, status: x.pid && lines[x.pid] ? (lines[x.pid].locked ? lines[x.pid].this_week : lines[x.pid].available ? 'projected' : 'NOT STARTABLE: ' + lines[x.pid].why_unavailable) : undefined, injury: x.pid && lines[x.pid] ? lines[x.pid].injury : undefined }));
   const left = round1(optimalTotal - currentTotal);
   return {
     league_id: L.league_id, week: L.snapshot.proj_week, team: teamName(L, r.roster_id), is_mine: !!(me && me.roster_id === r.roster_id),
@@ -141,8 +206,9 @@ export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
     swaps: call.changes.map((c: any) => ({ slot: c.slot, start: c.start, sit: c.sit, gain: c.gain_pts, close_call: c.close_call, why: c.why })),
     current_lineup: lineup(current.map((pid, i) => ({ pid, slot: slotNames[i] }))),
     optimal_lineup: lineup(slotNames.map((s, i) => ({ pid: placed[i] || '', slot: s }))),
-    bench: pool.filter(pid => !currentSet.has(pid)).map(pid => ({ player: name(ctx, pid), pos: posOf(ctx, L, pid), pts: lines[pid].pts, status: lines[pid].locked ? lines[pid].this_week : lines[pid].available ? 'projected' : 'not startable: ' + lines[pid].why_unavailable, zero_reason: lines[pid].zero_reason, injury: lines[pid].injury, slot_now: slotOf(pid) })).sort((a, b) => Number(b.pts || 0) - Number(a.pts || 0)),
+    bench: pool.filter(pid => !currentSet.has(pid)).map(pid => ({ player: name(ctx, pid), pos: posOf(ctx, L, pid), pts: lines[pid].pts, source: lines[pid].locked ? undefined : lines[pid].source, status: lines[pid].locked ? lines[pid].this_week : lines[pid].available ? 'projected' : 'not startable: ' + lines[pid].why_unavailable, zero_reason: lines[pid].zero_reason, injury: lines[pid].injury, slot_now: slotOf(pid) })).sort((a, b) => Number(b.pts || 0) - Number(a.pts || 0)),
     evidence: call.evidence, rules_applied: call.rules_applied, locks_loaded: call.locks_loaded, warning: call.warning,
+    projection: useDhq ? { source: 'DHQ weekly projection (average week), this league\'s scoring', built_at: (L.snapshot as any).dhq_proj.built_at, win_chance_pct: winPct } : { source: 'Sleeper weekly projection, this league\'s scoring (DHQ projections not in this build)' },
     solver: solved.exact ? 'exact assignment (it beat the greedy fill: a player eligible at two positions)' : 'greedy fill (the exact assignment found nothing better)',
     not_found: unknown.length ? unknown : undefined,
     before_you_answer: NEWS_STEP, method: skillText('start_sit'), live_as_of: liveAt, numbers_as_of: L.built_at,
@@ -378,7 +444,7 @@ const N = (d: string) => ({ type: 'number', description: d });
 const def = (n: string, d: string, props: Record<string, unknown>, required: string[] = []) => ({ name: n, description: d, inputSchema: { type: 'object', properties: { league_id: S('League id'), ...props }, required } });
 export const VERDICT_DEFS = [
   def('trade_plan', 'START HERE before proposing any trade. One verdict for getting a player (or dealing with a team): decision (offer / tough / counter / pass / no_fit; tough = possible but costly or a stretch) and one plain recommendation; the partner\'s likely mode (rebuilding / contending / middle), read from their record, this season\'s trades and their Sleeper trade block, what they want and won\'t take; the going rate for the target (a young starter needs a headliner: a next-draft 1st, or a young player worth 70%+; a rebuilder selling a young superflex QB also wants a 2nd or a solid young player on top); up to 3 offers built ONLY from what the member owns, each with its acceptance chance (and lineup_cost when it takes one of his key players); and what not to offer and why. Pass `give` to check and improve a package the member is considering.', { target: S('The player (or pick) the member wants, e.g. "Jordan Love". Default: the best player on the partner\'s trade block.'), partner: S('The other team or owner (default: whoever has the target)'), partner_roster_id: N('Optional: the partner\'s roster id'), give: A('Optional: a package the member is thinking of sending, to check it') }),
-  def('get_start_sit', 'THE call for any start/sit or lineup question this week, verdict first: `recommendation` (start X over Y and the points), confidence, coin-flip close calls (within 1.5 pts or 10%) with the tiebreak, who must not start and why (out, doubtful, bye, IR, no NFL team, no Sleeper line, already played), and Questionable starters in late games with a pivot who plays as late. Exact lineup solver (dual-position IDP players counted at every position). Pass `players` when the member names who he is choosing between. Uses Sleeper\'s weekly projection in this league\'s scoring, never dynasty value. Players whose game has started are locked.', { players: A('Optional: players to decide between (names or ids)'), roster_id: N('Optional: another roster in the league'), week: N('Optional NFL week; only the current week can be decided') }),
+  def('get_start_sit', 'THE call for any start/sit or lineup question this week, verdict first: `recommendation` (start X over Y and the points), confidence, coin-flip close calls (within 1.5 pts or 10%) with the tiebreak, who must not start and why (out, doubtful, bye, IR, no NFL team, no Sleeper line, already played), and Questionable starters in late games with a pivot who plays as late. Exact lineup solver (dual-position IDP players counted at every position). Pass `players` when the member names who he is choosing between. Ranks on DHQ\'s weekly projection in this league\'s scoring (the app\'s Lineup screen number; Sleeper\'s line where DHQ has none), with floor/ceiling and a win chance for the tiebreak; never dynasty value. Players whose game has started are locked.', { players: A('Optional: players to decide between (names or ids)'), roster_id: N('Optional: another roster in the league'), week: N('Optional NFL week; only the current week can be decided') }),
   def('get_waiver_plan', 'The waiver decision for the member\'s team, verdict first: who to claim, each paired with who to drop (active roster only, never taxi/IR, an injured stash or a handcuff to his own starter), an opening bid and a max from this season\'s in-season bids (offseason claims excluded) with comparable winning bids at the position, handcuffs to his starters on the wire, FAAB pacing by weeks left, and who not to add (a need no free agent would start at is a trade). Only positions this league starts (no DEF without a DEF slot). Use for "who should I pick up", "who do I drop", "how much should I bid".', { position: S('Optional: limit adds to one position (QB, RB, WR, TE, K, DL, LB, DB, FLEX)'), budget_pct: N('Optional: most of the remaining FAAB to put on any one claim, in percent (default: the pace cap)') }),
   def('roster_plan', 'Roster spots, cuts, IR and taxi for the member\'s team, verdict first: active/taxi/IR counts against the league limits, IR moves (this league\'s IR eligibility rules) and taxi moves that free a spot, the ordered cut list from the active roster (one drop rule, the same get_waiver_plan uses), and who to keep despite a low number (IR stashes valued at a healthy-equivalent from their peers, handcuffs, young upside). Use for "who should I cut", "do I have room", "can he go on IR/taxi".', {}),
   def('get_roster_needs', 'DHQ\'s read of a team: tier, window, health, panic, every position\'s status (deficit, thin, ok, surplus) with the quality-starter counts behind it, draft capital, and what to do about it.', { roster_id: N('Optional: defaults to the member\'s team') }),

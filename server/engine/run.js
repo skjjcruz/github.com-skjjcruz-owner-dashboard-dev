@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const { ENGINE_VERSION, loadShared, buildLeague, slimPlayers, sleeper, espnTeamData } = require('./headless');
 const { buildNewsIndex } = require('./news');
+const { createProjector } = require('./dhq-proj');
 
 const DRY = process.argv.includes('--dry');
 const REF = process.env.ENGINE_PROJECT_REF || '';
@@ -105,9 +106,28 @@ function rest(key) {
 
   let ok = 0, failed = 0;
   const rostered = new Set();
+  // DHQ weekly projections (server/engine/dhq-proj.js): one projection
+  // context per run, then every rostered player per league. A failure here
+  // never fails a league build; the server falls back to Sleeper's line.
+  let projector = null, projectorError = null;
+  const projectorFor = async () => {
+    if (projector || projectorError) return projector;
+    const tp = Date.now();
+    try { projector = await createProjector(shared); console.log('dhq projections ready in', ((Date.now() - tp) / 1000).toFixed(1) + 's ·', JSON.stringify(projector.data), '· sleeper week', projector.sleeperWeek); }
+    catch (e) { projectorError = e; console.warn('dhq projections unavailable:', e && e.message || e); }
+    return projector;
+  };
   for (const lid of leagues) {
     try {
       const row = await buildLeague(lid, shared, histCache);
+      try {
+        const pj = await projectorFor();
+        if (pj && row.snapshot && row.snapshot.league) {
+          const r = await pj.league(row.snapshot.league, row.snapshot.rosters || []);
+          row.snapshot.dhq_proj = { week: r.week, built_at: new Date().toISOString(), players: r.proj, inputs: r.data };
+          console.log('  dhq projections:', r.projected, 'players (', r.no_line, 'without a Sleeper line ) in', (r.ms / 1000).toFixed(1) + 's, week', r.week);
+        }
+      } catch (e) { console.warn('  dhq projections failed for', lid + ':', e && e.message || e); }
       const valued = Object.keys(row.intel.playerScores || {}).length;
       ((row.snapshot || {}).rosters || []).forEach(r => (r.players || []).forEach(pid => rostered.add(String(pid))));
       console.log('✓', row.name, '(' + lid + ')', 'in', (row.build_ms / 1000).toFixed(1) + 's ·', valued, 'players valued ·', row.assessments.length, 'teams');

@@ -22,6 +22,17 @@ weeks are the posted pairings with 0 points) and past seasons (`history`: each
 season's roster owners and weekly scores, cached in `engine_cache` once a
 season is complete).
 
+DHQ weekly projections (`dhq-proj.js`): each run also projects every rostered
+player for the current week with the app's own projection engine
+(`js/shared/{weekly-proj,sleeper-proj,nfl-context,matchup-engine,dhq-baseline,
+matchup-feeds-espn,matchup-inputs,dhq-proj}.js`, `js/utils/sos-engine.js`, read
+from this checkout) and the PFF and usage snapshots the Lab publishes, and
+stores `snapshot.dhq_proj = { week, players: { pid: { mean, median, floor,
+ceiling } } }`. The ESPN scoreboard and depth charts those files read through
+the live app's relays are fetched from ESPN directly; no other Supabase project
+is ever called. `get_start_sit` ranks on `mean`, like the app's Lineup screen.
+About 35 s per 16-team league.
+
 Why a scheduled job and not an edge function: a cold league build pulls ~200
 Sleeper calls and ~30 MB of stats and takes 3–5 s of CPU; edge functions get 2 s.
 The build runs here, the serving layer (later) reads the stored result in ms.
