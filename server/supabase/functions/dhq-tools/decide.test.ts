@@ -502,6 +502,27 @@ Deno.test('roster_plan: reads DHQ\'s weekly projection (median) when the build s
     ok(cuts.indexOf('Isaiah Davis') < cuts.indexOf('Zonovan Knight'), cuts.join(', '));
   } finally { delete (RL.snapshot as any).dhq_proj; }
 });
+// Owner ruling 2026-10-10: "Davis is a keeper, Breece Hall is out this week, he's up as an RB2."
+Deno.test('roster_plan: next man up is never a cut (Breece Hall out, Isaiah Davis moves up)', async () => {
+  // As Sleeper lists it live: the injured starter drops to depth 5, Allen is 1, Davis 2.
+  const base = rctx.players;
+  rctx.players = Object.assign({}, base, {
+    breece: RP('Breece Hall', 'RB', 'NYJ', { depth_chart_order: 5, age: 25, injury_status: 'Out' }),
+    allen: RP('Braelon Allen', 'RB', 'NYJ', { depth_chart_order: 1, age: 22 }),
+  });   // new object: the depth index rebuilds
+  SC.breece = 3900;
+  try {
+    const r = await rr('roster_plan');
+    ok(!r.cut_candidates.some((c: any) => c.player === 'Isaiah Davis'), 'Davis must not be a cut');
+    const k = r.keep_despite_low_value.find((x: any) => x.player === 'Isaiah Davis');
+    ok(k, JSON.stringify(r.keep_despite_low_value.map((x: any) => x.player)));
+    match(k.reason, /Next man up: Breece Hall \(Out\) is out, so he moves up to NYJ RB2/);
+    // A lesser injured teammate below him on the chart does not count.
+    SC.breece = 40;
+    const r2 = await rr('roster_plan');
+    ok(r2.cut_candidates.some((c: any) => c.player === 'Isaiah Davis'), 'a 40-value teammate at depth 5 is not "above" him');
+  } finally { rctx.players = base; delete SC.breece; }
+});
 Deno.test('get_waiver_plan: every add paired with an active-roster drop; handcuffs; TE is a trade', async () => {
   const r = await rr('get_waiver_plan');
   eq(r.decision, 'add');

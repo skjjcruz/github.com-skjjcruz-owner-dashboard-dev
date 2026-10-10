@@ -10,8 +10,9 @@
 //   2. Never a starter, a player whose game has started, a handcuff to the
 //      member's own starting RB/QB, a young riser (≤1 year in the league, or
 //      ≤24 with 3+ peak years; not kickers), the last healthy active body at
-//      a dedicated slot, an injured player worth 500+ (a stash), or anyone
-//      whose 0 is an engine gap while he holds an NFL role.
+//      a dedicated slot, an injured player worth 500+ (a stash), anyone
+//      whose 0 is an engine gap while he holds an NFL role, or the next man
+//      up (a QB1/RB2/WR3/TE1-or-better backup whose teammate is out).
 //   3. No NFL team goes first (a dead roster spot), then lowest keep score:
 //      value + 50 × this week's projection + 300 upside (dynasty; kickers get
 //      no upside); projection only in redraft.
@@ -163,6 +164,43 @@ export function handcuffs(ctx: Ctx, L: LeagueRow, r: Roster) {
   return out;
 }
 
+// ── Next man up (owner ruling 2026-10-10: "Davis is a keeper, Breece Hall
+// is out this week, he's up as an RB2"). A backup whose NFL teammate at his
+// position is out moves up the depth chart: he's not a cut. Sleeper moves an
+// injured starter DOWN its depth chart (live: Breece Hall sits at NYJ depth
+// 5 while out), so "above him" also means a teammate who is clearly the
+// bigger player (worth more than max(his value, 500)).
+const NEXT_UP_DEPTH: Record<string, number> = { QB: 1, RB: 2, WR: 3, TE: 1 };
+let teamPosMemo: { src: unknown; L: unknown; map: Record<string, string[]> } | null = null;
+function teamPosIndex(ctx: Ctx, L: LeagueRow) {
+  if (teamPosMemo && teamPosMemo.src === ctx.players && teamPosMemo.L === L) return teamPosMemo.map;
+  const map: Record<string, string[]> = {};
+  for (const pid in ctx.players) {
+    const p = ctx.players[pid];
+    if (!p || !p.t || p.dco == null) continue;
+    const pos = posOf(ctx, L, pid);
+    if (!NEXT_UP_DEPTH[pos]) continue;
+    (map[p.t + '|' + pos] = map[p.t + '|' + pos] || []).push(pid);
+  }
+  Object.values(map).forEach(list => list.sort((a, b) => Number(ctx.players[a].dco) - Number(ctx.players[b].dco)));
+  teamPosMemo = { src: ctx.players, L, map };
+  return map;
+}
+export function nextManUp(ctx: Ctx, L: LeagueRow, pid: string): { out: string[]; role: string } | null {
+  pid = String(pid);
+  const p = ctx.players[pid] || ({} as any), pos = posOf(ctx, L, pid);
+  if (!p.t || !NEXT_UP_DEPTH[pos] || INJ_OUT.has(injOf(ctx, pid))) return null;
+  const list = teamPosIndex(ctx, L)[p.t + '|' + pos] || [];
+  const at = list.indexOf(pid);
+  if (at <= 0) return null;
+  const v = (x: string) => Number(valueRead(ctx, L, x).value) || 0;
+  const outAbove = list.filter((x, i) => x !== pid && INJ_OUT.has(injOf(ctx, x)) && (i < at || v(x) > Math.max(v(pid), STASH_VALUE)));
+  if (!outAbove.length) return null;
+  const healthyRank = list.slice(0, at + 1).filter(x => !INJ_OUT.has(injOf(ctx, x))).length;
+  if (healthyRank > NEXT_UP_DEPTH[pos]) return null;
+  return { out: outAbove.map(x => pname(ctx, x) + ' (' + (fresh(ctx, x).inj || 'out') + ')'), role: pos + healthyRank };
+}
+
 // ── The one drop list ────────────────────────────────────────────────────
 export function keepScore(ctx: Ctx, L: LeagueRow, pid: string, vr: { value: number | null }) {
   const proj = Number(projFor(ctx, L, pid)) || 0;
@@ -210,6 +248,8 @@ export function cutPlan(ctx: Ctx, L: LeagueRow, r: Roster) {
     if (vr.value_source === 'unscored' && (Number(p.dco) === 1 || (proj != null && proj >= 3))) {
       return keepIf('No engine value, but he has an NFL role (' + p.t + (p.dco != null ? ' depth #' + p.dco : '') + (proj != null ? ', projects ' + round1(proj) : '') + '). Unknown value is not zero.');
     }
+    const nmu = nextManUp(ctx, L, pid);
+    if (nmu) return keepIf('Next man up: ' + nmu.out.join(' and ') + ' ' + (nmu.out.length > 1 ? 'are' : 'is') + ' out, so he moves up to ' + p.t + ' ' + nmu.role + '.');
     if (youngRiser(ctx, L, pid)) return keepIf('Young upside (age ' + ((ctx.players[pid] || {}).age || '?') + ', ' + ((ctx.players[pid] || {}).yrs != null ? (ctx.players[pid] || {}).yrs + ' yrs in the NFL' : 'rookie') + ').');
     if (INJ_OUT.has(inj) && (vr.value || 0) >= STASH_VALUE) { const el = irEligibility(ctx, L, pid); return keepIf('Injured (' + p.inj + ') but worth ' + vr.value + ': hold him through it' + (el.eligible === false ? ' (' + el.why + ').' : '.')); }
     const pos = posOf(ctx, L, pid);
@@ -302,7 +342,7 @@ export function rosterPlan(ctx: Ctx, L: LeagueRow, args: any) {
       'Only active-roster players are drops; taxi and IR never are (they don\'t free an active spot).',
       'Free moves (IR, activation) before any cut.',
       'IR eligibility follows this league\'s reserve_allow_* settings; IR status is always eligible.',
-      'Never cut: starters, players whose game has started, handcuffs to your own starters, young risers, injured players worth ' + STASH_VALUE + '+, the last healthy body at a slot, or a 0 that is an engine gap.',
+      'Never cut: starters, players whose game has started, handcuffs to your own starters, the next man up (an NFL teammate at his position is out and he moves up to QB1/RB2/WR3/TE1), young risers, injured players worth ' + STASH_VALUE + '+, the last healthy body at a slot, or a 0 that is an engine gap.',
       'Engine 0 for an Inactive (IR) player is replaced by a healthy-equivalent peer value (value_source ir_fallback); a player the engine never scored is unknown, not 0.',
       isDynasty(L) ? 'Dynasty keep score = value + 50 x this week\'s projection + 300 upside (rookie/2nd year or 3+ peak years; not kickers).' : 'Redraft: keep score = this week\'s projection only.',
       'Taxi deadline read as: no new taxi moves after that week (Sleeper\'s exact rule not verified).',
