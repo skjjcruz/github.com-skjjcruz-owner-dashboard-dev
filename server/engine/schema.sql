@@ -164,3 +164,8 @@ alter table public.player_news enable row level security;
 create index if not exists player_news_player on public.player_news (player_id, published_at desc);
 create index if not exists player_news_team on public.player_news (team, published_at desc);
 delete from public.player_news where published_at < now() - interval '30 days';
+
+-- Connector debugging (2026-10-10): one row per request to dhq-auth / dhq-tools
+-- (path, user agent, whether auth was sent; never a token).
+create table if not exists public.connect_trace (id bigserial primary key, at timestamptz not null default now(), fn text, method text, path text, query text, ua text, origin text, has_auth boolean, status int);
+alter table public.connect_trace enable row level security;

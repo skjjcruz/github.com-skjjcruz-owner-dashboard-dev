@@ -117,7 +117,17 @@ async function formOrJson(req: Request): Promise<Record<string, string>> {
   return out;
 }
 
+// Connector debugging (2026-10-10, Grok): one row per request in
+// connect_trace (path, user agent, whether it carried auth; never the token).
+function trace(req: Request) {
+  try {
+    const u = new URL(req.url);
+    const q = u.search.replace(/(code|code_verifier|refresh_token|access_token|client_secret|password)=[^&]*/gi, '$1=…').slice(0, 500);
+    fetch(SUPABASE_URL + '/rest/v1/connect_trace', { method: 'POST', headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ fn: 'dhq-auth', method: req.method, path: u.pathname.slice(0, 200), query: q, ua: (req.headers.get('user-agent') || '').slice(0, 200), origin: req.headers.get('origin') || null, has_auth: !!req.headers.get('authorization') }) }).catch(() => {});
+  } catch { /* never block a request */ }
+}
 Deno.serve(async (req: Request) => {
+  trace(req);
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const url = new URL(req.url);
   const i = url.pathname.indexOf('/dhq-auth');
