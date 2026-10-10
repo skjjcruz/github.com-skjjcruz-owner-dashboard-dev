@@ -453,7 +453,11 @@ Deno.test('roster_plan: full roster, Carr first, IR and taxi never cut, value ga
   const r = await rr('roster_plan');
   eq(r.roster_count, { active: 22, max: 22, open: 0, taxi: 3, taxi_max: 10, ir: 2, ir_max: 10 }); eq(r.decision, 'full'); match(r.recommendation, /Derek Carr/);
   const cuts = r.cut_candidates.map((c: any) => c.player);
-  eq(cuts[0], 'Derek Carr'); eq(cuts.slice(1, 4), ['Ryan Fitzgerald', 'Zonovan Knight', 'Isaiah Davis']);
+  eq(cuts[0], 'Derek Carr');
+  // Owner ruling: never cut the backup kicker (two kickers for bye weeks).
+  ok(!cuts.includes('Ryan Fitzgerald'), 'backup K is never a cut');
+  match(r.keep_despite_low_value.find((k: any) => k.player === 'Ryan Fitzgerald').reason, /Your backup kicker: you need 2 kickers to cover bye weeks/);
+  eq(cuts.slice(1, 3), ['Zonovan Knight', 'Isaiah Davis']);   // then the low-upside RBs
   for (const never of ['Myles Garrett', 'James Conner', 'Aaron Donald', 'Will Levis', 'Jacardia Wright', "D'Angelo Ponds", 'Justice Hill', 'Genesis Smith', 'Trey Hendrickson', 'Dak Prescott', 'Cairo Santos']) ok(!cuts.includes(never), never + ' must not be a cut');
   const keep = Object.fromEntries(r.keep_despite_low_value.map((k: any) => [k.player, k]));
   eq(keep['Myles Garrett'].value_source, 'ir_fallback'); eq(keep['Myles Garrett'].value, 1426); match(keep['Myles Garrett'].reason, /IR stash/);
@@ -480,17 +484,21 @@ Deno.test('roster_plan: IR-eligible bench player goes to IR first; an ineligible
     eq(r.decision, 'activate_from_ir'); match(r.recommendation, /James Conner/);
   } finally { rosterPlayers.conner.inj = 'IR'; Object.assign(me13, JSON.parse(saved)); delete rosterPlayers.etienne; delete SC.etienne; }
 });
-Deno.test('roster_plan: a bye week is not "projects 0" (season ppg instead); a backup kicker says so', async () => {
+Deno.test('roster_plan: a bye week is not "projects 0" (season ppg instead); only a third kicker is a cut', async () => {
+  // A third kicker (Santos starts, Lutz backs up): only now can Fitzgerald be a cut.
+  const base = rctx.players, savedPlayers = me13.players;
+  rctx.players = Object.assign({}, base, { lutz: RP('Wil Lutz', 'K', 'DEN', { age: 31, years_exp: 10 }) });
+  SC.lutz = 400; me13.players = me13.players.concat('lutz');
   const teams = ['DAL', 'LAR', 'IND', 'BAL', 'JAX', 'CHI', 'LV', 'HOU', 'NYJ', 'ARI', 'LAC', 'TB', 'BUF', 'CLE', 'TEN', 'MIA', 'DET', 'SF', 'MIN', 'NO', 'SEA', 'WAS', 'NYG', 'GB', 'PHI', 'DEN', 'KC', 'ATL', 'PIT', 'CIN'];   // CAR not playing: a bye
   rctx.nflWeek = { week: 5, games: Object.fromEntries(teams.map(t => [t, { opp: 'X', date: null }])) };
   try {
     const r = await rr('roster_plan');
     const fitz = r.cut_candidates.find((c: any) => c.player === 'Ryan Fitzgerald');
-    match(fitz.why, /on bye this week \(averages 10\.6 a game\)/); match(fitz.why, /a backup kicker: you start 1/);
+    match(fitz.why, /on bye this week \(averages 10\.6 a game\)/); match(fitz.why, /a third kicker: you only need 2/);
     ok(!/projects 0/.test(fitz.why)); eq(fitz.keep_score, 90 + Math.round(10.6 * 50));
     const cuts = r.cut_candidates.map((c: any) => c.player);
     ok(cuts.indexOf('Ryan Fitzgerald') > cuts.indexOf('Isaiah Davis'), cuts.join(', '));
-  } finally { delete (rctx as any).nflWeek; }
+  } finally { delete (rctx as any).nflWeek; rctx.players = base; me13.players = savedPlayers; delete SC.lutz; }
 });
 Deno.test('roster_plan: reads DHQ\'s weekly projection (median) when the build stored it', async () => {
   (RL.snapshot as any).dhq_proj = { week: 5, players: { davis: { mean: 0.5, median: 0.4, floor: 0.3, ceiling: 0.7 }, knight: { mean: 0, median: 0, floor: 0, ceiling: 0, no_line: true } } };

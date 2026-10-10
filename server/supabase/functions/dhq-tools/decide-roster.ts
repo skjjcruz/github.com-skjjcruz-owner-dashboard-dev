@@ -12,7 +12,8 @@
 //      ≤24 with 3+ peak years; not kickers), the last healthy active body at
 //      a dedicated slot, an injured player worth 500+ (a stash), anyone
 //      whose 0 is an engine gap while he holds an NFL role, or the next man
-//      up (a QB1/RB2/WR3/TE1-or-better backup whose teammate is out).
+//      up (a QB1/RB2/WR3/TE1-or-better backup whose teammate is out), or a
+//      backup kicker (kickers up to max(2, K slots + 1) cover bye weeks).
 //   3. No NFL team goes first (a dead roster spot), then lowest keep score:
 //      value + 50 × this week's projection + 300 upside (dynasty; kickers get
 //      no upside); projection only in redraft.
@@ -248,6 +249,10 @@ export function cutPlan(ctx: Ctx, L: LeagueRow, r: Roster) {
     if (vr.value_source === 'unscored' && (Number(p.dco) === 1 || (proj != null && proj >= 3))) {
       return keepIf('No engine value, but he has an NFL role (' + p.t + (p.dco != null ? ' depth #' + p.dco : '') + (proj != null ? ', projects ' + round1(proj) : '') + '). Unknown value is not zero.');
     }
+    // Owner ruling 2026-10-10: "we never cut backup kickers, you need two on
+    // the roster, you have bye weeks." Keep one more than the K slots (at least 2).
+    const kNeed = Math.max(2, (slots.K || 1) + 1);
+    if (posOf(ctx, L, pid) === 'K' && (healthyAt.K || 0) <= kNeed) return keepIf('Your backup kicker: you need ' + kNeed + ' kickers to cover bye weeks.');
     const nmu = nextManUp(ctx, L, pid);
     if (nmu) return keepIf('Next man up: ' + nmu.out.join(' and ') + ' ' + (nmu.out.length > 1 ? 'are' : 'is') + ' out, so he moves up to ' + p.t + ' ' + nmu.role + '.');
     if (youngRiser(ctx, L, pid)) return keepIf('Young upside (age ' + ((ctx.players[pid] || {}).age || '?') + ', ' + ((ctx.players[pid] || {}).yrs != null ? (ctx.players[pid] || {}).yrs + ' yrs in the NFL' : 'rookie') + ').');
@@ -258,7 +263,7 @@ export function cutPlan(ctx: Ctx, L: LeagueRow, r: Roster) {
     if (vr.value_source === 'unscored') why.push('no engine value and no NFL role');
     else why.push('value ' + (vr.value || 0));
     why.push(onBye(ctx, pid) ? 'on bye this week' + (proj != null ? ' (averages ' + round1(proj) + ' a game)' : '') : proj != null ? (gameStarted(ctx, pid) ? 'scored ' : 'projects ') + round1(proj) + ' this week' : 'no projection this week');
-    if (pos === 'K' && (healthyAt.K || 0) > (slots.K || 1)) why.push('a backup kicker: you start ' + (slots.K || 1));
+    if (pos === 'K') why.push('a third kicker: you only need ' + kNeed);
     if (Number(metaOf(L, pid).trend) <= -30) why.push('trend ' + metaOf(L, pid).trend + '%');
     if (inj) why.push(String(p.inj));
     candidates.push(Object.assign({ pid, rank_key: 0, keep_score: keepScore(ctx, L, pid, vr) }, row(ctx, L, pid, { why: why.join(', ') + '.', keep_score: keepScore(ctx, L, pid, vr) })));
@@ -342,7 +347,7 @@ export function rosterPlan(ctx: Ctx, L: LeagueRow, args: any) {
       'Only active-roster players are drops; taxi and IR never are (they don\'t free an active spot).',
       'Free moves (IR, activation) before any cut.',
       'IR eligibility follows this league\'s reserve_allow_* settings; IR status is always eligible.',
-      'Never cut: starters, players whose game has started, handcuffs to your own starters, the next man up (an NFL teammate at his position is out and he moves up to QB1/RB2/WR3/TE1), young risers, injured players worth ' + STASH_VALUE + '+, the last healthy body at a slot, or a 0 that is an engine gap.',
+      'Never cut: starters, players whose game has started, handcuffs to your own starters, the next man up (an NFL teammate at his position is out and he moves up to QB1/RB2/WR3/TE1), a backup kicker (two kickers cover bye weeks), young risers, injured players worth ' + STASH_VALUE + '+, the last healthy body at a slot, or a 0 that is an engine gap.',
       'Engine 0 for an Inactive (IR) player is replaced by a healthy-equivalent peer value (value_source ir_fallback); a player the engine never scored is unknown, not 0.',
       isDynasty(L) ? 'Dynasty keep score = value + 50 x this week\'s projection + 300 upside (rookie/2nd year or 3+ peak years; not kickers).' : 'Redraft: keep score = this week\'s projection only.',
       'Taxi deadline read as: no new taxi moves after that week (Sleeper\'s exact rule not verified).',
