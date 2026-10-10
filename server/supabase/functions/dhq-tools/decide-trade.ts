@@ -241,6 +241,7 @@ export async function ownerIntent(ctx: Ctx, L: LeagueRow, r: Roster): Promise<In
 }
 // How much one piece is worth TO a team in that mode, as a share of its value.
 export function appealFor(L: LeagueRow, mode: string, x: any): { mult: number; why: string } {
+  if (x.kind === 'faab') return { mult: 1, why: 'FAAB' };
   if (mode === 'REBUILDING') {
     if (x.kind === 'pick') {
       const ahead = (Number(x.year) || 0) - nextDraftYear(L);
@@ -285,7 +286,18 @@ function playerAsset(ctx: Ctx, L: LeagueRow, pid: string): Piece {
   const m = metaOf(L, pid), r = holderOf(L, pid);
   return { kind: 'player', pid, label: pname(ctx, pid), value: valueOf(L, pid), pos: posOf(ctx, L, pid), age: ageOf(ctx, pid), peak_years_left: m.peakYrsLeft != null ? m.peakYrsLeft : undefined, injury: injuryText(ctx, pid) || undefined, owner_rid: r ? String(r.roster_id) : null };
 }
+// FAAB as a trade piece ("$250 FAAB"), at the Trade Room's rate (1 FAAB
+// dollar = 2 DHQ), so the builder and this evaluator price it the same.
+const FAAB_RATE = 2;
+export function faabPiece(text: unknown): Piece | null {
+  const m = String(text || '').trim().match(/^\$\s*(\d+)(?:\s*faab)?$|^(\d+)\s*(?:\$\s*)?faab$/i);
+  if (!m) return null;
+  const d = Number(m[1] || m[2]);
+  return d > 0 ? { kind: 'faab', label: '$' + d + ' FAAB', dollars: d, value: Math.round(d * FAAB_RATE) } : null;
+}
 function resolvePiece(ctx: Ctx, L: LeagueRow, text: string, holderHint: Roster | null): Piece | null {
+  const fb = faabPiece(text);
+  if (fb) return fb;
   const pk = parsePick(ctx, L, text);
   if (pk) {
     const own = picksByOwner(L);
@@ -411,7 +423,7 @@ function theirVetsToShed(ctx: Ctx, L: LeagueRow, partner: Roster, intent: Intent
 const MODE_WORD: Record<string, string> = { REBUILDING: 'rebuilding', CONTENDING: 'contending', NEUTRAL: 'middle' };
 // One verdict, in a fixed order of precedence: ownership > headliner >
 // what the partner wants > raw value. Raw value never overrules the headliner.
-function reconcile(o: any) {
+export function reconcile(o: any) {
   const r = o.tt / Math.max(o.tg, 1);
   let decision: string, call: string;
   let market = o.headliner && o.headliner.ok ? 'At market: the headliner is the going rate, not an overpay'
@@ -423,7 +435,7 @@ function reconcile(o: any) {
   else if (!o.headliner && r < 0.85) { decision = 'counter'; call = 'You give up more than you get (' + o.tg + ' for ' + o.tt + '). Trim what you send.'; }
   else if (o.pv && o.pv.ratio < 0.95) { decision = 'offer'; call = 'Close: send it, and be ready to add a small piece of the kind ' + who + ' values.'; }
   else { decision = 'offer'; call = o.headliner ? 'Send it: it meets the going rate for a young starter.' : 'Send it: it works for both sides.'; }
-  if (decision === 'offer' && o.accept != null && o.accept < 20) { decision = 'counter'; call = 'The value works on paper, but the chance is low (' + o.accept + '%). ' + call; }
+  if (decision === 'offer' && o.accept != null && o.accept < 20) { decision = 'counter'; call = 'The value works on paper, but ' + who + ' is unlikely to take it (about ' + o.accept + '%). Add a piece of the kind they value, or look elsewhere.'; }
   return { decision, call, market_label: market };
 }
 const confidenceOf = (o: any) => (!o.partnerKnown || o.unknownHolders) ? 'low' : (o.mode === 'NEUTRAL' || !o.engine || !o.picksLoaded) ? 'medium' : 'high';

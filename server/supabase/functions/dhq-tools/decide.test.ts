@@ -14,7 +14,7 @@ import './vendor/startsit-engine.js';
 import './vendor/faab-engine.js';
 import { runTool, type Ctx, type LeagueRow } from './tools.ts';
 import { solveLineup, startSitCall } from './decide-lineup.ts';
-import { ownerIntent, pickValue, nextDraftYear, projectedSlot, isVet, costToOwner, headlinerMet, headlinerRuleFor, postureFor, appealFor } from './decide-trade.ts';
+import { ownerIntent, pickValue, nextDraftYear, projectedSlot, isVet, costToOwner, headlinerMet, headlinerRuleFor, postureFor, appealFor, faabPiece, reconcile } from './decide-trade.ts';
 import { valueRead, cutPlan, faabInputs } from './decide-roster.ts';
 import { SCALE } from './decide-common.ts';
 
@@ -328,6 +328,18 @@ Deno.test('trade: trade_plan answer shape and comparables from this season\'s le
   match(r.evidence[0], /most valuable player on .*trade block/); ok(r.comparables.length >= 1);
   ok(r.rules_applied.length >= 5 && typeof r.method === 'string'); ok(r.offers.length <= 3);
   await throwsLike(tr('trade_plan', { target: 'Jordan Love', partner: 'DJAlexB' }), /is on bwit13/);
+});
+Deno.test('trade: FAAB is a trade piece at the Trade Room rate (1 FAAB dollar = 2 value)', async () => {
+  const e = await tr('evaluate_trade', { give: ['2029 1st', '$100 FAAB'], get: ['Jordan Love'] });
+  ok(JSON.stringify(e).includes('$100 FAAB')); eq(e.total_give, pickValue(TL, 2029, 1, null, 13) + 200);
+  eq(e.you_give.find((x: any) => x.pick === '$100 FAAB').value, 200);
+  eq(faabPiece('250 faab'), { kind: 'faab', label: '$250 FAAB', dollars: 250, value: 500 }); eq(faabPiece('2027 1st'), null);
+  eq(appealFor(TL, 'REBUILDING', { kind: 'faab' }).mult, 1);
+});
+Deno.test('trade: an offer the partner is unlikely to take says so plainly', () => {
+  const v = reconcile({ ownIssues: [], headliner: null, pv: { ratio: 1.2, toThem: 3000, theirCost: 2500 }, mode: 'NEUTRAL', tg: 2500, tt: 2600, accept: 12, partnerName: 'bwit13' });
+  eq(v.decision, 'counter'); eq(v.call, 'The value works on paper, but bwit13 is unlikely to take it (about 12%). Add a piece of the kind they value, or look elsewhere.');
+  eq(reconcile({ ownIssues: [], headliner: null, pv: { ratio: 1.2 }, mode: 'NEUTRAL', tg: 2500, tt: 2600, accept: 40, partnerName: 'bwit13' }).decision, 'offer');
 });
 Deno.test('trade rules: vet cutoffs, listed cost, headliner holder, posture, appeal, one scale', () => {
   eq([isVet('QB', 27), isVet('QB', 32), isVet('RB', 27), isVet('WR', 28), isVet('WR', 29), isVet('TE', 29), isVet('TE', 26)], [false, true, true, false, true, true, false]);
