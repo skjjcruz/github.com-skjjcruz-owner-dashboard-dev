@@ -141,3 +141,26 @@ create table if not exists public.connect_usage (
 create index if not exists connect_usage_key_at on public.connect_usage (key_hash, at desc);
 create index if not exists connect_usage_at on public.connect_usage (at desc);
 alter table public.connect_usage enable row level security;
+
+-- ── Player news index (owner ask 2026-10-09) ─────────────────────────────
+-- One row per story per player it touches (server/engine/news.js). Kept 30
+-- days. Read by the public dhq-news function (service role) — RLS on, no
+-- policies, so the public key still reaches nothing here directly.
+create table if not exists public.player_news (
+  id               text primary key,
+  player_id        text not null,
+  team             text,
+  kind             text not null,
+  link             text not null,
+  why              text,
+  headline         text,
+  summary          text,
+  url              text,
+  source           text,
+  published_at     timestamptz not null,
+  updated_at       timestamptz not null default now()
+);
+alter table public.player_news enable row level security;
+create index if not exists player_news_player on public.player_news (player_id, published_at desc);
+create index if not exists player_news_team on public.player_news (team, published_at desc);
+delete from public.player_news where published_at < now() - interval '30 days';

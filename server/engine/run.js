@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ENGINE_VERSION, loadShared, buildLeague, slimPlayers, sleeper, espnTeamData } = require('./headless');
+const { buildNewsIndex } = require('./news');
 
 const DRY = process.argv.includes('--dry');
 const REF = process.env.ENGINE_PROJECT_REF || '';
@@ -103,10 +104,12 @@ function rest(key) {
   } : null;
 
   let ok = 0, failed = 0;
+  const rostered = new Set();
   for (const lid of leagues) {
     try {
       const row = await buildLeague(lid, shared, histCache);
       const valued = Object.keys(row.intel.playerScores || {}).length;
+      ((row.snapshot || {}).rosters || []).forEach(r => (r.players || []).forEach(pid => rostered.add(String(pid))));
       console.log('✓', row.name, '(' + lid + ')', 'in', (row.build_ms / 1000).toFixed(1) + 's ·', valued, 'players valued ·', row.assessments.length, 'teams');
       if (db) await db.upsert('league_intel', [Object.assign(row, { error: null })]);
       else fs.writeFileSync(path.join(OUT, lid + '.json'), JSON.stringify(row));
@@ -127,6 +130,16 @@ function rest(key) {
     console.log('news:', espn.teams, 'teams,', Object.values(espn.news).reduce((t, l) => t + l.length, 0), 'headlines,', Object.keys(espn.ids).length, 'player ids matched by name');
   }
   const news = { fetched_at: espn ? espn.fetched_at : null, teams: espn ? espn.news : {} };
+
+  // The player news index: every story linked to the players it touches.
+  // Last run's player reports ride in engine_cache so only changed ones
+  // are fetched again. A failure here never fails the build.
+  let newsIndex = null;
+  try {
+    const prior = histCache ? await histCache.get('news_reports') : null;
+    newsIndex = await buildNewsIndex(shared.players, espn ? espn.ids : {}, rostered, prior || {});
+    console.log('news index:', JSON.stringify(newsIndex.counts), 'in', (newsIndex.ms / 1000).toFixed(1) + 's');
+  } catch (e) { console.warn('news index:', e && e.message || e); }
   if (db) {
     await db.upsert('engine_cache', [
       { key: 'players', data: players, updated_at: new Date().toISOString() },
@@ -135,11 +148,22 @@ function rest(key) {
       { key: 'nfl_week', data: { week: shared.week, games: shared.weekGames || {} }, updated_at: new Date().toISOString() },
       { key: 'news', data: news, updated_at: new Date().toISOString() },
     ]);
+    if (newsIndex) {
+      try {
+        const now = new Date().toISOString();
+        for (let i = 0; i < newsIndex.rows.length; i += 500) await db.upsert('player_news', newsIndex.rows.slice(i, i + 500).map(r => Object.assign({}, r, { updated_at: now })));
+        await db.upsert('engine_cache', [
+          { key: 'news_reports', data: newsIndex.reports, updated_at: now },
+          { key: 'news_index', data: { fetched_at: newsIndex.fetched_at, counts: newsIndex.counts }, updated_at: now },
+        ]);
+      } catch (e) { console.warn('news store:', e.message); }
+    }
     await db.upsert('engine_runs', [{ started_at: started, finished_at: new Date().toISOString(), engine_version: ENGINE_VERSION, leagues_ok: ok, leagues_failed: failed, notes: null }]).catch(e => console.warn('run log:', e.message));
   } else {
     fs.writeFileSync(path.join(OUT, 'players.json'), JSON.stringify(players));
     fs.writeFileSync(path.join(OUT, 'nfl_week.json'), JSON.stringify({ week: shared.week, games: shared.weekGames || {} }));
     fs.writeFileSync(path.join(OUT, 'news.json'), JSON.stringify(news));
+    if (newsIndex) fs.writeFileSync(path.join(OUT, 'player_news.json'), JSON.stringify(newsIndex.rows));
   }
   console.log('done:', ok, 'built,', failed, 'failed, total', ((Date.now() - t0) / 1000).toFixed(1) + 's; players table', Object.keys(players).length);
   process.exit(failed && !ok ? 1 : 0);
