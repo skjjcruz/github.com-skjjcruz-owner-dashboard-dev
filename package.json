@@ -71,7 +71,7 @@
   "author": "skjjcruz",
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
-    "@babel/standalone": "^7.29.9",
+    "@babel/standalone": "^8.0.6",
     "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
