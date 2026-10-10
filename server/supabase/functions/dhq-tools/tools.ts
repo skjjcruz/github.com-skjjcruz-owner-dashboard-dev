@@ -7,6 +7,7 @@
 // time), passed in as `te`.
 import { fetchLive, type LiveState } from './live.ts';
 import { VERDICT_DEFS, VERDICT_NAMES, runVerdict } from './verdicts.ts';
+import { LEAGUE_DEFS, LEAGUE_NAMES, runLeagueTool, rulesOf, groupScoring, rosterSlots, ownerExtras, teamArg } from './league-tools.ts';
 
 export interface PlayerSlim { n: string; pos: string; fp?: string[]; t: string | null; age: number | null; yrs: number | null; st: string | null; inj: string | null; injp: string | null; dc: string | null; dco: number | null; col: string | null; num: number | null; act: boolean; e?: number | null }
 export interface Roster { roster_id: number; owner_id: string; co_owners: string[] | null; players: string[]; starters: string[]; reserve: string[]; taxi: string[]; settings: Record<string, number>; metadata: { team_name?: string } | null }
@@ -15,7 +16,9 @@ export interface Pick { year: number; round: number; from: number; value: number
 export interface LeagueRow {
   league_id: string; season: string; name: string; built_at: string; engine_version: string;
   intel: Record<string, any>; assessments: any[]; dna: Record<string, any>;
-  snapshot: { league: any; rosters: Roster[]; users: User[]; traded_picks: any[]; matchups: any[]; nfl_state: any; picks?: Record<string, Pick[]>; games?: Record<string, Array<number | null>>; proj?: Record<string, number>; proj_week?: number; txns?: any[] };
+  snapshot: { league: any; rosters: Roster[]; users: User[]; traded_picks: any[]; matchups: any[]; nfl_state: any; picks?: Record<string, Pick[]>; games?: Record<string, Array<number | null>>; proj?: Record<string, number>; proj_week?: number; txns?: any[];
+    weeks?: Record<string, Array<{ roster_id: number; matchup_id: number | null; points: number }>>; last_reg_week?: number;
+    history?: Array<{ season: string; league_id: string; last_reg_week: number; owners: Record<string, string | null>; weeks: Record<string, Array<{ roster_id: number; matchup_id: number | null; points: number }>> }> };
 }
 export interface TradeEngine {
   fairnessGrade(give: number, get: number): { grade: string; label: string };
@@ -59,8 +62,8 @@ export function livePoints(ctx: Ctx, L: LeagueRow, pid: string): number | null {
 export class ToolError extends Error {}
 
 export const round1 = (n: unknown) => Math.round(Number(n || 0) * 10) / 10;
-const norm = (s: unknown) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const ord = (n: number) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+export const norm = (s: unknown) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+export const ord = (n: number) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
 
 // ── league helpers ─────────────────────────────────────────────────
 export function myRoster(L: LeagueRow, memberId: string): Roster | null {
@@ -69,7 +72,7 @@ export function myRoster(L: LeagueRow, memberId: string): Roster | null {
 export function rosterOf(L: LeagueRow, rid: unknown): Roster | null {
   return L.snapshot.rosters.find(r => String(r.roster_id) === String(rid)) || null;
 }
-function userOf(L: LeagueRow, r: Roster | null): User | null {
+export function userOf(L: LeagueRow, r: Roster | null): User | null {
   return r ? (L.snapshot.users.find(u => u.user_id === r.owner_id) || null) : null;
 }
 export function teamName(L: LeagueRow, rid: unknown): string {
@@ -80,7 +83,7 @@ export function ownerName(L: LeagueRow, rid: unknown): string { const u = userOf
 export function dhq(L: LeagueRow, pid: string): number { const v = (L.intel.playerScores || {})[pid]; return v > 0 ? Math.round(v) : 0; }
 export function whoRosters(L: LeagueRow, pid: string): number | null { const r = L.snapshot.rosters.find(x => (x.players || []).includes(pid)); return r ? r.roster_id : null; }
 export function assessOf(L: LeagueRow, rid: unknown) { return (L.assessments || []).find(a => String(a.rosterId) === String(rid)) || null; }
-function assessBrief(a: any) {
+export function assessBrief(a: any) {
   if (!a) return null;
   return {
     tier: a.tier, window: a.window, health_score: a.healthScore, power_rank: a.powerRank,
@@ -271,7 +274,7 @@ export const resolveOne = (ctx: Ctx, L: LeagueRow | null, q: unknown) => findPla
 export function pickLabel(pk: Pick, holder: number, L: LeagueRow) { return pk.year + ' ' + ord(pk.round) + (pk.from !== holder ? ' (from ' + teamName(L, pk.from) + ')' : ''); }
 
 // Which league a tool means: the given id, else the member's only league.
-async function league(ctx: Ctx, args: any): Promise<LeagueRow> {
+export async function league(ctx: Ctx, args: any): Promise<LeagueRow> {
   const id = args && args.league_id != null ? String(args.league_id) : '';
   if (id) {
     const row = await ctx.loadLeague(id);
@@ -285,17 +288,18 @@ async function league(ctx: Ctx, args: any): Promise<LeagueRow> {
 // ── the tools ──────────────────────────────────────────────────────
 export const TOOL_DEFS = [
   def('list_leagues', 'The member\'s connected leagues: id, name, format, their team and record, and when the DHQ numbers were last refreshed. Call this first when league_id is unknown.', {}),
-  def('get_league', 'League basics: scoring format (superflex, PPR, TE premium, IDP), starting slots, FAAB, playoff setup, NFL week, and full standings with each team\'s DHQ tier and power rank.', { league_id: S('League id') }),
+  def('get_league', 'League setup and rules: scoring format (superflex, PPR, TE premium, IDP), roster slots, the full scoring settings grouped (passing, rushing, receiving, bonuses, kicking, IDP...), and the rules (trade deadline, veto, playoffs: teams, start week, bracket and seeding; waivers: type, FAAB budget, minimum bid, processing day; taxi and IR rules; divisions), NFL week, and the standings with each team\'s DHQ tier and power rank. For points against, luck, FAAB left per team and waiver order call get_standings.', { league_id: S('League id') }),
   def('get_team', 'A team\'s roster with each player\'s DHQ dynasty value, league rank, age, points per game, peak years left, injury and lineup slot; their draft picks with values; record, tier, window, needs, strengths and FAAB. Omit roster_id for the member\'s own team.', { league_id: S('League id'), roster_id: N('Roster id from standings; omit for my team') }),
   def('find_players', 'Search NFL players by name. Returns ids, position, team, DHQ value in the league and who rosters them.', { name: S('Full or partial name'), league_id: S('League id (optional, for values)') }, ['name']),
   def('get_player', 'One player in depth: bio, NFL team, depth chart, injury, DHQ value and trend, age curve, role, league rank, who rosters him, and his trade history in this league.', { player: S('Player name or id'), league_id: S('League id') }, ['player']),
   def('evaluate_trade', 'Grade a trade with the DHQ trade engine. Sides take players (names/ids) and picks written like "2027 1st". Returns each piece\'s value, totals, fairness grade, the chance the other owner accepts (their DNA and needs), the psychology behind it, and roster fit.', { league_id: S('League id'), give: A('What the member sends'), get: A('What the member receives'), partner_roster_id: N('Other team\'s roster id (optional; inferred from the players received)') }, ['give', 'get']),
-  def('get_owner_profile', 'An owner\'s trading personality from the league\'s full trade history: DNA type and why, trade count, value wins/losses, positions bought and sold, favorite partners, timing, and recent deals.', { league_id: S('League id'), roster_id: N('Roster id') }, ['roster_id']),
+  def('get_owner_profile', 'An owner\'s trading personality from the league\'s full trade history: DNA type and why, trade count, value wins/losses, positions bought and sold, favorite partners, timing, biggest win and biggest loss, players acquired and sold, recent deals, trades with me, and this season\'s waiver/FAAB activity.', { league_id: S('League id'), team: S('Team name, owner name, roster id, or "me"'), roster_id: N('Roster id (alternative to team)') }),
   def('get_recent_trades', 'Completed trades in the league, newest first, with what each side got and who won on DHQ value.', { league_id: S('League id'), days: N('Look-back window in days (default 30)'), roster_id: N('Only trades involving this roster (optional)') }),
   def('get_waiver_options', 'Best available free agents by DHQ value, Sleeper\'s trending adds, the member\'s FAAB left, and what this league usually pays by position.', { league_id: S('League id'), position: S('QB, RB, WR, TE, K, DL, LB, DB (optional)'), limit: N('How many (default 8, max 15)') }),
   def('get_pick_values', 'What draft picks are worth in this league (DHQ pick values by round and slot), plus who owns which picks.', { league_id: S('League id'), roster_id: N('Only this roster\'s picks (optional)') }),
   def('get_weekly_projections', 'START/SIT: this week\'s Sleeper projection for each player in this league\'s scoring, with injury status and this season\'s game log. Use this (not dynasty value or long-run rates) to decide who to start, and always include every player being compared so you never have to send the member elsewhere for a number. Then search the web for the last week of news on each player and his team (play-caller, coaching or QB changes, teammate injuries, role changes, weather) and lead with the biggest item.', { league_id: S('League id'), players: A('Player names or ids (up to 20)') }, ['players']),
   def('get_my_matchup', 'This week\'s head-to-head matchup for the member: opponent, both set lineups with each starter\'s projection and injury, projected totals, and the bench players projected higher than a starter. For the lineup decision itself call get_start_sit.', { league_id: S('League id') }),
+  ...LEAGUE_DEFS,
   ...VERDICT_DEFS,
 ];
 function def(name: string, description: string, properties: Record<string, unknown>, required: string[] = []) {
@@ -321,6 +325,7 @@ export async function runTool(ctx: Ctx, name: string, args: any): Promise<unknow
     case 'get_weekly_projections': return weeklyProjections(ctx, await league(ctx, args), args);
     case 'get_my_matchup': return myMatchup(ctx, await league(ctx, args));
     default:
+      if (LEAGUE_NAMES.has(name)) return runLeagueTool(ctx, await league(ctx, args), name, args);
       if (VERDICT_NAMES.has(name)) return runVerdict(ctx, await league(ctx, args), name, args);
       throw new ToolError('Unknown tool ' + name);
   }
@@ -338,7 +343,7 @@ function listLeagues(ctx: Ctx) {
 }
 function getLeague(ctx: Ctx, L: LeagueRow) {
   const me = myRoster(L, ctx.memberId);
-  return { league_id: L.league_id, league: L.name, season: L.season, status: L.snapshot.league.status, nfl_week: L.snapshot.nfl_state?.week, format: leagueFormat(L), my_roster_id: me ? me.roster_id : null, my_team: me ? teamName(L, me.roster_id) : null, standings: standings(L, ctx.memberId), numbers_as_of: L.built_at };
+  return { league_id: L.league_id, league: L.name, season: L.season, status: L.snapshot.league.status, nfl_week: L.snapshot.nfl_state?.week, format: leagueFormat(L), roster_slots: rosterSlots(L), rules: rulesOf(L), scoring: groupScoring((L.snapshot.league || {}).scoring_settings || {}), my_roster_id: me ? me.roster_id : null, my_team: me ? teamName(L, me.roster_id) : null, standings: standings(L, ctx.memberId), numbers_as_of: L.built_at };
 }
 async function getTeam(ctx: Ctx, L: LeagueRow, args: any) {
   const me = myRoster(L, ctx.memberId);
@@ -422,13 +427,14 @@ function evaluateTrade(ctx: Ctx, L: LeagueRow, args: any) {
   return out;
 }
 function ownerProfile(ctx: Ctx, L: LeagueRow, args: any) {
-  const rid = args.roster_id; if (!rosterOf(L, rid)) throw new ToolError('No roster ' + rid + ' in ' + L.name + '.');
+  const rid = teamArg(ctx, L, args.team, args.roster_id).roster_id;
   const pr = (L.intel.ownerProfiles || {})[String(rid)]; const dna = (L.dna || {})[String(rid)];
   const out: Record<string, unknown> = { league_id: L.league_id, roster_id: Number(rid), team: teamName(L, rid), owner: ownerName(L, rid) };
   if (dna) out.dna = { type: dna.key, confidence_pct: dna.confidence, why: dna.reasoning };
   if (pr) Object.assign(out, { style: pr.dna, trades_total: pr.trades, trades_won: pr.tradesWon, trades_lost: pr.tradesLost, trades_fair: pr.tradesFair, avg_value_edge: pr.avgValueDiff, favorite_target_pos: pr.targetPos, positions_bought: pr.posAcquired, positions_sold: pr.posSold, picks_bought: pr.picksAcquired, picks_sold: pr.picksSold, top_partners: Object.entries(pr.partners || {}).sort((a: any, b: any) => b[1] - a[1]).slice(0, 4).map(([r, n]) => teamName(L, r) + ' x' + n), week_timing: pr.weekTiming, season_activity: pr.seasonActivity });
   out.recent_trades = (recentTrades(ctx, L, { days: 400, roster_id: rid }) as any).trades.slice(0, 5);
   out.team_now = assessBrief(assessOf(L, rid));
+  Object.assign(out, ownerExtras(ctx, L, rid));
   return out;
 }
 function recentTrades(ctx: Ctx, L: LeagueRow, args: any) {
@@ -448,8 +454,8 @@ function waiverOptions(ctx: Ctx, L: LeagueRow, args: any) {
   return { league_id: L.league_id, faab_left: a ? a.faabRemaining : undefined, faab_min_bid: a ? a.faabMinBid : undefined, best_available: pool.map(pid => playerRow(ctx, L, pid)), trending_adds_on_sleeper: trending, what_this_league_pays_by_position: market, numbers_as_of: L.built_at };
 }
 // intel.dhqPickValues is keyed by OVERALL slot (1 = first pick of the draft).
-function slotValue(L: LeagueRow, slot: number): number { return Math.round((((L.intel.dhqPickValues || {})[String(slot)] || {}).value) || 0); }
-function roundMidValue(L: LeagueRow, round: number): number {
+export function slotValue(L: LeagueRow, slot: number): number { return Math.round((((L.intel.dhqPickValues || {})[String(slot)] || {}).value) || 0); }
+export function roundMidValue(L: LeagueRow, round: number): number {
   const teams = L.snapshot.rosters.length || 12;
   return slotValue(L, (round - 1) * teams + Math.ceil(teams / 2));
 }

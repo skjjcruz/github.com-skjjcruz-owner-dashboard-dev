@@ -14,6 +14,14 @@ project (`hovnqztlbsgsywrbidbh`, separate from the live app's database).
 Local dry run (no database): `LEAGUES=<league id> node server/engine/run.js --dry`
 writes `server/engine/out/<league id>.json`.
 
+Besides the engine's output (`intel`, `assessments`, `dna`), each row's
+`snapshot` carries the raw league facts the serving tools read: rosters, users,
+picks, this season's waiver/FA moves (`txns`), every regular-season week's
+matchup rows (`weeks`: `{week: [{roster_id, matchup_id, points}]}`, future
+weeks are the posted pairings with 0 points) and past seasons (`history`: each
+season's roster owners and weekly scores, cached in `engine_cache` once a
+season is complete).
+
 Why a scheduled job and not an edge function: a cold league build pulls ~200
 Sleeper calls and ~30 MB of stats and takes 3–5 s of CPU; edge functions get 2 s.
 The build runs here, the serving layer (later) reads the stored result in ms.

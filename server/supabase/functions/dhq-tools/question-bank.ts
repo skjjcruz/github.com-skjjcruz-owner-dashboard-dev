@@ -44,6 +44,11 @@ const starterOn = (team: string | undefined) => {
 };
 const playedPid = starterOn(playedTeam), upcomingPid = starterOn(upcomingTeam);
 
+// Last season's champion (or any other team when that was me) for head-to-head.
+const myRid = L.snapshot.rosters.find(r => r.owner_id === memberId)?.roster_id;
+const lastChamp = (L.intel.championships || {})[String(Number(L.season) - 1)]?.champion;
+const rivalRid = lastChamp != null && lastChamp !== myRid ? lastChamp : L.snapshot.rosters.find(r => r.roster_id !== myRid)!.roster_id;
+
 const BANK: Q[] = [
   { q: 'Which leagues am I in?', tool: 'list_leagues', args: {}, must: r => [
     ...miss(Array.isArray(r.leagues) && r.leagues.length >= 1, 'lists at least one league'),
@@ -123,6 +128,70 @@ const BANK: Q[] = [
     ...miss(num(r.suggested_bid), 'a suggested bid'),
     ...miss(r.range && num(r.range.low) && num(r.range.high), 'a range'),
     ...miss(typeof r.cold_start === 'boolean', 'says whether the league has enough bid history'),
+  ] },
+  // League lookups (same coverage as the in-app AI's ask-tools).
+  { q: 'What are the league rules and scoring?', tool: 'get_league', args: { league_id: lid }, must: r => [
+    ...miss(r.rules && r.rules.playoffs && num(r.rules.playoffs.start_week), 'playoff setup in the rules'),
+    ...miss(r.rules && r.rules.waivers && r.rules.waivers.type, 'waiver type in the rules'),
+    ...miss('trade_deadline_week' in (r.rules || {}), 'trade deadline stated'),
+    ...miss(r.scoring && r.scoring.passing && num(r.scoring.passing.pass_td), 'scoring settings grouped (passing TD present)'),
+    ...miss(r.roster_slots && num(r.roster_slots.QB), 'roster slots'),
+  ] },
+  { q: 'Show me the standings with points against and luck', tool: 'get_standings', args: { league_id: lid }, must: r => [
+    ...miss(Array.isArray(r.teams) && r.teams.length === L.snapshot.rosters.length, 'every team listed'),
+    ...miss(r.teams.every((t: Any) => num(t.points_for) && num(t.points_against)), 'points for and against for every team'),
+    ...miss(r.teams.some((t: Any) => t.mine), 'my team marked'),
+    ...miss(wk <= 1 || r.teams.every((t: Any) => typeof t.all_play === 'string' && num(t.luck)), 'all-play and luck once weeks are played'),
+    ...miss(!L.snapshot.league.settings?.waiver_budget || r.teams.every((t: Any) => num(t.faab_left)), 'FAAB left for every team'),
+  ] },
+  { q: 'Who do I play the rest of the season?', tool: 'get_schedule', args: { league_id: lid }, must: r => [
+    ...miss(Array.isArray(r.weeks) && r.weeks.length === Number(L.snapshot.last_reg_week), 'one row per regular-season week'),
+    ...miss(r.weeks.filter((w: Any) => w.status === 'played').every((w: Any) => /^[WLT]$/.test(w.result) && /-/.test(w.score)), 'played weeks show result and score'),
+    ...miss(r.weeks.filter((w: Any) => w.status === 'upcoming').every((w: Any) => w.opponent && w.opponent_roster_id != null), 'future weeks show the opponent'),
+    ...miss(wk <= 1 || r.weeks.some((w: Any) => w.status === 'played'), 'some weeks already played'),
+  ] },
+  { q: 'Who has won this league?', tool: 'get_league_history', args: { league_id: lid }, must: r => [
+    ...miss(Array.isArray(r.seasons) && r.seasons.some((s: Any) => s.champion && s.champion !== 'unknown' && s.champion !== 'in progress'), 'a past champion named'),
+    ...miss(r.seasons.some((s: Any) => Array.isArray(s.bracket) && s.bracket.some((b: string) => /Championship/.test(b))), 'a championship game in a bracket'),
+    ...miss(Array.isArray(r.all_time) && r.all_time.length > 0 && r.all_time.every((m: Any) => m.manager && /\d+-\d+/.test(m.record)), 'all-time records per manager'),
+    ...miss(!JSON.stringify(r).includes('roster '), 'every team named, never a bare roster id'),
+  ] },
+  { q: 'What is my record against the league champion?', tool: 'get_head_to_head', args: { league_id: lid, team_b: String(rivalRid) }, must: r => [
+    ...miss(r.this_season && typeof r.this_season.record_for_team_a === 'string', 'this season\'s record'),
+    ...miss(r.all_time && /\d+-\d+/.test(r.all_time.regular_season_record_for_team_a), 'all-time regular-season record'),
+    ...miss(r.all_time && Array.isArray(r.all_time.past_seasons_both_in_league), 'which past seasons were counted'),
+  ] },
+  { q: 'What waiver claims did I make, and what did I pay?', tool: 'get_transactions', args: { league_id: lid, type: 'waiver', team: 'me', limit: 5 }, must: r => [
+    ...miss(Array.isArray(r.rows), 'rows listed'),
+    ...miss(r.rows.every((x: Any) => /^waiver/.test(x.type) && num(x.faab_bid)), 'every row is a waiver claim with its bid'),
+    ...miss(!(L.snapshot.txns || []).length || r.total_found > 0, 'claims found when the league has moves'),
+  ] },
+  { q: 'Show me the trades from last season and who won', tool: 'get_transactions', args: { league_id: lid, type: 'trade', season: String(Number(L.season) - 1), limit: 5 }, must: r => [
+    ...miss(r.rows.length > 0, 'last season\'s trades found'),
+    ...miss(r.rows.every((x: Any) => x.type === 'trade' && x.winner && Array.isArray(x.sides) && x.sides.every((s: Any) => s.team && Array.isArray(s.got))), 'each trade shows both sides and a winner'),
+  ] },
+  { q: 'How have our rookie drafts gone?', tool: 'get_draft_info', args: { league_id: lid, section: 'results', limit: 10 }, must: r => [
+    ...miss(r.draft_results && r.draft_results.rows.length > 0, 'past picks listed'),
+    ...miss(r.draft_results && r.draft_results.rows.every((d: Any) => d.player && d.team && d.result && /^\d+\.\d\d$/.test(d.pick)), 'each pick shows player, team, slot and result'),
+  ] },
+  { q: 'What picks do I own and how do first-rounders hit here?', tool: 'get_draft_info', args: { league_id: lid, team: 'me', section: 'all' }, must: r => [
+    ...miss(r.picks && Array.isArray(r.picks.picks), 'my picks'),
+    ...miss(Array.isArray(r.hit_rates_by_round) && r.hit_rates_by_round.length > 0, 'hit rates by round'),
+    ...miss(Array.isArray(r.pick_values_next_draft) && r.pick_values_next_draft.every((x: Any) => num(x.mid)), 'pick values by round'),
+  ] },
+  { q: 'Top 10 WRs in my league', tool: 'search_players', args: { league_id: lid, position: 'WR', limit: 10 }, must: r => [
+    ...miss(r.players.length === 10, 'ten players'),
+    ...miss(r.players.every((p: Any) => p.pos === 'WR' && num(p.dhq_value) && p.rostered_by), 'only WRs, each with value and who has him'),
+    ...miss(r.players.every((p: Any, i: number) => i === 0 || p.dhq_value <= r.players[i - 1].dhq_value), 'sorted by value'),
+  ] },
+  { q: 'Best available RB this week', tool: 'search_players', args: { league_id: lid, position: 'RB', availability: 'free_agents', sort: 'this_week', limit: 5 }, must: r => [
+    ...miss(r.players.every((p: Any) => p.rostered_by === 'free agent' && p.pos === 'RB'), 'only free-agent RBs'),
+    ...miss(r.players.every((p: Any) => num(p.proj_this_week) || num(p.scored_this_week)), 'each shows this week\'s projection or points'),
+  ] },
+  { q: 'Tell me about this owner (biggest win and loss, trades with me)', tool: 'get_owner_profile', args: { league_id: lid, roster_id: L.snapshot.rosters.find(x => x.owner_id !== memberId && (L.intel.ownerProfiles || {})[String(x.roster_id)]?.trades)?.roster_id }, must: r => [
+    ...miss(r.biggest_win || r.biggest_loss, 'biggest win or loss'),
+    ...miss(r.players_acquired && num(r.players_acquired.count), 'players acquired'),
+    ...miss(r.trades_with_me && num(r.trades_with_me.count), 'trades with me'),
   ] },
   { q: 'An unknown league is refused clearly', tool: 'get_team', args: { league_id: 'nope' }, must: () => ['should have thrown'] },
 ];

@@ -32,6 +32,9 @@ const calls: Array<[string, Record<string, unknown>]> = [
   ['get_player', { player: 'Chig Okonkwo', league_id: lid }],
   ['get_weekly_projections', { league_id: lid, players: ['Chig Okonkwo', 'Courtland Sutton', 'KaVontae Turpin', 'nobody here'] }],
   ['get_my_matchup', { league_id: lid }],
+  ['get_standings', { league_id: lid }], ['get_schedule', { league_id: lid }], ['get_league_history', { league_id: lid }],
+  ['get_head_to_head', { league_id: lid, team_b: '7' }], ['get_transactions', { league_id: lid, limit: 5 }], ['get_draft_info', { league_id: lid, section: 'results' }],
+  ['search_players', { league_id: lid, position: 'RB', availability: 'free_agents' }],
   ['get_team', { league_id: 'nope' }],
 ];
 console.log('tools:', TOOL_DEFS.map(t => t.name).join(', '));

@@ -19,7 +19,7 @@ import { SKILLS } from './skills.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const VERSION = 'dhq-tools 0.6';
+const VERSION = 'dhq-tools 0.7';
 const PROTOCOL_DEFAULT = '2025-06-18';
 
 const CORS: Record<string, string> = {
@@ -38,6 +38,7 @@ const INSTRUCTIONS = [
   'Two kinds of numbers: dhq_value and dhq_rate_ppg are DYNASTY numbers; proj_this_week, season_avg, game_log and scored_this_week are THIS SEASON in the league\'s scoring. Never use a dynasty number for a this-week decision.',
   'A player whose game has started is locked (game_status says so). live_as_of is when lineups, scores and injuries were read from Sleeper; numbers_as_of is when DHQ values were built (every two hours).',
   'DHQ value scale for this league: roughly 7,000+ elite, 4,000+ starter, 2,000+ depth, below that a stash.',
+  'For league facts use the lookups: get_league (rules, scoring settings, roster slots), get_standings (points for/against, max points, divisions, seeds, FAAB left and waiver order for every team, all-play and luck), get_schedule (a team\'s opponents week by week, results, who is left), get_head_to_head (this season and all-time between two managers), get_league_history (champions, brackets, all-time records), get_transactions (trades every season with winners; this season\'s waiver claims with FAAB bids and who they outbid; free-agent adds), get_draft_info (pick ownership, pick values, past draft results, hit rates), search_players (league-wide rankings by position and availability), get_owner_profile (trading habits, biggest win and loss, trades with the member).',
   'Never send the member to look something up in Sleeper or anywhere else. Fetch it. Start with list_leagues when the league is unknown; the member\'s own team is the default everywhere. You cannot make moves in Sleeper: tell the member exactly what to do there.',
 ].join('\n');
 

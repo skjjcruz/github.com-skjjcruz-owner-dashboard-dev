@@ -16,7 +16,7 @@ const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const API = 'https://api.sleeper.app/v1';
-const ENGINE_VERSION = 'headless-3';
+const ENGINE_VERSION = 'headless-4';
 
 // The shared engine files, in the order index.html loads them (only the
 // ones the valuation path needs — no auth, UI or AI modules).
@@ -144,6 +144,12 @@ function seasonLines(W, S, shared, LI, league) {
   return { week: shared.week, games, proj };
 }
 
+function divisionNames(league) {
+  const md = league.metadata || {}; const out = {};
+  for (let d = 1; d <= 12; d++) if (md['division_' + d]) out[d] = String(md['division_' + d]);
+  return Object.keys(out).length ? out : null;
+}
+
 // Per-player row the tools need, without the 15 MB of everything else.
 function slimPlayers(players) {
   const out = {};
@@ -216,6 +222,51 @@ function picksByRoster(W, S, league) {
   return out;
 }
 
+// Every regular-season week's matchup rows, trimmed to what the schedule,
+// standings luck and head-to-head tools read: who played whom and the score.
+// Sleeper posts the whole season's pairings up front, so future weeks carry
+// the opponent with 0 points. Regular season = weeks before playoff_week_start.
+function lastRegWeek(lg) { return Math.max(1, Math.min(18, (Number(((lg && lg.settings) || {}).playoff_week_start) || 15) - 1)); }
+async function seasonWeeks(leagueId, lastWeek) {
+  const ws = []; for (let w = 1; w <= lastWeek; w++) ws.push(w);
+  const rows = await Promise.all(ws.map(w => sleeper('/league/' + leagueId + '/matchups/' + w).catch(() => null)));
+  const out = {};
+  ws.forEach((w, i) => {
+    const list = (rows[i] || []).filter(m => m && m.roster_id != null);
+    if (list.length) out[w] = list.map(m => ({ roster_id: m.roster_id, matchup_id: m.matchup_id == null ? null : m.matchup_id, points: Math.round((Number(m.points) || 0) * 100) / 100 }));
+  });
+  return out;
+}
+
+// Past seasons of this league (the previous_league_id chain): who owned each
+// roster that year and every regular-season score, so all-time head-to-head
+// and per-manager records can be counted by manager. A finished season never
+// changes, so it is cached (engine_cache) and fetched only once.
+async function pastSeasons(league, histCache) {
+  const out = [];
+  const seen = new Set([String(league.league_id)]);
+  let prev = league.previous_league_id;
+  while (prev && prev !== '0' && !seen.has(String(prev)) && out.length < 10) {
+    const id = String(prev); seen.add(id);
+    const key = 'past_season_' + id;
+    let row = histCache ? await histCache.get(key).catch(() => null) : null;
+    if (!row) {
+      const info = await sleeper('/league/' + id).catch(() => null);
+      if (!info) break;
+      const [rosters, weeks] = await Promise.all([sleeper('/league/' + id + '/rosters').catch(() => []), seasonWeeks(id, lastRegWeek(info))]);
+      row = {
+        season: String(info.season || ''), league_id: id, previous_league_id: info.previous_league_id || null, last_reg_week: lastRegWeek(info), status: info.status || null,
+        owners: Object.fromEntries((rosters || []).map(r => [r.roster_id, r.owner_id || null])),
+        weeks,
+      };
+      if (histCache && info.status === 'complete') await histCache.set(key, row).catch(() => {});
+    }
+    out.push(row);
+    prev = row.previous_league_id;
+  }
+  return out;
+}
+
 // Build one league. `shared` comes from loadShared(); `histCache` is an
 // optional {get(key), set(key, value)} that stands in for the browser's
 // IndexedDB so past seasons' trades/drafts/brackets are not re-fetched.
@@ -262,6 +313,10 @@ async function buildLeague(leagueId, shared, histCache) {
   const LI = W.App.LI;
   if (!LI || !LI.playerScores || !Object.keys(LI.playerScores).length) throw new Error('engine produced no values for ' + leagueId);
 
+  const [weeks, history] = await Promise.all([
+    seasonWeeks(league.league_id, lastRegWeek(league)).catch(() => ({})),
+    pastSeasons(league, histCache).catch(e => { console.error('past seasons', leagueId, e && e.message); return []; }),
+  ]);
   const assessments = W.assessAllTeamsFromGlobal();
   const picks = picksByRoster(W, S, league);
   const lines = seasonLines(W, S, shared, LI, league);
@@ -269,7 +324,7 @@ async function buildLeague(leagueId, shared, histCache) {
   (rosters || []).forEach(r => { try { dna[r.roster_id] = W.computeWeightedDNA(r.roster_id) || null; } catch (e) { dna[r.roster_id] = null; } });
 
   const snapshot = {
-    league: { league_id: league.league_id, name: league.name, season: leagueSeason, status: league.status, scoring_settings: league.scoring_settings, roster_positions: league.roster_positions, settings: league.settings, previous_league_id: league.previous_league_id || null, avatar: league.avatar || null },
+    league: { league_id: league.league_id, name: league.name, season: leagueSeason, status: league.status, scoring_settings: league.scoring_settings, roster_positions: league.roster_positions, settings: league.settings, previous_league_id: league.previous_league_id || null, avatar: league.avatar || null, division_names: divisionNames(league) },
     rosters: (rosters || []).map(r => ({ roster_id: r.roster_id, owner_id: r.owner_id, co_owners: r.co_owners || null, players: r.players || [], starters: r.starters || [], reserve: r.reserve || [], taxi: r.taxi || [], settings: r.settings || {}, metadata: r.metadata ? { team_name: r.metadata.team_name } : null })),
     users: (users || []).map(u => ({ user_id: u.user_id, display_name: u.display_name, avatar: u.avatar || null, team_name: (u.metadata && u.metadata.team_name) || null, team_avatar: (u.metadata && u.metadata.avatar) || null })),
     traded_picks: S.tradedPicks, txns,
@@ -278,6 +333,9 @@ async function buildLeague(leagueId, shared, histCache) {
     proj: lines.proj,             // pid -> this week's Sleeper projection in this league's scoring
     proj_week: lines.week,
     matchups: (matchups || []).map(m => ({ roster_id: m.roster_id, matchup_id: m.matchup_id, points: m.points, starters: m.starters })),
+    weeks,                        // week -> [{roster_id, matchup_id, points}] for every regular-season week (future weeks: pairings, 0 points)
+    last_reg_week: lastRegWeek(league),
+    history,                      // past seasons: [{season, league_id, last_reg_week, owners: {roster_id: owner_id}, weeks}]
     nfl_state: { week, season, season_type: nfl.season_type, display_week: nfl.display_week, leg: nfl.leg },
   };
   return {
