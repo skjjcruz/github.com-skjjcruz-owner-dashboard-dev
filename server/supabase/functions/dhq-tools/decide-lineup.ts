@@ -189,6 +189,10 @@ export function startSitCall(facts: any) {
     if (x.roster_slot === 'not on roster') return;
     const askedHim = (F.asked || []).includes(pid);
     if ((x.roster_slot === 'IR' || x.roster_slot === 'taxi') && !askedHim) return;
+    // Owner test 2026-10-10: "bench Derek Carr and Trey Hendrickson" when they
+    // were already benched. Only a current starter (or a player the member
+    // asked about) belongs on the do-not-start list.
+    if (x.roster_slot !== 'starter' && !askedHim) return;
     let reason: string | null = null;
     if (x.locked && x.roster_slot !== 'starter') reason = 'locked: his game has started, he can\'t come off the bench';
     else if (!x.locked && (x.roster_slot === 'IR' || x.roster_slot === 'taxi')) reason = x.roster_slot === 'IR' ? 'on your IR slot' : 'on your taxi squad';

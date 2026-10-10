@@ -119,9 +119,16 @@ Deno.test('start/sit: a sit who is out is never a coin flip; locks not loaded me
   const out = startSitCall(base({ a: SP('Backup', 1.0), b: SP('Hurt', 0, { roster_slot: 'starter', zero_reason: 'out' }) }, { locks_loaded: false }));
   eq(out.changes[0].close_call, false); eq(out.confidence, 'low'); ok(out.warning); eq(out.do_not_start, [{ player: 'Hurt', reason: 'out' }]);
 });
+Deno.test('start/sit: do_not_start lists current starters (or players asked about), never players already on the bench', () => {
+  const P2 = { s: SP('Starter Out', 0, { roster_slot: 'starter', zero_reason: 'out' }), b: SP('Bench Out', 0, { zero_reason: 'out' }), c: SP('Bench NoTeam', 0, { zero_reason: 'no NFL team' }), a: SP('Healthy', 5) };
+  const out = startSitCall(base(P2, { current: { 0: 's' }, placed: { 0: 'a' } }));
+  eq(out.do_not_start, [{ player: 'Starter Out', reason: 'out' }]);
+  const asked = startSitCall(base(P2, { current: { 0: 's' }, placed: { 0: 'a' }, asked: ['b', 'c'] }));
+  eq(asked.do_not_start.map((x: any) => x.player).sort(), ['Bench NoTeam', 'Bench Out', 'Starter Out']);
+});
 Deno.test('start/sit: a locked player is never moved, even if handed a swap', () => {
   const out = startSitCall(base({ a: SP('Bench Lock', 20, { locked: true }), b: SP('Starter', 5, { roster_slot: 'starter' }) }));
-  eq(out.changes.length, 0); eq(out.do_not_start, [{ player: 'Bench Lock', reason: 'locked: his game has started, he can\'t come off the bench' }]);
+  eq(out.changes.length, 0); eq(out.do_not_start, [], 'a benched player is already benched: nothing to say');
 });
 Deno.test('start/sit: swaps chain through a starter who only changes slots', () => {
   const slots = [{ idx: 0, slotName: 'DL', elig: ['DL'] }, { idx: 1, slotName: 'LB', elig: ['LB'] }];

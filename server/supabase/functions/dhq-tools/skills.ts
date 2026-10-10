@@ -17,7 +17,7 @@ export const SKILLS: Skill[] = [
     name: 'start_sit', title: 'DHQ Start / Sit', description: 'How DHQ decides who starts this week.',
     text: [
       'DHQ START / SIT METHOD (the Lineup screen\'s rule, with the exact solver and the coin-flip rules).',
-      '1. Call get_start_sit FIRST for any lineup question. Pass the players the member named. Lead with `recommendation`; explain with `changes`, `close_calls`, `do_not_start` and `questionable`. Do not rebuild the lineup yourself.',
+      '1. Call get_start_sit FIRST for any lineup question. Pass the players the member named. Lead with `recommendation`; explain with `changes`, `close_calls`, `do_not_start` (current starters who must come out, plus anyone the member named) and `questionable`. Do not rebuild the lineup yourself, and don\'t tell the member to bench players who are already on the bench.',
       '2. The number is Sleeper\'s weekly projection scored in this league\'s settings (TE premium included). A player Sleeper is not projecting has no number and cannot be started; every 0 says why (`zero_reason`: bye, out, doubtful, IR, no NFL team, no_sleeper_line, no_role).',
       '3. Out, IR, PUP, suspended and bye players cannot start. Doubtful counts as out. Questionable plays at his projection; a Questionable starter in a late game needs a pivot on the bench who plays as late (`questionable` names him).',
       '4. A player whose game has kicked off is locked where he is and counts his actual points. Never suggest moving a locked player.',
