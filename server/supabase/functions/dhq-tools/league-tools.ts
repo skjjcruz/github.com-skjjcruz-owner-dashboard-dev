@@ -15,6 +15,7 @@ import {
   myRoster, rosterOf, teamName, ownerName, dhq, whoRosters, assessOf, round1, norm, ord, pickLabel,
   resolveOne, slotValue, roundMidValue, seasonBits, fresh,
 } from './tools.ts';
+import { leaguePositions } from './decide-common.ts';
 
 // ── shared helpers ──────────────────────────────────────────────────────
 const num = (v: unknown) => (v == null || v === '' || isNaN(Number(v)) ? null : Number(v));
@@ -562,9 +563,18 @@ const POS_NORM: Record<string, string> = { DE: 'DL', DT: 'DL', NT: 'DL', EDGE: '
 const normPos = (p: string) => { const u = String(p || '').toUpperCase(); return POS_NORM[u] || u; };
 export function searchPlayersTool(ctx: Ctx, L: LeagueRow, args: any) {
   const q = args.position ? String(args.position).toUpperCase().replace(/[\s-]/g, '_') : '';
-  const want = q ? (POS_GROUP[q] || [normPos(q)]) : null;
+  let want = q ? (POS_GROUP[q] || [normPos(q)]) : null;
   if (want && !want.every(p => POS_ALL.includes(p))) throw new ToolError('Unknown position "' + args.position + '". Use QB, RB, WR, TE, K, DEF, DL, LB, DB, FLEX, SUPER_FLEX or IDP.');
   const avail = String(args.availability || 'all').toLowerCase().replace(/[\s-]/g, '_');
+  // Free agents: only positions this league can start (no DEF without a DEF slot).
+  if (avail === 'free_agents') {
+    const startable = leaguePositions(L);
+    if (want) {
+      const ok = want.filter(p => startable.includes(p));
+      if (!ok.length) return { league_id: L.league_id, filters: strip({ position: args.position, availability: avail }), matches: 0, players: [], note: 'This league has no ' + want.join('/') + ' slot, so a free agent there can\'t score for you. It starts: ' + startable.join(', ') + '.' };
+      want = ok;
+    } else want = startable;
+  }
   const sort = ['value', 'this_week', 'ppg', 'age', 'season_avg'].includes(String(args.sort)) ? String(args.sort) : 'value';
   const nflTeam = args.nfl_team ? String(args.nfl_team).toUpperCase().trim() : null;
   const limit = clampInt(args.limit, 1, 40, 15);
@@ -624,16 +634,21 @@ export function searchPlayersTool(ctx: Ctx, L: LeagueRow, args: any) {
 // league notes on that feed need a login and stay out of reach. Listings
 // whose player has since moved or been cut are dropped.
 const blockMemo: Record<string, { at: number; rows: Array<Record<string, any>> }> = {};
-async function tradeBlockTool(ctx: Ctx, L: LeagueRow, args: any) {
+// The league's raw league_players rows (memoised five minutes). Shared with
+// the trade decision tools (decide-trade.ts), which read who an owner listed.
+export async function tradeBlockRows(L: LeagueRow): Promise<Array<Record<string, any>>> {
   const lid = String(L.league_id).replace(/[^0-9]/g, '');
-  let rows = blockMemo[lid] && Date.now() - blockMemo[lid].at < 5 * 60 * 1000 ? blockMemo[lid].rows : null;
-  if (!rows) {
-    const r = await fetch('https://api.sleeper.app/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '{ league_players(league_id: "' + lid + '") { player_id metadata settings } }' }), signal: AbortSignal.timeout(8000) });
-    if (!r.ok) throw new ToolError('Sleeper\'s trade block did not answer (' + r.status + ').');
-    const j = await r.json();
-    rows = (j && j.data && j.data.league_players) || [];
-    blockMemo[lid] = { at: Date.now(), rows: rows as Array<Record<string, any>> };
-  }
+  const hit = blockMemo[lid] && Date.now() - blockMemo[lid].at < 5 * 60 * 1000 ? blockMemo[lid].rows : null;
+  if (hit) return hit;
+  const r = await fetch('https://api.sleeper.app/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '{ league_players(league_id: "' + lid + '") { player_id metadata settings } }' }), signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new ToolError('Sleeper\'s trade block did not answer (' + r.status + ').');
+  const j = await r.json();
+  const rows = ((j && j.data && j.data.league_players) || []) as Array<Record<string, any>>;
+  blockMemo[lid] = { at: Date.now(), rows };
+  return rows;
+}
+async function tradeBlockTool(ctx: Ctx, L: LeagueRow, args: any) {
+  const rows = await tradeBlockRows(L);
   const rosters = (L.snapshot.rosters || []) as Roster[];
   const owner = new Map<string, Roster>();
   rosters.forEach(r => (r.players || []).forEach(pid => owner.set(String(pid), r)));

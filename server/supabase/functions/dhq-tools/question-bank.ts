@@ -49,7 +49,70 @@ const myRid = L.snapshot.rosters.find(r => r.owner_id === memberId)?.roster_id;
 const lastChamp = (L.intel.championships || {})[String(Number(L.season) - 1)]?.champion;
 const rivalRid = lastChamp != null && lastChamp !== myRid ? lastChamp : L.snapshot.rosters.find(r => r.roster_id !== myRid)!.roster_id;
 
+// Decision-tool fixtures, picked from the data so they survive roster moves.
+const myRoster = L.snapshot.rosters.find(r => r.owner_id === memberId)!;
+const isSF = ((L.snapshot.league || {}).roster_positions || []).includes('SUPER_FLEX');
+const valueOf = (pid: string) => Math.round(Number((L.intel.playerScores || {})[pid]) || 0);
+const ageOf = (pid: string) => Number((ctx.players[pid] || {}).age) || 0;
+const posOfP = (pid: string) => String(((L.intel.playerMeta || {})[pid] || {}).pos || (ctx.players[pid] || {}).pos || '');
+// A young front-line target on another team (a young starting QB in superflex, else a young starter worth 4,000+).
+const others = L.snapshot.rosters.filter(r => r.roster_id !== myRoster.roster_id).flatMap(r => (r.players || []).map(String));
+const loveOnOther = others.find(pid => (ctx.players[pid] || {}).n === 'Jordan Love');
+const youngTarget = loveOnOther || others.filter(pid => (isSF && posOfP(pid) === 'QB' && ageOf(pid) > 0 && ageOf(pid) <= 29 && Number((ctx.players[pid] || {}).dco) === 1) || (valueOf(pid) >= 4000 && ageOf(pid) > 0 && ageOf(pid) <= 28)).sort((a, b) => valueOf(b) - valueOf(a))[0];
+// Two of my veterans past their age cliff (RB 27+, WR 29+, TE 29+, QB 32+), the offer a rebuilder doesn't want.
+const CLIFF: Record<string, number> = { QB: 32, RB: 27, WR: 29, TE: 29 };
+const myVets = (myRoster.players || []).map(String).filter(pid => CLIFF[posOfP(pid)] && ageOf(pid) >= CLIFF[posOfP(pid)] && valueOf(pid) > 0).sort((a, b) => valueOf(b) - valueOf(a)).slice(0, 2);
+const starterSet = new Set((myRoster.starters || []).map(String));
+const taxiIr = new Set([...(myRoster.taxi || []), ...(myRoster.reserve || [])].map(String));
+const nm = (pid: string) => (ctx.players[pid] || {}).n || pid;
+const myNames = new Set((myRoster.players || []).map(String).map(nm));
+const hasDefSlot = ((L.snapshot.league || {}).roster_positions || []).some((s: string) => /^(DEF|DST)$/i.test(s));
+
 const BANK: Q[] = [
+  // ── Decision tools (Lab parity, 2026-10-10) ─────────────────────────
+  { q: 'How do I get a young starting QB? (trade_plan)', tool: 'trade_plan', args: { league_id: lid, target: youngTarget ? nm(youngTarget) : 'nobody' }, must: r => [
+    ...miss(!!youngTarget, 'a young front-line target exists on another team'),
+    ...miss(['offer', 'counter', 'pass', 'no_fit'].includes(r.decision) && typeof r.recommendation === 'string', 'a decision and a recommendation first'),
+    ...miss(JSON.stringify(Object.keys(r).slice(0, 3)) === JSON.stringify(['decision', 'confidence', 'recommendation']), 'verdict-first shape'),
+    ...miss(['rebuilding', 'contending', 'middle'].includes(r.partner && r.partner.mode) && Array.isArray(r.partner.why), 'the partner\'s mode with evidence'),
+    ...miss(r.price_floor && /1st-round pick/.test(r.price_floor.headliner_needed), 'a young starter\'s going rate is a 1st (headliner)'),
+    ...miss(Array.isArray(r.offers) && r.offers.length <= 3 && r.offers.every((o: Any) => o.headliner_met === true && num(o.accept_chance_pct)), 'every offer meets the headliner and has a chance'),
+    ...miss(r.offers.every((o: Any) => o.give.every((g: string) => /^\d{4} /.test(g) ? r.my_assets.picks.some((p: Any) => p.pick === g) : myNames.has(g.replace(/ \(.*$/, '')))), 'offers use only what I own'),
+    ...miss(Array.isArray(r.rules_applied) && typeof r.method === 'string', 'rules and method attached'),
+  ] },
+  { q: 'Two aging vets for a young starting QB (the offer a rebuilder won\'t take)', tool: 'evaluate_trade', args: { league_id: lid, give: myVets.map(nm), get: youngTarget ? [nm(youngTarget)] : ['nobody'] }, must: r => [
+    ...miss(myVets.length === 2, 'two veterans on my roster to test with'),
+    ...miss(Object.keys(r)[0] === 'verdict' && ['offer', 'counter', 'pass'].includes(r.verdict.decision), 'verdict first'),
+    ...miss(r.headliner && r.headliner.offer_has_it === false, 'no headliner in two veterans'),
+    ...miss(r.verdict.decision !== 'offer' && num(r.acceptance_chance_pct) && r.acceptance_chance_pct <= 10, 'not an offer; chance capped at 10% without the headliner'),
+    ...miss(/raw value/.test(String(r.fairness)), 'the fairness grade is labeled raw value only'),
+    ...miss(/7,000\+ elite, 4,000\+ starter, 2,000\+ depth/.test(r.values_note || ''), 'one value scale stated'),
+  ] },
+  { q: 'Who should I pick up and who do I drop? (get_waiver_plan)', tool: 'get_waiver_plan', args: { league_id: lid }, must: r => [
+    ...miss(['add', 'hold'].includes(r.decision) && typeof r.recommendation === 'string', 'a decision and a recommendation'),
+    ...miss((r.adds || []).every((x: Any) => x.drop && (x.drop.player || /open active spot/.test(x.drop.why))), 'every add is paired with a drop or an open spot'),
+    ...miss((r.adds || []).every((x: Any) => !x.drop.player || ![...starterSet, ...taxiIr].map(nm).includes(x.drop.player)), 'never drops a starter, taxi or IR player'),
+    ...miss(new Set((r.adds || []).map((x: Any) => x.drop.player).filter(Boolean)).size === (r.adds || []).filter((x: Any) => x.drop.player).length, 'no drop used twice'),
+    ...miss(hasDefSlot || (r.adds || []).every((x: Any) => x.player.pos !== 'DEF'), 'no DEF add without a DEF slot'),
+    ...miss(!L.snapshot.league.settings?.waiver_budget || (r.faab && num(r.faab.max_single_bid)), 'FAAB pace cap stated'),
+  ] },
+  { q: 'Should I add a defense? (no DEF slot here)', tool: 'get_waiver_plan', args: { league_id: lid, position: 'DEF' }, must: r => [
+    ...miss(hasDefSlot || (r.decision === 'no_slot' && r.adds.length === 0), 'a league with no DEF slot gets no DEF add'),
+  ] },
+  { q: 'Who should I cut? (roster_plan)', tool: 'roster_plan', args: { league_id: lid }, must: r => [
+    ...miss(typeof r.decision === 'string' && typeof r.recommendation === 'string', 'a decision and a recommendation'),
+    ...miss(r.roster_count && num(r.roster_count.active) && num(r.roster_count.ir), 'roster counts against the limits'),
+    ...miss((r.cut_candidates || []).every((c: Any) => ![...starterSet, ...taxiIr].map(nm).includes(c.player)), 'never cuts a starter, taxi or IR player'),
+    ...miss((r.keep_despite_low_value || []).filter((k: Any) => (myRoster.reserve || []).map(String).map(nm).includes(k.player)).every((k: Any) => k.value_source !== 'dhq' || k.value > 0), 'an IR player is never valued at 0 (healthy-equivalent or unknown)'),
+    ...miss(typeof r.method === 'string' && /ir_fallback/.test(r.method), 'the IR fallback rule is in the method'),
+  ] },
+  { q: 'Is my lineup right this week? (get_start_sit, verdict first)', tool: 'get_start_sit', args: { league_id: lid }, must: r => [
+    ...miss(typeof r.recommendation === 'string' && ['high', 'medium', 'low'].includes(r.confidence), 'recommendation and confidence'),
+    ...miss(Array.isArray(r.changes) && Array.isArray(r.close_calls) && Array.isArray(r.do_not_start) && Array.isArray(r.questionable), 'changes, close calls, do-not-start and questionable'),
+    ...miss(r.do_not_start.every((d: Any) => typeof d.reason === 'string' && d.reason.length > 0), 'every do-not-start says why'),
+    ...miss(new Set(r.optimal_lineup.filter((x: Any) => x.player !== '(empty)').map((x: Any) => x.player)).size === r.optimal_lineup.filter((x: Any) => x.player !== '(empty)').length, 'nobody counted twice in the best lineup'),
+    ...miss(!r.changes.some((c: Any) => r.optimal_lineup.some((x: Any) => x.locked && (x.player === c.start))), 'no change moves a locked player'),
+  ] },
   { q: 'Which leagues am I in?', tool: 'list_leagues', args: {}, must: r => [
     ...miss(Array.isArray(r.leagues) && r.leagues.length >= 1, 'lists at least one league'),
     ...miss(r.leagues.some((l: Any) => l.league_id === lid), 'includes the test league'),
@@ -84,6 +147,7 @@ const BANK: Q[] = [
     ...miss(num(r.acceptance_chance_pct), 'acceptance chance stated'),
     ...miss(r.their_posture && r.my_needs, 'partner posture and my needs considered'),
     ...miss(JSON.stringify(r).includes('Taylor') && JSON.stringify(r).includes('Nacua'), 'both players named'),
+    ...miss(Object.keys(r)[0] === 'verdict' && typeof r.verdict.call === 'string' && ['offer', 'counter', 'pass'].includes(r.verdict.decision), 'the verdict comes first'),
   ] },
   { q: 'Who is a good waiver add at RB?', tool: 'get_waiver_options', args: { league_id: lid, position: 'RB', limit: 5 }, must: r => [
     ...miss(Array.isArray(r.best_available) && r.best_available.length > 0, 'a list of the best available'),
@@ -128,6 +192,7 @@ const BANK: Q[] = [
     ...miss(num(r.suggested_bid), 'a suggested bid'),
     ...miss(r.range && num(r.range.low) && num(r.range.high), 'a range'),
     ...miss(typeof r.cold_start === 'boolean', 'says whether the league has enough bid history'),
+    ...miss(r.in_season_bids && num(r.in_season_bids.count) && num(r.in_season_bids.offseason_claims_excluded), 'bid history is in-season only, and says how many offseason claims it left out'),
   ] },
   // League lookups (same coverage as the in-app AI's ask-tools).
   { q: 'What are the league rules and scoring?', tool: 'get_league', args: { league_id: lid }, must: r => [

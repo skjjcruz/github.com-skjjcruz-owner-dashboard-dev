@@ -19,7 +19,7 @@ import { SKILLS } from './skills.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const VERSION = 'dhq-tools 0.8';
+const VERSION = 'dhq-tools 0.9';
 const PROTOCOL_DEFAULT = '2025-06-18';
 
 const CORS: Record<string, string> = {
@@ -33,7 +33,7 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
 
 const INSTRUCTIONS = [
   'You are talking to Dynasty HQ, a dynasty fantasy football engine. The member connected their own Sleeper leagues. Use the tools for every fact; never guess a number, roster or pick. If a tool did not give it to you, you do not know it, and you say so.',
-  'DHQ decides, you explain. For a decision, call the verdict tool and lead with its call: get_start_sit (who to start, any lineup question), get_roster_needs (holes, surplus, window), get_player_outlook (buy, sell or hold), compare_players, find_trade_targets (who to trade with), evaluate_trade (grade a deal), get_waiver_bid (FAAB), get_draft_board. Each returns `method`, the DHQ method it followed; the same methods are published as prompts. Do not rebuild a verdict from raw numbers.',
+  'DHQ decides, you explain. For a decision, call the decision tool FIRST and lead with its `decision` and `recommendation` (or `verdict`): trade_plan (any trade you might propose: who to deal with, what they want, the going rate, offers built only from what the member owns), get_start_sit (who to start, any lineup question), get_waiver_plan (who to claim, who to drop, what to bid), roster_plan (who to cut, roster room, IR and taxi). Then: evaluate_trade (grade a deal the member names; lead with its verdict, not the raw fairness grade), get_roster_needs (holes, surplus, window), get_player_outlook (buy, sell or hold), compare_players, find_trade_targets (who to call), get_waiver_bid (one player\'s FAAB bid), get_draft_board. Each returns `method`, the DHQ method it followed; the same methods are published as prompts. Do not rebuild a verdict from raw numbers, and never propose a player or pick the member does not own.',
   'Then go deeper than the verdict: read latest_news and team_news for the players in the call and lead with the biggest item on each side (a new play-caller or head coach, a quarterback change, a teammate injury or trade that shifts targets, a role change, practice status). Say whether it changes the call. If you can search the web, add anything newer.',
   'Two kinds of numbers: dhq_value and dhq_rate_ppg are DYNASTY numbers; proj_this_week, season_avg, game_log and scored_this_week are THIS SEASON in the league\'s scoring. Never use a dynasty number for a this-week decision.',
   'A player whose game has started is locked (game_status says so). live_as_of is when lineups, scores and injuries were read from Sleeper; numbers_as_of is when DHQ values were built (every two hours).',

@@ -8,6 +8,8 @@
 import { fetchLive, type LiveState } from './live.ts';
 import { VERDICT_DEFS, VERDICT_NAMES, runVerdict } from './verdicts.ts';
 import { LEAGUE_DEFS, LEAGUE_NAMES, runLeagueTool, rulesOf, groupScoring, rosterSlots, ownerExtras, teamArg } from './league-tools.ts';
+import { evaluateTrade } from './decide-trade.ts';
+import { leaguePositions, normPos } from './decide-common.ts';
 
 export interface PlayerSlim { n: string; pos: string; fp?: string[]; t: string | null; age: number | null; yrs: number | null; st: string | null; inj: string | null; injp: string | null; dc: string | null; dco: number | null; col: string | null; num: number | null; act: boolean; e?: number | null }
 export interface Roster { roster_id: number; owner_id: string; co_owners: string[] | null; players: string[]; starters: string[]; reserve: string[]; taxi: string[]; settings: Record<string, number>; metadata: { team_name?: string } | null }
@@ -292,7 +294,7 @@ export const TOOL_DEFS = [
   def('get_team', 'A team\'s roster with each player\'s DHQ dynasty value, league rank, age, points per game, peak years left, injury and lineup slot; their draft picks with values; record, tier, window, needs, strengths and FAAB. Omit roster_id for the member\'s own team.', { league_id: S('League id'), roster_id: N('Roster id from standings; omit for my team') }),
   def('find_players', 'Search NFL players by name. Returns ids, position, team, DHQ value in the league and who rosters them.', { name: S('Full or partial name'), league_id: S('League id (optional, for values)') }, ['name']),
   def('get_player', 'One player in depth: bio, NFL team, depth chart, injury, DHQ value and trend, age curve, role, league rank, who rosters him, and his trade history in this league.', { player: S('Player name or id'), league_id: S('League id') }, ['player']),
-  def('evaluate_trade', 'Grade a trade with the DHQ trade engine. Sides take players (names/ids) and picks written like "2027 1st". Returns each piece\'s value, totals, fairness grade, the chance the other owner accepts (their DNA and needs), the psychology behind it, and roster fit.', { league_id: S('League id'), give: A('What the member sends'), get: A('What the member receives'), partner_roster_id: N('Other team\'s roster id (optional; inferred from the players received)') }, ['give', 'get']),
+  def('evaluate_trade', 'Grade a proposed trade. Read `verdict` first: one decision (offer / counter / pass) that already reconciles ownership, the headliner rule (a young starter costs a 1st or a young player worth 70%+), what this partner wants (their real mode: rebuilding / contending / middle, from their record, this season\'s trades and their trade block) and value. Also: every piece\'s DHQ value (picks in the next draft at their projected slot), the raw-value fairness grade (never overrules the verdict), the chance the other owner accepts on what the package is worth TO THEM, how to balance it, their DNA, posture, psychology and roster fit. Picks read like "2027 1st", "2026 1.03" or "2027 2nd from Gas". To BUILD an offer, call trade_plan.', { league_id: S('League id'), give: A('What the member sends'), get: A('What the member receives'), partner: S('Other team or owner (optional; inferred from what the member receives)'), partner_roster_id: N('Other team\'s roster id (optional)') }, ['give', 'get']),
   def('get_owner_profile', 'An owner\'s trading personality from the league\'s full trade history: DNA type and why, trade count, value wins/losses, positions bought and sold, favorite partners, timing, biggest win and biggest loss, players acquired and sold, recent deals, trades with me, and this season\'s waiver/FAAB activity.', { league_id: S('League id'), team: S('Team name, owner name, roster id, or "me"'), roster_id: N('Roster id (alternative to team)') }),
   def('get_recent_trades', 'Completed trades in the league, newest first, with what each side got and who won on DHQ value.', { league_id: S('League id'), days: N('Look-back window in days (default 30)'), roster_id: N('Only trades involving this roster (optional)') }),
   def('get_waiver_options', 'Best available free agents by DHQ value, Sleeper\'s trending adds, the member\'s FAAB left, and what this league usually pays by position.', { league_id: S('League id'), position: S('QB, RB, WR, TE, K, DL, LB, DB (optional)'), limit: N('How many (default 8, max 15)') }),
@@ -385,47 +387,6 @@ async function getPlayer(ctx: Ctx, args: any) {
     numbers_as_of: L ? L.built_at : undefined,
   });
 }
-function evaluateTrade(ctx: Ctx, L: LeagueRow, args: any) {
-  const me = myRoster(L, ctx.memberId);
-  if (!me) throw new ToolError('You do not have a team in ' + L.name + '.');
-  const picks = L.snapshot.picks || {}; const notes: string[] = [];
-  const parsePick = (s: string) => { const m = String(s).match(/(20\d\d)\s*(?:round\s*|rd\s*|r)?(\d)(?:st|nd|rd|th)?/i); return m ? { year: Number(m[1]), round: Number(m[2]) } : null; };
-  const side = (list: unknown[], holder: number | null) => (list || []).map(q => {
-    const qs = String(q); const pk = /20\d\d/.test(qs) && !(/^\d+$/.test(qs) && ctx.players[qs]) ? parsePick(qs) : null;
-    if (pk) {
-      const own = holder != null ? (picks[String(holder)] || []).filter(x => x.year === pk.year && x.round === pk.round) : [];
-      const use = own.find(x => x.from === holder) || own[0];
-      if (!use) notes.push((holder != null ? teamName(L, holder) : 'That team') + ' does not own a ' + pk.year + ' ' + ord(pk.round) + '.');
-      const value = use ? use.value : roundMidValue(L, pk.round);
-      return { piece: use && holder != null ? pickLabel(use, holder, L) : pk.year + ' ' + ord(pk.round), type: 'pick', dhq_value: value };
-    }
-    const pid = resolveOne(ctx, L, qs);
-    if (!pid) { notes.push('Could not find "' + qs + '".'); return null; }
-    const owner = whoRosters(L, pid);
-    if (holder != null && owner !== holder) notes.push(ctx.players[pid].n + ' is not on ' + teamName(L, holder) + (owner ? ' (he is on ' + teamName(L, owner) + ')' : ' (free agent)') + '.');
-    return { piece: ctx.players[pid].n, type: 'player', pos: ctx.players[pid].pos, age: ctx.players[pid].age, dhq_value: dhq(L, pid) };
-  }).filter(Boolean) as Array<{ piece: string; type: string; dhq_value: number }>;
-  let partner: number | null = args.partner_roster_id != null ? Number(args.partner_roster_id) : null;
-  if (partner == null) for (const q of (args.get || [])) { const pid = resolveOne(ctx, L, q); const o = pid ? whoRosters(L, pid) : null; if (o && o !== me.roster_id) { partner = o; break; } }
-  const give = side(args.give, me.roster_id), get = side(args.get, partner);
-  const giveV = give.reduce((t, x) => t + x.dhq_value, 0), getV = get.reduce((t, x) => t + x.dhq_value, 0);
-  const out: Record<string, unknown> = { league_id: L.league_id, partner: partner != null ? teamName(L, partner) + ' (roster ' + partner + ')' : 'unknown', you_give: give, you_get: get, total_give: giveV, total_get: getV, net_for_you: getV - giveV, value_basis: 'Straight sum of DHQ values; the in-app Trade Builder also adjusts for roster spots and pick slots, so its grade can differ slightly.' };
-  const fg = ctx.te.fairnessGrade(giveV, getV); out.fairness = fg.grade + ' — ' + fg.label;
-  if (partner != null) {
-    const mine = assessOf(L, me.roster_id), theirs = assessOf(L, partner), dna = (L.dna || {})[String(partner)];
-    const key = dna && dna.key ? dna.key : 'NONE';
-    const posture = ctx.te.calcOwnerPosture(theirs, key); const taxes = ctx.te.calcPsychTaxes(mine, theirs, key, posture) || [];
-    out.their_dna = dna ? key + ' (' + dna.confidence + '% confidence): ' + (dna.reasoning || '') : 'Not enough trades to read their DNA.';
-    out.their_posture = posture && posture.label ? posture.label + ' — ' + posture.desc : undefined;
-    out.acceptance_chance_pct = ctx.te.calcAcceptanceLikelihood(giveV, getV, key, taxes, mine, theirs, { totalPieces: give.length + get.length });
-    out.psychology = taxes.filter(t => t.impact).map(t => t.name + ' (' + (t.impact > 0 ? '+' : '') + t.impact + '): ' + t.desc);
-    out.roster_fit_0_100 = ctx.te.calcComplementarity(mine, theirs);
-    out.my_needs = assessBrief(mine)?.needs; out.their_needs = assessBrief(theirs)?.needs;
-  }
-  if (notes.length) out.notes = notes;
-  out.numbers_as_of = L.built_at;
-  return out;
-}
 function ownerProfile(ctx: Ctx, L: LeagueRow, args: any) {
   const rid = teamArg(ctx, L, args.team, args.roster_id).roster_id;
   const pr = (L.intel.ownerProfiles || {})[String(rid)]; const dna = (L.dna || {})[String(rid)];
@@ -446,12 +407,16 @@ function recentTrades(ctx: Ctx, L: LeagueRow, args: any) {
 function waiverOptions(ctx: Ctx, L: LeagueRow, args: any) {
   const pos = String(args.position || '').toUpperCase(); const limit = Math.max(1, Math.min(15, Number(args.limit) || 8));
   const rostered = new Set<string>(); L.snapshot.rosters.forEach(r => r.players.forEach(x => rostered.add(x)));
-  const posOf = (pid: string) => ((L.intel.playerMeta || {})[pid] || {}).pos || (ctx.players[pid] || {}).pos;
-  const pool = Object.keys(L.intel.playerScores || {}).filter(pid => !rostered.has(pid) && ctx.players[pid] && ctx.players[pid].t && ctx.players[pid].act).filter(pid => !pos || posOf(pid) === pos || (ctx.players[pid].fp || []).includes(pos)).sort((a, b) => dhq(L, b) - dhq(L, a)).slice(0, limit);
-  const trending = (ctx.trending || []).map(x => String(x.player_id)).filter(pid => !rostered.has(pid) && ctx.players[pid] && (!pos || posOf(pid) === pos)).slice(0, 8).map(pid => ({ name: ctx.players[pid].n, pos: posOf(pid), nfl_team: ctx.players[pid].t, dhq_value: dhq(L, pid), adds_24h: ((ctx.trending || []).find(x => String(x.player_id) === pid) || { count: 0 }).count }));
+  const posOf = (pid: string) => normPos(((L.intel.playerMeta || {})[pid] || {}).pos || (ctx.players[pid] || {}).pos);
+  // Only positions this league can start (no DEF without a DEF slot).
+  const startable = leaguePositions(L);
+  if (pos && !startable.includes(normPos(pos))) return { league_id: L.league_id, best_available: [], trending_adds_on_sleeper: [], note: 'This league has no ' + pos + ' slot, so a free agent there can\'t score for you. It starts: ' + startable.join(', ') + '.' };
+  const canStart = (pid: string) => startable.includes(posOf(pid));
+  const pool = Object.keys(L.intel.playerScores || {}).filter(pid => !rostered.has(pid) && ctx.players[pid] && ctx.players[pid].t && ctx.players[pid].act && canStart(pid)).filter(pid => !pos || posOf(pid) === pos || (ctx.players[pid].fp || []).includes(pos)).sort((a, b) => dhq(L, b) - dhq(L, a)).slice(0, limit);
+  const trending = (ctx.trending || []).map(x => String(x.player_id)).filter(pid => !rostered.has(pid) && ctx.players[pid] && canStart(pid) && (!pos || posOf(pid) === pos)).slice(0, 8).map(pid => ({ name: ctx.players[pid].n, pos: posOf(pid), nfl_team: ctx.players[pid].t, dhq_value: dhq(L, pid), adds_24h: ((ctx.trending || []).find(x => String(x.player_id) === pid) || { count: 0 }).count }));
   const me = myRoster(L, ctx.memberId); const a = me ? assessOf(L, me.roster_id) : null;
   const market = Object.fromEntries(Object.entries(L.intel.faabByPos || {}).map(([p, m]: any) => [p, { typical_bid: m.median, avg: Math.round(m.avg), p75: m.p75, bids_seen: m.count }]));
-  return { league_id: L.league_id, faab_left: a ? a.faabRemaining : undefined, faab_min_bid: a ? a.faabMinBid : undefined, best_available: pool.map(pid => playerRow(ctx, L, pid)), trending_adds_on_sleeper: trending, what_this_league_pays_by_position: market, numbers_as_of: L.built_at };
+  return { league_id: L.league_id, positions_this_league_starts: startable, faab_left: a ? a.faabRemaining : undefined, faab_min_bid: a ? a.faabMinBid : undefined, best_available: pool.map(pid => playerRow(ctx, L, pid)), trending_adds_on_sleeper: trending, what_this_league_pays_by_position: market, for_a_decision: 'For who to claim, who to drop and what to bid, call get_waiver_plan.', numbers_as_of: L.built_at };
 }
 // intel.dhqPickValues is keyed by OVERALL slot (1 = first pick of the draft).
 export function slotValue(L: LeagueRow, slot: number): number { return Math.round((((L.intel.dhqPickValues || {})[String(slot)] || {}).value) || 0); }

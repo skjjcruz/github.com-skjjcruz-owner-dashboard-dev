@@ -16,8 +16,28 @@ and plain REST (`POST {"tool": "...", "args": {...}}`).
 Local check: `deno run --allow-read --allow-env functions/dhq-tools/local-test.ts`
 after a builder dry run (see ../engine/README.md).
 
-## How the tools are organised (dhq-tools 0.5)
+## How the tools are organised (dhq-tools 0.9)
 
+- **Decision tools** (verdict first: `decision`, `confidence`,
+  `recommendation`, then the evidence and the rules applied), the same rules
+  as the Lab's "Ask your AI" (v6-hub `js/shared/ask-tools*.js`, 2026-10-10),
+  each in one shared module so two tools can never disagree:
+  - `decide-trade.ts`: `trade_plan` and `evaluate_trade` (its `verdict`):
+    the partner's real mode (record, this season's trades, Sleeper trade
+    block), pieces priced the way that partner sees them, the headliner rule,
+    only owned assets offered, acceptance on worth-to-partner, rebuilders
+    never give picks back, next-draft picks at their projected slot with no
+    year discount, one value scale (7,000 / 4,000 / 2,000).
+  - `decide-roster.ts`: `roster_plan`, `get_waiver_plan` and the in-season
+    bid history `get_waiver_bid` reads: the one drop rule, IR/Inactive
+    players valued at a healthy-equivalent from their peers, IR/taxi rules,
+    adds paired with drops, FAAB pace.
+  - `decide-lineup.ts`: `get_start_sit`: the app's greedy solver checked by
+    an exact assignment (dual-position IDP players), coin flips, zero
+    reasons, Questionable pivots.
+  - `decide-common.ts`: the shared reads (positions, values, teams, scale).
+  - `decide.test.ts`: the Lab's fixtures for all of the above
+    (`deno test --allow-read functions/dhq-tools/decide.test.ts`).
 - **Verdict tools** (`verdicts.ts`) run the app's own methods and return a
   call with its reasons: `get_start_sit` (the Lineup screen's solver, from
   `js/shared/startsit-engine.js`), `get_roster_needs` (the team assessor),

@@ -14,32 +14,42 @@ import {
   playerRow, projLine, fresh, teamPlayed, goLive, latestBlurbs, teamNews, resolveOne, NEWS_STEP,
 } from './tools.ts';
 import { skillText } from './skills.ts';
+import { solveLineup, startSitCall, TAG_REASON } from './decide-lineup.ts';
+import { tradePlan } from './decide-trade.ts';
+import { rosterPlan, waiverPlan, inSeason, bidStats, posComps, compSummary } from './decide-roster.ts';
+import { normPos } from './decide-common.ts';
 
 const engines = () => (globalThis as any).App || {};
 const OUT_SET = new Set(['OUT', 'IR', 'PUP', 'SUS', 'NA', 'DNP', 'COV']);
 const BENCH = new Set(['BN', 'BE', 'BENCH', 'IR', 'TAXI', 'RES']);
-const CLOSE_CALL_PTS = 0.5;   // the app's toss-up line (startsit-verdict.js)
 const name = (ctx: Ctx, pid: string) => (ctx.players[pid] && ctx.players[pid].n) || pid;
-const posOf = (ctx: Ctx, L: LeagueRow, pid: string) => String(((L.intel.playerMeta || {})[pid] || {}).pos || (ctx.players[pid] || {}).pos || '').toUpperCase();
+// Fantasy position, normalised (DE/DT → DL, CB/S → DB) so the solver's slot eligibility matches.
+const posOf = (ctx: Ctx, L: LeagueRow, pid: string) => normPos(((L.intel.playerMeta || {})[pid] || {}).pos || (ctx.players[pid] || {}).pos || '');
 
 // ── 1. Start / sit and the whole lineup ──────────────────────────────────
-// The app's rule, exactly: one number per player (Sleeper's projection in
-// this league's scoring), Out/IR/Doubtful and bye players are unavailable,
-// players whose game has started are locked where they are, then the
-// solver fills the open slots greedily, narrowest slot first. The verdict
-// is the biggest swap; under half a point is a toss-up.
-type Line = ProjLine & { pts: number | null; available: boolean; locked: boolean; why_unavailable?: string };
+// One number per player (Sleeper's projection in this league's scoring).
+// Out/IR/Doubtful and bye players are unavailable, players whose game has
+// started are locked where they are at their actual points, then the open
+// slots are solved: the app's greedy solver, checked by an exact assignment
+// (decide-lineup.ts) so a DL/LB-eligible player never costs points. The
+// call (decide-lineup.ts startSitCall, the Lab's rules): changes with their
+// gain, coin flips within 1.5 pts or 10% with the tiebreak, who must not
+// start and why, Questionable starters in late games with a pivot.
+type Line = ProjLine & { pts: number | null; available: boolean; locked: boolean; why_unavailable?: string; zero_reason?: string };
 function lineFor(ctx: Ctx, L: LeagueRow, pid: string): Line {
   const p = projLine(ctx, L, pid);
-  const inj = String((fresh(ctx, pid).inj || '')).toUpperCase();
+  const f = fresh(ctx, pid);
+  const inj = String((f.inj || '')).toUpperCase().trim();
   const locked = p.scored_this_week != null;
-  let available = true, why: string | undefined;
-  if (p.nfl_opponent === 'BYE') { available = false; why = 'bye week'; }
-  else if (OUT_SET.has(inj) || /^OUT/.test(inj)) { available = false; why = 'ruled ' + (fresh(ctx, pid).inj || 'out'); }
-  else if (inj === 'DOUBTFUL' || inj === 'D') { available = false; why = 'Doubtful: DHQ treats doubtful as out (he misses far more often than he plays)'; }
-  else if (!locked && p.proj_this_week == null) { available = false; why = 'Sleeper is not projecting him this week'; }
+  let available = true, why: string | undefined, zero: string | undefined;
+  if (!f.t && !locked) { available = false; why = 'no NFL team'; zero = 'no NFL team'; }
+  else if (p.nfl_opponent === 'BYE') { available = false; why = 'bye week'; zero = 'bye'; }
+  else if (OUT_SET.has(inj) || /^OUT/.test(inj) || /^IR\b/.test(inj)) { available = false; why = 'ruled ' + (f.inj || 'out'); zero = TAG_REASON[inj] || (/^IR\b/.test(inj) ? 'IR' : 'out'); }
+  else if (inj === 'DOUBTFUL' || inj === 'D') { available = false; why = 'Doubtful: DHQ treats doubtful as out (he misses far more often than he plays)'; zero = 'doubtful'; }
+  else if (!locked && p.proj_this_week == null) { available = false; why = 'Sleeper is not projecting him this week'; zero = 'no_sleeper_line'; }
+  else if (!locked && Number(p.proj_this_week) <= 0) zero = 'no_role';
   const pts = locked ? Number(p.scored_this_week) : (available ? Number(p.proj_this_week) : null);
-  return { ...p, pts, available, locked, why_unavailable: why };
+  return { ...p, pts, available, locked, why_unavailable: why, zero_reason: locked ? undefined : zero };
 }
 export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
   const me = myRoster(L, ctx.memberId);
@@ -48,9 +58,13 @@ export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
   if (!r) throw new ToolError('No roster to set a lineup for in ' + L.name + '.');
   const SS = engines().StartSit;
   if (!SS) throw new Error('lineup solver not loaded');
+  const wkNow = Number(L.snapshot.proj_week) || 0;
+  if (args.week != null && Number(args.week) && wkNow && Number(args.week) !== wkNow) throw new ToolError('Start/sit is decided for this week (week ' + wkNow + ') only: later weeks\' injuries and lineups are not known yet.');
   const named: string[] = [], unknown: string[] = [];
-  (args.players || []).slice(0, 6).forEach((q: unknown) => { const pid = resolveOne(ctx, L, q); if (pid) named.push(pid); else unknown.push(String(q)); });
-  const pool = (r.players || []).filter(pid => !(r.reserve || []).includes(pid) && !(r.taxi || []).includes(pid));
+  const asked = Array.isArray(args.players) ? args.players : (args.players ? String(args.players).split(/\s*(?:,|\bvs\.?\b|\bor\b|\band\b|\/)\s*/i) : []);
+  asked.map((x: unknown) => String(x || '').trim()).filter(Boolean).slice(0, 6).forEach((q: string) => { const pid = resolveOne(ctx, L, q); if (pid) { if (!named.includes(pid)) named.push(pid); } else unknown.push(q); });
+  const reserve = (r.reserve || []).map(String), taxi = (r.taxi || []).map(String);
+  const pool = (r.players || []).map(String).filter(pid => !reserve.includes(pid) && !taxi.includes(pid));
   const liveAt = await goLive(ctx, L, pool.concat(named));
   const liveRow = ctx.live && ctx.live.matchups[L.league_id] && ctx.live.matchups[L.league_id].find(m => String(m.roster_id) === String(r.roster_id));
   const slotNames: string[] = ((L.snapshot.league && L.snapshot.league.roster_positions) || []).filter((s: string) => !BENCH.has(String(s).toUpperCase()));
@@ -62,59 +76,74 @@ export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
   const lockedSlots = new Set<number>();
   current.forEach((pid, i) => { if (pid && lines[pid] && lines[pid].locked) lockedSlots.add(i); });
   const openSlots = slotNames.map((s, i) => ({ s, i })).filter(x => !lockedSlots.has(x.i));
+  const positionsOf = (pid: string) => [...new Set([posOf(ctx, L, pid)].concat((fresh(ctx, pid).fp || []).map((x: string) => normPos(x))))].filter(Boolean);
   const candidates = pool.filter(pid => lines[pid] && !lines[pid].locked && lines[pid].available)
-    .map(pid => ({ pid, pos: posOf(ctx, L, pid), positions: (fresh(ctx, pid).fp || [posOf(ctx, L, pid)]).map((x: string) => String(x).toUpperCase()), available: true, pts: val(pid) }));
-  const solved = SS.optimalLineupWeekly(candidates, openSlots.map(x => x.s)) as { total: number; starters: Array<{ pid: string; slot: string; pts: number; pos: string }>; slots: Array<{ slot: string; pid: string | null }> };
+    .map(pid => ({ pid, pos: posOf(ctx, L, pid), positions: positionsOf(pid), pts: val(pid) }));
+  const solved = solveLineup(SS, candidates, openSlots.map(x => ({ idx: x.i, slot: x.s })));
+  const placed: Record<number, string> = {};
+  lockedSlots.forEach(i => { placed[i] = current[i]; });
+  Object.entries(solved.placed).forEach(([i, pid]) => { placed[Number(i)] = pid; });
   const lockedTotal = [...lockedSlots].reduce((t, i) => t + val(current[i]), 0);
   const currentTotal = round1(current.reduce((t, pid) => t + (pid && lines[pid] && (lines[pid].locked || lines[pid].available) ? val(pid) : 0), 0));
   const optimalTotal = round1(lockedTotal + (solved.total || 0));
-  const optimalSet = new Set<string>([...lockedSlots].map(i => current[i]).concat(solved.starters.map(s => s.pid)));
+  const optimalSet = new Set<string>(Object.values(placed));
   const currentSet = new Set(current.filter(Boolean));
-  const outs = current.map((pid, i) => ({ pid, slot: slotNames[i] })).filter(x => x.pid && !lockedSlots.has(slotNames.indexOf(x.slot)) && !optimalSet.has(x.pid));
-  const ins = solved.starters.filter(s => !currentSet.has(s.pid));
-  const swaps = ins.map((s, i) => { const o = outs.find(x => SS.normSlot(x.slot) === SS.normSlot(s.slot)) || outs[i]; return { slot: s.slot, start: name(ctx, s.pid), start_pts: round1(s.pts), sit: o ? name(ctx, o.pid) : null, sit_pts: o ? round1(val(o.pid)) : 0, gain: round1(s.pts - (o ? val(o.pid) : 0)), sit_reason: o && lines[o.pid] && !lines[o.pid].available ? lines[o.pid].why_unavailable : undefined }; })
-    .sort((a, b) => b.gain - a.gain);
-  const empty = current.filter(Boolean).length === 0;
-  const left = round1(optimalTotal - currentTotal);
-  let verdict: string;
-  if (empty) verdict = 'Your starting slots are empty: fill them before kickoff.';
-  else if (!swaps.length || left <= 0.05) verdict = 'Start who is in: your lineup is already optimal' + (lockedSlots.size ? ' (' + lockedSlots.size + ' slot' + (lockedSlots.size > 1 ? 's are' : ' is') + ' locked)' : '') + '.';
-  else {
-    const top = swaps[0];
-    if (top.sit && top.gain < CLOSE_CALL_PTS) verdict = 'TOSS-UP: ' + top.start + ' vs ' + top.sit + ' at ' + top.slot + ' are within ' + top.gain + ' points (' + top.start_pts + ' vs ' + top.sit_pts + '). Your call; lean to the healthier player and the better news.';
-    else verdict = 'THE CALL: start ' + top.start + (top.sit ? ' over ' + top.sit : ' in your empty slot') + ' at ' + top.slot + ' (' + top.start_pts + ' vs ' + top.sit_pts + ', +' + top.gain + ')' + (swaps.length > 1 ? '; ' + (swaps.length - 1) + ' more swap' + (swaps.length > 2 ? 's' : '') + ', +' + left + ' in all.' : '.');
+
+  // The facts the call is made from.
+  const kickOf = (pid: string) => { const t = fresh(ctx, pid).t; const g = t && ctx.live && ctx.live.scores ? ctx.live.scores[t] : null; return g && g.kick ? Number(g.kick) : null; };
+  const slotOfRoster = (pid: string) => currentSet.has(pid) ? 'starter' : reserve.includes(pid) ? 'IR' : taxi.includes(pid) ? 'taxi' : (r.players || []).map(String).includes(pid) ? 'bench' : 'not on roster';
+  const facts: Record<string, any> = {};
+  for (const pid of new Set(Object.keys(lines).concat(named))) {
+    const x = lines[pid] || lineFor(ctx, L, pid);
+    lines[pid] = x;
+    facts[pid] = { name: x.name, positions: positionsOf(pid), proj: x.locked ? val(pid) : x.available ? val(pid) : 0, floor: null, ceiling: null, locked: x.locked, kick: kickOf(pid), injury_status: fresh(ctx, pid).inj || null, zero_reason: x.zero_reason || null, why: null, roster_slot: slotOfRoster(pid) };
   }
-  // Head to head, when the member named players.
+  const elig = (s: string) => { const n = SS.normSlot(s); return SS.FLEX_ALLOWED[n] || [n]; };
+  const gameKicks: number[] = [];
+  if (ctx.live && ctx.live.scores) {
+    const seen = new Set<string>();
+    Object.entries(ctx.live.scores).forEach(([t, g]) => { if (!g || g.started || !(Number(g.kick) > 0)) return; const k = [t, g.opp].sort().join('@'); if (seen.has(k)) return; seen.add(k); gameKicks.push(Number(g.kick)); });
+  }
+  const call = startSitCall({
+    week: wkNow, slots: slotNames.map((s, i) => ({ idx: i, slotName: s, elig: elig(s) })),
+    current: Object.fromEntries(current.map((pid, i) => [i, pid]).filter(([, pid]) => pid)), placed,
+    current_total: currentTotal, best_total: optimalTotal,
+    locks_loaded: !!(ctx.live && ctx.live.scores), sleeper_loaded: Object.keys(L.snapshot.proj || {}).length > 0,
+    win_pct: null, players: facts, asked: named, not_found: unknown, game_kicks: gameKicks,
+    stat_word: 'projection', source_note: 'Sleeper\'s weekly projection in this league\'s scoring',
+  });
+
+  // Head to head, when the member named players: the call plus each player's line and news.
   let head_to_head: Record<string, unknown> | undefined;
   if (named.length >= 2) {
     const rows = named.map(pid => lines[pid]);
-    const open = rows.filter(x => x.available && !x.locked);
-    let call: string;
-    if (!open.length) call = 'None of them can be started: ' + rows.map(x => x.name + ' (' + (x.locked ? 'locked, ' + x.this_week : x.why_unavailable) + ')').join('; ') + '.';
+    const others = rows.filter(x => !(x.available && !x.locked) || facts[x.id].roster_slot === 'IR' || facts[x.id].roster_slot === 'taxi' || facts[x.id].roster_slot === 'not on roster').map(x => x.name + ' is ' + (x.locked ? 'locked (' + x.this_week + ')' : !x.available ? 'not startable: ' + x.why_unavailable : 'on your ' + facts[x.id].roster_slot.replace('not on roster', 'list of players you do not roster')));
+    const h = call.head_to_head;
+    let text: string;
+    if (h) text = 'Start ' + h.pick + ' over ' + h.over + (h.close_call ? ': a coin flip (' + h.gap_pts + ' pts apart), ' + h.tiebreak : ' (+' + h.gap_pts + ' pts projected)') + (h.injury_note ? '; ' + h.injury_note : '') + '.' + (others.length ? ' ' + others.join('. ') + '.' : '');
     else {
-      const best = [...open].sort((a, b) => Number(b.pts) - Number(a.pts));
-      const a = best[0], b = best[1];
-      const others = rows.filter(x => !open.includes(x)).map(x => x.name + ' is ' + (x.locked ? 'locked (' + x.this_week + ')' : 'not startable: ' + x.why_unavailable));
-      if (!b) call = 'Start ' + a.name + ' (' + a.pts + ' projected). ' + others.join('. ') + '.';
-      else if (Number(a.pts) - Number(b.pts) < CLOSE_CALL_PTS) call = 'TOSS-UP between ' + a.name + ' (' + a.pts + ') and ' + b.name + ' (' + b.pts + '): under half a point apart. Decide on health and the news.' + (others.length ? ' ' + others.join('. ') + '.' : '');
-      else call = 'Start ' + a.name + ' over ' + b.name + ': ' + a.pts + ' vs ' + b.pts + ' projected (+' + round1(Number(a.pts) - Number(b.pts)) + ')' + (a.injury ? '; note ' + a.name + ' is ' + a.injury : '') + '.' + (others.length ? ' ' + others.join('. ') + '.' : '');
+      const open = rows.filter(x => x.available && !x.locked && (facts[x.id].proj || 0) > 0 && !['IR', 'taxi', 'not on roster'].includes(facts[x.id].roster_slot));
+      text = open.length ? 'Start ' + open[0].name + ' (' + open[0].pts + ' projected). ' + others.join('. ') + '.' : 'None of them can be started: ' + rows.map(x => x.name + ' (' + (x.locked ? 'locked, ' + x.this_week : x.why_unavailable || 'on your ' + facts[x.id].roster_slot) + ')').join('; ') + '.';
     }
     const blurbs = await latestBlurbs(ctx, named);
-    head_to_head = { call, players: rows.map(x => ({ ...x, in_optimal_lineup: optimalSet.has(x.id), on_my_roster: pool.includes(x.id) || (r.reserve || []).includes(x.id), latest_news: blurbs[x.id], team_news: teamNews(ctx, x.nfl_team) })) };
+    head_to_head = { ...(h || {}), call: text, coin_flip: h ? !!h.close_call : undefined, players: rows.map(x => ({ ...x, in_optimal_lineup: optimalSet.has(x.id), on_my_roster: pool.includes(x.id) || reserve.includes(x.id) || taxi.includes(x.id), latest_news: blurbs[x.id], team_news: teamNews(ctx, x.nfl_team) })) };
   }
   const slotOf = (pid: string) => { const i = current.indexOf(pid); return i >= 0 ? slotNames[i] : 'bench'; };
-  const lineup = (pids: Array<{ pid: string; slot: string }>) => pids.map(x => ({ slot: x.slot, player: x.pid ? name(ctx, x.pid) : '(empty)', pos: x.pid ? posOf(ctx, L, x.pid) : undefined, pts: x.pid ? round1(val(x.pid)) : 0, status: x.pid && lines[x.pid] ? (lines[x.pid].locked ? lines[x.pid].this_week : lines[x.pid].available ? 'projected' : 'NOT STARTABLE: ' + lines[x.pid].why_unavailable) : undefined, injury: x.pid && lines[x.pid] ? lines[x.pid].injury : undefined }));
-  const optimalByIndex = slotNames.map((s, i) => lockedSlots.has(i) ? { pid: current[i], slot: s } : null);
-  const openOrder = openSlots.map(x => x.i);
-  solved.slots.forEach((sl, k) => { const idx = openOrder[k]; if (idx != null) optimalByIndex[idx] = { pid: sl.pid || '', slot: slotNames[idx] }; });
+  const lineup = (pids: Array<{ pid: string; slot: string }>) => pids.map(x => ({ slot: x.slot, player: x.pid ? name(ctx, x.pid) : '(empty)', pos: x.pid ? posOf(ctx, L, x.pid) : undefined, pts: x.pid ? round1(val(x.pid)) : 0, locked: x.pid && lines[x.pid] ? lines[x.pid].locked : undefined, status: x.pid && lines[x.pid] ? (lines[x.pid].locked ? lines[x.pid].this_week : lines[x.pid].available ? 'projected' : 'NOT STARTABLE: ' + lines[x.pid].why_unavailable) : undefined, injury: x.pid && lines[x.pid] ? lines[x.pid].injury : undefined }));
+  const left = round1(optimalTotal - currentTotal);
   return {
     league_id: L.league_id, week: L.snapshot.proj_week, team: teamName(L, r.roster_id), is_mine: !!(me && me.roster_id === r.roster_id),
-    verdict, head_to_head,
+    recommendation: call.recommendation, decision: call.decision, confidence: call.confidence,
+    verdict: call.recommendation,
+    head_to_head, asked: call.asked,
+    changes: call.changes, close_calls: call.close_calls, do_not_start: call.do_not_start, questionable: call.questionable,
     points_left_on_bench: left, lineup_is_optimal: left <= 0.05, current_total: currentTotal, optimal_total: optimalTotal,
-    swaps,
+    swaps: call.changes.map((c: any) => ({ slot: c.slot, start: c.start, sit: c.sit, gain: c.gain_pts, close_call: c.close_call, why: c.why })),
     current_lineup: lineup(current.map((pid, i) => ({ pid, slot: slotNames[i] }))),
-    optimal_lineup: lineup(optimalByIndex.map((x, i) => x || { pid: '', slot: slotNames[i] })),
-    bench: pool.filter(pid => !currentSet.has(pid)).map(pid => ({ player: name(ctx, pid), pos: posOf(ctx, L, pid), pts: lines[pid].pts, status: lines[pid].locked ? lines[pid].this_week : lines[pid].available ? 'projected' : 'not startable: ' + lines[pid].why_unavailable, injury: lines[pid].injury, slot_now: slotOf(pid) })).sort((a, b) => Number(b.pts || 0) - Number(a.pts || 0)),
+    optimal_lineup: lineup(slotNames.map((s, i) => ({ pid: placed[i] || '', slot: s }))),
+    bench: pool.filter(pid => !currentSet.has(pid)).map(pid => ({ player: name(ctx, pid), pos: posOf(ctx, L, pid), pts: lines[pid].pts, status: lines[pid].locked ? lines[pid].this_week : lines[pid].available ? 'projected' : 'not startable: ' + lines[pid].why_unavailable, zero_reason: lines[pid].zero_reason, injury: lines[pid].injury, slot_now: slotOf(pid) })).sort((a, b) => Number(b.pts || 0) - Number(a.pts || 0)),
+    evidence: call.evidence, rules_applied: call.rules_applied, locks_loaded: call.locks_loaded, warning: call.warning,
+    solver: solved.exact ? 'exact assignment (it beat the greedy fill: a player eligible at two positions)' : 'greedy fill (the exact assignment found nothing better)',
     not_found: unknown.length ? unknown : undefined,
     before_you_answer: NEWS_STEP, method: skillText('start_sit'), live_as_of: liveAt, numbers_as_of: L.built_at,
   };
@@ -135,7 +164,7 @@ export function rosterNeeds(ctx: Ctx, L: LeagueRow, args: any) {
   const strengths = a.strengths || [];
   const pk = a.picksAssessment || {};
   const todo: string[] = [];
-  (a.needs || []).forEach((n: any) => { const x = (a.posAssessment || {})[n.pos] || {}; todo.push((n.urgency === 'deficit' ? 'Priority: ' : '') + 'Add a quality ' + n.pos + ' (you have ' + (x.nflStarters || 0) + ' of the ' + (x.minQuality || 1) + ' the lineup needs). Use find_trade_targets for teams with ' + n.pos + ' surplus, and get_waiver_options position=' + n.pos + '.'); });
+  (a.needs || []).forEach((n: any) => { const x = (a.posAssessment || {})[n.pos] || {}; todo.push((n.urgency === 'deficit' ? 'Priority: ' : '') + 'Add a quality ' + n.pos + ' (you have ' + (x.nflStarters || 0) + ' of the ' + (x.minQuality || 1) + ' the lineup needs). Use find_trade_targets for teams with ' + n.pos + ' surplus (then trade_plan), and get_waiver_plan position=' + n.pos + '.'); });
   strengths.forEach((pos: string) => { const x = (a.posAssessment || {})[pos] || {}; todo.push(pos + ' is a tradeable surplus: ' + x.nflStarters + ' quality starters for ' + x.minQuality + ' slots. Sell from the back of that room, not the front.'); });
   if (pk.status === 'deficit' || pk.status === 'thin') todo.push('Draft capital is ' + pk.status + ' (' + pk.totalPicks + ' picks over the next ' + (pk.pickYears || []).length + ' drafts, ' + pk.roundsMissing + ' rounds with none). A rebuilding team should fix this first; a contender can live with it.');
   if (a.window === 'CONTENDING') todo.push('Window: contending. Spend future picks and youth for starters who score now.');
@@ -276,7 +305,7 @@ export function findTradeTargets(ctx: Ctx, L: LeagueRow, args: any) {
     league_id: L.league_id, my_team: teamName(L, me.roster_id), my_window: mine.window, my_needs: (mine.needs || []).map((n: any) => n.pos + ' (' + n.urgency + ')'), looking_for: want,
     partners: partners.slice(0, Number(args.limit) || 6),
     my_chips: chips, my_picks: myPicks,
-    how_to_use: 'Pick a partner, build a package from targets_for_you and my_chips or my_picks, then run evaluate_trade for the grade and acceptance chance. Pay rebuilders in picks and youth; pay contenders in starters.',
+    how_to_use: 'Pick a partner and a target, then call trade_plan (target, partner): it reads the partner\'s real mode, sets the going rate and builds offers only from what you own, each with its acceptance chance. To grade a package you already have, call evaluate_trade and lead with its verdict.',
     method: skillText('trade_targets'), numbers_as_of: L.built_at,
   };
 }
@@ -323,17 +352,25 @@ export function waiverBid(ctx: Ctx, L: LeagueRow, args: any) {
   for (const [id, p] of Object.entries(ctx.players)) { const f = fresh(ctx, id); playersData[id] = { player_id: id, position: p.pos, fantasy_positions: p.fp || [p.pos], injury_status: f.inj, team: f.t, status: f.st }; }
   const league = { settings: (L.snapshot.league && L.snapshot.league.settings) || {}, rosters: L.snapshot.rosters, roster_positions: (L.snapshot.league && L.snapshot.league.roster_positions) || [], users: L.snapshot.users };
   const pos = posOf(ctx, L, pid);
-  const est = F.estimate({ league, myRosterId: me.roster_id, txns: L.snapshot.txns, playersData, targetPid: pid, targetPos: pos, dhq: dhq(L, pid), playerValue: (id: string) => dhq(L, id) });
+  // In-season bids only (decide-roster.ts inSeason): Sleeper files every
+  // offseason claim under week 1, which drags the league's bid levels down.
+  const ins = inSeason(ctx, L, L.snapshot.txns as any[]);
+  const est = F.estimate({ league, myRosterId: me.roster_id, txns: ins.txns, playersData, targetPid: pid, targetPos: pos, dhq: dhq(L, pid), playerValue: (id: string) => dhq(L, id) });
   if (!est) throw new ToolError('No bid estimate: this is not a FAAB league, or the budget is spent.');
   const an = est.analysis || {};
   const pays = (L.intel.faabByPos || {})[pos];
+  const allComps = posComps(ctx, L, ins.txns, pos, 999);
   return {
     league_id: L.league_id, player: name(ctx, pid), pos, dhq_value: dhq(L, pid), rostered_by: whoRosters(L, pid) ? teamName(L, whoRosters(L, pid)) + ' (not a free agent)' : 'free agent',
     suggested_bid: est.sug, range: { low: est.lo, high: est.hi, high_capped_by_budget: !!est.hiCapped }, win_chance_pct_at_suggested: est.winPct != null ? Math.round(Number(est.winPct) * 100) : undefined, capped_by_spend_rule: !!est.capped,
     my_faab_left: est.myLeft, budget: est.budget, league_min_bid: est.minBid,
     cold_start: !!est.coldStart, bids_seen_this_season: est.sampleSize,
+    in_season_bids: Object.assign(bidStats(ins.txns), { since: ins.start, offseason_claims_excluded: ins.excluded }),
+    recent_winning_bids_at_position: allComps.length ? allComps.slice(0, 5) : undefined, position_in_season_wins: compSummary(allComps),
     rivals: (an.rivals || []).slice(0, 8), ladder: (an.ladder || []).map((x: any) => ({ bid: x.bid, win_pct: Math.round(Number(x.winPct) * 100) })),
     what_this_league_pays_at_pos: pays ? { typical: pays.median, average: pays.avg, p75: pays.p75, bids_seen: pays.count } : undefined,
+    based_on: est.coldStart ? 'Only ' + est.sampleSize + ' in-season bids in this league so far: league-typical defaults, not per-rival reads.' : est.sampleSize + ' in-season FAAB bids from this league (winning and losing; offseason claims left out).',
+    for_a_whole_plan: 'For who to claim AND who to drop, call get_waiver_plan.',
     method: skillText('waiver_bid'), numbers_as_of: L.built_at,
   };
 }
@@ -343,7 +380,10 @@ const A = (d: string) => ({ type: 'array', items: { type: 'string' }, descriptio
 const N = (d: string) => ({ type: 'number', description: d });
 const def = (n: string, d: string, props: Record<string, unknown>, required: string[] = []) => ({ name: n, description: d, inputSchema: { type: 'object', properties: { league_id: S('League id'), ...props }, required } });
 export const VERDICT_DEFS = [
-  def('get_start_sit', 'DHQ\'s lineup verdict, the same call the app\'s Lineup screen makes: the optimal lineup for this week in this league\'s scoring, the swaps to get there, and THE CALL (the biggest one). Name two or more players to get a head-to-head call between them. Players whose game has started are locked; Out, Doubtful and bye players cannot start. Returns the method it followed. Use this for every "who do I start" question instead of comparing projections yourself.', { players: A('Optional: players to decide between (names or ids)'), roster_id: N('Optional: another roster in the league') }),
+  def('trade_plan', 'START HERE before proposing any trade. One verdict for getting a player (or dealing with a team): decision (offer / counter / pass / no_fit) and one plain recommendation; the partner\'s real mode (rebuilding / contending / middle) read from their record, this season\'s trades and their Sleeper trade block, what they want and won\'t take; the going rate for the target (a young starter needs a headliner: a 1st, or a young player worth 70%+); up to 3 offers built ONLY from what the member owns, each with its acceptance chance; and what not to offer and why. Pass `give` to check and improve a package the member is considering.', { target: S('The player (or pick) the member wants, e.g. "Jordan Love". Default: the best player on the partner\'s trade block.'), partner: S('The other team or owner (default: whoever has the target)'), partner_roster_id: N('Optional: the partner\'s roster id'), give: A('Optional: a package the member is thinking of sending, to check it') }),
+  def('get_start_sit', 'THE call for any start/sit or lineup question this week, verdict first: `recommendation` (start X over Y and the points), confidence, coin-flip close calls (within 1.5 pts or 10%) with the tiebreak, who must not start and why (out, doubtful, bye, IR, no NFL team, no Sleeper line, already played), and Questionable starters in late games with a pivot who plays as late. Exact lineup solver (dual-position IDP players counted at every position). Pass `players` when the member names who he is choosing between. Uses Sleeper\'s weekly projection in this league\'s scoring, never dynasty value. Players whose game has started are locked.', { players: A('Optional: players to decide between (names or ids)'), roster_id: N('Optional: another roster in the league'), week: N('Optional NFL week; only the current week can be decided') }),
+  def('get_waiver_plan', 'The waiver decision for the member\'s team, verdict first: who to claim, each paired with who to drop (active roster only, never taxi/IR, an injured stash or a handcuff to his own starter), an opening bid and a max from this season\'s in-season bids (offseason claims excluded) with comparable winning bids at the position, handcuffs to his starters on the wire, FAAB pacing by weeks left, and who not to add (a need no free agent would start at is a trade). Only positions this league starts (no DEF without a DEF slot). Use for "who should I pick up", "who do I drop", "how much should I bid".', { position: S('Optional: limit adds to one position (QB, RB, WR, TE, K, DL, LB, DB, FLEX)'), budget_pct: N('Optional: most of the remaining FAAB to put on any one claim, in percent (default: the pace cap)') }),
+  def('roster_plan', 'Roster spots, cuts, IR and taxi for the member\'s team, verdict first: active/taxi/IR counts against the league limits, IR moves (this league\'s IR eligibility rules) and taxi moves that free a spot, the ordered cut list from the active roster (one drop rule, the same get_waiver_plan uses), and who to keep despite a low number (IR stashes valued at a healthy-equivalent from their peers, handcuffs, young upside). Use for "who should I cut", "do I have room", "can he go on IR/taxi".', {}),
   def('get_roster_needs', 'DHQ\'s read of a team: tier, window, health, panic, every position\'s status (deficit, thin, ok, surplus) with the quality-starter counts behind it, draft capital, and what to do about it.', { roster_id: N('Optional: defaults to the member\'s team') }),
   def('get_player_outlook', 'DHQ\'s buy / sell / hold call on one player for this league (the app\'s player-action chain over value tier, peak years, value years, trend and ownership), with the latest news and this season\'s line.', { player: S('Player name or id') }, ['player']),
   def('compare_players', 'Side by side for 2-6 players in this league: dynasty value, peak years, age, this week, season average, long-run rate, who leads each, and a verdict.', { players: A('Player names or ids (2-6)') }, ['players']),
@@ -353,6 +393,9 @@ export const VERDICT_DEFS = [
 ];
 export async function runVerdict(ctx: Ctx, L: LeagueRow, name: string, args: any): Promise<unknown> {
   switch (name) {
+    case 'trade_plan': return tradePlan(ctx, L, args);
+    case 'get_waiver_plan': return waiverPlan(ctx, L, args);
+    case 'roster_plan': return rosterPlan(ctx, L, args);
     case 'get_start_sit': return startSit(ctx, L, args);
     case 'get_roster_needs': return rosterNeeds(ctx, L, args);
     case 'get_player_outlook': return playerOutlook(ctx, L, args);

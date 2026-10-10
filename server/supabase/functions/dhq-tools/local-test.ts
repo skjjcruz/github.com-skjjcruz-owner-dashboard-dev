@@ -35,6 +35,7 @@ const calls: Array<[string, Record<string, unknown>]> = [
   ['get_standings', { league_id: lid }], ['get_schedule', { league_id: lid }], ['get_league_history', { league_id: lid }],
   ['get_head_to_head', { league_id: lid, team_b: '7' }], ['get_transactions', { league_id: lid, limit: 5 }], ['get_draft_info', { league_id: lid, section: 'results' }],
   ['search_players', { league_id: lid, position: 'RB', availability: 'free_agents' }],
+  ['trade_plan', { league_id: lid, target: 'Jordan Love' }], ['get_start_sit', { league_id: lid }], ['get_waiver_plan', { league_id: lid }], ['roster_plan', { league_id: lid }],
   ['get_team', { league_id: 'nope' }],
 ];
 console.log('tools:', TOOL_DEFS.map(t => t.name).join(', '));
