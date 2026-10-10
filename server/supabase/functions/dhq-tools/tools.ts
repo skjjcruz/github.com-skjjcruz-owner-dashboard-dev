@@ -158,9 +158,31 @@ export function teamNews(ctx: Ctx, team: string | null | undefined, limit = 6): 
   if (!list || !list.length) return undefined;
   return list.slice(0, limit).map(i => dateLabel(i.d) + ': ' + i.h + (i.s ? ' — ' + i.s : ''));
 }
-type Blurb = { published?: string; headline?: string; story?: string };
+type Story = { date: string; kind: string; how: string; headline: string; summary?: string; url?: string; source?: string };
+type Blurb = { published?: string; headline?: string; story?: string; stories?: Story[] };
+// The engine's player news index (server/engine/news.js → player_news):
+// every story of the last 14 days linked to the player, his own and the
+// team news that reaches him (coaching/play-calling, his quarterback).
+async function linkedNews(pids: string[]): Promise<Record<string, Story[]>> {
+  const url = Deno.env.get('SUPABASE_URL') || '', key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const ids = [...new Set(pids)].filter(p => /^[A-Za-z0-9]{1,12}$/.test(p)).slice(0, 40);
+  if (!url || !key || !ids.length) return {};
+  try {
+    const since = new Date(Date.now() - 14 * 864e5).toISOString();
+    const r = await fetch(url + '/rest/v1/player_news?select=player_id,kind,link,why,headline,summary,url,source,published_at&player_id=in.(' + ids.join(',') + ')&link=neq.report&published_at=gte.' + since + '&order=published_at.desc&limit=400', { headers: { apikey: key, Authorization: 'Bearer ' + key }, signal: AbortSignal.timeout(3000) });
+    if (!r.ok) return {};
+    const out: Record<string, Story[]> = {};
+    for (const x of await r.json() as Array<Record<string, string>>) {
+      const list = out[x.player_id] = out[x.player_id] || [];
+      if (list.length >= 5) continue;
+      list.push({ date: dateLabel(x.published_at.slice(0, 10)), kind: x.kind, how: x.link === 'direct' ? 'about him' : 'via ' + (x.why || 'his team'), headline: x.headline, summary: x.summary || undefined, url: x.url || undefined, source: x.source || undefined });
+    }
+    return out;
+  } catch { return {}; }
+}
 export async function latestBlurbs(ctx: Ctx, pids: string[]): Promise<Record<string, Blurb>> {
   const out: Record<string, Blurb> = {};
+  const linked = linkedNews(pids);
   const want = [...new Set(pids)].filter(pid => ctx.players[pid] && ctx.players[pid].e).slice(0, 12);
   await Promise.all(want.map(async pid => {
     try {
@@ -171,6 +193,8 @@ export async function latestBlurbs(ctx: Ctx, pids: string[]): Promise<Record<str
       if (rw && (rw.headline || rw.story)) out[pid] = { published: rw.published ? String(rw.published).replace(/\s\d\d:\d\d:\d\d\s\w+\s/, ' ') : undefined, headline: rw.headline, story: rw.story ? String(rw.story).slice(0, 600) : undefined };
     } catch { /* no blurb this time */ }
   }));
+  const stories = await linked;
+  Object.entries(stories).forEach(([pid, list]) => { if (list.length) out[pid] = { ...(out[pid] || {}), stories: list }; });
   return out;
 }
 // This season so far and this week, in the league's scoring.
@@ -439,7 +463,7 @@ function pickValues(ctx: Ctx, L: LeagueRow, args: any) {
   return { league_id: L.league_id, teams, draft_rounds: rounds, value_by_round: byRound, first_round_by_slot: top, picks_owned: owned, note: 'Values for the next draft; later years are discounted 12% per year. A pick\'s slot comes from Sleeper\'s draft order when known, else the owner\'s standing.' };
 }
 
-export const NEWS_STEP = 'Before you answer, read latest_news (the player\'s own most recent report) and team_news (his team\'s headlines from the last 7 days) for EACH player and lead with the biggest item on each side: a new play-caller or head coach, a quarterback change, a teammate trade or injury that shifts targets or carries, a role change, practice status. A coaching or play-calling change outranks a cold stretch of box scores. If you can also search the web, add anything newer. Never tell the member to go check something themselves.';
+export const NEWS_STEP = 'Before you answer, read latest_news (the player\'s own most recent report, plus latest_news.stories: every story of the last two weeks linked to him, "about him" or "via" the team news that reaches him, like a new play-caller or his quarterback\'s injury) and team_news (his team\'s headlines from the last 7 days) for EACH player and lead with the biggest item on each side: a new play-caller or head coach, a quarterback change, a teammate trade or injury that shifts targets or carries, a role change, practice status. A coaching or play-calling change outranks a cold stretch of box scores. If you can also search the web, add anything newer. Never tell the member to go check something themselves.';
 export type ProjLine = { id: string; name: string; pos: string; nfl_team: string; nfl_opponent?: string; game_date?: string | null; game_status?: string; injury?: string; proj_this_week?: number | null; scored_this_week?: number; this_week?: string; season_games?: number; season_avg?: number | null; game_log?: string };
 export function projLine(ctx: Ctx, L: LeagueRow, pid: string): ProjLine {
   const p = fresh(ctx, pid);
