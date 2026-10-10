@@ -26,6 +26,17 @@ export function weekPts(ctx: Ctx, L: LeagueRow, pid: string): number | null {
   const b = seasonBits(ctx, L, pid) as Record<string, any>;
   return b.scored_this_week != null ? Number(b.scored_this_week) : b.proj_this_week != null ? Number(b.proj_this_week) : null;
 }
+// This week as the Lab's roster and waiver tools read it (ask-tools.js
+// thisWeek): points scored once his game started, else DHQ's weekly
+// projection (its typical week, the median) when the build stored one,
+// else Sleeper's line.
+export function weekProj(ctx: Ctx, L: LeagueRow, pid: string): number | null {
+  const b = seasonBits(ctx, L, pid) as Record<string, any>;
+  if (b.scored_this_week != null) return Number(b.scored_this_week);
+  const d = (L.snapshot as any).dhq_proj;
+  if (d && d.players && Number(d.week) === Number(L.snapshot.proj_week) && d.players[pid]) return Number(d.players[pid].median) || 0;
+  return b.proj_this_week != null ? Number(b.proj_this_week) : null;
+}
 export const gameStarted = (ctx: Ctx, pid: string) => teamPlayed(ctx, fresh(ctx, pid).t);
 export const weekNow = (L: LeagueRow) => Number(L.snapshot.proj_week) || Number((L.snapshot.nfl_state || {}).week) || 0;
 

@@ -480,6 +480,28 @@ Deno.test('roster_plan: IR-eligible bench player goes to IR first; an ineligible
     eq(r.decision, 'activate_from_ir'); match(r.recommendation, /James Conner/);
   } finally { rosterPlayers.conner.inj = 'IR'; Object.assign(me13, JSON.parse(saved)); delete rosterPlayers.etienne; delete SC.etienne; }
 });
+Deno.test('roster_plan: a bye week is not "projects 0" (season ppg instead); a backup kicker says so', async () => {
+  const teams = ['DAL', 'LAR', 'IND', 'BAL', 'JAX', 'CHI', 'LV', 'HOU', 'NYJ', 'ARI', 'LAC', 'TB', 'BUF', 'CLE', 'TEN', 'MIA', 'DET', 'SF', 'MIN', 'NO', 'SEA', 'WAS', 'NYG', 'GB', 'PHI', 'DEN', 'KC', 'ATL', 'PIT', 'CIN'];   // CAR not playing: a bye
+  rctx.nflWeek = { week: 5, games: Object.fromEntries(teams.map(t => [t, { opp: 'X', date: null }])) };
+  try {
+    const r = await rr('roster_plan');
+    const fitz = r.cut_candidates.find((c: any) => c.player === 'Ryan Fitzgerald');
+    match(fitz.why, /on bye this week \(averages 10\.6 a game\)/); match(fitz.why, /a backup kicker: you start 1/);
+    ok(!/projects 0/.test(fitz.why)); eq(fitz.keep_score, 90 + Math.round(10.6 * 50));
+    const cuts = r.cut_candidates.map((c: any) => c.player);
+    ok(cuts.indexOf('Ryan Fitzgerald') > cuts.indexOf('Isaiah Davis'), cuts.join(', '));
+  } finally { delete (rctx as any).nflWeek; }
+});
+Deno.test('roster_plan: reads DHQ\'s weekly projection (median) when the build stored it', async () => {
+  (RL.snapshot as any).dhq_proj = { week: 5, players: { davis: { mean: 0.5, median: 0.4, floor: 0.3, ceiling: 0.7 }, knight: { mean: 0, median: 0, floor: 0, ceiling: 0, no_line: true } } };
+  try {
+    const r = await rr('roster_plan');
+    const davis = r.cut_candidates.find((c: any) => c.player === 'Isaiah Davis');
+    eq(davis.keep_score, 62 + Math.round(0.4 * 50)); match(davis.why, /projects 0\.4 this week/);
+    const cuts = r.cut_candidates.map((c: any) => c.player);
+    ok(cuts.indexOf('Isaiah Davis') < cuts.indexOf('Zonovan Knight'), cuts.join(', '));
+  } finally { delete (RL.snapshot as any).dhq_proj; }
+});
 Deno.test('get_waiver_plan: every add paired with an active-roster drop; handcuffs; TE is a trade', async () => {
   const r = await rr('get_waiver_plan');
   eq(r.decision, 'add');

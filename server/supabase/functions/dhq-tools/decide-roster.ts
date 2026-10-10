@@ -32,8 +32,8 @@
 // percentiles down by half. Claims made before the regular-season start are
 // left out.
 // deno-lint-ignore-file no-explicit-any
-import { type Ctx, type LeagueRow, type Roster, ToolError, myRoster, assessOf, dhq, fresh, round1 } from './tools.ts';
-import { normPos, metaOf, posOf, pname, valueOf, label, holderOf, injuryText, weekPts, gameStarted, weekNow, leaguePositions, posSet, POS_ALL } from './decide-common.ts';
+import { type Ctx, type LeagueRow, type Roster, ToolError, myRoster, assessOf, dhq, fresh, round1, gameBits } from './tools.ts';
+import { normPos, metaOf, posOf, pname, valueOf, label, holderOf, injuryText, weekProj, gameStarted, weekNow, leaguePositions, posSet, POS_ALL } from './decide-common.ts';
 import { skillText } from './skills.ts';
 
 const engines = () => (globalThis as any).App || {};
@@ -45,6 +45,15 @@ const IR_KEYS: Record<string, string> = { OUT: 'reserve_allow_out', DOUBTFUL: 'r
 const settingsOf = (L: LeagueRow): Record<string, any> => ((L.snapshot.league || {}).settings || {});
 const injOf = (ctx: Ctx, pid: string) => String(fresh(ctx, pid).inj || '').toUpperCase();
 const isDynasty = (L: LeagueRow) => Number(settingsOf(L).type) !== 0;   // Sleeper: 0 redraft, 1 keeper, 2 dynasty
+// Owner test 2026-10-10: Ryan Fitzgerald was a cut "because he projects zero
+// this week" when he was on a bye. A bye says nothing about a player: the
+// keep score uses his season points per game (playerMeta.ppg) instead.
+const onBye = (ctx: Ctx, pid: string) => { const t = fresh(ctx, pid).t; return !!t && gameBits(ctx, t).nfl_opponent === 'BYE'; };
+function projFor(ctx: Ctx, L: LeagueRow, pid: string): number | null {
+  if (gameStarted(ctx, pid)) return weekProj(ctx, L, pid);
+  if (onBye(ctx, pid)) { const m = metaOf(L, pid); return m.ppg != null ? Number(m.ppg) : null; }
+  return weekProj(ctx, L, pid);
+}
 const noUndef = (o: Record<string, any>) => { Object.keys(o).forEach(k => { if (o[k] === undefined || o[k] === null || o[k] === '') delete o[k]; }); return o; };
 
 // ── Value with the IR fallback ───────────────────────────────────────────
@@ -156,7 +165,7 @@ export function handcuffs(ctx: Ctx, L: LeagueRow, r: Roster) {
 
 // ── The one drop list ────────────────────────────────────────────────────
 export function keepScore(ctx: Ctx, L: LeagueRow, pid: string, vr: { value: number | null }) {
-  const proj = Number(weekPts(ctx, L, pid)) || 0;
+  const proj = Number(projFor(ctx, L, pid)) || 0;
   if (!isDynasty(L)) return round1(proj * 100);
   const m = metaOf(L, pid), p = ctx.players[pid] || ({} as any);
   const upside = posOf(ctx, L, pid) !== 'K' && (Number(p.yrs) <= 1 || Number(m.peakYrsLeft) >= 3) ? UPSIDE_BONUS : 0;
@@ -187,7 +196,7 @@ export function cutPlan(ctx: Ctx, L: LeagueRow, r: Roster) {
   counts.activeIds.forEach(pid => {
     const vr = valueRead(ctx, L, pid);
     const p = fresh(ctx, pid);
-    const proj = weekPts(ctx, L, pid);
+    const proj = projFor(ctx, L, pid);
     const inj = injOf(ctx, pid);
     const keepIf = (reason: string) => { keep.push(Object.assign({ pid }, row(ctx, L, pid, { reason }))); };
     if (!p.t) return candidates.push(Object.assign({ pid, rank_key: -2, keep_score: keepScore(ctx, L, pid, vr) }, row(ctx, L, pid, { why: 'No NFL team' + (inj ? ' (' + p.inj + ')' : '') + ': a dead roster spot.', keep_score: keepScore(ctx, L, pid, vr) })));
@@ -208,7 +217,8 @@ export function cutPlan(ctx: Ctx, L: LeagueRow, r: Roster) {
     const why: string[] = [];
     if (vr.value_source === 'unscored') why.push('no engine value and no NFL role');
     else why.push('value ' + (vr.value || 0));
-    why.push(proj != null ? (gameStarted(ctx, pid) ? 'scored ' : 'projects ') + round1(proj) + ' this week' : 'no projection this week');
+    why.push(onBye(ctx, pid) ? 'on bye this week' + (proj != null ? ' (averages ' + round1(proj) + ' a game)' : '') : proj != null ? (gameStarted(ctx, pid) ? 'scored ' : 'projects ') + round1(proj) + ' this week' : 'no projection this week');
+    if (pos === 'K' && (healthyAt.K || 0) > (slots.K || 1)) why.push('a backup kicker: you start ' + (slots.K || 1));
     if (Number(metaOf(L, pid).trend) <= -30) why.push('trend ' + metaOf(L, pid).trend + '%');
     if (inj) why.push(String(p.inj));
     candidates.push(Object.assign({ pid, rank_key: 0, keep_score: keepScore(ctx, L, pid, vr) }, row(ctx, L, pid, { why: why.join(', ') + '.', keep_score: keepScore(ctx, L, pid, vr) })));
@@ -404,23 +414,23 @@ export function waiverPlan(ctx: Ctx, L: LeagueRow, args: any) {
   const rostered = new Set<string>(); L.snapshot.rosters.forEach(r => (r.players || []).forEach(x => rostered.add(String(x))));
   // A need only counts for a player who would start there: his projection beats my weakest starter's at that position.
   const starterProj: Record<string, number> = {};
-  (me.starters || []).map(String).filter(x => x && x !== '0').forEach(sid => { const ps = posOf(ctx, L, sid); const v = Number(weekPts(ctx, L, sid)) || 0; starterProj[ps] = starterProj[ps] == null ? v : Math.min(starterProj[ps], v); });
+  (me.starters || []).map(String).filter(x => x && x !== '0').forEach(sid => { const ps = posOf(ctx, L, sid); const v = Number(weekProj(ctx, L, sid)) || 0; starterProj[ps] = starterProj[ps] == null ? v : Math.min(starterProj[ps], v); });
   const fitOf = (pid: string): { mult: number; fills?: string; short?: string; vs?: number; pr?: number | null } => {
     const pos = posOf(ctx, L, pid), need = needOf[pos];
     if (need === 'surplus') return { mult: FIT.surplus };
     if (need !== 'deficit' && need !== 'thin') return { mult: 1 };
-    const pr = weekPts(ctx, L, pid);
+    const pr = weekProj(ctx, L, pid);
     if (starterProj[pos] == null || (pr != null && pr > starterProj[pos])) return { mult: FIT[need], fills: need };
     return { mult: 1, short: need, vs: starterProj[pos], pr };
   };
-  const addScore = (pid: string) => Math.round(dhq(L, pid) * fitOf(pid).mult + (Number(weekPts(ctx, L, pid)) || 0) * 35);
+  const addScore = (pid: string) => Math.round(dhq(L, pid) * fitOf(pid).mult + (Number(weekProj(ctx, L, pid)) || 0) * 35);
   const fas = Object.keys(ctx.players).filter(pid => { const p = ctx.players[pid]; return !!(p && p.t && !rostered.has(pid) && p.act !== false && String(p.st || '') !== 'Retired' && !/inactive/i.test(String(p.st || '')) && want.includes(posOf(ctx, L, pid))); });
   const cuffs = handcuffs(ctx, L, me);
   const faSet = new Set(fas);
   const cuffFA = cuffs.filter(c => c.owner === 'free agent' && want.includes(c.pos) && faSet.has(c.backup));
   const cuffOf: Record<string, string> = {};
   cuffFA.forEach(c => { cuffOf[c.backup] = c.starter; });
-  const ranked = fas.filter(pid => dhq(L, pid) > 0 || (Number(weekPts(ctx, L, pid)) || 0) > 0).sort((x, y) => addScore(y) - addScore(x)).slice(0, 40);
+  const ranked = fas.filter(pid => dhq(L, pid) > 0 || (Number(weekProj(ctx, L, pid)) || 0) > 0).sort((x, y) => addScore(y) - addScore(x)).slice(0, 40);
   const order = [...new Set(cuffFA.map(c => c.backup).concat(ranked))];
   const plan = cutPlan(ctx, L, me);
   const counts = plan.counts;
@@ -453,7 +463,7 @@ export function waiverPlan(ctx: Ctx, L: LeagueRow, args: any) {
     if (fit.fills) { filled.add(posOf(ctx, L, pid)); why.push('fills your ' + fit.fills + ' ' + posOf(ctx, L, pid) + ' spot'); }
     else if (fit.short) why.push(posOf(ctx, L, pid) + ' is ' + fit.short + ' for you, but he wouldn\'t start (projects ' + (fit.pr != null ? round1(fit.pr) : 'nothing') + ' vs your starter\'s ' + round1(fit.vs) + ')');
     why.push('value ' + (vr.value != null ? vr.value : 'unknown'));
-    const pr = weekPts(ctx, L, pid);
+    const pr = weekProj(ctx, L, pid);
     if (pr != null) why.push((gameStarted(ctx, pid) ? 'scored ' : 'projects ') + round1(pr) + ' this week');
     const inj = injuryText(ctx, pid); if (inj) why.push(inj);
     if (gameStarted(ctx, pid)) why.push('already played this week, so he helps from next week');
