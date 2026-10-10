@@ -5,7 +5,7 @@
 // The rules, in order of precedence: ownership > headliner > what the
 // partner wants > raw value. The seven trade fixes:
 //   1. A player his owner listed on the trade block costs that owner LESS
-//      (15% off; a listed veteran at most half his value).
+//      (15% off); a rebuilder's veteran never below 70% (market floor).
 //   2. A pick whose holder can't be confirmed is never the member's.
 //   3. Rebuild before panic: a rebuilding owner is a seller whatever his
 //      panic (no "Desperate" posture, no Panic Premium).
@@ -396,12 +396,16 @@ export function headlinerMet(rule: any, target: Piece, give: Piece[], meRid: unk
   return { ok, firsts: firsts.length, via: picksOk ? firsts.concat(sweet).map(x => x.label).join(' + ') : playerOk ? big.label : null, notes };
 }
 // What one piece the partner gives up costs THEM (fix 1): a listed piece
-// takes 15% off, a listed veteran counts at most half his value.
-const LISTED_DISCOUNT = 0.85, LISTED_VET_CAP = 0.5;
+// takes 15% off. Market floor (Lab, LAB243 review): a rebuilder has little
+// USE for a veteran, but he can still sell him to a contender at market, so
+// what he gives up is never below about 70% of the veteran's value (85% of
+// that when he listed him).
+const LISTED_DISCOUNT = 0.85, VET_MARKET_FLOOR = 0.7;
 export function costToOwner(L: LeagueRow, mode: string, x: Piece, listed: boolean) {
   const ap = mode === 'REBUILDING' ? appealFor(L, 'REBUILDING', x) : { mult: 1, why: '' };
   const vet = x.kind === 'player' && isVet(x.pos, x.age);
-  const mult = listed ? Math.min(ap.mult * LISTED_DISCOUNT, vet ? LISTED_VET_CAP : Infinity) : ap.mult;
+  const base = vet && mode === 'REBUILDING' ? Math.max(ap.mult, VET_MARKET_FLOOR) : ap.mult;
+  const mult = listed ? base * LISTED_DISCOUNT : base;
   return { cost: Math.round(x.value * mult), mult: Math.round(mult * 100) / 100, why: [ap.why, listed ? 'on their trade block, so they want him moved' : ''].filter(Boolean).join('; ') };
 }
 function priceDeal(L: LeagueRow, intent: Intent | null, give: Piece[], get: Piece[]) {
@@ -653,7 +657,7 @@ export async function tradePlan(ctx: Ctx, L: LeagueRow, args: any) {
     'Partner mode read once (record, this season\'s trades, trade block); the app window is evidence only. A rebuild read wins over panic.',
     'Only assets you verifiably own are listed or offered; a pick with an unknown holder is not yours.',
     'Pieces priced as the partner sees them. A rebuilder: next-draft picks x1.15, the draft after x1.0, later x0.85; players 24 or under x1.15; ' + VET_RULE + ' x0.55 or x0.2.',
-    'A listed player costs his owner 15% less; a listed veteran at most half his value.',
+    'A listed player costs his owner 15% less. A rebuilder\'s veteran never costs him less than 70% of his value (he can sell him to a contender), 85% of that when listed.',
     'Next draft: slot projected from current standings (worst team picks 1st), no year discount; later drafts mid-round, less 12% a year.',
     'Acceptance is estimated on value to them, minus 8 points per extra player they must roster; capped at 10% without the headliner.',
     'A rebuilder never gives picks back: balance with veterans they want gone.',

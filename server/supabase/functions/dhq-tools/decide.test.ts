@@ -312,9 +312,10 @@ Deno.test('trade: balance when the member overpays a rebuilder: their veterans, 
   ok(e.balance && e.balance.options.length, JSON.stringify(e.balance)); match(e.balance.how, /won't give picks back/);
   e.balance.options.forEach((o: string) => ok(!PICKY.test(o), o)); ok(e.balance.options[0].includes('on their block'));
 });
-Deno.test('trade: listed vets cost their owner less; Love (listed, not a vet) only the listing discount', async () => {
+Deno.test('trade: listed vets cost their owner less (down to a market floor); Love (listed, not a vet) only the listing discount', async () => {
   const r = await tr('trade_plan', { target: 'Saquon Barkley' });
-  ok(r.price_floor.their_price <= Math.round(3100 * 0.5), String(r.price_floor.their_price)); match(r.price_floor.headliner_needed, /^none/);
+  // A listed vet costs his rebuilding owner less, but never below his market floor (70%, 85% of that when listed).
+  eq(r.price_floor.their_price, Math.round(3100 * 0.7 * 0.85), String(r.price_floor.their_price)); match(r.price_floor.headliner_needed, /^none/);
   const love = await tr('trade_plan', { target: 'Jordan Love' });
   eq(love.price_floor.their_price, Math.round(3574 * 0.85));
 });
