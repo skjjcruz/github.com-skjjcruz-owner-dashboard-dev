@@ -617,6 +617,62 @@ export function searchPlayersTool(ctx: Ctx, L: LeagueRow, args: any) {
   };
 }
 
+// ── trade block (owner ruling 2026-10-10: "really check, no assumptions") ──
+// Not in Sleeper's documented API, but the GraphQL feed Sleeper's own app
+// uses answers league_players without a login and marks every player and
+// pick an owner listed (settings.otb, otb_added_at). Pending offers and
+// league notes on that feed need a login and stay out of reach. Listings
+// whose player has since moved or been cut are dropped.
+const blockMemo: Record<string, { at: number; rows: Array<Record<string, any>> }> = {};
+async function tradeBlockTool(ctx: Ctx, L: LeagueRow, args: any) {
+  const lid = String(L.league_id).replace(/[^0-9]/g, '');
+  let rows = blockMemo[lid] && Date.now() - blockMemo[lid].at < 5 * 60 * 1000 ? blockMemo[lid].rows : null;
+  if (!rows) {
+    const r = await fetch('https://api.sleeper.app/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '{ league_players(league_id: "' + lid + '") { player_id metadata settings } }' }), signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new ToolError('Sleeper\'s trade block did not answer (' + r.status + ').');
+    const j = await r.json();
+    rows = (j && j.data && j.data.league_players) || [];
+    blockMemo[lid] = { at: Date.now(), rows: rows as Array<Record<string, any>> };
+  }
+  const rosters = (L.snapshot.rosters || []) as Roster[];
+  const owner = new Map<string, Roster>();
+  rosters.forEach(r => (r.players || []).forEach(pid => owner.set(String(pid), r)));
+  const only = args.team != null || args.roster_id != null ? teamArg(ctx, L, args.team, args.roster_id) : null;
+  const pos = args.position ? String(args.position).toUpperCase() : null;
+  const season = Number(L.season) || new Date().getFullYear();
+  const day = (ms: unknown) => { const t = Number(ms); return t > 0 ? new Date(t).toISOString().slice(0, 10) : undefined; };
+  const me = myRoster(L, ctx.memberId);
+  const teams = new Map<string, { team: string; roster_id: number; mine?: boolean; players: unknown[]; picks: unknown[] }>();
+  const slot = (r: Roster) => { const k = String(r.roster_id); if (!teams.has(k)) teams.set(k, { team: label(L, r.roster_id), roster_id: r.roster_id, mine: me && me.roster_id === r.roster_id ? true : undefined, players: [], picks: [] }); return teams.get(k)!; };
+  let stale = 0;
+  for (const x of rows || []) {
+    if (!x || !x.settings || !x.settings.otb) continue;
+    const id = String(x.player_id);
+    if (id.includes(',')) {
+      const [rid, yr, rd] = id.split(',').map(Number);   // original roster, season, round
+      if (!(yr > season)) { stale++; continue; }
+      const orig = rosters.find(r => Number(r.roster_id) === rid);
+      if (!orig || (only && only.roster_id !== orig.roster_id)) continue;
+      slot(orig).picks.push({ pick: yr + ' round ' + rd + ' (originally ' + teamName(L, rid) + ')', listed: day(x.settings.otb_added_at) });
+      continue;
+    }
+    const r = owner.get(id);
+    if (!r) { stale++; continue; }
+    if (only && only.roster_id !== r.roster_id) continue;
+    const p = fresh(ctx, id);
+    const ppos = String(p.pos || '').toUpperCase();
+    if (pos && ppos !== pos && !((p.fp || []) as string[]).map(String).includes(pos)) continue;
+    const b = seasonBits(ctx, L, id) as Record<string, any>;
+    slot(r).players.push(strip({ name: p.n || id, pos: ppos, nfl_team: p.t || 'FA', age: p.age ?? undefined, dhq_value: dhq(L, id), injury: p.inj ? p.inj + (p.injp ? ' (' + p.injp + ')' : '') : undefined, proj_this_week: b.proj_this_week ?? undefined, season_avg: b.season_avg ?? undefined, listed: day(x.settings.otb_added_at), likes: x.metadata && x.metadata.likes ? Number(x.metadata.likes) : undefined }));
+  }
+  const list = [...teams.values()].sort((a, b) => (b.players.length + b.picks.length) - (a.players.length + a.picks.length));
+  return strip({
+    league_id: L.league_id, source: 'Sleeper trade block (what owners listed in Sleeper), read live',
+    teams_shopping: list.length, listings: list.reduce((n, t) => n + t.players.length + t.picks.length, 0), stale_listings_dropped: stale || undefined,
+    teams: list, note: list.length ? undefined : 'Nothing on the block' + (only ? ' for that team' : '') + (pos ? ' at ' + pos : '') + ' right now.',
+  });
+}
+
 // ── definitions ─────────────────────────────────────────────────────────
 const S = (d: string) => ({ type: 'string', description: d });
 const N = (d: string) => ({ type: 'number', description: d });
@@ -632,6 +688,7 @@ export const LEAGUE_DEFS = [
   def('get_transactions', 'League moves: trades (every season, today\'s DHQ value per side and who won), waiver claims with FAAB bids (and who they outbid), and free-agent adds/drops this season. Filter by type, team, player, recent weeks or season.', { type: E(['all', 'trade', 'waiver', 'free_agent'], 'Default all.'), team: S(TEAM), roster_id: N('Roster id (alternative to team)'), player: S('Only moves involving this player'), weeks: N('Only the last N weeks of this season'), season: S('Only this season, e.g. "2025" (past seasons: trades only)'), include_failed: B('Also list failed waiver claims (default false)'), limit: N('Max rows (default 20, max 50)') }),
   def('get_draft_info', 'Draft picks: who owns which future picks (every team or one), what picks are worth by round and slot, past rookie draft results (who took whom, value now, hit or miss), and hit rates by round in this league.', { team: S(TEAM + ' (default: every team).'), roster_id: N('Roster id (alternative to team)'), section: E(['all', 'picks', 'values', 'results', 'hit_rates'], 'Default all.'), season: S('Past draft season for results, e.g. "2024"'), round: N('Only this round'), limit: N('Max result rows (default 25, max 60)') }),
   def('search_players', 'League-wide player rankings and filters: by position (or FLEX / SUPER_FLEX / IDP), availability (all, free_agents, rostered, mine), NFL team and age, sorted by DHQ dynasty value, this week\'s projection, season average, DHQ points per game, or age. Answers "top 20 WRs in my league", "best available RB", "youngest QBs".', { position: S('QB, RB, WR, TE, K, DEF, DL, LB, DB, FLEX, SUPER_FLEX or IDP (omit for all)'), availability: E(['all', 'free_agents', 'rostered', 'mine'], 'Default all.'), sort: E(['value', 'this_week', 'season_avg', 'ppg', 'age'], 'value (dynasty, default), this_week (projection or points scored), season_avg (this season), ppg (DHQ dynasty rate), age (youngest first).'), nfl_team: S('NFL team abbreviation, e.g. DEN'), min_age: N('Minimum age'), max_age: N('Maximum age'), limit: N('Rows (default 15, max 40)') }),
+  def('get_trade_block', 'Who is on the trade block in this league right now (what owners listed in Sleeper), by team: players with DHQ value, age, this week and when they were listed, plus future picks. Use it for "who\'s for sale" and before proposing any trade: a listed player is easier to get.', { team: S(TEAM + ' (default: every team).'), roster_id: N('Roster id (alternative to team)'), position: S('Only this position (QB, RB, WR, TE, K, DL, LB, DB)') }),
 ];
 export const LEAGUE_NAMES = new Set(LEAGUE_DEFS.map(d => d.name));
 export function runLeagueTool(ctx: Ctx, L: LeagueRow, name: string, args: any): unknown {
@@ -643,6 +700,7 @@ export function runLeagueTool(ctx: Ctx, L: LeagueRow, name: string, args: any): 
     case 'get_transactions': return transactionsTool(ctx, L, args);
     case 'get_draft_info': return draftInfoTool(ctx, L, args);
     case 'search_players': return searchPlayersTool(ctx, L, args);
+    case 'get_trade_block': return tradeBlockTool(ctx, L, args);
   }
   throw new ToolError('Unknown tool ' + name);
 }

@@ -179,6 +179,10 @@ const BANK: Q[] = [
     ...miss(Array.isArray(r.hit_rates_by_round) && r.hit_rates_by_round.length > 0, 'hit rates by round'),
     ...miss(Array.isArray(r.pick_values_next_draft) && r.pick_values_next_draft.every((x: Any) => num(x.mid)), 'pick values by round'),
   ] },
+  { q: 'Who is on the trade block?', tool: 'get_trade_block', args: { league_id: lid }, must: r => [
+    ...miss(typeof r.listings === 'number' && Array.isArray(r.teams), 'listings by team, read live from Sleeper'),
+    ...miss(r.teams.every((t: Any) => t.team && Array.isArray(t.players)), 'each team named with its players'),
+  ] },
   { q: 'Top 10 WRs in my league', tool: 'search_players', args: { league_id: lid, position: 'WR', limit: 10 }, must: r => [
     ...miss(r.players.length === 10, 'ten players'),
     ...miss(r.players.every((p: Any) => p.pos === 'WR' && num(p.dhq_value) && p.rostered_by), 'only WRs, each with value and who has him'),
