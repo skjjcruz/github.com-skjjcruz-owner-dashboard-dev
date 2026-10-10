@@ -79,7 +79,23 @@ async function memberLeagues(sleeperUserId: string) {
 }
 
 // ── OAuth plumbing ───────────────────────────────────────────────
-async function clientOf(id: string) { const rows = await select('oauth_clients', 'select=client_id,client_name,redirect_uris&client_id=eq.' + encodeURIComponent(id)); return rows[0] || null; }
+// Built-in clients for AIs whose connector form asks for a fixed Client ID
+// instead of registering itself (owner ask 2026-10-10: Grok on grok.com).
+// Their return address is any https page on their own site.
+const BUILTIN_CLIENTS: Record<string, { client_name: string; redirect: RegExp }> = {
+  'dhq-grok': { client_name: 'Grok', redirect: /^https:\/\/([a-z0-9-]+\.)*(grok\.com|x\.ai)(:\d+)?\// },
+};
+async function clientOf(id: string) {
+  const b = BUILTIN_CLIENTS[id];
+  if (b) return { client_id: id, client_name: b.client_name, redirect_uris: [] as string[] };
+  const rows = await select('oauth_clients', 'select=client_id,client_name,redirect_uris&client_id=eq.' + encodeURIComponent(id)); return rows[0] || null;
+}
+function redirectOk(client: { client_id: string; redirect_uris?: string[] }, uri: string) {
+  if (!uri) return false;
+  if ((client.redirect_uris || []).includes(uri)) return true;
+  const b = BUILTIN_CLIENTS[client.client_id];
+  return !!b && b.redirect.test(uri);
+}
 function redirectWith(uri: string, params: Record<string, string>) {
   const u = new URL(uri); Object.entries(params).forEach(([k, v]) => u.searchParams.set(k, v));
   return new Response(null, { status: 302, headers: { Location: u.toString(), 'Cache-Control': 'no-store' } });
@@ -130,7 +146,7 @@ Deno.serve(async (req: Request) => {
       const p = Object.fromEntries(url.searchParams.entries());
       const client = p.client_id ? await clientOf(p.client_id) : null;
       if (!client) return redirectWith(SIGNIN_PAGE, { error: 'This app is not registered with Dynasty HQ. Go back to your AI and try connecting again.' });
-      if (!p.redirect_uri || !(client.redirect_uris || []).includes(p.redirect_uri)) return redirectWith(SIGNIN_PAGE, { error: 'The return address does not match what this app registered.' });
+      if (!p.redirect_uri || !redirectOk(client, p.redirect_uri)) { console.log('dhq-auth: redirect mismatch', p.client_id, p.redirect_uri); return redirectWith(SIGNIN_PAGE, { error: 'The return address does not match what this app registered (' + String(p.redirect_uri || 'none').slice(0, 120) + ').' }); }
       if (p.response_type !== 'code') return redirectWith(p.redirect_uri, { error: 'unsupported_response_type', state: p.state || '' });
       if (!p.code_challenge || (p.code_challenge_method || 'S256') !== 'S256') return redirectWith(p.redirect_uri, { error: 'invalid_request', error_description: 'PKCE S256 is required', state: p.state || '' });
       const keep = { client_id: p.client_id, redirect_uri: p.redirect_uri, state: p.state || '', code_challenge: p.code_challenge, scope: p.scope || 'read', resource: p.resource || '', client_name: client.client_name || 'Your AI', auth: base };
@@ -139,7 +155,7 @@ Deno.serve(async (req: Request) => {
     if (req.method === 'POST' && route === '/authorize/login') {
       const f = await formOrJson(req);
       const client = f.client_id ? await clientOf(f.client_id) : null;
-      if (!client || !(client.redirect_uris || []).includes(f.redirect_uri)) return json({ ok: false, error: 'Start again from your AI.' }, 400);
+      if (!client || !redirectOk(client, f.redirect_uri)) return json({ ok: false, error: 'Start again from your AI.' }, 400);
       if (!f.code_challenge) return json({ ok: false, error: 'Start again from your AI.' }, 400);
       const who = await liveSignIn(String(f.email || '').trim(), String(f.password || ''));
       if (!who.ok) return json({ ok: false, error: who.error }, 401);
