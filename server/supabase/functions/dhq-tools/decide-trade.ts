@@ -455,6 +455,21 @@ const assessSummary = (a: any) => a ? { tier: a.tier || null, window: a.window |
 const VALUES_NOTE = SCALE_NOTE + ' A pick in the next draft is priced at its projected slot from current standings with no year discount; later drafts are mid-round, less 12% a year.';
 const list = (v: unknown) => [].concat((v as never) || []).map(String).map(s => s.trim()).filter(Boolean);
 
+// ── evaluate_deals (the app's door only, Phase A5) ──────────────────────
+// The Trade Finder's whole candidate list in one call: evaluate_trade on
+// each deal, in order (each partner's trade block is read once: tradeBlockRows
+// is memoised). Only what the Finder reads: { verdict, headliner }, or
+// { error } for a deal it can't read.
+export async function evaluateDeals(ctx: Ctx, L: LeagueRow, args: any) {
+  const deals = Array.isArray(args.deals) ? args.deals.slice(0, 400) : [];
+  const results: Array<Record<string, unknown>> = [];
+  for (const d of deals) {
+    try { const r: any = await evaluateTrade(ctx, L, d || {}); results.push({ verdict: r.verdict, headliner: r.headliner || null }); }
+    catch (e) { results.push({ error: String((e as Error).message || e) }); }
+  }
+  return { league_id: L.league_id, results, numbers_as_of: L.built_at };
+}
+
 // ── evaluate_trade ───────────────────────────────────────────────────────
 export async function evaluateTrade(ctx: Ctx, L: LeagueRow, args: any) {
   const me = myRoster(L, ctx.memberId);

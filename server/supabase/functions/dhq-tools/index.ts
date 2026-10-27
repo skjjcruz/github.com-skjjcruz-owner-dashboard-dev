@@ -145,7 +145,8 @@ async function buildCtx(memberId: string): Promise<Ctx> {
 // by id (as in dhq-league), the user must own a roster in the league (his
 // team is the default everywhere), and only these tools answer here (faab_bids is the Free Agency board's batch of bids).
 // evaluate_trade (Phase A5): the Trade Builder's call, the same evaluator the AI uses.
-const APP_TOOLS = new Set(['get_start_sit', 'get_waiver_plan', 'get_waiver_bid', 'roster_plan', 'faab_bids', 'evaluate_trade']);
+// evaluate_deals: the Trade Finder's candidate list in one call (POST, the list is long).
+const APP_TOOLS = new Set(['get_start_sit', 'get_waiver_plan', 'get_waiver_bid', 'roster_plan', 'faab_bids', 'evaluate_trade', 'evaluate_deals']);
 async function appCtx(leagueId: string, userId: string): Promise<Ctx | null> {
   const [rows, cache] = await Promise.all([
     rest('league_intel?select=*&error=is.null&league_id=eq.' + leagueId) as Promise<LeagueRow[]>,
@@ -162,12 +163,12 @@ async function appCtx(leagueId: string, userId: string): Promise<Ctx | null> {
     async loadLeague(id: string) { return id === leagueId ? L : null; },
   };
 }
-async function appDoor(url: URL): Promise<Response> {
+async function appDoor(url: URL, post?: Record<string, unknown> | null): Promise<Response> {
   const q = url.searchParams;
-  const leagueId = q.get('league') || '', userId = q.get('user') || '', tool = q.get('tool') || '';
+  const leagueId = String((post && post.league) || q.get('league') || ''), userId = String((post && post.user) || q.get('user') || ''), tool = String((post && post.tool) || q.get('tool') || '');
   if (!/^\d{10,20}$/.test(leagueId) || !/^\d{1,25}$/.test(userId) || !APP_TOOLS.has(tool)) return json({ ok: false, error: 'league, user and tool (' + [...APP_TOOLS].join(', ') + ') required' }, 400);
   let args: Record<string, unknown> = {};
-  try { args = q.get('args') ? JSON.parse(q.get('args') || '{}') : {}; } catch { return json({ ok: false, error: 'args must be JSON' }, 400); }
+  try { args = post ? ((post.args as Record<string, unknown>) || {}) : (q.get('args') ? JSON.parse(q.get('args') || '{}') : {}); } catch { return json({ ok: false, error: 'args must be JSON' }, 400); }
   if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
   const t0 = Date.now();
   const ctx = await appCtx(leagueId, userId);
@@ -234,6 +235,12 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   if (req.method === 'GET' && url.pathname.endsWith('/app')) {
     try { return await appDoor(url); } catch (e) { console.error(e); return json({ ok: false, error: 'Server error: ' + (e as Error).message }, 500); }
+  }
+  // The same door by POST {league, user, tool, args}, for a long list (evaluate_deals).
+  if (req.method === 'POST' && url.pathname.endsWith('/app')) {
+    let post: Record<string, unknown> | null = null;
+    try { post = await req.json(); } catch { return json({ ok: false, error: 'POST a JSON body: {league, user, tool, args}' }, 400); }
+    try { return await appDoor(url, post && typeof post === 'object' ? post : null); } catch (e) { console.error(e); return json({ ok: false, error: 'Server error: ' + (e as Error).message }, 500); }
   }
   if (req.method === 'GET') {
     if (url.pathname.endsWith('/.well-known/oauth-protected-resource')) {
