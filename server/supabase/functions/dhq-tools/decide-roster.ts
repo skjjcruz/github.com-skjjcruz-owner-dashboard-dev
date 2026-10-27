@@ -410,10 +410,40 @@ export function faabInputs(ctx: Ctx, L: LeagueRow, me: Roster) {
   const league = { settings: settingsOf(L), rosters: L.snapshot.rosters, roster_positions: (L.snapshot.league && L.snapshot.league.roster_positions) || [], users: L.snapshot.users };
   return { league, myRosterId: me.roster_id, playersData };
 }
+// The bid model reads each player's value unrounded, exactly as the app's
+// Free Agency screen hands it over (App.LI.playerScores, the same build), so
+// a bid here matches the screen to the dollar.
+export const bidValue = (L: LeagueRow) => (id: string) => Number((L.intel.playerScores || {})[id]) || 0;
 export function estimateFor(ctx: Ctx, L: LeagueRow, pid: string, txns: any[], base: ReturnType<typeof faabInputs>) {
   const F = engines().Faab;
   if (!F || !F.estimate) return null;
-  return F.estimate({ ...base, txns, targetPid: pid, targetPos: posOf(ctx, L, pid), dhq: dhq(L, pid), playerValue: (id: string) => dhq(L, id) });
+  const v = bidValue(L);
+  return F.estimate({ ...base, txns, targetPid: pid, targetPos: posOf(ctx, L, pid), dhq: v(pid), playerValue: v });
+}
+// ── faab_bids (the app's door only, Phase A4) ────────────────────────────
+// The Free Agency screen's bid for each player it lists, one call for the
+// whole board: the same model and inputs as get_waiver_bid (in-season bids,
+// the build's values), plus the member's own GM-mode minimum bid. Each bid is
+// the model's full estimate, the shape the screen already draws; null when
+// the model has no bid for him.
+export function faabBids(ctx: Ctx, L: LeagueRow, args: any) {
+  const me = myRoster(L, ctx.memberId);
+  if (!me) throw new ToolError('You do not have a team in ' + L.name + '.');
+  const F = engines().Faab;
+  if (!F || !F.estimate) throw new Error('bid model not loaded');
+  if (!isFaab(L) || !L.snapshot.txns) return { league_id: L.league_id, faab: false, bids: {} };
+  const ins = inSeason(ctx, L, L.snapshot.txns as any[]);
+  const base = faabInputs(ctx, L, me);
+  const v = bidValue(L);
+  const minBidOverride = Number(args.min_bid_override) > 0 ? Number(args.min_bid_override) : undefined;
+  const pids = (Array.isArray(args.pids) ? args.pids : []).map(String).filter(Boolean).slice(0, 400);
+  const bids: Record<string, unknown> = {};
+  for (const pid of pids) {
+    let est = null;
+    try { est = F.estimate({ ...base, txns: ins.txns, minBidOverride, targetPid: pid, targetPos: posOf(ctx, L, pid), dhq: v(pid), playerValue: v }); } catch { est = null; }
+    bids[pid] = est;
+  }
+  return { league_id: L.league_id, faab: true, roster_id: me.roster_id, in_season_since: ins.start, offseason_claims_excluded: ins.excluded, numbers_as_of: L.built_at, bids };
 }
 const isFaab = (L: LeagueRow) => { const st = settingsOf(L); return Number(st.waiver_budget) > 0 && (st.waiver_type == null || Number(st.waiver_type) === 2); };
 const leftOf = (L: LeagueRow, r: Roster | null) => Math.max(0, (Number(settingsOf(L).waiver_budget) || 0) - (Number(((r || {} as Roster).settings || {}).waiver_budget_used) || 0));

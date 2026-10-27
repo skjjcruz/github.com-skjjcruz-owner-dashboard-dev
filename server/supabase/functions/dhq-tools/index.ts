@@ -143,8 +143,8 @@ async function buildCtx(memberId: string): Promise<Ctx> {
 // same decision tools the AI connector uses, so the app and the AI give one
 // answer. No sign-in, so guests get them too: Sleeper league data is public
 // by id (as in dhq-league), the user must own a roster in the league (his
-// team is the default everywhere), and only these four tools answer here.
-const APP_TOOLS = new Set(['get_start_sit', 'get_waiver_plan', 'get_waiver_bid', 'roster_plan']);
+// team is the default everywhere), and only these tools answer here (faab_bids is the Free Agency board's batch of bids).
+const APP_TOOLS = new Set(['get_start_sit', 'get_waiver_plan', 'get_waiver_bid', 'roster_plan', 'faab_bids']);
 async function appCtx(leagueId: string, userId: string): Promise<Ctx | null> {
   const [rows, cache] = await Promise.all([
     rest('league_intel?select=*&error=is.null&league_id=eq.' + leagueId) as Promise<LeagueRow[]>,

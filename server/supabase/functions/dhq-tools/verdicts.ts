@@ -16,7 +16,7 @@ import {
 import { skillText } from './skills.ts';
 import { solveLineup, startSitCall, TAG_REASON } from './decide-lineup.ts';
 import { tradePlan } from './decide-trade.ts';
-import { rosterPlan, waiverPlan, inSeason, bidStats, posComps, compSummary, faabInputs } from './decide-roster.ts';
+import { rosterPlan, waiverPlan, inSeason, bidStats, posComps, compSummary, faabInputs, faabBids, bidValue } from './decide-roster.ts';
 import { normPos } from './decide-common.ts';
 
 const engines = () => (globalThis as any).App || {};
@@ -452,7 +452,7 @@ export function waiverBid(ctx: Ctx, L: LeagueRow, args: any) {
   // In-season bids only (decide-roster.ts inSeason): Sleeper files every
   // offseason claim under week 1, which drags the league's bid levels down.
   const ins = inSeason(ctx, L, L.snapshot.txns as any[]);
-  const est = F.estimate({ ...faabInputs(ctx, L, me), txns: ins.txns, targetPid: pid, targetPos: pos, dhq: dhq(L, pid), playerValue: (id: string) => dhq(L, id) });
+  const est = F.estimate({ ...faabInputs(ctx, L, me), txns: ins.txns, targetPid: pid, targetPos: pos, dhq: bidValue(L)(pid), playerValue: bidValue(L) });
   if (!est) throw new ToolError('No bid estimate: this is not a FAAB league, or the budget is spent.');
   const an = est.analysis || {};
   const pays = (L.intel.faabByPos || {})[pos];
@@ -500,8 +500,10 @@ export async function runVerdict(ctx: Ctx, L: LeagueRow, name: string, args: any
     case 'find_trade_targets': return findTradeTargets(ctx, L, args);
     case 'get_draft_board': return draftBoard(ctx, L, args);
     case 'get_waiver_bid': return waiverBid(ctx, L, args);
+    case 'faab_bids': return faabBids(ctx, L, args);
   }
   throw new ToolError('Unknown tool: ' + name);
 }
-export const VERDICT_NAMES = new Set(VERDICT_DEFS.map(d => d.name));
+// faab_bids answers only at the app's door (index.ts APP_TOOLS); it is not listed for the AI.
+export const VERDICT_NAMES = new Set(VERDICT_DEFS.map(d => d.name).concat(['faab_bids']));
 export type { Roster };
