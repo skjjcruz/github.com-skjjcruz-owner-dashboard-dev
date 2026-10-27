@@ -216,12 +216,35 @@ async function createProjector(shared, opts) {
   const loaded = await ctx.App.SleeperProj.loadCurrent(shared.season);
   const D = ctx.App.DhqProj;
   await D._loadDeps();
+  let lastLeague = null;
   return {
     data, sleeperWeek: loaded,
     // extraPids: players off every roster to project too (run.js passes
     // everyone with a Sleeper line this week), so a free agent the AI
     // talks about has DHQ's number like everyone else (owner ruling
     // 2026-10-12: the AI only ever quotes DHQ's projection).
+    // Later weeks (Phase A3): the app's own projectWeek for every rostered
+    // player, weeks after this one through the regular season, right after
+    // league() for the same league. Compact rows [median, mean, floor,
+    // ceiling, why] (null: no number), with the injury tag each was
+    // projected with so the app recomputes anyone whose tag has changed.
+    async later(snapshotLeague, rosters) {
+      const t0 = Date.now();
+      if (lastLeague !== snapshotLeague.league_id) throw new Error('later() needs league() for the same league first');
+      const cur = Number(D.week()) || 0;
+      const pws = Number(snapshotLeague.settings && snapshotLeague.settings.playoff_week_start) || 15;
+      const lastReg = Math.max(1, Math.min(18, pws - 1));
+      const pids = [...new Set(rosters.flatMap(r => (r.players || []).map(String)))];
+      const weeks = {}, inj = {};
+      for (let w = cur + 1; cur && w <= lastReg; w++) {
+        const res = await D.projectWeek(pids, w);
+        const m = {};
+        for (const pid of pids) if (pid in res) { const v = res[pid]; m[pid] = v ? [v.median, v.mean, v.floor, v.ceiling, v.why || ''] : null; }
+        weeks[w] = m;
+      }
+      for (const pid of pids) { const tag = ((shared.players || {})[pid] || {}).injury_status; if (tag) inj[pid] = String(tag); }
+      return { cur, model: projModel(), built_at: new Date().toISOString(), weeks, inj, ms: Date.now() - t0 };
+    },
     async league(snapshotLeague, rosters, extraPids) {
       const t0 = Date.now();
       const lg = snapshotLeague;
@@ -261,6 +284,7 @@ async function createProjector(shared, opts) {
         if (r.noSleeper) { out[pid].no_line = true; noLine++; }
         n++;
       }
+      lastLeague = lg.league_id;
       return { week: D.week(), proj: out, app, projected: n, no_line: noLine, ms: Date.now() - t0, data: Object.assign({}, data, { sleeper_week: loaded }) };
     },
   };

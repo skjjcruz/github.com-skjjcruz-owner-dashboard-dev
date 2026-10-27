@@ -24,6 +24,8 @@
 // dhq_proj }, for an app that loaded the league's values from its own cache
 // and only needs this week's DHQ projections (dhq_proj.app: each player's
 // result as the app's own projection code holds it).
+// part=later: { league_id, built_at, dhq_later }, later weeks' projections
+// for every rostered player (built at most every 12 hours).
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const CORS: Record<string, string> = {
@@ -48,6 +50,13 @@ Deno.serve(async (req) => {
   const id = new URL(req.url).searchParams.get('league') || '';
   if (!/^\d{10,20}$/.test(id)) return respond(req, { error: 'league=<Sleeper league id> required' }, 400, 'no-store');
   try {
+    if (new URL(req.url).searchParams.get('part') === 'later') {
+      const rl = await fetch(SUPABASE_URL + '/rest/v1/league_intel?select=league_id,built_at,dhq_later:snapshot->dhq_later&error=is.null&league_id=eq.' + id, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });
+      if (!rl.ok) throw new Error('rest ' + rl.status);
+      const l = ((await rl.json()) as Array<Record<string, unknown>>)[0];
+      if (!l || !l.dhq_later) return respond(req, { error: 'not built', league_id: id }, 404, 'public, max-age=60');
+      return respond(req, { league_id: id, built_at: l.built_at, dhq_later: l.dhq_later }, 200, 'public, max-age=300');
+    }
     if (new URL(req.url).searchParams.get('part') === 'proj') {
       const rp = await fetch(SUPABASE_URL + '/rest/v1/league_intel?select=league_id,season,built_at,engine_version,dhq_proj:snapshot->dhq_proj&error=is.null&league_id=eq.' + id, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });
       if (!rp.ok) throw new Error('rest ' + rp.status);

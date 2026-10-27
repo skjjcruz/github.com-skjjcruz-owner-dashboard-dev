@@ -188,6 +188,22 @@ function rest(key) {
           const r = await pj.league(row.snapshot.league, row.snapshot.rosters || [], projPool(row.snapshot.league, Object.keys(row.snapshot.proj || {})));
           row.snapshot.dhq_proj = { week: r.week, built_at: new Date().toISOString(), players: r.proj, inputs: r.data, app: r.app };
           console.log('  dhq projections:', r.projected, 'players (', r.no_line, 'without a Sleeper line ) in', (r.ms / 1000).toFixed(1) + 's, week', r.week);
+          // Later weeks (Phase A3): a minute or two a league, so built at
+          // most every 12 hours, and only in the first half of the run's
+          // time budget; otherwise the last build's carries over while it
+          // still fits (same projection model and current week; the app
+          // takes it up to 24 hours old).
+          const prev = db ? ((await db.select('league_intel', 'select=later:snapshot->dhq_later&league_id=eq.' + lid).catch(() => []))[0] || {}).later : null;
+          const fits = prev && prev.model === r.app.model && Number(prev.cur) === Number(r.week);
+          if (fits && Date.now() - Date.parse(prev.built_at) < 12 * 60 * 60 * 1000) row.snapshot.dhq_later = prev;
+          else if (PARTIAL || Date.now() - t0 < BUDGET_MS / 2) {
+            try {
+              const lt = await pj.later(row.snapshot.league, row.snapshot.rosters || []);
+              console.log('  later weeks:', Object.keys(lt.weeks).join(',') || 'none', 'in', (lt.ms / 1000).toFixed(1) + 's');
+              delete lt.ms;
+              row.snapshot.dhq_later = lt;
+            } catch (e) { console.warn('  later weeks failed for', lid + ':', e && e.message || e); if (fits) row.snapshot.dhq_later = prev; }
+          } else if (fits) row.snapshot.dhq_later = prev;
         }
       } catch (e) { console.warn('  dhq projections failed for', lid + ':', e && e.message || e); }
       // What dhq-league serves the app, as exact JSON text: jsonb reorders
