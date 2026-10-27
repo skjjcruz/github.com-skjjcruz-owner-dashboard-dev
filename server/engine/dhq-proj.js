@@ -51,7 +51,10 @@ function projModel(root) {
   return h.digest('hex').slice(0, 12);
 }
 const DATA_HOME = 'https://skjjcruz.github.io/DHQ-Web-Page/';
-const SNAPSHOTS = ['data/pff-matchup-snapshot.js', 'data/usage-snapshot.js'];
+// The PFF, usage and WR/RB/TE model snapshots (Lab PRs #104/#106: DHQ's own
+// WR, RB and TE models, scored four times a day into data/wr-model-snapshot.js),
+// the same files dhq-proj.js loads in the page (its DEPS).
+const SNAPSHOTS = ['data/pff-matchup-snapshot.js', 'data/usage-snapshot.js', 'data/wr-model-snapshot.js'];
 const LOCAL_FN = 'https://dhq-engine.local/functions/v1';
 const ESPN_SITE = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 
