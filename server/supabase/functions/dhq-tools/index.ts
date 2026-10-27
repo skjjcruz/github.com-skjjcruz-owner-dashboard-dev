@@ -137,6 +137,49 @@ async function buildCtx(memberId: string): Promise<Ctx> {
   };
 }
 
+// ── The app's door (Phase A4, 2026-10-27) ─────────────────────────
+// GET /dhq-tools/app?league=<id>&user=<Sleeper user id>&tool=<name>[&args=<JSON>]
+// The app's FAAB bids, waiver, start/sit and roster calls come from the
+// same decision tools the AI connector uses, so the app and the AI give one
+// answer. No sign-in, so guests get them too: Sleeper league data is public
+// by id (as in dhq-league), the user must own a roster in the league (his
+// team is the default everywhere), and only these four tools answer here.
+const APP_TOOLS = new Set(['get_start_sit', 'get_waiver_plan', 'get_waiver_bid', 'roster_plan']);
+async function appCtx(leagueId: string, userId: string): Promise<Ctx | null> {
+  const [rows, cache] = await Promise.all([
+    rest('league_intel?select=*&error=is.null&league_id=eq.' + leagueId) as Promise<LeagueRow[]>,
+    rest('engine_cache?select=key,data&key=in.(players,nfl_state,trending_add,nfl_week,news)') as Promise<Array<{ key: string; data: any }>>,
+  ]);
+  const L = rows[0];
+  if (!L || !inLeague(L, userId)) return null;
+  const get = (k: string) => (cache.find(c => c.key === k) || { data: null }).data;
+  // deno-lint-ignore no-explicit-any
+  const te = (globalThis as any).App?.TradeEngine;
+  if (!te) throw new Error('trade engine not loaded');
+  return {
+    memberId: userId, leagues: [L], players: get('players') || {}, nflState: get('nfl_state') || {}, trending: get('trending_add') || [], nflWeek: get('nfl_week') || undefined, news: get('news') || undefined, te,
+    async loadLeague(id: string) { return id === leagueId ? L : null; },
+  };
+}
+async function appDoor(url: URL): Promise<Response> {
+  const q = url.searchParams;
+  const leagueId = q.get('league') || '', userId = q.get('user') || '', tool = q.get('tool') || '';
+  if (!/^\d{10,20}$/.test(leagueId) || !/^\d{1,25}$/.test(userId) || !APP_TOOLS.has(tool)) return json({ ok: false, error: 'league, user and tool (' + [...APP_TOOLS].join(', ') + ') required' }, 400);
+  let args: Record<string, unknown> = {};
+  try { args = q.get('args') ? JSON.parse(q.get('args') || '{}') : {}; } catch { return json({ ok: false, error: 'args must be JSON' }, 400); }
+  if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
+  const t0 = Date.now();
+  const ctx = await appCtx(leagueId, userId);
+  if (!ctx) return json({ ok: false, error: 'league not built, or that user has no team in it' }, 404, { 'Cache-Control': 'public, max-age=60' });
+  try {
+    const result = await runTool(ctx, tool, Object.assign({}, args, { league_id: leagueId }));
+    return json({ ok: true, ms: Date.now() - t0, result }, 200, { 'Cache-Control': 'public, max-age=60' });
+  } catch (e) {
+    if (e instanceof ToolError) return json({ ok: false, error: e.message }, 400);
+    throw e;
+  }
+}
+
 // ── MCP (JSON-RPC over HTTP, stateless) ──────────────────────────
 type Rpc = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 async function rpc(msg: Rpc, ctx: () => Promise<Ctx>, member: () => Promise<Member>): Promise<Record<string, unknown> | null> {
@@ -188,6 +231,9 @@ Deno.serve(async (req: Request) => {
   trace(req);
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const url = new URL(req.url);
+  if (req.method === 'GET' && url.pathname.endsWith('/app')) {
+    try { return await appDoor(url); } catch (e) { console.error(e); return json({ ok: false, error: 'Server error: ' + (e as Error).message }, 500); }
+  }
   if (req.method === 'GET') {
     if (url.pathname.endsWith('/.well-known/oauth-protected-resource')) {
       return json({ resource: PUBLIC_FUNCTIONS + '/dhq-tools', authorization_servers: [PUBLIC_FUNCTIONS + '/dhq-auth'], bearer_methods_supported: ['header'], scopes_supported: ['read'], resource_name: 'Dynasty HQ' });
