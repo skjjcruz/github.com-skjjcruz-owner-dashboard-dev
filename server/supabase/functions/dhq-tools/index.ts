@@ -14,6 +14,7 @@
 import './vendor/trade-engine.js';
 import './vendor/startsit-engine.js';
 import './vendor/faab-engine.js';
+import './vendor/pick-value-model.js';
 import { TOOL_DEFS, runTool, ToolError, type Ctx, type LeagueRow } from './tools.ts';
 import { SKILLS } from './skills.ts';
 

@@ -54,6 +54,9 @@ jobs:
           # Free Agency screens exactly.
           { echo 'globalThis.window = globalThis;'; cat js/shared/startsit-engine.js; } > server/supabase/functions/dhq-tools/vendor/startsit-engine.js
           { echo 'globalThis.window = globalThis;'; cat js/shared/faab-engine.js; } > server/supabase/functions/dhq-tools/vendor/faab-engine.js
+          # DHQ's standard pick curve, which the app falls back to when a
+          # league's build has no pick values of its own (chopped leagues).
+          { echo 'globalThis.window = globalThis;'; cat dhq-shared-src/pick-value-model.js; } > server/supabase/functions/dhq-tools/vendor/pick-value-model.js
 
       - name: Type check
         run: |

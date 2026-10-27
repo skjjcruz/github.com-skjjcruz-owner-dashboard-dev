@@ -47,11 +47,21 @@ const isoDate = (ts: unknown) => (Number(ts) > 0 ? new Date(Number(ts)).toISOStr
 
 // ── Pick values (fix 5) ──────────────────────────────────────────────────
 // The league-calibrated DHQ slot curve (intel.dhqPickValues, by overall
-// slot), else a fixed round table.
+// slot). A build with no curve (a league with no rookie-draft history yet, a
+// chopped league) prices a pick on DHQ's standard pick curve
+// (pick-value-model.js getPickValueBySlot, vendored), at this league's teams
+// and draft rounds, as the app does (Phase A5, 2026-10-27: the server's trade
+// plans used a flat round table there and built different offers). The fixed
+// round table only if that curve is missing.
 function rawPickValue(L: LeagueRow, round: number, slot: number | null) {
   const n = teams(L), s = slot || Math.ceil(n / 2);
   const v = slotValue(L, (round - 1) * n + s);
-  return v > 0 ? v : ({ 1: 7000, 2: 3500, 3: 1800, 4: 800 } as Record<number, number>)[round] || 400;
+  if (v > 0) return v;
+  // deno-lint-ignore no-explicit-any
+  const curve = (globalThis as any).getPickValueBySlot;
+  const rounds = Number(((L.snapshot.league || {}).settings || {}).draft_rounds) || 4;
+  if (typeof curve === 'function') { const c = Number(curve(round, s, n, rounds)) || 0; if (c > 0) return c; }
+  return ({ 1: 7000, 2: 3500, 3: 1800, 4: 800 } as Record<number, number>)[round] || 400;
 }
 // Picks owned by each roster, from the build: { rid: [{ year, round, originalOwnerRid }] }. Null when not stored.
 export function picksByOwner(L: LeagueRow): Record<string, Array<{ year: number; round: number; originalOwnerRid: number }>> | null {
