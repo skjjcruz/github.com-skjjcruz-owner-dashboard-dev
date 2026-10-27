@@ -34,10 +34,22 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..', '..');
 const FILES = [
   'reconai-shared/constants.js', 'reconai-shared/utils.js',
-  'js/shared/weekly-proj.js', 'js/shared/sleeper-proj.js', 'js/shared/nfl-context.js', 'js/utils/sos-engine.js',
+  'js/shared/weekly-proj.js', 'js/shared/startsit-engine.js', 'js/shared/sleeper-proj.js', 'js/shared/nfl-context.js', 'js/utils/sos-engine.js',
   'js/shared/matchup-engine.js', 'js/shared/dhq-baseline.js', 'js/shared/matchup-feeds-espn.js', 'js/shared/matchup-inputs.js',
   'js/shared/dhq-proj.js',
 ];
+// The projection model's fingerprint: a hash of the projection code the
+// build runs. scripts/build-deploy.cjs stamps the same hash of the page's own
+// copies into <meta name="dhq-proj-model">, and the app uses these numbers
+// only when the two agree (Phase A3, 2026-10-27): a page running other
+// projection code (the Lab's experiments, or a website deploy the engine
+// hasn't picked up yet) keeps computing its own.
+const MODEL_FILES = FILES.filter(f => f.startsWith('js/'));
+function projModel(root) {
+  const h = require('crypto').createHash('sha256');
+  for (const f of MODEL_FILES) h.update(f).update('\0').update(fs.readFileSync(path.join(root || ROOT, f))).update('\0');
+  return h.digest('hex').slice(0, 12);
+}
 const DATA_HOME = 'https://skjjcruz.github.io/DHQ-Web-Page/';
 const SNAPSHOTS = ['data/pff-matchup-snapshot.js', 'data/usage-snapshot.js'];
 const LOCAL_FN = 'https://dhq-engine.local/functions/v1';
@@ -154,6 +166,15 @@ function engineSource(rel, memo) {
   return code.replace(MEMO_FROM, MEMO_TO);
 }
 
+// One top-level function, word for word, from a shared file.
+function sharedFunction(rel, name) {
+  const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  const i = src.indexOf('\nfunction ' + name + '(');
+  const j = i < 0 ? -1 : src.indexOf('\n}\n', i);
+  if (i < 0 || j < 0) throw new Error(rel + ': function ' + name + ' not found');
+  return src.slice(i + 1, j + 3);
+}
+
 // opts.memo: false turns the speed-up off (host/memo-check.js compares both).
 async function createProjector(shared, opts) {
   const memo = !(opts && opts.memo === false) && process.env.DHQ_PROJ_MEMO !== '0';
@@ -177,6 +198,13 @@ async function createProjector(shared, opts) {
   // Sleeper's week lines come from the build's own fetch (headless.loadShared).
   ctx.Sleeper = { fetchWeekProjections: async () => shared.projWeek || {} };
   ctx.S = { platform: 'sleeper', players: shared.players, nflState: shared.nfl, season: String(shared.season), currentWeek: Number(shared.week), leagues: [], rosters: [], currentLeagueId: null };
+  // Sleeper's scoring function (reconai-shared/sleeper-api.js), which the
+  // page has as window.calcFantasyPts: startsit-engine.js scores Sleeper's
+  // weekly line with it, and the matchup engine's safety check reads that
+  // score (out.sleeper). Without it the build had no Sleeper score for anyone,
+  // so the safety check never fired here as it does on the page (found
+  // 2026-10-27 comparing the two: a starter at 0.5 against the page's 4.5).
+  vm.runInContext(sharedFunction('reconai-shared/sleeper-api.js', 'calcFantasyPts') + '\nwindow.calcFantasyPts = calcFantasyPts;', ctx, { filename: 'sleeper-api.js#calcFantasyPts' });
   for (const rel of FILES) vm.runInContext(engineSource(rel, memo), ctx, { filename: rel });
   // js/core.js's calcPPG (core.js is the app shell; only this helper is needed).
   ctx.App.calcPPG = ctx.App.calcPPG || function calcPPG(stats, scoring) { const raw = ctx.App.calcRawPts(stats, scoring); if (raw === null) return 0; const gp = (stats && stats.gp) || 0; return gp > 0 ? Math.max(0, raw / gp) : 0; };
@@ -210,6 +238,19 @@ async function createProjector(shared, opts) {
         await new Promise(r => setTimeout(r, 100));
       }
       const out = {};
+      // For the app (Phase A3): each player's result exactly as the app's own
+      // dhq-proj.js would hold it (before the truth law, which the app applies
+      // with Sleeper's live lines), the players DHQ has no number for, and the
+      // injury tag each was projected with, so the app recomputes anyone whose
+      // tag has changed since the build.
+      const app = { model: projModel(), results: {}, none: [], inj: {} };
+      for (const pid of pids) {
+        if (!(pid in st.results)) continue;
+        if (st.results[pid] === null) app.none.push(pid);
+        else app.results[pid] = st.results[pid];
+        const tag = ((shared.players || {})[pid] || {}).injury_status;
+        if (tag) app.inj[pid] = String(tag);
+      }
       let n = 0, noLine = 0;
       for (const pid of pids) {
         const r = D.get(pid);   // with the truth law: no Sleeper line this week reads 0
@@ -220,9 +261,9 @@ async function createProjector(shared, opts) {
         if (r.noSleeper) { out[pid].no_line = true; noLine++; }
         n++;
       }
-      return { week: D.week(), proj: out, projected: n, no_line: noLine, ms: Date.now() - t0, data: Object.assign({}, data, { sleeper_week: loaded }) };
+      return { week: D.week(), proj: out, app, projected: n, no_line: noLine, ms: Date.now() - t0, data: Object.assign({}, data, { sleeper_week: loaded }) };
     },
   };
 }
 
-module.exports = { createProjector, engineFetch, LOCAL_FN };
+module.exports = { createProjector, engineFetch, LOCAL_FN, MODEL_FILES, projModel };

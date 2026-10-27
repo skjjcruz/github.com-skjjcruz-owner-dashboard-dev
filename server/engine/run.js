@@ -148,6 +148,23 @@ function rest(key) {
   // DHQ weekly projections (server/engine/dhq-proj.js): one projection
   // context per run, then every rostered player per league. A failure here
   // never fails a league build; the server falls back to Sleeper's line.
+  // Who gets a DHQ projection beyond the rosters: everyone the app can ask
+  // about (Phase A3, 2026-10-27: the app shows the server's numbers, its
+  // free-agent lists included): every player on an NFL team at a position
+  // the league can start (defenders only in IDP leagues), plus anyone
+  // Sleeper projects this week.
+  const OFF_POS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
+  const DEF_POS = new Set(['DL', 'DE', 'DT', 'NT', 'LB', 'ILB', 'OLB', 'MLB', 'DB', 'CB', 'S', 'SS', 'FS']);
+  const IDP_SLOT = /^(DL|DE|DT|LB|DB|CB|S|IDP_FLEX)$/;
+  const projPool = (league, withLine) => {
+    const idp = ((league && league.roster_positions) || []).some(s => IDP_SLOT.test(String(s).toUpperCase()));
+    const pool = new Set(withLine);
+    for (const pid of Object.keys(shared.players)) {
+      const p = shared.players[pid], pos = String((p && p.position) || '').toUpperCase();
+      if (p && p.team && (OFF_POS.has(pos) || (idp && DEF_POS.has(pos)))) pool.add(pid);
+    }
+    return [...pool];
+  };
   let projector = null, projectorError = null;
   const projectorFor = async () => {
     if (projector || projectorError) return projector;
@@ -168,8 +185,8 @@ function rest(key) {
       try {
         const pj = await projectorFor();
         if (pj && row.snapshot && row.snapshot.league) {
-          const r = await pj.league(row.snapshot.league, row.snapshot.rosters || [], Object.keys(row.snapshot.proj || {}));
-          row.snapshot.dhq_proj = { week: r.week, built_at: new Date().toISOString(), players: r.proj, inputs: r.data };
+          const r = await pj.league(row.snapshot.league, row.snapshot.rosters || [], projPool(row.snapshot.league, Object.keys(row.snapshot.proj || {})));
+          row.snapshot.dhq_proj = { week: r.week, built_at: new Date().toISOString(), players: r.proj, inputs: r.data, app: r.app };
           console.log('  dhq projections:', r.projected, 'players (', r.no_line, 'without a Sleeper line ) in', (r.ms / 1000).toFixed(1) + 's, week', r.week);
         }
       } catch (e) { console.warn('  dhq projections failed for', lid + ':', e && e.message || e); }
