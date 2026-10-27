@@ -173,6 +173,18 @@ function rest(key) {
           console.log('  dhq projections:', r.projected, 'players (', r.no_line, 'without a Sleeper line ) in', (r.ms / 1000).toFixed(1) + 's, week', r.week);
         }
       } catch (e) { console.warn('  dhq projections failed for', lid + ':', e && e.message || e); }
+      // What dhq-league serves the app, as exact JSON text: jsonb reorders
+      // object keys (shortest first), and the app lists some of them in
+      // key order (positions in an assessment, for one), so the app gets
+      // the build's own text, key order and all (Phase A1, 2026-10-27).
+      if (row.snapshot) {
+        const appIntel = Object.assign({}, row.intel); delete appIntel.sourceSnapshots;
+        row.snapshot.app_intel_json = JSON.stringify(appIntel);
+        row.snapshot.app_assess_json = JSON.stringify({
+          assessments: row.assessments || [], dna: row.dna || {},
+          rosters: (row.snapshot.rosters || []).map(r => ({ roster_id: r.roster_id, players: r.players || [], settings: { wins: (r.settings || {}).wins || 0, losses: (r.settings || {}).losses || 0, ties: (r.settings || {}).ties || 0, fpts: (r.settings || {}).fpts || 0 } })),
+        });
+      }
       const valued = Object.keys(row.intel.playerScores || {}).length;
       ((row.snapshot || {}).rosters || []).forEach(r => (r.players || []).forEach(pid => rostered.add(String(pid))));
       console.log('✓', row.name, '(' + lid + ')', 'in', (row.build_ms / 1000).toFixed(1) + 's ·', valued, 'players valued ·', row.assessments.length, 'teams');

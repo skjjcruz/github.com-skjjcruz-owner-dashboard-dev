@@ -25,7 +25,7 @@ const CORS: Record<string, string> = {
 };
 
 async function respond(req: Request, body: unknown, status: number, cache: string) {
-  const text = JSON.stringify(body);
+  const text = typeof body === 'string' ? body : JSON.stringify(body);
   const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Cache-Control': cache, Vary: 'Accept-Encoding', ...CORS };
   if (/\bgzip\b/.test(req.headers.get('accept-encoding') || '') && text.length > 2048) {
     const gz = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
@@ -40,6 +40,18 @@ Deno.serve(async (req) => {
   const id = new URL(req.url).searchParams.get('league') || '';
   if (!/^\d{10,20}$/.test(id)) return respond(req, { error: 'league=<Sleeper league id> required' }, 400, 'no-store');
   try {
+    // A build that stored its exact text (run.js app_*_json) is served as
+    // that text, key order and all; older rows fall back to the columns.
+    const exact = 'league_intel?select=league_id,season,built_at,engine_version,dhq_proj:snapshot->dhq_proj,intel_json:snapshot->>app_intel_json,assess_json:snapshot->>app_assess_json&error=is.null&league_id=eq.' + id;
+    const r0 = await fetch(SUPABASE_URL + '/rest/v1/' + exact, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });
+    if (!r0.ok) throw new Error('rest ' + r0.status);
+    const row0 = ((await r0.json()) as Array<Record<string, unknown>>)[0];
+    if (row0 && typeof row0.intel_json === 'string' && row0.intel_json.length > 2) {
+      const ver0 = Number((String(row0.engine_version || '').match(/^headless-(\d+)$/) || [])[1] || 0);
+      const assessText = ver0 >= 6 && typeof row0.assess_json === 'string' ? row0.assess_json : 'null';
+      const head = JSON.stringify({ league_id: id, season: row0.season, built_at: row0.built_at, engine_version: row0.engine_version, dhq_proj: row0.dhq_proj || null });
+      return respond(req, head.slice(0, -1) + ',"intel":' + row0.intel_json + ',"assess":' + assessText + '}', 200, 'public, max-age=60');
+    }
     const q = 'league_intel?select=league_id,season,built_at,engine_version,intel,assessments,dna,dhq_proj:snapshot->dhq_proj,rosters:snapshot->rosters&error=is.null&league_id=eq.' + id;
     const r = await fetch(SUPABASE_URL + '/rest/v1/' + q, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });
     if (!r.ok) throw new Error('rest ' + r.status);
