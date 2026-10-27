@@ -16,6 +16,9 @@
 // whether the league has moved since (a trade, an add, a scored week) and
 // compute on the device until the next build. Only from headless-6 on: older
 // builds assessed with unscored stats and the wrong pick years.
+//
+// brain (Phase A2, headless-7 on): the points ledger, intent reads and the
+// engine's one brain, so the app doesn't download the projection feeds.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const CORS: Record<string, string> = {
@@ -42,7 +45,7 @@ Deno.serve(async (req) => {
   try {
     // A build that stored its exact text (run.js app_*_json) is served as
     // that text, key order and all; older rows fall back to the columns.
-    const exact = 'league_intel?select=league_id,season,built_at,engine_version,dhq_proj:snapshot->dhq_proj,intel_json:snapshot->>app_intel_json,assess_json:snapshot->>app_assess_json&error=is.null&league_id=eq.' + id;
+    const exact = 'league_intel?select=league_id,season,built_at,engine_version,dhq_proj:snapshot->dhq_proj,intel_json:snapshot->>app_intel_json,assess_json:snapshot->>app_assess_json,brain_json:snapshot->>app_brain_json&error=is.null&league_id=eq.' + id;
     const r0 = await fetch(SUPABASE_URL + '/rest/v1/' + exact, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });
     if (!r0.ok) throw new Error('rest ' + r0.status);
     const row0 = ((await r0.json()) as Array<Record<string, unknown>>)[0];
@@ -50,7 +53,8 @@ Deno.serve(async (req) => {
       const ver0 = Number((String(row0.engine_version || '').match(/^headless-(\d+)$/) || [])[1] || 0);
       const assessText = ver0 >= 6 && typeof row0.assess_json === 'string' ? row0.assess_json : 'null';
       const head = JSON.stringify({ league_id: id, season: row0.season, built_at: row0.built_at, engine_version: row0.engine_version, dhq_proj: row0.dhq_proj || null });
-      return respond(req, head.slice(0, -1) + ',"intel":' + row0.intel_json + ',"assess":' + assessText + '}', 200, 'public, max-age=60');
+      const brainText = ver0 >= 7 && typeof row0.brain_json === 'string' && row0.brain_json.length > 2 ? row0.brain_json : 'null';
+      return respond(req, head.slice(0, -1) + ',"intel":' + row0.intel_json + ',"assess":' + assessText + ',"brain":' + brainText + '}', 200, 'public, max-age=60');
     }
     const q = 'league_intel?select=league_id,season,built_at,engine_version,intel,assessments,dna,dhq_proj:snapshot->dhq_proj,rosters:snapshot->rosters&error=is.null&league_id=eq.' + id;
     const r = await fetch(SUPABASE_URL + '/rest/v1/' + q, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });

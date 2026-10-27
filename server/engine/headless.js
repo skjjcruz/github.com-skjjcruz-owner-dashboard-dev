@@ -19,7 +19,8 @@ const API = 'https://api.sleeper.app/v1';
 // headless-6 (2026-10-27): team assessments match the app's exactly (stats
 // scored with the league's scoring, the league's drafts, the app's
 // dynastyValue); the app reads them from dhq-league only from this version.
-const ENGINE_VERSION = 'headless-6';
+// headless-7 (2026-10-27): adds the points ledger, intent reads and one brain.
+const ENGINE_VERSION = 'headless-7';
 
 // The shared engine files, in the order index.html loads them (only the
 // ones the valuation path needs — no auth, UI or AI modules).
@@ -110,7 +111,14 @@ async function loadShared() {
   const thisWeek = weeklyStats[week] || {};
   Object.keys(thisWeek).forEach(pid => { const t = players[pid] && players[pid].team; if (t && Number(thisWeek[pid].gp) > 0 && weekGames[t]) weekGames[t].played = true; });
   const roles = await nflRoles().catch(() => null);
-  return { nfl, season, week, players, statsByYear, weeklyStats, projWeek: projWeek || {}, weekGames, roles };
+  // The points ledger's feeds (18 weekly projection files + last season's
+  // stats, multi-MB each): fetched once per run and shared by every league.
+  const feeds = new Map();
+  const fetchJsonCached = url => {
+    if (!feeds.has(url)) feeds.set(url, fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url); return r.json(); }));
+    return feeds.get(url);
+  };
+  return { nfl, season, week, players, statsByYear, weeklyStats, projWeek: projWeek || {}, weekGames, roles, fetchJsonCached };
 }
 
 // The NFL depth charts the app's NflRoles module reads (the app's public
@@ -376,6 +384,21 @@ async function buildLeague(leagueId, shared, histCache) {
   W.dynastyValue = pid => (W.App.LI && W.App.LI.playerScores && W.App.LI.playerScores[pid]) || 0;
   W.App.dynastyValue = W.dynastyValue;
   const assessments = W.assessAllTeamsFromGlobal();
+  // Phase A2 (2026-10-27): the points ledger, the owner-intent reads and the
+  // one brain, built here so the app no longer downloads the projection
+  // feeds and computes them. Loaded only now, after the value build, so the
+  // engine's own background one-brain call (end of loadLeagueIntel) skips;
+  // the app's league objects are matched: the engine's call reads the
+  // trimmed S.leagues entry, the trade desk's the full league.
+  let brainPack = null;
+  try {
+    for (const f of ['points-ledger.js', 'one-brain.js', 'intent-reads.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, 'reconai-shared', f), 'utf8'), ctx, { filename: f });
+    const posOf = pid => (S.players[pid] ? S.players[pid].position : null);
+    const ledger = await W.WrLabPointsLedger.load({ league: S.leagues[0], rosters: S.rosters, posOf, fetchJson: shared.fetchJsonCached });
+    await W.App.computeOneBrain(S);
+    const intent = W.WrLabIntentReads ? await W.WrLabIntentReads.read({ league: Object.assign({}, league, S.leagues[0]), rosters: S.rosters, ledger }).catch(e => { console.error('intent reads', leagueId, e && e.message); return null; }) : null;
+    brainPack = { ledger, intent, brain: W.DhqBrain || null };
+  } catch (e) { console.error('one brain', leagueId, e && e.message); }
   const picks = picksByRoster(W, S, league);
   const lines = seasonLines(W, S, shared, LI, league);
   const dna = {};
@@ -399,7 +422,7 @@ async function buildLeague(leagueId, shared, histCache) {
   return {
     league_id: league.league_id, season: leagueSeason, name: league.name, platform: 'sleeper',
     built_at: new Date().toISOString(), engine_version: ENGINE_VERSION, build_ms: Date.now() - t0,
-    intel: Object.assign(slimIntel(LI), { rookieProspects }), assessments, dna, snapshot,
+    intel: Object.assign(slimIntel(LI), { rookieProspects }), assessments, dna, snapshot, brainPack,
   };
 }
 

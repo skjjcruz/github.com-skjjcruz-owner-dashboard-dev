@@ -180,14 +180,20 @@ function rest(key) {
       if (row.snapshot) {
         const appIntel = Object.assign({}, row.intel); delete appIntel.sourceSnapshots;
         row.snapshot.app_intel_json = JSON.stringify(appIntel);
+        row.snapshot.app_brain_json = row.brainPack ? JSON.stringify(row.brainPack) : null;
+        // Traded picks as the app compares them (team-assess.js
+        // serverBuildMatches): a picks-only trade changes the assessments
+        // and the one brain without moving a player.
+        const picksSig = (row.snapshot.traded_picks || []).map(p => [p.season, p.round, p.roster_id, p.owner_id].join('|')).sort().join(',');
         row.snapshot.app_assess_json = JSON.stringify({
-          assessments: row.assessments || [], dna: row.dna || {},
+          assessments: row.assessments || [], dna: row.dna || {}, picks_sig: picksSig,
           rosters: (row.snapshot.rosters || []).map(r => ({ roster_id: r.roster_id, players: r.players || [], settings: { wins: (r.settings || {}).wins || 0, losses: (r.settings || {}).losses || 0, ties: (r.settings || {}).ties || 0, fpts: (r.settings || {}).fpts || 0 } })),
         });
       }
       const valued = Object.keys(row.intel.playerScores || {}).length;
       ((row.snapshot || {}).rosters || []).forEach(r => (r.players || []).forEach(pid => rostered.add(String(pid))));
       console.log('✓', row.name, '(' + lid + ')', 'in', (row.build_ms / 1000).toFixed(1) + 's ·', valued, 'players valued ·', row.assessments.length, 'teams');
+      delete row.brainPack; // stored as the app's text in the snapshot only
       if (db) await db.upsert('league_intel', [Object.assign(row, { error: null })]);
       else fs.writeFileSync(path.join(OUT, lid + '.json'), JSON.stringify(row));
       ok++; builtIds.push(lid);
