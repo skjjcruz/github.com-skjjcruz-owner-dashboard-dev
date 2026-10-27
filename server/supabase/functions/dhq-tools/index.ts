@@ -146,7 +146,8 @@ async function buildCtx(memberId: string): Promise<Ctx> {
 // team is the default everywhere), and only these tools answer here (faab_bids is the Free Agency board's batch of bids).
 // evaluate_trade (Phase A5): the Trade Builder's call, the same evaluator the AI uses.
 // evaluate_deals: the Trade Finder's candidate list in one call (POST, the list is long).
-const APP_TOOLS = new Set(['get_start_sit', 'get_waiver_plan', 'get_waiver_bid', 'roster_plan', 'faab_bids', 'evaluate_trade', 'evaluate_deals']);
+// trade_plans: the Finder's rule-built offers (trade_plan per ask, with piece ids).
+const APP_TOOLS = new Set(['get_start_sit', 'get_waiver_plan', 'get_waiver_bid', 'roster_plan', 'faab_bids', 'evaluate_trade', 'evaluate_deals', 'trade_plans']);
 async function appCtx(leagueId: string, userId: string): Promise<Ctx | null> {
   const [rows, cache] = await Promise.all([
     rest('league_intel?select=*&error=is.null&league_id=eq.' + leagueId) as Promise<LeagueRow[]>,

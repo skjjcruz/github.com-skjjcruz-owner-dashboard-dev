@@ -8,7 +8,7 @@
 import { fetchLive, type LiveState } from './live.ts';
 import { VERDICT_DEFS, VERDICT_NAMES, runVerdict } from './verdicts.ts';
 import { LEAGUE_DEFS, LEAGUE_NAMES, runLeagueTool, rulesOf, groupScoring, rosterSlots, ownerExtras, teamArg } from './league-tools.ts';
-import { evaluateTrade, evaluateDeals } from './decide-trade.ts';
+import { evaluateTrade, evaluateDeals, tradePlans } from './decide-trade.ts';
 import { leaguePositions, normPos } from './decide-common.ts';
 
 export interface PlayerSlim { n: string; pos: string; fp?: string[]; t: string | null; age: number | null; yrs: number | null; st: string | null; inj: string | null; injp: string | null; dc: string | null; dco: number | null; col: string | null; num: number | null; act: boolean; e?: number | null }
@@ -336,6 +336,7 @@ export async function runTool(ctx: Ctx, name: string, args: any): Promise<unknow
     case 'get_player': return getPlayer(ctx, args);
     case 'evaluate_trade': return evaluateTrade(ctx, await league(ctx, args), args);
     case 'evaluate_deals': return evaluateDeals(ctx, await league(ctx, args), args);
+    case 'trade_plans': return tradePlans(ctx, await league(ctx, args), args);
     case 'get_owner_profile': return ownerProfile(ctx, await league(ctx, args), args);
     case 'get_recent_trades': return recentTrades(ctx, await league(ctx, args), args);
     case 'get_waiver_options': return waiverOptions(ctx, await league(ctx, args), args);

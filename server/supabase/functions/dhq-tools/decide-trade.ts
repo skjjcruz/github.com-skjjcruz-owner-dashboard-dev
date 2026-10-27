@@ -274,6 +274,12 @@ export function appealFor(L: LeagueRow, mode: string, x: any): { mult: number; w
 
 // ── Pieces ───────────────────────────────────────────────────────────────
 type Piece = Record<string, any>;
+// Ids for an offer's pieces, for the app (the Trade Finder loads offers into
+// its own deal shape), the same shape as the app's AskTools trade_plan.
+// Not enumerable, so the AI's answer reads exactly as before; trade_plans
+// (the app's door) hands them over.
+const pieceId = (x: Piece) => x.kind === 'pick' ? { kind: 'pick', year: x.year, round: x.round, from: x.from } : x.kind === 'faab' ? { kind: 'faab', dollars: x.dollars } : { kind: 'player', pid: x.pid };
+const withPieceIds = (out: Record<string, any>, give: Piece[], get: Piece[]) => Object.defineProperty(out, 'piece_ids', { value: { give: give.map(pieceId), get: get.map(pieceId) }, enumerable: false });
 function pickAsset(ctx: Ctx, L: LeagueRow, year: number, round: number, from: number | null, own: ReturnType<typeof picksByOwner>, slot: number | null): Piece {
   const projected = slot == null ? projectedSlot(L, year, from) : null;
   const v = pickValue(L, year, round, slot != null ? slot : null, from);
@@ -454,6 +460,21 @@ const confidenceOf = (o: any) => (!o.partnerKnown || o.unknownHolders) ? 'low' :
 const assessSummary = (a: any) => a ? { tier: a.tier || null, window: a.window || null, health: a.healthScore != null ? Math.round(a.healthScore) : null, panic: a.panic != null ? a.panic : null, needs: (a.needs || []).map((n: any) => n.pos + (n.urgency ? ' (' + n.urgency + ')' : '')), strengths: a.strengths || [] } : null;
 const VALUES_NOTE = SCALE_NOTE + ' A pick in the next draft is priced at its projected slot from current standings with no year discount; later drafts are mid-round, less 12% a year.';
 const list = (v: unknown) => [].concat((v as never) || []).map(String).map(s => s.trim()).filter(Boolean);
+
+// ── trade_plans (the app's door only, Phase A5) ─────────────────────────
+// The Trade Finder's rule-built candidates in one call: trade_plan for each
+// ask ({ target?, partner }), in order, each offer with its piece_ids.
+export async function tradePlans(ctx: Ctx, L: LeagueRow, args: any) {
+  const asks = Array.isArray(args.asks) ? args.asks.slice(0, 30) : [];
+  const results: Array<Record<string, unknown>> = [];
+  for (const a of asks) {
+    try {
+      const r: any = await tradePlan(ctx, L, a || {});
+      results.push({ decision: r.decision, offers: (r.offers || []).map((o: any) => Object.assign({}, o, { piece_ids: o.piece_ids })) });
+    } catch (e) { results.push({ error: String((e as Error).message || e) }); }
+  }
+  return { league_id: L.league_id, results, numbers_as_of: L.built_at };
+}
 
 // ── evaluate_deals (the app's door only, Phase A5) ──────────────────────
 // The Trade Finder's whole candidate list in one call: evaluate_trade on
@@ -721,13 +742,13 @@ export async function tradePlan(ctx: Ctx, L: LeagueRow, args: any) {
     const v = reconcile({ ownIssues: [], headliner: hl ? { ok: hl.ok, rule: rule!.rule } : null, pv, mode, tg: rawGive, tt: tgt.value, accept: acc, partnerName: label(L, p.roster_id) });
     return {
       tag, pieces, pv, hl, acc, rawGive,
-      out: {
+      out: withPieceIds({
         give: pieces.map(pieceName), get: [tgt.label],
         accept_chance_pct: acc, headliner_met: hl ? hl.ok : undefined, market_label: v.market_label,
         value_you_send: rawGive, value_you_get: tgt.value, worth_to_them: pv.toThem, their_price: pv.theirCost,
         why: tag + '. Worth about ' + pv.toThem + ' to a ' + MODE_WORD[mode] + ' owner against ' + pv.theirCost + ' for ' + tgt.label + ' as they see him. ' + pv.priced.map(x => x.piece + ': ' + (x.why || 'full value')).join('; ') + '.',
         balance,
-      } as Record<string, any>,
+      }, pieces, [tgt]) as Record<string, any>,
     };
   };
   const fill = (basePieces: any[]) => {
