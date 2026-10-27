@@ -16,7 +16,10 @@ const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const API = 'https://api.sleeper.app/v1';
-const ENGINE_VERSION = 'headless-5';
+// headless-6 (2026-10-27): team assessments match the app's exactly (stats
+// scored with the league's scoring, the league's drafts, the app's
+// dynastyValue); the app reads them from dhq-league only from this version.
+const ENGINE_VERSION = 'headless-6';
 
 // The shared engine files, in the order index.html loads them (only the
 // ones the valuation path needs — no auth, UI or AI modules).
@@ -188,11 +191,12 @@ function slimPlayers(players) {
   return out;
 }
 
-function playerStatsFor(statsByYear, season, calcRawPts) {
-  const prev = statsByYear[Number(season) - 1] || {}, cur = statsByYear[season] || {};
+function appPlayerStats(seasonStats, calcRawPts) {
   const out = {};
-  Object.entries(prev).forEach(([pid, s]) => { const pts = calcRawPts(s), gp = s.gp || 0; out[pid] = { prevTotal: pts ? Math.round(pts * 10) / 10 : 0, prevAvg: gp > 0 ? Math.round(pts / gp * 10) / 10 : 0, prevRawStats: s }; });
-  Object.entries(cur).forEach(([pid, s]) => { const pts = calcRawPts(s), gp = s.gp || 0; if (!out[pid]) out[pid] = {}; if (gp > 0) { out[pid].seasonTotal = pts ? Math.round(pts * 10) / 10 : 0; out[pid].seasonAvg = Math.round(pts / gp * 10) / 10; } });
+  Object.entries(seasonStats || {}).forEach(([pid, s]) => {
+    const pts = calcRawPts(s), gp = s.gp || 0;
+    out[pid] = { prevTotal: pts ? Math.round(pts * 10) / 10 : 0, prevAvg: gp > 0 ? Math.round(pts / gp * 10) / 10 : 0, prevRawStats: s };
+  });
   return out;
 }
 
@@ -328,9 +332,12 @@ async function buildLeague(leagueId, shared, histCache) {
   const { nfl, season, players } = shared;
   const week = Number(nfl.display_week || nfl.week || 1);
   const weeksSoFar = []; for (let w = 1; w <= Math.min(18, week); w++) weeksSoFar.push(w);
-  const [league, rosters, users, tradedPicks, matchups, ...txnWeeks] = await Promise.all([
+  const [league, rosters, users, tradedPicks, matchups, drafts, ...txnWeeks] = await Promise.all([
     sleeper('/league/' + leagueId), sleeper('/league/' + leagueId + '/rosters'), sleeper('/league/' + leagueId + '/users'),
     sleeper('/league/' + leagueId + '/traded_picks'), sleeper('/league/' + leagueId + '/matchups/' + week),
+    // The league's drafts: the pick window rolls past a season whose draft is
+    // complete (team-assess seasonDraftComplete), as on the device.
+    sleeper('/league/' + leagueId + '/drafts').catch(() => []),
   ].concat(weeksSoFar.map(w => sleeper('/league/' + leagueId + '/transactions/' + w).catch(() => []))));
   if (!league) throw new Error('league not found: ' + leagueId);
   // This season's waiver and free-agent moves, trimmed: what the FAAB bid
@@ -340,12 +347,18 @@ async function buildLeague(leagueId, shared, histCache) {
     .map(t => ({ type: t.type, status: t.status, created: t.created, leg: t.leg, settings: t.settings ? { waiver_bid: t.settings.waiver_bid, seq: t.settings.seq } : null, adds: t.adds || null, drops: t.drops || null, roster_ids: t.roster_ids || [] }));
   const leagueSeason = String(league.season || season);
   const S = {
-    platform: 'sleeper', players, playerStats: playerStatsFor(shared.statsByYear, leagueSeason, W.calcRawPts),
+    // The stats the app's assessments read, in the shape the app leaves them
+    // once a league is open: its season-view step (league-detail.js, the
+    // timeYear effect) rewrites S.playerStats from the current season only,
+    // scored with this league's scoring (IDP included), as prevTotal /
+    // prevAvg / prevRawStats. Unscored stats gave defenders ~0, and last
+    // season's averages filled in players the app shows with none.
+    platform: 'sleeper', players, playerStats: appPlayerStats(shared.statsByYear[leagueSeason] || {}, st => W.calcRawPts(st, league.scoring_settings)),
     rosters: rosters || [], leagueUsers: users || [],
     leagues: [{ league_id: league.league_id, name: league.name, scoring_settings: league.scoring_settings, roster_positions: league.roster_positions, settings: league.settings }],
     currentLeagueId: league.league_id, season: leagueSeason, nflState: nfl, currentWeek: week, matchups: matchups || [],
     tradedPicks: W.App.normalizeTradedPicks ? W.App.normalizeTradedPicks(rosters || [], tradedPicks || []) : (tradedPicks || []),
-    drafts: [], transactions: {},
+    drafts: Array.isArray(drafts) ? drafts : [], transactions: {},
   };
   W.S = S; W.App.S = S;
 
@@ -357,6 +370,11 @@ async function buildLeague(leagueId, shared, histCache) {
     seasonWeeks(league.league_id, lastRegWeek(league)).catch(() => ({})),
     pastSeasons(league, histCache).catch(e => { console.error('past seasons', leagueId, e && e.message); return []; }),
   ]);
+  // The app replaces the engine's dynastyValue with a plain score lookup when
+  // it opens a league (league-detail.js bridge): an Inactive player keeps his
+  // value there. Assess with the same function the app uses.
+  W.dynastyValue = pid => (W.App.LI && W.App.LI.playerScores && W.App.LI.playerScores[pid]) || 0;
+  W.App.dynastyValue = W.dynastyValue;
   const assessments = W.assessAllTeamsFromGlobal();
   const picks = picksByRoster(W, S, league);
   const lines = seasonLines(W, S, shared, LI, league);
