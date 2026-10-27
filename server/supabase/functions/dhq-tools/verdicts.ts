@@ -215,7 +215,7 @@ export async function startSit(ctx: Ctx, L: LeagueRow, args: any) {
     }
   } catch { player_context = undefined; }
   const slotOf = (pid: string) => { const i = current.indexOf(pid); return i >= 0 ? slotNames[i] : 'bench'; };
-  const lineup = (pids: Array<{ pid: string; slot: string }>) => pids.map(x => ({ slot: x.slot, player: x.pid ? name(ctx, x.pid) : '(empty)', pos: x.pid ? posOf(ctx, L, x.pid) : undefined, pts: x.pid ? round1(shownOf(x.pid)) : 0, locked: x.pid && lines[x.pid] ? lines[x.pid].locked : undefined, status: x.pid && lines[x.pid] ? (lines[x.pid].locked ? lines[x.pid].this_week : lines[x.pid].available ? 'projected' : 'NOT STARTABLE: ' + lines[x.pid].why_unavailable) : undefined, injury: x.pid && lines[x.pid] ? lines[x.pid].injury : undefined }));
+  const lineup = (pids: Array<{ pid: string; slot: string }>) => pids.map(x => ({ slot: x.slot, pid: x.pid || undefined, player: x.pid ? name(ctx, x.pid) : '(empty)', pos: x.pid ? posOf(ctx, L, x.pid) : undefined, pts: x.pid ? round1(shownOf(x.pid)) : 0, locked: x.pid && lines[x.pid] ? lines[x.pid].locked : undefined, status: x.pid && lines[x.pid] ? (lines[x.pid].locked ? lines[x.pid].this_week : lines[x.pid].available ? 'projected' : 'NOT STARTABLE: ' + lines[x.pid].why_unavailable) : undefined, injury: x.pid && lines[x.pid] ? lines[x.pid].injury : undefined }));
   const left = round1(optimalTotal - currentTotal);
   return {
     league_id: L.league_id, week: L.snapshot.proj_week, team: teamName(L, r.roster_id), is_mine: !!(me && me.roster_id === r.roster_id),
