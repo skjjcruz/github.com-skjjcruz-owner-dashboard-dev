@@ -168,7 +168,7 @@ async function sharedData() {
   // Which leagues: env override, else the active rows in connect_leagues
   // plus every league a member opened in the last 30 days (build_requests).
   let leagues = (process.env.LEAGUES || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!leagues.length && db) {
+  if (!leagues.length && db && !STANDBY) {
     leagues = (await db.select('connect_leagues', 'select=league_id&active=eq.true')).map(r => r.league_id);
     // Connected leagues first, then members' leagues most out of date first,
     // so a run that hits its time budget leaves the freshest work undone.
@@ -229,6 +229,7 @@ async function sharedData() {
       if (!leagues.length) await new Promise(r => setTimeout(r, 1000));
     }
     T_BUILD = Date.now();
+    leagues = leagues.slice(0, 1);
     if (process.send) process.send({ building: leagues[0] });
     console.log('building on request:', leagues[0]);
   }
