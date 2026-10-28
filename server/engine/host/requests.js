@@ -57,11 +57,13 @@ function startStandby() {
   });
 }
 
-// A claimed league whose builder died (or hangs past the limit) is marked
-// failed, as before, so one bad id can't loop; a request a day on re-queues it.
+// A claimed league whose builder died (or hangs past the limit) goes back in
+// the queue once; a second time it is marked failed, as before, so one bad
+// id can't loop (a request a day on re-queues it).
+const UNFINISHED = 'build did not finish';
 async function sweep() {
   for (const b of builders) if (b.building && Date.now() - b.since > BUILD_LIMIT_MS) { console.warn('builder over time:', b.building); b.child.kill('SIGKILL'); }
-  await sql("update public.build_requests set status = 'failed', last_error = coalesce(last_error, 'build did not finish') where status = 'building' and building_at < now() - interval '35 minutes'");
+  await sql("update public.build_requests set status = case when last_error = '" + UNFINISHED + "' then 'failed' else 'pending' end, last_error = '" + UNFINISHED + "' where status = 'building' and building_at < now() - interval '35 minutes'");
 }
 
 (async function main() {
