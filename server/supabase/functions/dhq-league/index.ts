@@ -6,7 +6,8 @@
 //   GET /functions/v1/dhq-league?league=1312100327931019264
 //   → { league_id, season, built_at, engine_version, intel, dhq_proj, assess }
 //   404 when the league hasn't been built (never cached: a new league's build
-//   may land seconds later, and the app asks again).
+//   may land seconds later, and the app asks again), with its place in the
+//   build queue: { error, league_id, queue: pending | building | … | null }.
 //
 // intel is the engine's full LeagueIntel minus sourceSnapshots (upstream
 // URLs); dhq_proj is the week's projections. The row's error text, the
@@ -83,7 +84,14 @@ Deno.serve(async (req) => {
     if (!r.ok) throw new Error('rest ' + r.status);
     const rows = await r.json() as Array<Record<string, unknown>>;
     const row = rows[0];
-    if (!row || !row.intel) return respond(req, { error: 'not built', league_id: id }, 404, 'no-store');
+    if (!row || !row.intel) {
+      // Where it is in the build queue (pending | building | built | failed,
+      // or null when never asked for): the app waits only on a league that
+      // is being built (Phase A6).
+      const rq = await fetch(SUPABASE_URL + '/rest/v1/build_requests?select=status&league_id=eq.' + id, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } }).catch(() => null);
+      const queue = rq && rq.ok ? (((await rq.json()) as Array<{ status: string }>)[0] || {}).status || null : null;
+      return respond(req, { error: 'not built', league_id: id, queue }, 404, 'no-store');
+    }
     const intel = { ...(row.intel as Record<string, unknown>) };
     delete intel.sourceSnapshots;
     const ver = Number((String(row.engine_version || '').match(/^headless-(\d+)$/) || [])[1] || 0);

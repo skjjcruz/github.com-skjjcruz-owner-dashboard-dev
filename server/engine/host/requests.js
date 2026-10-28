@@ -6,10 +6,10 @@
 // always started up and waiting: shared data loaded, database open. It
 // checks the queue every second, claims one league (a league open on a
 // member's screen first), builds it and exits. The moment it claims one,
-// this starts the next standby, so a second member never waits on a cold
-// start either. At most two builders at once; while one is building, the
-// waiting one takes only leagues open on a screen. A standby whose shared
-// data passes 20 minutes exits and is replaced.
+// this starts the next standby, so the next member never waits on a cold
+// start either. At most three builders (one waiting); a league nobody has
+// open is taken only while no other league is building. A standby whose
+// shared data passes 20 minutes exits and is replaced.
 // Run by dhq-requests.service. Env (from /etc/dhq-engine.env):
 // SUPABASE_ACCESS_TOKEN, ENGINE_PROJECT_REF.
 'use strict';
@@ -17,7 +17,7 @@ const { spawn } = require('child_process');
 const REF = process.env.ENGINE_PROJECT_REF || '';
 const TOKEN = process.env.SUPABASE_ACCESS_TOKEN || '';
 const APP = process.env.DHQ_APP_DIR || '/opt/dhq/app';
-const MAX_BUILDERS = 2;
+const MAX_BUILDERS = 3;
 const BUILD_LIMIT_MS = 30 * 60 * 1000;
 
 async function sql(query) {
@@ -33,14 +33,15 @@ async function sql(query) {
 
 const builders = new Set();   // { child, building }
 function waiting() { return [...builders].filter(b => !b.building).length; }
+function busy() { return [...builders].filter(b => b.building).length; }
 
 function startStandby() {
   if (builders.size >= MAX_BUILDERS || waiting() > 0) return;
-  const busy = builders.size > 0;
+  const anyBusy = busy() > 0;
   const b = { building: null, started: Date.now() };
   b.child = spawn(process.execPath, ['--max-old-space-size=2048', 'server/engine/run.js'], {
     cwd: APP,
-    env: Object.assign({}, process.env, { ENGINE_PARTIAL: '1', ENGINE_STANDBY: '1', ENGINE_RUNNER: 'request', ENGINE_ONLY_OPENED: busy ? '1' : '' }),
+    env: Object.assign({}, process.env, { ENGINE_PARTIAL: '1', ENGINE_STANDBY: '1', ENGINE_RUNNER: 'request', ENGINE_ONLY_OPENED: anyBusy ? '1' : '' }),
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });
   builders.add(b);
@@ -49,8 +50,8 @@ function startStandby() {
   });
   b.child.on('exit', code => {
     builders.delete(b);
-    // The waiting one may take any league again.
-    if (!builders.size || ![...builders].some(x => x.building)) for (const x of builders) { try { x.child.send({ anyLeague: true }); } catch (e) { /* gone */ } }
+    // Nothing else building: the waiting one may take any league again.
+    if (!busy()) for (const x of builders) { try { x.child.send({ anyLeague: true }); } catch (e) { /* gone */ } }
     if (code) console.warn('builder exited', code, b.building ? '(league ' + b.building + ')' : '(standby)');
     // A crash while waiting: pause before the next, so a broken build can't spin.
     setTimeout(startStandby, code && !b.building ? 30000 : 500);

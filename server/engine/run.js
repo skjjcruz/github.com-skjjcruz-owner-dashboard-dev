@@ -355,7 +355,11 @@ async function sharedData() {
           const prev = db ? ((await db.select('league_intel', 'select=later:snapshot->dhq_later&league_id=eq.' + lid).catch(() => []))[0] || {}).later : null;
           const fits = prev && prev.model === r.app.model && Number(prev.cur) === Number(r.week);
           if (fits && Date.now() - Date.parse(prev.built_at) < 12 * 60 * 60 * 1000) row.snapshot.dhq_later = prev;
-          else if (PARTIAL || Date.now() - t0 < BUDGET_MS / 2) {
+          // A standby build (a member waiting on a new league) leaves them to
+          // the next scheduled build, so the builder is free again in about
+          // half a minute instead of two; the app projects later weeks
+          // itself meanwhile, as it does for any league without them.
+          else if ((PARTIAL && !STANDBY) || (!PARTIAL && Date.now() - t0 < BUDGET_MS / 2)) {
             try {
               const lt = await pj.later(row.snapshot.league, row.snapshot.rosters || []);
               console.log('  later weeks:', Object.keys(lt.weeks).join(',') || 'none', 'in', (lt.ms / 1000).toFixed(1) + 's');
