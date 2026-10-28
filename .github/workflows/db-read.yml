@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 5
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      ENGINE_PROJECT_REF: ${{ secrets.ENGINE_PROJECT_REF }}
+      ENGINE_PROJECT_REF: hovnqztlbsgsywrbidbh
       DB: ${{ inputs.db }}
       SQL: ${{ inputs.sql }}
       PUBKEY_B64: ${{ inputs.pubkey }}
