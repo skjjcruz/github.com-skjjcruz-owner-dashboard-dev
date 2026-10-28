@@ -3,8 +3,12 @@
 // queues league ids, and a queued league grants nobody anything (who may see
 // a league is decided by roster membership in dhq-tools).
 //
-//   POST /functions/v1/dhq-request   body: {"leagues":["1312100327931019264", …]}
+//   POST /functions/v1/dhq-request   body: {"leagues":["1312100327931019264", …], "open": "…"}
 //   → { queued: n, known: n, skipped: n }
+//
+// "open" (optional, one of the leagues) is the league on the member's screen
+// right now: if it's waiting to be built it goes to the front of the queue
+// (opened_at; Phase A6, 2026-10-28).
 //
 // Guards: Sleeper ids only (digits), at most 30 per call, a new league must
 // exist on Sleeper, at most 60 new leagues per caller per hour and 300
@@ -48,10 +52,11 @@ async function onSleeper(id: string) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
-  let body: { leagues?: unknown } = {};
+  let body: { leagues?: unknown; open?: unknown } = {};
   try { body = await req.json(); } catch { return json({ error: 'JSON body required' }, 400); }
   const ids = [...new Set((Array.isArray(body.leagues) ? body.leagues : []).map(x => String(x).trim()).filter(x => /^\d{10,20}$/.test(x)))].slice(0, PER_CALL);
   if (!ids.length) return json({ error: 'leagues: Sleeper league ids required' }, 400);
+  const open = ids.includes(String(body.open ?? '')) ? String(body.open) : '';
   try {
     const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown';
     const ipHash = await sha('dhq-request:' + ip);
@@ -69,6 +74,11 @@ Deno.serve(async (req) => {
     const exp = new Date(now + 30 * DAY).toISOString();
     if (renew.length) await rest('build_requests?league_id=in.(' + renew.join(',') + ')', { method: 'PATCH', body: JSON.stringify({ seen_at: iso, expires_at: exp }) });
 
+    // Already waiting: move the open one to the front.
+    if (open && have.get(open)?.status === 'pending') {
+      await rest('build_requests?status=eq.pending&league_id=eq.' + open, { method: 'PATCH', body: JSON.stringify({ opened_at: iso }) });
+    }
+
     // New leagues: limits first, then check each exists on Sleeper.
     const fresh = ids.filter(id => !have.has(id)).concat(retry);
     let queued = 0;
@@ -84,7 +94,7 @@ Deno.serve(async (req) => {
         await rest('build_requests', {
           method: 'POST',
           headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-          body: JSON.stringify(real.map(id => ({ league_id: id, status: 'pending', requested_at: iso, seen_at: iso, expires_at: exp, last_error: null, ip_hash: ipHash }))),
+          body: JSON.stringify(real.map(id => ({ league_id: id, status: 'pending', requested_at: iso, seen_at: iso, expires_at: exp, last_error: null, ip_hash: ipHash, ...(open ? { opened_at: id === open ? iso : null } : {}) }))),
         });
       }
       queued = real.length;

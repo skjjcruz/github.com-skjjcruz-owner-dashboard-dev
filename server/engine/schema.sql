@@ -189,6 +189,9 @@ create table if not exists public.build_requests (
 alter table public.build_requests enable row level security;
 create index if not exists build_requests_pending on public.build_requests (status, requested_at);
 create index if not exists build_requests_ip on public.build_requests (ip_hash, requested_at desc);
+-- When a member last had the league open on screen (dhq-request "open"):
+-- the request watcher builds those first (Phase A6, 2026-10-28).
+alter table public.build_requests add column if not exists opened_at timestamptz;
 
 -- Full hourly builds vs. one-league request builds: GitHub's fallback check
 -- (server/engine/host/lease.js gate) looks at full builds only.

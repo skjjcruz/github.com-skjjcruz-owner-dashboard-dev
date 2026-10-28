@@ -245,10 +245,15 @@ async function sharedData() {
   if (PARTIAL) await markNew(leagues.filter(id => /^\d{10,20}$/.test(id)));
   const injected = new Set();
   let lastQueueCheck = 0;
+  // A league a member has open right now (opened_at, set by dhq-request)
+  // goes first; a request build takes only those, so the league on screen
+  // never waits behind the rest of the member's leagues.
   const takeQueued = async li => {
-    if (!db || PARTIAL || Date.now() - lastQueueCheck < 3000) return;
+    if (!db || Date.now() - lastQueueCheck < 3000) return;
     lastQueueCheck = Date.now();
-    const rows = await db.select('build_requests', 'select=league_id&status=eq.pending&order=requested_at.asc&limit=5').catch(() => []);
+    const rows = await db.select('build_requests', PARTIAL
+      ? 'select=league_id&status=eq.pending&opened_at=not.is.null&order=opened_at.desc&limit=2'
+      : 'select=league_id&status=eq.pending&order=opened_at.desc.nullslast,requested_at.asc&limit=5').catch(() => []);
     // Skip any already built in this run (ahead of li) or already taken.
     const fresh = rows.map(r => String(r.league_id)).filter(id => { const at = leagues.indexOf(id); return /^\d{10,20}$/.test(id) && !injected.has(id) && !(at >= 0 && at < li); });
     if (!fresh.length) return;

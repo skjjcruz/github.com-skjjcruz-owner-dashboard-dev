@@ -24,7 +24,10 @@ async function sql(query) {
 
 async function tick() {
   // The table may not exist until the first build applies schema.sql.
-  const rows = await sql("select league_id from public.build_requests where status = 'pending' order by requested_at limit " + BATCH);
+  // A league open on a member's screen first (opened_at; the column comes
+  // with the next full build's schema.sql, so fall back until it exists).
+  const rows = await sql("select league_id from public.build_requests where status = 'pending' order by opened_at desc nulls last, requested_at limit " + BATCH)
+    .catch(() => sql("select league_id from public.build_requests where status = 'pending' order by requested_at limit " + BATCH));
   const ids = rows.map(r => String(r.league_id)).filter(id => /^\d{10,20}$/.test(id));
   if (!ids.length) return;
   console.log('building on request:', ids.join(','));
