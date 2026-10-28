@@ -77,6 +77,9 @@ async function sweep() {
 (async function main() {
   if (!REF || !TOKEN) { console.error('ENGINE_PROJECT_REF and SUPABASE_ACCESS_TOKEN are required'); process.exit(1); }
   console.log('keeping a standby builder ready (at most', MAX_BUILDERS, 'builders)');
+  // Leagues the last watcher's builders had claimed when it stopped (a
+  // restart takes its builders down with it) go back in the queue.
+  await sql("update public.build_requests set status = 'pending' where status = 'building'").then(r => console.log('back in the queue after a restart:', (r || []).length || 'none')).catch(e => console.warn('requeue:', e.message));
   startStandby();
   setInterval(() => { startStandby(); sweep().catch(e => console.warn('request sweep:', e.message)); }, 60 * 1000);
   // The service stopping (setup, restart): take the builders down with it.
