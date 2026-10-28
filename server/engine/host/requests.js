@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // Builds leagues members just opened (owner go-ahead 2026-10-17). The app
 // sends league ids to dhq-request, which queues them in build_requests; this
-// checks the queue every 15 seconds and runs a one-league request build
+// checks the queue every 3 seconds and runs a one-league request build
 // (build.sh with LEAGUES and ENGINE_PARTIAL=1). Run by dhq-requests.service.
 // Env (from /etc/dhq-engine.env): SUPABASE_ACCESS_TOKEN, ENGINE_PROJECT_REF.
 'use strict';
 const { spawnSync } = require('child_process');
 const REF = process.env.ENGINE_PROJECT_REF || '';
 const TOKEN = process.env.SUPABASE_ACCESS_TOKEN || '';
-const EVERY_MS = 15000;
+const EVERY_MS = 3000;   // a new league is picked up within 3 s (Phase A6; was 15 s)
 const BATCH = 5;
 
 async function sql(query) {

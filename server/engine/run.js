@@ -77,6 +77,25 @@ function rest(key) {
   };
 }
 
+// What dhq-league serves the app, as exact JSON text: jsonb reorders object
+// keys (shortest first), and the app lists some of them in key order
+// (positions in an assessment, for one), so the app gets the build's own
+// text, key order and all (Phase A1, 2026-10-27).
+function appTexts(row) {
+  if (!row.snapshot) return;
+  const appIntel = Object.assign({}, row.intel); delete appIntel.sourceSnapshots;
+  row.snapshot.app_intel_json = JSON.stringify(appIntel);
+  row.snapshot.app_brain_json = row.brainPack ? JSON.stringify(row.brainPack) : null;
+  // Traded picks as the app compares them (team-assess.js
+  // serverBuildMatches): a picks-only trade changes the assessments
+  // and the one brain without moving a player.
+  const picksSig = (row.snapshot.traded_picks || []).map(p => [p.season, p.round, p.roster_id, p.owner_id].join('|')).sort().join(',');
+  row.snapshot.app_assess_json = JSON.stringify({
+    assessments: row.assessments || [], dna: row.dna || {}, picks_sig: picksSig,
+    rosters: (row.snapshot.rosters || []).map(r => ({ roster_id: r.roster_id, players: r.players || [], settings: { wins: (r.settings || {}).wins || 0, losses: (r.settings || {}).losses || 0, ties: (r.settings || {}).ties || 0, fpts: (r.settings || {}).fpts || 0 } })),
+  });
+}
+
 (async () => {
   const started = new Date().toISOString();
   let db = null;
@@ -178,10 +197,48 @@ function rest(key) {
   // the leagues it didn't reach (most out of date first).
   const BUDGET_MS = Number(process.env.ENGINE_BUDGET_MIN || 20) * 60 * 1000;
   let skipped = 0;
-  for (const lid of leagues) {
-    if (!PARTIAL && Date.now() - t0 > BUDGET_MS) { skipped++; continue; }
+  // A league a member opens for the first time (Phase A6, 2026-10-28): its
+  // values are saved the moment they are built, before this week's and
+  // later weeks' projections (a minute or more), so the app finds them in
+  // about the time it would take to build them itself. A full run also
+  // takes such leagues between leagues, instead of leaving them queued
+  // behind it (it holds the build lock for up to 14 minutes).
+  const neverBuilt = new Set();
+  const markNew = async ids => {
+    if (!db || !ids.length) return;
+    const have = new Set((await db.select('league_intel', 'select=league_id&league_id=in.(' + ids.join(',') + ')').catch(() => ids.map(league_id => ({ league_id })))).map(r => String(r.league_id)));
+    ids.forEach(id => { if (!have.has(String(id))) neverBuilt.add(String(id)); });
+  };
+  if (PARTIAL) await markNew(leagues.filter(id => /^\d{10,20}$/.test(id)));
+  const injected = new Set();
+  let lastQueueCheck = 0;
+  const takeQueued = async li => {
+    if (!db || PARTIAL || Date.now() - lastQueueCheck < 3000) return;
+    lastQueueCheck = Date.now();
+    const rows = await db.select('build_requests', 'select=league_id&status=eq.pending&order=requested_at.asc&limit=5').catch(() => []);
+    // Skip any already built in this run (ahead of li) or already taken.
+    const fresh = rows.map(r => String(r.league_id)).filter(id => { const at = leagues.indexOf(id); return /^\d{10,20}$/.test(id) && !injected.has(id) && !(at >= 0 && at < li); });
+    if (!fresh.length) return;
+    await markNew(fresh);
+    fresh.forEach(id => { const at = leagues.indexOf(id); if (at >= 0) leagues.splice(at, 1); injected.add(id); });
+    leagues.splice(li, 0, ...fresh);
+    console.log('  taking member requests first:', fresh.join(','));
+  };
+  for (let li = 0; li < leagues.length; li++) {
+    await takeQueued(li);
+    const lid = leagues[li];
+    if (!PARTIAL && !injected.has(lid) && Date.now() - t0 > BUDGET_MS) { skipped++; continue; }
     try {
       const row = await buildLeague(lid, shared, histCache);
+      if (db && neverBuilt.has(String(lid))) {
+        try {
+          const early = Object.assign({}, row, { snapshot: Object.assign({}, row.snapshot) });
+          appTexts(early);
+          delete early.brainPack;
+          await db.upsert('league_intel', [Object.assign(early, { error: null })]);
+          console.log('  values saved early (first build of this league)');
+        } catch (e) { console.warn('  early save failed for', lid + ':', e && e.message || e); }
+      }
       try {
         const pj = await projectorFor();
         if (pj && row.snapshot && row.snapshot.league) {
@@ -206,23 +263,7 @@ function rest(key) {
           } else if (fits) row.snapshot.dhq_later = prev;
         }
       } catch (e) { console.warn('  dhq projections failed for', lid + ':', e && e.message || e); }
-      // What dhq-league serves the app, as exact JSON text: jsonb reorders
-      // object keys (shortest first), and the app lists some of them in
-      // key order (positions in an assessment, for one), so the app gets
-      // the build's own text, key order and all (Phase A1, 2026-10-27).
-      if (row.snapshot) {
-        const appIntel = Object.assign({}, row.intel); delete appIntel.sourceSnapshots;
-        row.snapshot.app_intel_json = JSON.stringify(appIntel);
-        row.snapshot.app_brain_json = row.brainPack ? JSON.stringify(row.brainPack) : null;
-        // Traded picks as the app compares them (team-assess.js
-        // serverBuildMatches): a picks-only trade changes the assessments
-        // and the one brain without moving a player.
-        const picksSig = (row.snapshot.traded_picks || []).map(p => [p.season, p.round, p.roster_id, p.owner_id].join('|')).sort().join(',');
-        row.snapshot.app_assess_json = JSON.stringify({
-          assessments: row.assessments || [], dna: row.dna || {}, picks_sig: picksSig,
-          rosters: (row.snapshot.rosters || []).map(r => ({ roster_id: r.roster_id, players: r.players || [], settings: { wins: (r.settings || {}).wins || 0, losses: (r.settings || {}).losses || 0, ties: (r.settings || {}).ties || 0, fpts: (r.settings || {}).fpts || 0 } })),
-        });
-      }
+      appTexts(row);
       const valued = Object.keys(row.intel.playerScores || {}).length;
       ((row.snapshot || {}).rosters || []).forEach(r => (r.players || []).forEach(pid => rostered.add(String(pid))));
       console.log('✓', row.name, '(' + lid + ')', 'in', (row.build_ms / 1000).toFixed(1) + 's ·', valued, 'players valued ·', row.assessments.length, 'teams');
@@ -230,6 +271,8 @@ function rest(key) {
       if (db) await db.upsert('league_intel', [Object.assign(row, { error: null })]);
       else fs.writeFileSync(path.join(OUT, lid + '.json'), JSON.stringify(row));
       ok++; builtIds.push(lid);
+      // A request taken mid-run is marked now, so the request watcher doesn't build it again.
+      if (db && injected.has(lid)) await db.update('build_requests', 'league_id=eq.' + lid, { status: 'built', last_built_at: new Date().toISOString(), last_error: null }).catch(() => {});
     } catch (e) {
       failed++;
       console.error('✗', lid, e && e.message || e);
