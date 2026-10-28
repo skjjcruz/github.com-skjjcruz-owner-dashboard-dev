@@ -205,7 +205,7 @@ async function sharedData() {
   // free-agent lists included): every player on an NFL team at a position
   // the league can start (defenders only in IDP leagues), plus anyone
   // Sleeper projects this week.
-  const OFF_POS = new Set(['QB', 'RB', 'WR', 'TE', 'K']);
+  const OFF_POS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DEF']);   // DEF: team defenses (DHQ D/ST model, Lab #108)
   const DEF_POS = new Set(['DL', 'DE', 'DT', 'NT', 'LB', 'ILB', 'OLB', 'MLB', 'DB', 'CB', 'S', 'SS', 'FS']);
   const IDP_SLOT = /^(DL|DE|DT|LB|DB|CB|S|IDP_FLEX)$/;
   const projPool = (league, withLine) => {
