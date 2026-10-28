@@ -14,10 +14,16 @@ main() {
   # than skipping a turn; give up after 5 minutes (the next slot is 15 away).
   flock -w 300 9 || { echo "another build is still running; skipping"; exit 0; }
 
-  git -C "$BASE/app" fetch -q origin main && git -C "$BASE/app" reset -q --hard origin/main
-  git -C "$BASE/DHQ-Shared" fetch -q origin && git -C "$BASE/DHQ-Shared" reset -q --hard origin/HEAD
+  # A request build (a member waiting on a league, Phase A6) runs the code
+  # the last scheduled build pulled (at most an hour old); every other build
+  # pulls first.
+  if [[ "${ENGINE_RUNNER:-}" != "request" ]]; then
+    git -C "$BASE/app" fetch -q origin main && git -C "$BASE/app" reset -q --hard origin/main
+    git -C "$BASE/DHQ-Shared" fetch -q origin && git -C "$BASE/DHQ-Shared" reset -q --hard origin/HEAD
+    cd "$BASE/app"
+    DHQ_SHARED_SOURCE="$BASE/DHQ-Shared" node scripts/sync-reconai-shared.cjs
+  fi
   cd "$BASE/app"
-  DHQ_SHARED_SOURCE="$BASE/DHQ-Shared" node scripts/sync-reconai-shared.cjs
 
   # A dry run stores nothing, so it takes no lease.
   if [[ " $* " != *" --dry "* ]]; then

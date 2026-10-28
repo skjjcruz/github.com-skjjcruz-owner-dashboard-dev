@@ -96,15 +96,20 @@ function appTexts(row) {
   });
 }
 
+const T_START = Date.now();
 (async () => {
   const started = new Date().toISOString();
   let db = null;
   if (!DRY) {
     if (!REF || !TOKEN) throw new Error('ENGINE_PROJECT_REF and SUPABASE_ACCESS_TOKEN are required (or pass --dry)');
     await ensureAwake();
-    await sql(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
-    // New tables reach the REST layer only after its schema cache reloads.
-    await sql("notify pgrst, 'reload schema'").catch(() => {});
+    // The schema is applied by every full (hourly) run; a request build
+    // (PARTIAL, a member waiting on a league) skips it (Phase A6).
+    if (!PARTIAL) {
+      await sql(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+      // New tables reach the REST layer only after its schema cache reloads.
+      await sql("notify pgrst, 'reload schema'").catch(() => {});
+    }
     db = rest(await serviceKey());
     for (let i = 0; ; i++) {
       try { await db.select('connect_leagues', 'select=league_id&limit=1'); break; }
@@ -128,6 +133,7 @@ function appTexts(row) {
   console.log('engine', ENGINE_VERSION, DRY ? '(dry run)' : '', '—', leagues.length, 'league(s)');
 
   const t0 = Date.now();
+  if (PARTIAL) console.log('ready in', ((Date.now() - T_START) / 1000).toFixed(1) + 's');
   const shared = await loadShared();
   console.log('shared data in', ((Date.now() - t0) / 1000).toFixed(1) + 's: season', shared.season, 'week', shared.nfl.display_week || shared.nfl.week, '· players', Object.keys(shared.players).length);
 
@@ -236,7 +242,7 @@ function appTexts(row) {
           appTexts(early);
           delete early.brainPack;
           await db.upsert('league_intel', [Object.assign(early, { error: null })]);
-          console.log('  values saved early (first build of this league)');
+          console.log('  values saved early (first build of this league),', ((Date.now() - T_START) / 1000).toFixed(1) + 's after start');
         } catch (e) { console.warn('  early save failed for', lid + ':', e && e.message || e); }
       }
       try {
