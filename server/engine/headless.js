@@ -111,14 +111,18 @@ async function loadShared() {
   const thisWeek = weeklyStats[week] || {};
   Object.keys(thisWeek).forEach(pid => { const t = players[pid] && players[pid].team; if (t && Number(thisWeek[pid].gp) > 0 && weekGames[t]) weekGames[t].played = true; });
   const roles = await nflRoles().catch(() => null);
-  // The points ledger's feeds (18 weekly projection files + last season's
-  // stats, multi-MB each): fetched once per run and shared by every league.
+  return withFeeds({ nfl, season, week, players, statsByYear, weeklyStats, projWeek: projWeek || {}, weekGames, roles });
+}
+// The points ledger's feeds (18 weekly projection files + last season's
+// stats, multi-MB each): fetched once per run and shared by every league.
+// Also re-attached to a saved copy of the shared data (run.js).
+function withFeeds(shared) {
   const feeds = new Map();
-  const fetchJsonCached = url => {
+  shared.fetchJsonCached = url => {
     if (!feeds.has(url)) feeds.set(url, fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url); return r.json(); }));
     return feeds.get(url);
   };
-  return { nfl, season, week, players, statsByYear, weeklyStats, projWeek: projWeek || {}, weekGames, roles, fetchJsonCached };
+  return shared;
 }
 
 // The NFL depth charts the app's NflRoles module reads (the app's public
@@ -370,14 +374,18 @@ async function buildLeague(leagueId, shared, histCache) {
   };
   W.S = S; W.App.S = S;
 
+  // This season's weeks and the past seasons don't depend on the values:
+  // fetched while the engine builds them (a league's first build waits on
+  // both; Phase A6, 2026-10-28).
+  const pastFetch = Promise.all([
+    seasonWeeks(league.league_id, lastRegWeek(league)).catch(() => ({})),
+    pastSeasons(league, histCache).catch(e => { console.error('past seasons', leagueId, e && e.message); return []; }),
+  ]);
   await W.App.loadLeagueIntel();
   const LI = W.App.LI;
   if (!LI || !LI.playerScores || !Object.keys(LI.playerScores).length) throw new Error('engine produced no values for ' + leagueId);
 
-  const [weeks, history] = await Promise.all([
-    seasonWeeks(league.league_id, lastRegWeek(league)).catch(() => ({})),
-    pastSeasons(league, histCache).catch(e => { console.error('past seasons', leagueId, e && e.message); return []; }),
-  ]);
+  const [weeks, history] = await pastFetch;
   // The app replaces the engine's dynastyValue with a plain score lookup when
   // it opens a league (league-detail.js bridge): an Inactive player keeps his
   // value there. Assess with the same function the app uses.
@@ -464,4 +472,4 @@ async function espnTeamData(players) {
   return out;
 }
 
-module.exports = { ENGINE_VERSION, loadShared, buildLeague, slimPlayers, sleeper, espnTeamData };
+module.exports = { ENGINE_VERSION, loadShared, withFeeds, buildLeague, slimPlayers, sleeper, espnTeamData };

@@ -11,7 +11,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { ENGINE_VERSION, loadShared, buildLeague, slimPlayers, sleeper, espnTeamData } = require('./headless');
+const { ENGINE_VERSION, loadShared, withFeeds, buildLeague, slimPlayers, sleeper, espnTeamData } = require('./headless');
 const { buildNewsIndex } = require('./news');
 const { createProjector } = require('./dhq-proj');
 
@@ -97,6 +97,33 @@ function appTexts(row) {
 }
 
 const T_START = Date.now();
+// The shared data (the player directory, five seasons of stats, this week's
+// lines): a full run downloads it and keeps a copy on disk; a request build
+// (a member waiting on a new league) reuses a copy under 20 minutes old,
+// the same data the last scheduled build used (Phase A6, 2026-10-28: ~3 s
+// of downloads against under 1 s to read).
+const SHARED_COPY = process.env.DHQ_SHARED_COPY || path.join(require('os').tmpdir(), 'dhq-shared-copy.json');
+async function sharedData() {
+  if (PARTIAL) {
+    try {
+      const st = fs.statSync(SHARED_COPY);
+      if (Date.now() - st.mtimeMs < 20 * 60 * 1000) {
+        const copy = withFeeds(JSON.parse(fs.readFileSync(SHARED_COPY, 'utf8')));
+        console.log('shared data from the last build\'s copy,', Math.round((Date.now() - st.mtimeMs) / 60000), 'min old');
+        return copy;
+      }
+    } catch (e) { /* no usable copy: download */ }
+  }
+  const shared = await loadShared();
+  if (!PARTIAL && !DRY) {
+    try {
+      const copy = Object.assign({}, shared); delete copy.fetchJsonCached;
+      fs.writeFileSync(SHARED_COPY + '.tmp', JSON.stringify(copy));
+      fs.renameSync(SHARED_COPY + '.tmp', SHARED_COPY);
+    } catch (e) { console.warn('shared data copy not kept:', e.message); }
+  }
+  return shared;
+}
 (async () => {
   const started = new Date().toISOString();
   let db = null;
@@ -134,7 +161,7 @@ const T_START = Date.now();
 
   const t0 = Date.now();
   if (PARTIAL) console.log('ready in', ((Date.now() - T_START) / 1000).toFixed(1) + 's');
-  const shared = await loadShared();
+  const shared = await sharedData();
   console.log('shared data in', ((Date.now() - t0) / 1000).toFixed(1) + 's: season', shared.season, 'week', shared.nfl.display_week || shared.nfl.week, '· players', Object.keys(shared.players).length);
 
   // Past-season history per league lives in engine_cache so each run only
