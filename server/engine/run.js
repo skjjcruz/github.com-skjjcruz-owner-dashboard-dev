@@ -113,6 +113,12 @@ function appTexts(row) {
 }
 
 const T_START = Date.now();
+// The server has one CPU (2026-10-28): the league a member is waiting on
+// (opened, never built) gets it; everything after its values and
+// assessments are saved, and any league nobody is waiting on, runs at a
+// low priority (the scheduled build runs at nice 10, a standby at 0).
+let standbyOpened = false;
+function lowPriority() { try { require('os').setPriority(15); } catch (e) { /* not allowed: carry on */ } }
 let T_BUILD = T_START;   // when the league was taken (a standby waits first)
 // The shared data (the player directory, five seasons of stats, this week's
 // lines): a full run downloads it and keeps a copy on disk; a request build
@@ -219,18 +225,18 @@ async function sharedData() {
     while (!leagues.length) {
       const q = 'select=league_id&status=eq.pending' + (onlyOpened ? '&opened_at=not.is.null' : '') + '&order=opened_at.desc.nullslast,requested_at.asc&limit=3';
       if (Date.now() - SHARED_AT > SHARED_MAX_MS) { console.log('standby: shared data', Math.round((Date.now() - SHARED_AT) / 60000), 'min old; making way for a fresh one'); process.exit(0); }
-      const rows = await db.select('build_requests', q).catch(() => []);
+      const rows = await db.select('build_requests', q.replace('select=league_id', 'select=league_id,opened_at')).catch(() => []);
       for (const r of rows) {
         const id = String(r.league_id);
         if (!/^\d{10,20}$/.test(id)) continue;
         const got = await db.claim('build_requests', 'league_id=eq.' + id + '&status=eq.pending', { status: 'building', building_at: new Date().toISOString() }).catch(() => []);
-        if (got.length) { leagues = [id]; break; }
+        if (got.length) { leagues = [id]; standbyOpened = !!r.opened_at; break; }
       }
       if (!leagues.length) await new Promise(r => setTimeout(r, 1000));
     }
     T_BUILD = Date.now();
     leagues = leagues.slice(0, 1);
-    if (process.send) process.send({ building: leagues[0] });
+    if (process.send) process.send({ building: leagues[0], opened: standbyOpened });
     console.log('building on request:', leagues[0]);
   }
 
@@ -288,6 +294,8 @@ async function sharedData() {
     ids.forEach(id => { if (!have.has(String(id))) neverBuilt.add(String(id)); });
   };
   if (PARTIAL) await markNew(leagues.filter(id => /^\d{10,20}$/.test(id)));
+  const urgentDone = () => { if (STANDBY) { lowPriority(); if (process.send) try { process.send({ urgentDone: true }); } catch (e) { /* gone */ } } };
+  if (STANDBY && !(standbyOpened && neverBuilt.has(String(leagues[0])))) urgentDone();
   const injected = new Set();
   let lastQueueCheck = 0;
   // A league a member has open right now (opened_at, set by dhq-request)
@@ -338,6 +346,7 @@ async function sharedData() {
           appTexts(early);
           delete early.brainPack;
           await db.upsert('league_intel', [Object.assign(early, { error: null })]);
+          urgentDone();
           console.log('  assessments saved early,', ((Date.now() - T_BUILD) / 1000).toFixed(1) + 's after ' + (STANDBY ? 'taking it' : 'start') + ' · build', JSON.stringify(steps), '· save', ((Date.now() - tSave) / 1000).toFixed(1) + 's');
         } catch (e) { console.warn('  early save failed for', lid + ':', e && e.message || e); }
       }

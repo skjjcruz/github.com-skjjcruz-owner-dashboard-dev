@@ -11,4 +11,4 @@ EnvironmentFile=/etc/dhq-engine.env
 Environment=ENGINE_BUDGET_MIN=11
 ExecStart=/opt/dhq/app/server/engine/host/build.sh
 TimeoutStartSec=15min
-Nice=5
+Nice=10

@@ -9,7 +9,7 @@ EnvironmentFile=/etc/dhq-engine.env
 ExecStart=/usr/bin/node /opt/dhq/app/server/engine/host/requests.js
 Restart=always
 RestartSec=30
-Nice=5
+Nice=0
 
 [Install]
 WantedBy=multi-user.target

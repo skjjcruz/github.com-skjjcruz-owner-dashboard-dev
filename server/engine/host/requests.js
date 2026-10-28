@@ -45,10 +45,17 @@ function startStandby() {
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });
   builders.add(b);
+  // The next standby starts once the member's league is saved (or after
+  // 10 s): its start-up would otherwise take the one CPU from that build.
   b.child.on('message', m => {
-    if (m && m.building) { b.building = m.building; b.since = Date.now(); startStandby(); }
+    if (m && m.building) {
+      b.building = m.building; b.since = Date.now();
+      if (m.opened) b.later = setTimeout(startStandby, 10000); else startStandby();
+    }
+    if (m && m.urgentDone) { clearTimeout(b.later); startStandby(); }
   });
   b.child.on('exit', code => {
+    clearTimeout(b.later);
     builders.delete(b);
     // Nothing else building: the waiting one may take any league again.
     if (!busy()) for (const x of builders) { try { x.child.send({ anyLeague: true }); } catch (e) { /* gone */ } }
