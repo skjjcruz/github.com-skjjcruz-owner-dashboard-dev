@@ -11,6 +11,7 @@
 #   disable  turn it off (GitHub's fallback then builds within ~2 hours)
 #   run      start one real build on the server now
 #   status   timer state, the last build's log tail, the last stored runs
+#   requests-log  the request watcher's log, last two hours (league ids and timings only)
 #
 # Secrets: ENGINE_HOST, ENGINE_SSH_KEY (owner added 2026-10-17),
 # SUPABASE_ACCESS_TOKEN (passed to the server's env file on setup).
@@ -21,10 +22,10 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "setup | compare | enable | disable | run | status"
+        description: "setup | compare | enable | disable | run | status | requests-log"
         required: true
         type: choice
-        options: [status, setup, compare, enable, disable, run]
+        options: [status, setup, compare, enable, disable, run, requests-log]
       league:
         description: "League id for compare"
         required: false
@@ -92,6 +93,10 @@ jobs:
         if: inputs.action == 'run'
         run: |
           ssh engine 'sudo systemctl start dhq-engine.service; systemctl show dhq-engine.service -p Result -p ExecMainStatus; journalctl -u dhq-engine.service -n 15 --no-pager -o cat'
+
+      - name: Request builds log
+        if: inputs.action == 'requests-log'
+        run: ssh engine 'journalctl -u dhq-requests.service --since "-2 hours" --no-pager -o short-iso | tail -n 120'
 
       - name: Status
         if: always() && inputs.action != 'compare'
