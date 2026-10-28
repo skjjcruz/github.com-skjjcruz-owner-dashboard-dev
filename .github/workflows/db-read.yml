@@ -24,6 +24,12 @@ on:
         description: "Base64 of the caller's RSA public key (PEM)"
         required: true
         type: string
+      db:
+        description: "Which database: app (default) or engine (the engine server's: league_intel, build_requests)"
+        required: false
+        default: app
+        type: choice
+        options: [app, engine]
 
 permissions:
   contents: read
@@ -38,6 +44,8 @@ jobs:
     timeout-minutes: 5
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      ENGINE_PROJECT_REF: ${{ secrets.ENGINE_PROJECT_REF }}
+      DB: ${{ inputs.db }}
       SQL: ${{ inputs.sql }}
       PUBKEY_B64: ${{ inputs.pubkey }}
     steps:
@@ -56,8 +64,12 @@ jobs:
               print('Refused: only a single read-only SELECT/WITH/EXPLAIN is allowed.', file=sys.stderr)
               sys.exit(2)
           query = 'set session characteristics as transaction read only; ' + sql
+          ref = os.environ.get('ENGINE_PROJECT_REF', '') if os.environ.get('DB') == 'engine' else 'sxshiqyxhhifvtfqawbq'
+          if not re.match(r'^[a-z0-9]{20}$', ref):
+              print('No project for db=' + os.environ.get('DB', ''), file=sys.stderr)
+              sys.exit(2)
           req = urllib.request.Request(
-              'https://api.supabase.com/v1/projects/sxshiqyxhhifvtfqawbq/database/query',
+              'https://api.supabase.com/v1/projects/' + ref + '/database/query',
               data=json.dumps({'query': query}).encode(),
               headers={'Authorization': 'Bearer ' + os.environ['SUPABASE_ACCESS_TOKEN'],
                        'Content-Type': 'application/json', 'Accept': 'application/json',
