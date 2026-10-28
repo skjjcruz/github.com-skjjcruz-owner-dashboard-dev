@@ -27,7 +27,7 @@ const ENGINE_VERSION = 'headless-7';
 const ENGINE_FILES = [
   'constants.js', 'utils.js', 'storage.js', 'event-bus.js', 'platform-provider.js', 'sleeper-api.js',
   'pick-value-model.js', 'dhq-providers.js', 'dhq-core.js', 'intelligence-context.js', 'values-v2.js', 'pff-snapshot.js',
-  'dhq-engine.js', 'nfl-roles.js', 'team-assess.js', 'analytics-engine.js', 'trade-engine.js', 'rookie-data.js',
+  'dhq-engine.js', 'dhq-engine-values.js', 'nfl-roles.js', 'team-assess.js', 'analytics-engine.js', 'trade-engine.js', 'rookie-data.js',
 ].map(f => 'reconai-shared/' + f).concat(['js/utils/player-value.js']);
 
 function storage() {
@@ -72,8 +72,12 @@ function buildContext() {
   return vm.createContext(ctx);
 }
 
+// The value formula's own file (split out of dhq-engine.js, Phase A6): a
+// shared engine from before the split has the formula inside dhq-engine.js.
+const OPTIONAL_FILES = new Set(['reconai-shared/dhq-engine-values.js']);
 function loadEngine(ctx) {
   for (const rel of ENGINE_FILES) {
+    if (OPTIONAL_FILES.has(rel) && !fs.existsSync(path.join(ROOT, rel))) continue;
     const code = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     vm.runInContext(code, ctx, { filename: rel });
   }
