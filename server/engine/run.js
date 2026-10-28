@@ -315,14 +315,17 @@ async function sharedData() {
     const lid = leagues[li];
     if (!PARTIAL && !injected.has(lid) && Date.now() - t0 > BUDGET_MS) { skipped++; continue; }
     try {
+      const tStart = Date.now();
       const row = await buildLeague(lid, shared, histCache);
+      const steps = Object.assign({ start: +((tStart - T_BUILD) / 1000).toFixed(2) }, row.steps); delete row.steps;
       if (db && neverBuilt.has(String(lid))) {
         try {
+          const tSave = Date.now();
           const early = Object.assign({}, row, { snapshot: Object.assign({}, row.snapshot) });
           appTexts(early);
           delete early.brainPack;
           await db.upsert('league_intel', [Object.assign(early, { error: null })]);
-          console.log('  values saved early (first build of this league),', ((Date.now() - T_BUILD) / 1000).toFixed(1) + 's after ' + (STANDBY ? 'taking it' : 'start'));
+          console.log('  values saved early (first build of this league),', ((Date.now() - T_BUILD) / 1000).toFixed(1) + 's after ' + (STANDBY ? 'taking it' : 'start') + ' · build', JSON.stringify(steps), '· save', ((Date.now() - tSave) / 1000).toFixed(1) + 's');
         } catch (e) { console.warn('  early save failed for', lid + ':', e && e.message || e); }
       }
       try {

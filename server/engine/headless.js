@@ -310,6 +310,8 @@ async function pastSeasons(league, histCache) {
 // IndexedDB so past seasons' trades/drafts/brackets are not re-fetched.
 async function buildLeague(leagueId, shared, histCache) {
   const t0 = Date.now();
+  // Seconds into the build at each step (logged for a league's first build).
+  const steps = {}; const step = k => { steps[k] = +((Date.now() - t0) / 1000).toFixed(2); };
   const ctx = buildContext();
   // The depth charts the app's NflRoles loads (the superflex QB floor and
   // starter roles read them): fetched once per run in loadShared and served
@@ -341,6 +343,7 @@ async function buildLeague(leagueId, shared, histCache) {
     if (!rookieProspects) console.error('rookie prospects did not load for ' + leagueId + ': young-player values will differ from a device that has them');
   }
 
+  step('rookies');
   const { nfl, season, players } = shared;
   const week = Number(nfl.display_week || nfl.week || 1);
   const weeksSoFar = []; for (let w = 1; w <= Math.min(18, week); w++) weeksSoFar.push(w);
@@ -352,6 +355,7 @@ async function buildLeague(leagueId, shared, histCache) {
     sleeper('/league/' + leagueId + '/drafts').catch(() => []),
   ].concat(weeksSoFar.map(w => sleeper('/league/' + leagueId + '/transactions/' + w).catch(() => []))));
   if (!league) throw new Error('league not found: ' + leagueId);
+  step('league');
   // This season's waiver and free-agent moves, trimmed: what the FAAB bid
   // model reads (winning and losing bids, who made them).
   const txns = [].concat(...txnWeeks.map(list => list || []))
@@ -383,9 +387,11 @@ async function buildLeague(leagueId, shared, histCache) {
   ]);
   await W.App.loadLeagueIntel();
   const LI = W.App.LI;
+  step('values');
   if (!LI || !LI.playerScores || !Object.keys(LI.playerScores).length) throw new Error('engine produced no values for ' + leagueId);
 
   const [weeks, history] = await pastFetch;
+  step('past');
   // The app replaces the engine's dynastyValue with a plain score lookup when
   // it opens a league (league-detail.js bridge): an Inactive player keeps his
   // value there. Assess with the same function the app uses.
@@ -407,6 +413,7 @@ async function buildLeague(leagueId, shared, histCache) {
     const intent = W.WrLabIntentReads ? await W.WrLabIntentReads.read({ league: Object.assign({}, league, S.leagues[0]), rosters: S.rosters, ledger }).catch(e => { console.error('intent reads', leagueId, e && e.message); return null; }) : null;
     brainPack = { ledger, intent, brain: W.DhqBrain || null };
   } catch (e) { console.error('one brain', leagueId, e && e.message); }
+  step('brain');
   const picks = picksByRoster(W, S, league);
   const lines = seasonLines(W, S, shared, LI, league);
   const dna = {};
@@ -429,7 +436,7 @@ async function buildLeague(leagueId, shared, histCache) {
   };
   return {
     league_id: league.league_id, season: leagueSeason, name: league.name, platform: 'sleeper',
-    built_at: new Date().toISOString(), engine_version: ENGINE_VERSION, build_ms: Date.now() - t0,
+    built_at: new Date().toISOString(), engine_version: ENGINE_VERSION, build_ms: Date.now() - t0, steps,
     intel: Object.assign(slimIntel(LI), { rookieProspects }), assessments, dna, snapshot, brainPack,
   };
 }
