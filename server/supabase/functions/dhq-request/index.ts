@@ -58,6 +58,11 @@ Deno.serve(async (req) => {
   if (!ids.length) return json({ error: 'leagues: Sleeper league ids required' }, 400);
   const open = ids.includes(String(body.open ?? '')) ? String(body.open) : '';
   try {
+    // The league on screen: its Sleeper check starts now, alongside the
+    // lookups (a member is waiting on its first build; Phase A6).
+    const checks = new Map<string, Promise<boolean>>();
+    const exists = (id: string) => { if (!checks.has(id)) checks.set(id, onSleeper(id)); return checks.get(id)!; };
+    if (open) exists(open);
     const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown';
     const ipHash = await sha('dhq-request:' + ip);
     const now = Date.now(), iso = new Date(now).toISOString();
@@ -72,24 +77,26 @@ Deno.serve(async (req) => {
       if (r.status === 'failed') retry.push(r.league_id); else renew.push(r.league_id);
     }
     const exp = new Date(now + 30 * DAY).toISOString();
-    if (renew.length) await rest('build_requests?league_id=in.(' + renew.join(',') + ')', { method: 'PATCH', body: JSON.stringify({ seen_at: iso, expires_at: exp }) });
-
-    // Already waiting: move the open one to the front.
-    if (open && have.get(open)?.status === 'pending') {
-      await rest('build_requests?status=eq.pending&league_id=eq.' + open, { method: 'PATCH', body: JSON.stringify({ opened_at: iso }) });
-    }
+    await Promise.all([
+      renew.length ? rest('build_requests?league_id=in.(' + renew.join(',') + ')', { method: 'PATCH', body: JSON.stringify({ seen_at: iso, expires_at: exp }) }) : null,
+      // Already waiting: move the open one to the front.
+      open && have.get(open)?.status === 'pending' ? rest('build_requests?status=eq.pending&league_id=eq.' + open, { method: 'PATCH', body: JSON.stringify({ opened_at: iso }) }) : null,
+    ]);
 
     // New leagues: limits first, then check each exists on Sleeper.
-    const fresh = ids.filter(id => !have.has(id)).concat(retry);
+    const fresh = ids.filter(id => !have.has(id)).concat(retry).sort((a, b) => Number(b === open) - Number(a === open));
     let queued = 0;
     if (fresh.length) {
       const since = new Date(now - 3600e3).toISOString();
-      const mine = await rest('build_requests?select=league_id&ip_hash=eq.' + ipHash + '&requested_at=gte.' + since + '&limit=' + (NEW_PER_HOUR + 1)) as unknown[];
-      const waiting = await rest('build_requests?select=league_id&status=eq.pending&limit=' + (QUEUE_CAP + 1)) as unknown[];
+      // The limits and the Sleeper checks at once (the checks are cheap reads).
+      const [mine, waiting, found] = await Promise.all([
+        rest('build_requests?select=league_id&ip_hash=eq.' + ipHash + '&requested_at=gte.' + since + '&limit=' + (NEW_PER_HOUR + 1)) as Promise<unknown[]>,
+        rest('build_requests?select=league_id&status=eq.pending&limit=' + (QUEUE_CAP + 1)) as Promise<unknown[]>,
+        Promise.all(fresh.map(id => exists(id))),
+      ]);
       const room = Math.max(0, Math.min(NEW_PER_HOUR - mine.length, QUEUE_CAP - waiting.length));
       if (!room) return json({ queued: 0, known: rows.length, skipped: fresh.length, note: 'busy: try later' }, 429);
-      const take = fresh.slice(0, room);
-      const real = (await Promise.all(take.map(async id => (await onSleeper(id)) ? id : null))).filter(Boolean) as string[];
+      const real = fresh.filter((id, i) => found[i]).slice(0, room);
       if (real.length) {
         await rest('build_requests', {
           method: 'POST',
