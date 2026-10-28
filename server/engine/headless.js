@@ -308,7 +308,10 @@ async function pastSeasons(league, histCache) {
 // Build one league. `shared` comes from loadShared(); `histCache` is an
 // optional {get(key), set(key, value)} that stands in for the browser's
 // IndexedDB so past seasons' trades/drafts/brackets are not re-fetched.
-async function buildLeague(leagueId, shared, histCache) {
+// `onValues` (optional): called with a values-only row the moment the
+// league's values exist, before history, assessments and the one brain
+// (a league's first build saves it at once; Phase A6).
+async function buildLeague(leagueId, shared, histCache, onValues) {
   const t0 = Date.now();
   // Seconds into the build at each step (logged for a league's first build).
   const steps = {}; const step = k => { steps[k] = +((Date.now() - t0) / 1000).toFixed(2); };
@@ -389,6 +392,16 @@ async function buildLeague(leagueId, shared, histCache) {
   const LI = W.App.LI;
   step('values');
   if (!LI || !LI.playerScores || !Object.keys(LI.playerScores).length) throw new Error('engine produced no values for ' + leagueId);
+  if (onValues) {
+    try {
+      onValues({
+        league_id: league.league_id, season: leagueSeason, name: league.name, platform: 'sleeper',
+        built_at: new Date().toISOString(), engine_version: ENGINE_VERSION, build_ms: Date.now() - t0,
+        intel: Object.assign(slimIntel(LI), { rookieProspects }), assessments: [], dna: {},
+        snapshot: { league: { league_id: league.league_id, name: league.name, season: leagueSeason, status: league.status, scoring_settings: league.scoring_settings, roster_positions: league.roster_positions, settings: league.settings }, rosters: (rosters || []).map(r => ({ roster_id: r.roster_id, owner_id: r.owner_id, players: r.players || [], starters: r.starters || [] })) },
+      });
+    } catch (e) { console.error('values-only row', leagueId, e && e.message); }
+  }
 
   const [weeks, history] = await pastFetch;
   step('past');

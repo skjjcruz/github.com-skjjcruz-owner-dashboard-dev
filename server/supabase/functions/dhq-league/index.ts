@@ -5,7 +5,8 @@
 //
 //   GET /functions/v1/dhq-league?league=1312100327931019264
 //   → { league_id, season, built_at, engine_version, intel, dhq_proj, assess }
-//   404 when the league hasn't been built (the app then computes on device).
+//   404 when the league hasn't been built (never cached: a new league's build
+//   may land seconds later, and the app asks again).
 //
 // intel is the engine's full LeagueIntel minus sourceSnapshots (upstream
 // URLs); dhq_proj is the week's projections. The row's error text, the
@@ -54,14 +55,14 @@ Deno.serve(async (req) => {
       const rl = await fetch(SUPABASE_URL + '/rest/v1/league_intel?select=league_id,built_at,dhq_later:snapshot->dhq_later&error=is.null&league_id=eq.' + id, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });
       if (!rl.ok) throw new Error('rest ' + rl.status);
       const l = ((await rl.json()) as Array<Record<string, unknown>>)[0];
-      if (!l || !l.dhq_later) return respond(req, { error: 'not built', league_id: id }, 404, 'public, max-age=60');
+      if (!l || !l.dhq_later) return respond(req, { error: 'not built', league_id: id }, 404, 'no-store');
       return respond(req, { league_id: id, built_at: l.built_at, dhq_later: l.dhq_later }, 200, 'public, max-age=300');
     }
     if (new URL(req.url).searchParams.get('part') === 'proj') {
       const rp = await fetch(SUPABASE_URL + '/rest/v1/league_intel?select=league_id,season,built_at,engine_version,dhq_proj:snapshot->dhq_proj&error=is.null&league_id=eq.' + id, { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });
       if (!rp.ok) throw new Error('rest ' + rp.status);
       const p = ((await rp.json()) as Array<Record<string, unknown>>)[0];
-      if (!p || !p.dhq_proj) return respond(req, { error: 'not built', league_id: id }, 404, 'public, max-age=60');
+      if (!p || !p.dhq_proj) return respond(req, { error: 'not built', league_id: id }, 404, 'no-store');
       return respond(req, { league_id: id, season: p.season, built_at: p.built_at, engine_version: p.engine_version, dhq_proj: p.dhq_proj }, 200, 'public, max-age=60');
     }
     // A build that stored its exact text (run.js app_*_json) is served as
@@ -82,7 +83,7 @@ Deno.serve(async (req) => {
     if (!r.ok) throw new Error('rest ' + r.status);
     const rows = await r.json() as Array<Record<string, unknown>>;
     const row = rows[0];
-    if (!row || !row.intel) return respond(req, { error: 'not built', league_id: id }, 404, 'public, max-age=60');
+    if (!row || !row.intel) return respond(req, { error: 'not built', league_id: id }, 404, 'no-store');
     const intel = { ...(row.intel as Record<string, unknown>) };
     delete intel.sourceSnapshots;
     const ver = Number((String(row.engine_version || '').match(/^headless-(\d+)$/) || [])[1] || 0);

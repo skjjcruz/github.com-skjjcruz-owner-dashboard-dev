@@ -316,7 +316,20 @@ async function sharedData() {
     if (!PARTIAL && !injected.has(lid) && Date.now() - t0 > BUDGET_MS) { skipped++; continue; }
     try {
       const tStart = Date.now();
-      const row = await buildLeague(lid, shared, histCache);
+      // A league's first build: its values are saved the moment they exist
+      // (the app takes values without the assessments and fills those in
+      // itself, as it always has), then again with everything but this
+      // week's projections, then in full.
+      let valuesSaved = Promise.resolve();
+      const onValues = db && neverBuilt.has(String(lid)) ? vrow => {
+        const tv = Date.now();
+        vrow.snapshot.app_intel_json = JSON.stringify(Object.assign({}, vrow.intel, { sourceSnapshots: undefined }));
+        valuesSaved = db.upsert('league_intel', [Object.assign(vrow, { error: null })])
+          .then(() => console.log('  values saved (first build of this league),', ((Date.now() - T_BUILD) / 1000).toFixed(1) + 's after ' + (STANDBY ? 'taking it' : 'start') + ' · save', ((Date.now() - tv) / 1000).toFixed(1) + 's'))
+          .catch(e => console.warn('  values save failed for', lid + ':', e && e.message || e));
+      } : null;
+      const row = await buildLeague(lid, shared, histCache, onValues);
+      await valuesSaved;
       const steps = Object.assign({ start: +((tStart - T_BUILD) / 1000).toFixed(2) }, row.steps); delete row.steps;
       if (db && neverBuilt.has(String(lid))) {
         try {
@@ -325,7 +338,7 @@ async function sharedData() {
           appTexts(early);
           delete early.brainPack;
           await db.upsert('league_intel', [Object.assign(early, { error: null })]);
-          console.log('  values saved early (first build of this league),', ((Date.now() - T_BUILD) / 1000).toFixed(1) + 's after ' + (STANDBY ? 'taking it' : 'start') + ' · build', JSON.stringify(steps), '· save', ((Date.now() - tSave) / 1000).toFixed(1) + 's');
+          console.log('  assessments saved early,', ((Date.now() - T_BUILD) / 1000).toFixed(1) + 's after ' + (STANDBY ? 'taking it' : 'start') + ' · build', JSON.stringify(steps), '· save', ((Date.now() - tSave) / 1000).toFixed(1) + 's');
         } catch (e) { console.warn('  early save failed for', lid + ':', e && e.message || e); }
       }
       try {
