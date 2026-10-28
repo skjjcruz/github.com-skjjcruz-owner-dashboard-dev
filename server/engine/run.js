@@ -20,6 +20,16 @@ const DRY = process.argv.includes('--dry');
 // just opened. It skips the shared lookups and the news index (the hourly
 // build owns those) and never stores an error row over a good league.
 const PARTIAL = process.env.ENGINE_PARTIAL === '1';
+// A standby builder (server/engine/host/requests.js, Phase A6): a request
+// build that starts up first (shared data loaded, database open) and then
+// waits for a member's league, so a league opened for the first time is
+// built in seconds instead of after a cold start. It builds one league and
+// exits; requests.js keeps the next one waiting.
+const STANDBY = PARTIAL && process.env.ENGINE_STANDBY === '1';
+// A standby gives up (and is replaced) once its shared data is this old, the
+// same limit a request build puts on the last full build's copy.
+const SHARED_MAX_MS = 20 * 60 * 1000;
+let SHARED_AT = Date.now();
 const REF = process.env.ENGINE_PROJECT_REF || '';
 const TOKEN = process.env.SUPABASE_ACCESS_TOKEN || '';
 const MGMT = 'https://api.supabase.com/v1/projects/' + REF;
@@ -69,6 +79,12 @@ function rest(key) {
       const r = await fetch(base + table + '?' + q, { method: 'PATCH', headers: Object.assign({ Prefer: 'return=minimal' }, headers), body: JSON.stringify(patch) });
       if (!r.ok) throw new Error('update ' + table + ' ' + r.status + ': ' + (await r.text()).slice(0, 300));
     },
+    // PATCH that returns the rows it changed (a claim: only one builder gets each).
+    async claim(table, q, patch) {
+      const r = await fetch(base + table + '?' + q, { method: 'PATCH', headers: Object.assign({ Prefer: 'return=representation' }, headers), body: JSON.stringify(patch) });
+      if (!r.ok) throw new Error('claim ' + table + ' ' + r.status + ': ' + (await r.text()).slice(0, 300));
+      return r.json();
+    },
     async select(table, q) {
       const r = await fetch(base + table + '?' + q, { headers });
       if (!r.ok) throw new Error('select ' + table + ' ' + r.status + ': ' + (await r.text()).slice(0, 300));
@@ -97,6 +113,7 @@ function appTexts(row) {
 }
 
 const T_START = Date.now();
+let T_BUILD = T_START;   // when the league was taken (a standby waits first)
 // The shared data (the player directory, five seasons of stats, this week's
 // lines): a full run downloads it and keeps a copy on disk; a request build
 // (a member waiting on a new league) reuses a copy under 20 minutes old,
@@ -107,13 +124,15 @@ async function sharedData() {
   if (PARTIAL) {
     try {
       const st = fs.statSync(SHARED_COPY);
-      if (Date.now() - st.mtimeMs < 20 * 60 * 1000) {
+      if (Date.now() - st.mtimeMs < SHARED_MAX_MS) {
         const copy = withFeeds(JSON.parse(fs.readFileSync(SHARED_COPY, 'utf8')));
+        SHARED_AT = st.mtimeMs;
         console.log('shared data from the last build\'s copy,', Math.round((Date.now() - st.mtimeMs) / 60000), 'min old');
         return copy;
       }
     } catch (e) { /* no usable copy: download */ }
   }
+  SHARED_AT = Date.now();
   const shared = await loadShared();
   if (!PARTIAL && !DRY) {
     try {
@@ -156,8 +175,8 @@ async function sharedData() {
     const asked = await db.select('build_requests', 'select=league_id&status=neq.failed&expires_at=gt.' + encodeURIComponent(new Date().toISOString()) + '&order=last_built_at.asc.nullsfirst').catch(e => { console.warn('build requests:', e.message); return []; });
     leagues = [...new Set(leagues.concat(asked.map(r => r.league_id)))];
   }
-  if (!leagues.length) throw new Error('no leagues to build (set LEAGUES=… or add rows to connect_leagues)');
-  console.log('engine', ENGINE_VERSION, DRY ? '(dry run)' : '', '—', leagues.length, 'league(s)');
+  if (!leagues.length && !(STANDBY && db)) throw new Error('no leagues to build (set LEAGUES=… or add rows to connect_leagues)');
+  console.log('engine', ENGINE_VERSION, DRY ? '(dry run)' : '', '—', STANDBY ? 'standby' : leagues.length + ' league(s)');
 
   const t0 = Date.now();
   if (PARTIAL) console.log('ready in', ((Date.now() - T_START) / 1000).toFixed(1) + 's');
@@ -187,6 +206,31 @@ async function sharedData() {
       await db.upsert('engine_cache', [{ key, data: Object.assign({}, kept, fresh), updated_at: new Date().toISOString() }]);
       console.log('sleeper week lines:', Object.keys(fresh).length, 'fresh ·', back, 'kept rows restored (games already played)');
     } catch (e) { console.warn('sleeper week keep:', e.message); }
+  }
+
+  // Standby: wait for a league to build (opened on a member's screen first),
+  // claimed so no other builder takes it. With ONLY_OPENED (another builder
+  // is busy) it waits for an opened league only. Nothing within the shared
+  // data's age limit: exit, and requests.js starts a fresh standby.
+  if (STANDBY) {
+    let onlyOpened = process.env.ENGINE_ONLY_OPENED === '1';
+    process.on('message', m => { if (m && m.anyLeague) onlyOpened = false; });   // the other builder finished
+    console.log('standby: ready in', ((Date.now() - T_START) / 1000).toFixed(1) + 's' + (onlyOpened ? ' (opened leagues only)' : ''));
+    while (!leagues.length) {
+      const q = 'select=league_id&status=eq.pending' + (onlyOpened ? '&opened_at=not.is.null' : '') + '&order=opened_at.desc.nullslast,requested_at.asc&limit=3';
+      if (Date.now() - SHARED_AT > SHARED_MAX_MS) { console.log('standby: shared data', Math.round((Date.now() - SHARED_AT) / 60000), 'min old; making way for a fresh one'); process.exit(0); }
+      const rows = await db.select('build_requests', q).catch(() => []);
+      for (const r of rows) {
+        const id = String(r.league_id);
+        if (!/^\d{10,20}$/.test(id)) continue;
+        const got = await db.claim('build_requests', 'league_id=eq.' + id + '&status=eq.pending', { status: 'building', building_at: new Date().toISOString() }).catch(() => []);
+        if (got.length) { leagues = [id]; break; }
+      }
+      if (!leagues.length) await new Promise(r => setTimeout(r, 1000));
+    }
+    T_BUILD = Date.now();
+    if (process.send) process.send({ building: leagues[0] });
+    console.log('building on request:', leagues[0]);
   }
 
   const histCache = db ? {
@@ -249,13 +293,16 @@ async function sharedData() {
   // goes first; a request build takes only those, so the league on screen
   // never waits behind the rest of the member's leagues.
   const takeQueued = async li => {
-    if (!db || Date.now() - lastQueueCheck < 3000) return;
+    if (!db || STANDBY || Date.now() - lastQueueCheck < 3000) return;
     lastQueueCheck = Date.now();
     const rows = await db.select('build_requests', PARTIAL
       ? 'select=league_id&status=eq.pending&opened_at=not.is.null&order=opened_at.desc&limit=2'
       : 'select=league_id&status=eq.pending&order=opened_at.desc.nullslast,requested_at.asc&limit=5').catch(() => []);
     // Skip any already built in this run (ahead of li) or already taken.
-    const fresh = rows.map(r => String(r.league_id)).filter(id => { const at = leagues.indexOf(id); return /^\d{10,20}$/.test(id) && !injected.has(id) && !(at >= 0 && at < li); });
+    let fresh = rows.map(r => String(r.league_id)).filter(id => { const at = leagues.indexOf(id); return /^\d{10,20}$/.test(id) && !injected.has(id) && !(at >= 0 && at < li); });
+    if (!fresh.length) return;
+    // Claimed, so a standby builder doesn't build the same league.
+    fresh = (await db.claim('build_requests', 'status=eq.pending&league_id=in.(' + fresh.join(',') + ')', { status: 'building', building_at: new Date().toISOString() }).catch(() => [])).map(r => String(r.league_id)).filter(id => fresh.includes(id));
     if (!fresh.length) return;
     await markNew(fresh);
     fresh.forEach(id => { const at = leagues.indexOf(id); if (at >= 0) leagues.splice(at, 1); injected.add(id); });
@@ -274,7 +321,7 @@ async function sharedData() {
           appTexts(early);
           delete early.brainPack;
           await db.upsert('league_intel', [Object.assign(early, { error: null })]);
-          console.log('  values saved early (first build of this league),', ((Date.now() - T_START) / 1000).toFixed(1) + 's after start');
+          console.log('  values saved early (first build of this league),', ((Date.now() - T_BUILD) / 1000).toFixed(1) + 's after ' + (STANDBY ? 'taking it' : 'start'));
         } catch (e) { console.warn('  early save failed for', lid + ':', e && e.message || e); }
       }
       try {

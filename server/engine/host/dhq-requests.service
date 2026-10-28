@@ -1,5 +1,5 @@
 [Unit]
-Description=DHQ engine: build leagues members just opened (checks every 15 s)
+Description=DHQ engine: build leagues members just opened (a standby builder waits, checking every second)
 Wants=network-online.target
 After=network-online.target
 
