@@ -1,9 +1,11 @@
 [Unit]
-Description=DHQ engine build: hourly, every 15 minutes in NFL game windows
+Description=DHQ engine build: every 30 minutes, every 15 minutes in NFL game windows
 
 [Timer]
-# Hourly baseline (UTC).
-OnCalendar=*-*-* *:17:00 UTC
+# Baseline every 30 minutes (UTC). A run builds about 40 leagues in its
+# 11-minute budget, most out of date first; with 74 leagues (2026-10-29)
+# hourly left some over the app's 2-hour freshness limit.
+OnCalendar=*-*-* *:17,47:00 UTC
 # Game windows, every 15 minutes (owner ask 2026-10-18), on Eastern time so
 # daylight saving is handled: Sunday 9am (London games) to 1am, Thursday and
 # Monday nights 7pm to 1am. Builds take ~2 minutes; a slot that fires while
