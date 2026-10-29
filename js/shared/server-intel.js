@@ -130,7 +130,7 @@
     // whichever platform) to this, which posts it to dhq-compute and waits
     // for the engine server to compute the values (a few seconds).
     const COMPUTE = 'https://hovnqztlbsgsywrbidbh.supabase.co/functions/v1/dhq-compute';
-    const COMPUTE_WAIT = { ms: 45000, poll: 600 };
+    const COMPUTE_WAIT = { ms: 45000, poll: 400 };
     async function remoteCompute(job) {
         const S = job && job.S, gathered = job && job.gathered;
         if (!S || !gathered || typeof root.fetch !== 'function') throw new Error('nothing to compute');

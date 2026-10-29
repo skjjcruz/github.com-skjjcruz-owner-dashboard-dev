@@ -505,6 +505,7 @@ async function espnTeamData(players) {
 // for players Sleeper doesn't know (espn_123) and those an ESPN or MFL
 // league laid over Sleeper's laid on top.
 async function computeFromPayload(payload, shared) {
+  const t0 = Date.now(), steps = {}; const step = k => { steps[k] = +((Date.now() - t0) / 1000).toFixed(2); };
   const ctx = buildContext();
   if (shared.roles) ctx.localStorage.setItem('dhq_nfl_roles_v1', JSON.stringify({ ts: Date.now(), roles: shared.roles }));
   loadEngine(ctx);
@@ -519,6 +520,7 @@ async function computeFromPayload(payload, shared) {
     const rk = await W.loadRookieProspects().catch(() => null);
     rookieProspects = (rk && rk.count) || 0;
   }
+  step('ready');
   const lg = payload.league || {};
   const lid = String(lg.league_id || '');
   if (!lid || !payload.gathered || String(payload.gathered.leagueId) !== lid) throw new Error('payload: league and gathered data do not match');
@@ -538,7 +540,8 @@ async function computeFromPayload(payload, shared) {
   await W.App.loadLeagueIntel();
   const LI = W.App.LI;
   if (!LI || !LI.playerScores || !Object.keys(LI.playerScores).length) throw new Error('engine produced no values');
-  return Object.assign(slimIntel(LI), { rookieProspects });
+  step('values');
+  return Object.defineProperty(Object.assign(slimIntel(LI), { rookieProspects }), 'steps', { value: steps, enumerable: false });
 }
 
 module.exports = { ENGINE_VERSION, loadShared, withFeeds, buildLeague, computeFromPayload, slimPlayers, sleeper, espnTeamData };

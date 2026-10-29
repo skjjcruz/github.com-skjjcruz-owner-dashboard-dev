@@ -23,6 +23,12 @@ const CORS: Record<string, string> = {
 };
 const json = (body: unknown, status = 200) =>
   new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS } });
+// The values (about 1 MB of text) go out gzipped when the page takes it.
+function gzipped(req: Request, text: string) {
+  if (!/\bgzip\b/.test(req.headers.get('accept-encoding') || '')) return json(text);
+  const gz = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Response(gz, { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding', ...CORS } });
+}
 
 const MAX_BYTES = 4 * 1024 * 1024, PER_HOUR = 40, QUEUE_CAP = 100;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -49,7 +55,7 @@ Deno.serve(async (req) => {
       if (!ID.test(id)) return json({ error: 'id required' }, 400);
       const row = ((await rest('compute_requests?select=status,error,result_json&id=eq.' + id)) as Array<{ status: string; error: string | null; result_json: string | null }>)[0];
       if (!row) return json({ error: 'unknown id' }, 404);
-      if (row.status === 'done' && row.result_json) return json('{"status":"done","intel":' + row.result_json + '}');
+      if (row.status === 'done' && row.result_json) return gzipped(req, '{"status":"done","intel":' + row.result_json + '}');
       return json({ status: row.status, error: row.error || undefined });
     }
     if (req.method !== 'POST') return json({ error: 'GET or POST' }, 405);

@@ -238,7 +238,7 @@ async function sharedData() {
         const got = await db.claim('build_requests', 'league_id=eq.' + id + '&status=eq.pending', { status: 'building', building_at: new Date().toISOString() }).catch(() => []);
         if (got.length) { leagues = [id]; standbyOpened = !!r.opened_at; break; }
       }
-      if (!leagues.length) await new Promise(r => setTimeout(r, 1000));
+      if (!leagues.length) await new Promise(r => setTimeout(r, 500));
     }
     T_BUILD = Date.now();
     leagues = leagues.slice(0, 1);
@@ -249,7 +249,7 @@ async function sharedData() {
         const intel = await computeFromPayload(job.payload || {}, shared);
         const text = JSON.stringify(Object.assign({}, intel, { sourceSnapshots: undefined }));
         await db.update('compute_requests', 'id=eq.' + job.id, { status: 'done', result_json: text, payload: null, done_at: new Date().toISOString() });
-        console.log('computed for a page:', job.platform, job.league_key, Object.keys(intel.playerScores).length, 'players in', ((Date.now() - t) / 1000).toFixed(1) + 's');
+        console.log('computed for a page:', job.platform, job.league_key, Object.keys(intel.playerScores).length, 'players in', ((Date.now() - t) / 1000).toFixed(1) + 's', JSON.stringify(intel.steps || {}), 'waited', ((t - Date.parse(job.requested_at)) / 1000).toFixed(1) + 's');
       } catch (e) {
         console.warn('compute for a page failed:', job.platform, job.league_key, e && e.message || e);
         await db.update('compute_requests', 'id=eq.' + job.id, { status: 'failed', error: String(e && e.message || e).slice(0, 300), payload: null, done_at: new Date().toISOString() }).catch(() => {});
