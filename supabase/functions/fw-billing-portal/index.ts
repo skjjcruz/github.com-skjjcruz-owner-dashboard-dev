@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
 function allowedReturnOrigins(): string[] {
   // Same policy as fw-create-checkout's redirect allowlist: known production
   // origins plus env-configured extras, which may only widen the list.
-  const defaults = 'http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002,https://jcc100218.github.io,https://warroom.skjjcruz.com,https://skjjcruz.github.io';
+  const defaults = 'http://localhost:3001,http://localhost:3002,http://127.0.0.1:3001,http://127.0.0.1:3002,https://jcc100218.github.io,https://warroom.skjjcruz.com,https://skjjcruz.github.io,https://dhqfootball.com,https://www.dhqfootball.com';
   const configured = (Deno.env.get('APP_ALLOWED_ORIGINS') || '')
     .split(',')
     .map(s => s.trim())
