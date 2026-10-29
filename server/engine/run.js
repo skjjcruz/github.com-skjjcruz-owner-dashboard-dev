@@ -11,7 +11,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { ENGINE_VERSION, loadShared, withFeeds, buildLeague, computeFromPayload, slimPlayers, sleeper, espnTeamData } = require('./headless');
+const { ENGINE_VERSION, loadShared, withFeeds, buildLeague, computeFromPayload, rookieClass, slimPlayers, sleeper, espnTeamData } = require('./headless');
 const { buildNewsIndex } = require('./news');
 const { createProjector } = require('./dhq-proj');
 
@@ -188,6 +188,18 @@ async function sharedData() {
   if (PARTIAL) console.log('ready in', ((Date.now() - T_START) / 1000).toFixed(1) + 's');
   const shared = await sharedData();
   console.log('shared data in', ((Date.now() - t0) / 1000).toFixed(1) + 's: season', shared.season, 'week', shared.nfl.display_week || shared.nfl.week, '· players', Object.keys(shared.players).length);
+
+  // The incoming rookie class as pages use it (Phase A7), served by
+  // dhq-league ?part=rookies: stored as its exact text, once per full build.
+  if (db && !PARTIAL) {
+    try {
+      const cls = await rookieClass();
+      if (cls.length) {
+        await db.upsert('engine_cache', [{ key: 'rookie_class', data: { built_at: new Date().toISOString(), count: cls.length, text: JSON.stringify(cls) }, updated_at: new Date().toISOString() }]);
+        console.log('rookie class:', cls.length, 'prospects');
+      }
+    } catch (e) { console.warn('rookie class:', e && e.message || e); }
+  }
 
   // Past-season history per league lives in engine_cache so each run only
   // refreshes the current season (the engine's own fast path).

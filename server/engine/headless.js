@@ -216,6 +216,31 @@ function appPlayerStats(seasonStats, calcRawPts) {
   return out;
 }
 
+// Each incoming rookie's value in this league, keyed by normalized name: the
+// rookie-data.js startup value on the league's veteran ladder (it reads the
+// league's values and roster slots). Pages show it on rookie boards and in
+// the draft room from the league's intel instead of computing it (Phase A7).
+function rookieValues(W) {
+  const RD = W.RookieData;
+  if (!RD || !RD._cache || !RD._cache.loaded || !RD._cache.order || !W.App.LI || !W.App.LI.playerScores) return null;
+  const out = {};
+  for (const p of RD.getProspects()) out[RD._internals.normName(p.name)] = p.dynastyValue;
+  return out;
+}
+
+// The incoming rookie class as pages use it (rookie-data.js's prospects:
+// grades, tiers, ranks, base values and the scouting fields), served by
+// dhq-league ?part=rookies so pages don't carry the grading (Phase A7).
+// League values come with each league's intel (rookieValues above).
+async function rookieClass() {
+  const ctx = buildContext();
+  loadEngine(ctx);
+  const W = ctx.window;
+  await W.loadRookieProspects();
+  const order = (W.RookieData && W.RookieData._cache && W.RookieData._cache.order) || [];
+  return order.map(p => { const o = {}; for (const k in p) if (k[0] !== '_') o[k] = p[k]; return o; });
+}
+
 // Trim the per-player detail the engine keeps (factor breakdowns and the
 // FantasyCalc compatibility reason list are 80% of the bytes).
 function slimIntel(LI) {
@@ -401,7 +426,7 @@ async function buildLeague(leagueId, shared, histCache, onValues) {
       onValues({
         league_id: league.league_id, season: leagueSeason, name: league.name, platform: 'sleeper',
         built_at: new Date().toISOString(), engine_version: ENGINE_VERSION, build_ms: Date.now() - t0,
-        intel: Object.assign(slimIntel(LI), { rookieProspects }), assessments: [], dna: {},
+        intel: Object.assign(slimIntel(LI), { rookieProspects, rookieValues: rookieValues(W) }), assessments: [], dna: {},
         snapshot: { league: { league_id: league.league_id, name: league.name, season: leagueSeason, status: league.status, scoring_settings: league.scoring_settings, roster_positions: league.roster_positions, settings: league.settings }, rosters: (rosters || []).map(r => ({ roster_id: r.roster_id, owner_id: r.owner_id, players: r.players || [], starters: r.starters || [] })) },
       });
     } catch (e) { console.error('values-only row', leagueId, e && e.message); }
@@ -454,7 +479,7 @@ async function buildLeague(leagueId, shared, histCache, onValues) {
   return {
     league_id: league.league_id, season: leagueSeason, name: league.name, platform: 'sleeper',
     built_at: new Date().toISOString(), engine_version: ENGINE_VERSION, build_ms: Date.now() - t0, steps,
-    intel: Object.assign(slimIntel(LI), { rookieProspects }), assessments, dna, snapshot, brainPack,
+    intel: Object.assign(slimIntel(LI), { rookieProspects, rookieValues: rookieValues(W) }), assessments, dna, snapshot, brainPack,
   };
 }
 
@@ -541,7 +566,7 @@ async function computeFromPayload(payload, shared) {
   const LI = W.App.LI;
   if (!LI || !LI.playerScores || !Object.keys(LI.playerScores).length) throw new Error('engine produced no values');
   step('values');
-  return Object.defineProperty(Object.assign(slimIntel(LI), { rookieProspects }), 'steps', { value: steps, enumerable: false });
+  return Object.defineProperty(Object.assign(slimIntel(LI), { rookieProspects, rookieValues: rookieValues(W) }), 'steps', { value: steps, enumerable: false });
 }
 
-module.exports = { ENGINE_VERSION, loadShared, withFeeds, buildLeague, computeFromPayload, slimPlayers, sleeper, espnTeamData };
+module.exports = { ENGINE_VERSION, loadShared, withFeeds, buildLeague, computeFromPayload, rookieClass, slimPlayers, sleeper, espnTeamData };

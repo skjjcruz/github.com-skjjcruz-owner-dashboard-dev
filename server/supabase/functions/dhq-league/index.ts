@@ -5,6 +5,8 @@
 //
 //   GET /functions/v1/dhq-league?league=1312100327931019264
 //   → { league_id, season, built_at, engine_version, intel, dhq_proj, assess }
+//   GET /functions/v1/dhq-league?part=rookies → { built_at, prospects } (the
+//   incoming rookie class, no league needed)
 //   404 when the league hasn't been built (never cached: a new league's build
 //   may land seconds later, and the app asks again), with its place in the
 //   build queue: { error, league_id, queue: pending | building | … | null }.
@@ -49,6 +51,19 @@ async function respond(req: Request, body: unknown, status: number, cache: strin
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'GET') return respond(req, { error: 'GET only' }, 405, 'no-store');
+  // The incoming rookie class as pages use it (Phase A7): grades, tiers, ranks
+  // and base values, built hourly by the engine server; no league needed.
+  if (new URL(req.url).searchParams.get('part') === 'rookies') {
+    try {
+      const rr = await fetch(SUPABASE_URL + '/rest/v1/engine_cache?select=data&key=eq.rookie_class', { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } });
+      if (!rr.ok) throw new Error('rest ' + rr.status);
+      const d = (((await rr.json()) as Array<{ data: { built_at?: string; text?: string } }>)[0] || {}).data;
+      if (!d || typeof d.text !== 'string') return respond(req, { error: 'not built' }, 404, 'no-store');
+      return respond(req, '{"built_at":' + JSON.stringify(d.built_at || null) + ',"prospects":' + d.text + '}', 200, 'public, max-age=600');
+    } catch (e) {
+      return respond(req, { error: 'rookies unavailable', detail: String((e as Error).message || e) }, 503, 'no-store');
+    }
+  }
   const id = new URL(req.url).searchParams.get('league') || '';
   if (!/^\d{10,20}$/.test(id)) return respond(req, { error: 'league=<Sleeper league id> required' }, 400, 'no-store');
   try {
