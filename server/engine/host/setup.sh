@@ -14,8 +14,15 @@ if ! command -v node >/dev/null || ! node -v | grep -q '^v22\.'; then
 fi
 command -v git >/dev/null || sudo apt-get install -y -q git >/dev/null
 sudo mkdir -p /opt/dhq && sudo chown ubuntu:ubuntu /opt/dhq
-[ -d /opt/dhq/app/.git ] || git clone -q https://github.com/skjjcruz/github.com-skjjcruz-owner-dashboard-dev.git /opt/dhq/app
-[ -d /opt/dhq/DHQ-Shared/.git ] || git clone -q https://github.com/skjjcruz/DHQ-Shared.git /opt/dhq/DHQ-Shared
+# Read-only GitHub token for the two repos once they are private (Phase B3;
+# DHQ_READ_TOKEN in the env file, empty until the owner adds it): the
+# remotes carry it, so the hourly build's git fetch keeps working.
+READ_TOKEN="$(printf '%s\n' "$ENVFILE_CONTENT" | sed -n 's/^DHQ_READ_TOKEN=//p' | head -n 1)"
+GH="https://${READ_TOKEN:+x-access-token:$READ_TOKEN@}github.com/skjjcruz"
+[ -d /opt/dhq/app/.git ] || git clone -q "$GH/github.com-skjjcruz-owner-dashboard-dev.git" /opt/dhq/app
+[ -d /opt/dhq/DHQ-Shared/.git ] || git clone -q "$GH/DHQ-Shared.git" /opt/dhq/DHQ-Shared
+git -C /opt/dhq/app remote set-url origin "$GH/github.com-skjjcruz-owner-dashboard-dev.git"
+git -C /opt/dhq/DHQ-Shared remote set-url origin "$GH/DHQ-Shared.git"
 git -C /opt/dhq/app fetch -q origin main && git -C /opt/dhq/app reset -q --hard origin/main
 printf '%s\n' "$ENVFILE_CONTENT" | sudo tee /etc/dhq-engine.env >/dev/null
 sudo chown root:ubuntu /etc/dhq-engine.env && sudo chmod 640 /etc/dhq-engine.env
