@@ -1,7 +1,9 @@
 name: Security
 
 on:
+  # Pushes to main and pull requests (Phase B2, 2026-10-29, build minutes).
   push:
+    branches: [main]
   pull_request:
   schedule:
     # Weekly re-scan so newly-disclosed CVEs surface even without a push
