@@ -37,7 +37,7 @@ jobs:
           # Read-only token once DHQ-Shared is private (Phase B3); until then the default.
           token: ${{ secrets.DHQ_READ_TOKEN || github.token }}
           path: dhq-shared-src
-      - uses: supabase/setup-cli@v2.0.0
+      - uses: supabase/setup-cli@v3.0.1
         with:
           version: latest
       - uses: denoland/setup-deno@v2
