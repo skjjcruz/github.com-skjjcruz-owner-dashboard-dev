@@ -12,6 +12,13 @@
 // ============================================================
 
 import Anthropic from 'npm:@anthropic-ai/sdk';
+// Alex's identity and every DHQ prompt's text (Phase A7): pages send markers
+// (⟦dhq:identity⟧, ⟦dhq:system:<type>⟧, ⟦dhq:instructions:<type>⟧) and the
+// text is filled in here. A copy of DHQ-Shared/dhq-prompts.js
+// (scripts/sync-reconai-shared.cjs keeps it current).
+import '../_shared/dhq-prompts.js';
+const DhqPrompts = (globalThis as any).DhqPrompts as { IDENTITY: string; PROMPTS: Record<string, { system?: string; instructions?: string }>; expand: (t: string) => string };
+const expandPrompts = (t: string) => (t && t.includes('⟦dhq:') ? DhqPrompts.expand(t) : t);
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
     corsHeaders,
@@ -1257,11 +1264,11 @@ function normalizeGenericAIContext(type: string, context: any): GenericAIContext
     let messages = Array.isArray(parsed?.messages)
         ? parsed.messages
             .filter((m: any) => m && typeof m.content === 'string')
-            .map((m: any) => ({ role: String(m.role || 'user'), content: m.content }))
+            .map((m: any) => ({ role: String(m.role || 'user'), content: expandPrompts(m.content) }))
         : [];
 
     if (!messages.length && parsed?.userMessage) {
-        messages = [{ role: 'user', content: String(parsed.userMessage) }];
+        messages = [{ role: 'user', content: expandPrompts(String(parsed.userMessage)) }];
     }
     if (!messages.length && typeof context === 'string') {
         messages = [{ role: 'user', content: context }];
@@ -1273,7 +1280,7 @@ function normalizeGenericAIContext(type: string, context: any): GenericAIContext
 
     return {
         callType,
-        system: String(parsed?.system || 'Dynasty fantasy football advisor. Values are DHQ on a 0-10000 league-adjusted scale. Be specific, practical, and concise.'),
+        system: expandPrompts(String(parsed?.system || 'Dynasty fantasy football advisor. Values are DHQ on a 0-10000 league-adjusted scale. Be specific, practical, and concise.')),
         userPrompt,
         maxTokens: Math.max(100, Math.min(Number(parsed?.maxTokens) || 600, 4000)),
         useWebSearch: parsed?.useWebSearch === true,
@@ -2990,6 +2997,14 @@ Deno.serve(async (req) => {
 
         const body = await req.json();
         const { type, context } = body;
+        // The prompt text itself, for a signed-in page that talks to the AI
+        // with its own key (bring-your-own-key never reaches this server).
+        if (type === 'prompt_text') {
+            return new Response(
+                JSON.stringify({ identity: DhqPrompts.IDENTITY, prompts: DhqPrompts.PROMPTS }),
+                { status: 200, headers: { ...responseHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
+            );
+        }
         // Opt-in SSE (new clients send stream:true). Old clients never send it
         // and keep getting exactly one JSON body.
         const wantsStream = body?.stream === true;

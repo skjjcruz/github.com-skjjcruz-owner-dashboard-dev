@@ -129,6 +129,13 @@ for (const file of vendored) {
   fs.copyFileSync(src, path.join(TARGET, file));
 }
 
+// Alex's identity and the DHQ prompts' text (Phase A7): never a page module;
+// ai-analyze fills a page's prompt markers from this copy (committed, since
+// edge functions deploy from this repo; tests/dhq-prompts-sync.test.js).
+const PROMPTS_SRC = path.join(SOURCE, 'dhq-prompts.js');
+const PROMPTS_DEST = path.join(ROOT, 'supabase', 'functions', '_shared', 'dhq-prompts.js');
+if (fs.existsSync(PROMPTS_SRC) && fs.existsSync(path.dirname(PROMPTS_DEST))) fs.copyFileSync(PROMPTS_SRC, PROMPTS_DEST);
+
 // Refresh rookie CSVs in place (don't wipe draft-war-room/ — it holds WR-only files).
 for (const rel of data) {
   const src = path.join(SOURCE, rel);
