@@ -20,3 +20,7 @@ verify_jwt = false
 # Values for a league a page gathered (Phase A6); grants nothing.
 [functions.dhq-compute]
 verify_jwt = false
+
+# The mock draft's computer picks (Phase A7); grants nothing.
+[functions.dhq-mock]
+verify_jwt = false

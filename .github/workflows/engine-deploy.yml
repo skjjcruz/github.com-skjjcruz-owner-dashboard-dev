@@ -57,6 +57,10 @@ jobs:
           # DHQ's standard pick curve, which the app falls back to when a
           # league's build has no pick values of its own (chopped leagues).
           { echo 'globalThis.window = globalThis;'; cat dhq-shared-src/pick-value-model.js; } > server/supabase/functions/dhq-tools/vendor/pick-value-model.js
+          # The mock draft's computer-pick formula (dhq-mock; pages no longer
+          # carry it, Phase A7).
+          mkdir -p server/supabase/functions/dhq-mock/vendor
+          { echo 'globalThis.window = globalThis;'; cat dhq-shared-src/mock-engine.js; } > server/supabase/functions/dhq-mock/vendor/mock-engine.js
 
       - name: Type check
         run: |
@@ -65,6 +69,8 @@ jobs:
           deno check server/supabase/functions/dhq-news/index.ts
           deno check server/supabase/functions/dhq-request/index.ts
           deno check server/supabase/functions/dhq-league/index.ts
+          deno check server/supabase/functions/dhq-compute/index.ts
+          deno check server/supabase/functions/dhq-mock/index.ts
 
       # The question bank: build one league for real (dry run, nothing
       # stored) and make sure every question still comes back with the facts
@@ -96,7 +102,7 @@ jobs:
           urllib.request.urlopen(req, timeout=60).read()
           PYEOF
 
-      - name: Deploy dhq-tools, dhq-auth, dhq-news, dhq-request, dhq-league and dhq-compute
+      - name: Deploy dhq-tools, dhq-auth, dhq-news, dhq-request, dhq-league, dhq-compute and dhq-mock
         run: |
           supabase functions deploy dhq-tools --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
           supabase functions deploy dhq-auth --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
@@ -108,6 +114,8 @@ jobs:
           supabase functions deploy dhq-league --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
           # Values for a league a page gathered (Phase A6): no sign-in.
           supabase functions deploy dhq-compute --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          # The mock draft's computer picks (Phase A7): no sign-in.
+          supabase functions deploy dhq-mock --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
 
       - name: Smoke test
         run: |
