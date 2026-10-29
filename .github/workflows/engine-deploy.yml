@@ -96,7 +96,7 @@ jobs:
           urllib.request.urlopen(req, timeout=60).read()
           PYEOF
 
-      - name: Deploy dhq-tools, dhq-auth, dhq-news and dhq-request
+      - name: Deploy dhq-tools, dhq-auth, dhq-news, dhq-request, dhq-league and dhq-compute
         run: |
           supabase functions deploy dhq-tools --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
           supabase functions deploy dhq-auth --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
@@ -106,6 +106,8 @@ jobs:
           supabase functions deploy dhq-request --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
           # One league's built numbers (public Sleeper-league data): no sign-in.
           supabase functions deploy dhq-league --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          # Values for a league a page gathered (Phase A6): no sign-in.
+          supabase functions deploy dhq-compute --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
 
       - name: Smoke test
         run: |

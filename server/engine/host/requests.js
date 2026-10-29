@@ -72,6 +72,9 @@ const UNFINISHED = 'build did not finish';
 async function sweep() {
   for (const b of builders) if (b.building && Date.now() - b.since > BUILD_LIMIT_MS) { console.warn('builder over time:', b.building); b.child.kill('SIGKILL'); }
   await sql("update public.build_requests set status = case when last_error = '" + UNFINISHED + "' then 'failed' else 'pending' end, last_error = '" + UNFINISHED + "' where status = 'building' and building_at < now() - interval '35 minutes'");
+  // Values computed for a page (dhq-compute): a page waits seconds, not
+  // minutes, so one stuck for 2 minutes has failed; every row goes after a day.
+  await sql("update public.compute_requests set status = 'failed', error = 'compute did not finish', payload = null where status in ('pending', 'building') and requested_at < now() - interval '2 minutes'; delete from public.compute_requests where requested_at < now() - interval '1 day'").catch(e => console.warn('compute sweep:', e.message));
 }
 
 (async function main() {
@@ -79,6 +82,7 @@ async function sweep() {
   console.log('keeping a standby builder ready (at most', MAX_BUILDERS, 'builders)');
   // Leagues the last watcher's builders had claimed when it stopped (a
   // restart takes its builders down with it) go back in the queue.
+  await sql("update public.compute_requests set status = 'pending' where status = 'building'").catch(() => {});
   await sql("update public.build_requests set status = 'pending' where status = 'building'").then(r => console.log('back in the queue after a restart:', (r || []).length || 'none')).catch(e => console.warn('requeue:', e.message));
   startStandby();
   setInterval(() => { startStandby(); sweep().catch(e => console.warn('request sweep:', e.message)); }, 60 * 1000);

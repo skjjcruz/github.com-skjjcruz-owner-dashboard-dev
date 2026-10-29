@@ -496,4 +496,49 @@ async function espnTeamData(players) {
   return out;
 }
 
-module.exports = { ENGINE_VERSION, loadShared, withFeeds, buildLeague, slimPlayers, sleeper, espnTeamData };
+// Values for a league a page gathered (Phase A6, dhq-compute): pages no
+// longer carry the value formula, so for a league this server hasn't built
+// (an ESPN or MFL league, or one it didn't take) the page sends what it
+// gathered (the league, rosters and its league history) and the engine runs
+// here exactly as it would have on the page. Stats and the rookie class are
+// this server's; the player directory is too, with the page's own records
+// for players Sleeper doesn't know (espn_123) and those an ESPN or MFL
+// league laid over Sleeper's laid on top.
+async function computeFromPayload(payload, shared) {
+  const ctx = buildContext();
+  if (shared.roles) ctx.localStorage.setItem('dhq_nfl_roles_v1', JSON.stringify({ ts: Date.now(), roles: shared.roles }));
+  loadEngine(ctx);
+  const W = ctx.window;
+  W.Sleeper.fetchSeasonStats = yr => Promise.resolve(shared.statsByYear[yr] || {});
+  W.App.Sleeper = W.Sleeper;
+  const DhqStorage = vm.runInContext('DhqStorage', ctx);
+  DhqStorage.idbGet = async () => null;
+  DhqStorage.idbSet = async () => true;
+  let rookieProspects = 0;
+  if (typeof W.loadRookieProspects === 'function') {
+    const rk = await W.loadRookieProspects().catch(() => null);
+    rookieProspects = (rk && rk.count) || 0;
+  }
+  const lg = payload.league || {};
+  const lid = String(lg.league_id || '');
+  if (!lid || !payload.gathered || String(payload.gathered.leagueId) !== lid) throw new Error('payload: league and gathered data do not match');
+  // The page's records laid over this server's directory, as the page lays a
+  // platform's records over Sleeper's (espn-api.js / mfl-api.js).
+  const extra = {};
+  for (const [pid, pl] of Object.entries(payload.players || {})) if (pl && typeof pl === 'object') extra[pid] = pl;
+  const nfl = payload.nflState || shared.nfl;
+  const S = {
+    platform: String(payload.platform || 'sleeper'), players: Object.keys(extra).length ? Object.assign({}, shared.players, extra) : shared.players, playerStats: {},
+    rosters: payload.rosters || [], leagueUsers: payload.leagueUsers || [],
+    leagues: [lg], currentLeagueId: lid, season: String(payload.season || lg.season || shared.season), nflState: nfl,
+    currentWeek: Number((nfl && (nfl.display_week || nfl.week)) || 1), matchups: [], tradedPicks: payload.tradedPicks || [], drafts: [], transactions: {},
+  };
+  W.S = S; W.App.S = S;
+  W.App.gatheredLeagueData = payload.gathered;
+  await W.App.loadLeagueIntel();
+  const LI = W.App.LI;
+  if (!LI || !LI.playerScores || !Object.keys(LI.playerScores).length) throw new Error('engine produced no values');
+  return Object.assign(slimIntel(LI), { rookieProspects });
+}
+
+module.exports = { ENGINE_VERSION, loadShared, withFeeds, buildLeague, computeFromPayload, slimPlayers, sleeper, espnTeamData };

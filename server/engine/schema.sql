@@ -196,6 +196,30 @@ alter table public.build_requests add column if not exists opened_at timestamptz
 -- is marked failed by the request watcher.
 alter table public.build_requests add column if not exists building_at timestamptz;
 
+-- ── Values computed for a device (Phase A6, 2026-10-28) ────────────────────
+-- A page no longer carries the value formula. When the server has no build
+-- of the league a member opened (an ESPN or MFL league, or a league it
+-- didn't take), the page gathers the league's data as it always has and
+-- sends it here (dhq-compute); a standby builder (server/engine/run.js)
+-- computes the values and stores them as the app's text in result_json.
+-- Rows are deleted after a day.
+create table if not exists public.compute_requests (
+  id            uuid primary key default gen_random_uuid(),
+  league_key    text not null,
+  platform      text,
+  status        text not null default 'pending',   -- pending | building | done | failed
+  payload       jsonb,
+  result_json   text,
+  error         text,
+  ip_hash       text,
+  requested_at  timestamptz not null default now(),
+  building_at   timestamptz,
+  done_at       timestamptz
+);
+alter table public.compute_requests enable row level security;
+create index if not exists compute_requests_pending on public.compute_requests (status, requested_at);
+create index if not exists compute_requests_ip on public.compute_requests (ip_hash, requested_at desc);
+
 -- Full hourly builds vs. one-league request builds: GitHub's fallback check
 -- (server/engine/host/lease.js gate) looks at full builds only.
 alter table public.engine_runs add column if not exists kind text not null default 'full';
@@ -211,7 +235,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['connect_leagues', 'league_intel', 'engine_cache', 'engine_runs', 'connect_keys',
-    'oauth_clients', 'oauth_pending', 'oauth_codes', 'connect_usage', 'player_news', 'connect_trace', 'build_requests'] loop
+    'oauth_clients', 'oauth_pending', 'oauth_codes', 'connect_usage', 'player_news', 'connect_trace', 'build_requests', 'compute_requests'] loop
     if to_regclass('public.' || t) is not null and not (
       has_table_privilege('service_role', 'public.' || t, 'SELECT') and has_table_privilege('service_role', 'public.' || t, 'INSERT')
       and has_table_privilege('service_role', 'public.' || t, 'UPDATE') and has_table_privilege('service_role', 'public.' || t, 'DELETE')) then

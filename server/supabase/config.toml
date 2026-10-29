@@ -16,3 +16,7 @@ verify_jwt = false
 # One league's built numbers (public Sleeper-league data); grants nothing.
 [functions.dhq-league]
 verify_jwt = false
+
+# Values for a league a page gathered (Phase A6); grants nothing.
+[functions.dhq-compute]
+verify_jwt = false

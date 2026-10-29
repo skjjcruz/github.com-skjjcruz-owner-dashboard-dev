@@ -11,7 +11,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { ENGINE_VERSION, loadShared, withFeeds, buildLeague, slimPlayers, sleeper, espnTeamData } = require('./headless');
+const { ENGINE_VERSION, loadShared, withFeeds, buildLeague, computeFromPayload, slimPlayers, sleeper, espnTeamData } = require('./headless');
 const { buildNewsIndex } = require('./news');
 const { createProjector } = require('./dhq-proj');
 
@@ -225,6 +225,12 @@ async function sharedData() {
     while (!leagues.length) {
       const q = 'select=league_id&status=eq.pending' + (onlyOpened ? '&opened_at=not.is.null' : '') + '&order=opened_at.desc.nullslast,requested_at.asc&limit=3';
       if (Date.now() - SHARED_AT > SHARED_MAX_MS) { console.log('standby: shared data', Math.round((Date.now() - SHARED_AT) / 60000), 'min old; making way for a fresh one'); process.exit(0); }
+      // A page waiting on values it gathered (dhq-compute) comes first.
+      const asks = await db.select('compute_requests', 'select=id&status=eq.pending&order=requested_at.asc&limit=3').catch(() => []);
+      for (const a of asks) {
+        const got = await db.claim('compute_requests', 'id=eq.' + a.id + '&status=eq.pending', { status: 'building', building_at: new Date().toISOString() }).catch(() => []);
+        if (got.length) { await computeForPage(got[0]); process.exit(0); }
+      }
       const rows = await db.select('build_requests', q.replace('select=league_id', 'select=league_id,opened_at')).catch(() => []);
       for (const r of rows) {
         const id = String(r.league_id);
@@ -236,6 +242,19 @@ async function sharedData() {
     }
     T_BUILD = Date.now();
     leagues = leagues.slice(0, 1);
+    async function computeForPage(job) {
+      const t = Date.now();
+      if (process.send) process.send({ building: 'compute ' + job.id, opened: true });
+      try {
+        const intel = await computeFromPayload(job.payload || {}, shared);
+        const text = JSON.stringify(Object.assign({}, intel, { sourceSnapshots: undefined }));
+        await db.update('compute_requests', 'id=eq.' + job.id, { status: 'done', result_json: text, payload: null, done_at: new Date().toISOString() });
+        console.log('computed for a page:', job.platform, job.league_key, Object.keys(intel.playerScores).length, 'players in', ((Date.now() - t) / 1000).toFixed(1) + 's');
+      } catch (e) {
+        console.warn('compute for a page failed:', job.platform, job.league_key, e && e.message || e);
+        await db.update('compute_requests', 'id=eq.' + job.id, { status: 'failed', error: String(e && e.message || e).slice(0, 300), payload: null, done_at: new Date().toISOString() }).catch(() => {});
+      }
+    }
     if (process.send) process.send({ building: leagues[0], opened: standbyOpened });
     console.log('building on request:', leagues[0]);
   }
