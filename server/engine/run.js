@@ -229,8 +229,11 @@ async function sharedData() {
       const asks = await db.select('compute_requests', 'select=id&status=eq.pending&order=requested_at.asc&limit=3').catch(() => []);
       for (const a of asks) {
         const got = await db.claim('compute_requests', 'id=eq.' + a.id + '&status=eq.pending', { status: 'building', building_at: new Date().toISOString() }).catch(() => []);
-        if (got.length) { await computeForPage(got[0]); process.exit(0); }
+        // Computed in a context of its own, so the standby stays up and
+        // goes on waiting (no 3 s start-up before the next one).
+        if (got.length) { await computeForPage(got[0]); break; }
       }
+      if (asks.length) continue;
       const rows = await db.select('build_requests', q.replace('select=league_id', 'select=league_id,opened_at')).catch(() => []);
       for (const r of rows) {
         const id = String(r.league_id);
@@ -244,7 +247,6 @@ async function sharedData() {
     leagues = leagues.slice(0, 1);
     async function computeForPage(job) {
       const t = Date.now();
-      if (process.send) process.send({ building: 'compute ' + job.id, opened: true });
       try {
         const intel = await computeFromPayload(job.payload || {}, shared);
         const text = JSON.stringify(Object.assign({}, intel, { sourceSnapshots: undefined }));
