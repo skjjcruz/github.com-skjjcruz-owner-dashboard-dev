@@ -26,7 +26,7 @@ const ENGINE_VERSION = 'headless-7';
 // ones the valuation path needs — no auth, UI or AI modules).
 const ENGINE_FILES = [
   'constants.js', 'utils.js', 'storage.js', 'event-bus.js', 'platform-provider.js', 'sleeper-api.js',
-  'pick-value-model.js', 'dhq-providers.js', 'dhq-core.js', 'intelligence-context.js', 'values-v2.js', 'pff-snapshot.js',
+  'pick-value-model.js', 'dhq-providers.js', 'dhq-core.js', 'dhq-core-values.js', 'intelligence-context.js', 'values-v2.js', 'pff-snapshot.js',
   'dhq-engine.js', 'dhq-engine-values.js', 'nfl-roles.js', 'team-assess.js', 'analytics-engine.js', 'trade-engine.js', 'rookie-data.js',
 ].map(f => 'reconai-shared/' + f).concat(['js/utils/player-value.js']);
 
@@ -72,9 +72,10 @@ function buildContext() {
   return vm.createContext(ctx);
 }
 
-// The value formula's own file (split out of dhq-engine.js, Phase A6): a
-// shared engine from before the split has the formula inside dhq-engine.js.
-const OPTIONAL_FILES = new Set(['reconai-shared/dhq-engine-values.js']);
+// The value formula's own files (split out of dhq-engine.js, Phase A6, and
+// out of dhq-core.js, Phase A8): a shared engine from before a split has the
+// formula inside the older file.
+const OPTIONAL_FILES = new Set(['reconai-shared/dhq-engine-values.js', 'reconai-shared/dhq-core-values.js']);
 function loadEngine(ctx) {
   for (const rel of ENGINE_FILES) {
     if (OPTIONAL_FILES.has(rel) && !fs.existsSync(path.join(ROOT, rel))) continue;
