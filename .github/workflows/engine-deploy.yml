@@ -56,6 +56,10 @@ jobs:
           # Free Agency screens exactly.
           { echo 'globalThis.window = globalThis;'; cat js/shared/startsit-engine.js; } > server/supabase/functions/dhq-tools/vendor/startsit-engine.js
           { echo 'globalThis.window = globalThis;'; cat js/shared/faab-engine.js; } > server/supabase/functions/dhq-tools/vendor/faab-engine.js
+          # The bid model leaves eliminated teams of a chopped league out of
+          # the rivals through App.Chopped, as the page does (without it every
+          # chopped team, empty roster and frozen budget, counted as a bidder).
+          { echo 'globalThis.window = globalThis;'; cat js/shared/chopped.js; } > server/supabase/functions/dhq-tools/vendor/chopped.js
           # DHQ's standard pick curve, which the app falls back to when a
           # league's build has no pick values of its own (chopped leagues).
           { echo 'globalThis.window = globalThis;'; cat dhq-shared-src/pick-value-model.js; } > server/supabase/functions/dhq-tools/vendor/pick-value-model.js

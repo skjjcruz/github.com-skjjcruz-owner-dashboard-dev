@@ -11,6 +11,7 @@
 // deno-lint-ignore-file no-explicit-any
 import './vendor/trade-engine.js';
 import './vendor/startsit-engine.js';
+import './vendor/chopped.js';
 import './vendor/faab-engine.js';
 import { runTool, type Ctx, type LeagueRow } from './tools.ts';
 import { solveLineup, startSitCall } from './decide-lineup.ts';
@@ -598,5 +599,23 @@ Deno.test('bid model gets normalised positions: raw CB/S/DE rivals bid the same 
     const after = await rr('get_waiver_bid', { player: 'Jacob Parrish' });
     eq([after.suggested_bid, after.range, after.rivals.map((r: any) => r.need)], [before.suggested_bid, before.range, before.rivals.map((r: any) => r.need)]);
   } finally { Object.entries(saved).forEach(([k, v]) => { rosterPlayers[k].pos = v; }); }
+});
+Deno.test('chopped league: eliminated teams are not bid rivals (as on the page)', async () => {
+  // A chopped team's roster is empty and its budget frozen, so without
+  // App.Chopped (vendor/chopped.js) it read as a fully funded, high-need
+  // bidder and inflated the bid (CTB Shootout, 2026-11-02: 6 eliminated
+  // teams counted; $1,039 on the server vs $961 on the page).
+  const lg = RL.snapshot.league as any, rosters = RL.snapshot.rosters as any[];
+  const before = await rr('get_waiver_bid', { player: 'Jacob Parrish' });
+  const savedType = lg.settings.type;
+  const ghost = JSON.parse(JSON.stringify(rosters.find((r: any) => String(r.owner_id) !== String(me13.owner_id))));
+  ghost.roster_id = 99; ghost.owner_id = 'ghost'; ghost.players = []; ghost.starters = []; ghost.reserve = []; ghost.taxi = [];
+  ghost.settings = Object.assign({}, ghost.settings, { eliminated: 3, waiver_budget_used: 0 });
+  lg.settings.type = 3; rosters.push(ghost);
+  try {
+    const after = await rr('get_waiver_bid', { player: 'Jacob Parrish' });
+    ok(!after.rivals.some((r: any) => r.rosterId === 99), 'the eliminated team is not a rival');
+    eq([after.suggested_bid, after.rivals.length], [before.suggested_bid, before.rivals.length]);
+  } finally { rosters.pop(); lg.settings.type = savedType; }
 });
 Deno.test({ name: 'restore fetch', fn: () => { globalThis.fetch = realFetch; } });

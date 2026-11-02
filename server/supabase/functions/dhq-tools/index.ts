@@ -13,6 +13,7 @@
 // Read-only: nothing here writes to Sleeper or to any league.
 import './vendor/trade-engine.js';
 import './vendor/startsit-engine.js';
+import './vendor/chopped.js';
 import './vendor/faab-engine.js';
 import './vendor/pick-value-model.js';
 import { TOOL_DEFS, runTool, ToolError, type Ctx, type LeagueRow } from './tools.ts';

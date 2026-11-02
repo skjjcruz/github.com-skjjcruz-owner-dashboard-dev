@@ -4,6 +4,7 @@
 // Needs vendor/trade-engine.js (see engine-deploy.yml for how it is made).
 import './vendor/trade-engine.js';
 import './vendor/startsit-engine.js';
+import './vendor/chopped.js';
 import './vendor/faab-engine.js';
 import { TOOL_DEFS, runTool, type Ctx, type LeagueRow } from './tools.ts';
 
