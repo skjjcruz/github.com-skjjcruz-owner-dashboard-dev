@@ -67,6 +67,10 @@ const myVets = (myRoster.players || []).map(String).filter(pid => CLIFF[posOfP(p
 const starterSet = new Set((myRoster.starters || []).map(String));
 const taxiIr = new Set([...(myRoster.taxi || []), ...(myRoster.reserve || [])].map(String));
 const nm = (pid: string) => (ctx.players[pid] || {}).n || pid;
+// A free agent to price (the bid question): the league's most valuable
+// unrostered QB/RB/WR/TE, so it doesn't break when a named player is signed.
+const rosteredHere = new Set(L.snapshot.rosters.flatMap(x => (x.players || []).map(String)));
+const freeAgent = Object.keys(L.intel.playerScores || {}).filter(pid => !rosteredHere.has(pid) && ctx.players[pid] && ['QB', 'RB', 'WR', 'TE'].includes(posOfP(pid))).sort((a, b) => valueOf(b) - valueOf(a))[0];
 const myNames = new Set((myRoster.players || []).map(String).map(nm));
 const hasDefSlot = ((L.snapshot.league || {}).roster_positions || []).some((s: string) => /^(DEF|DST)$/i.test(s));
 
@@ -199,7 +203,7 @@ const BANK: Q[] = [
     ...miss(num(r.draft_year), 'draft year'),
     ...miss(Array.isArray(r.picks_by_team) && r.picks_by_team.length > 0, 'picks by team'),
   ] },
-  { q: 'How much should I bid on a free agent?', tool: 'get_waiver_bid', args: { league_id: lid, player: (L.snapshot.rosters.flatMap(x => x.players || []).includes('7607') ? 'nobody' : 'Michael Carter') }, must: r => [
+  { q: 'How much should I bid on a free agent?', tool: 'get_waiver_bid', args: { league_id: lid, player: freeAgent ? nm(freeAgent) : 'Michael Carter' }, must: r => [
     ...miss(num(r.suggested_bid), 'a suggested bid'),
     ...miss(r.range && num(r.range.low) && num(r.range.high), 'a range'),
     ...miss(typeof r.cold_start === 'boolean', 'says whether the league has enough bid history'),
