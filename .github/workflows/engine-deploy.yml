@@ -110,18 +110,18 @@ jobs:
 
       - name: Deploy dhq-tools, dhq-auth, dhq-news, dhq-request, dhq-league, dhq-compute and dhq-mock
         run: |
-          supabase functions deploy dhq-tools --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
-          supabase functions deploy dhq-auth --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          supabase functions deploy dhq-tools --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt --yes
+          supabase functions deploy dhq-auth --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt --yes
           # Public NFL news only (no league or member data): no sign-in.
-          supabase functions deploy dhq-news --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          supabase functions deploy dhq-news --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt --yes
           # Queues league ids for the engine server; grants nothing: no sign-in.
-          supabase functions deploy dhq-request --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          supabase functions deploy dhq-request --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt --yes
           # One league's built numbers (public Sleeper-league data): no sign-in.
-          supabase functions deploy dhq-league --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          supabase functions deploy dhq-league --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt --yes
           # Values for a league a page gathered (Phase A6): no sign-in.
-          supabase functions deploy dhq-compute --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          supabase functions deploy dhq-compute --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt --yes
           # The mock draft's computer picks (Phase A7): no sign-in.
-          supabase functions deploy dhq-mock --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt
+          supabase functions deploy dhq-mock --project-ref "$ENGINE_PROJECT_REF" --workdir server --use-api --no-verify-jwt --yes
 
       - name: Smoke test
         run: |

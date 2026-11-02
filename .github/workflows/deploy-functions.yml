@@ -241,7 +241,7 @@ jobs:
         run: |
           for fn in ${{ steps.plan.outputs.plan }}; do
             echo "── deploying $fn"
-            supabase functions deploy "$fn" --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt
+            supabase functions deploy "$fn" --project-ref sxshiqyxhhifvtfqawbq --use-api --no-verify-jwt --yes
           done
 
       # NOTE: mfl-proxy is deliberately NOT deployed here. Both apps share the
