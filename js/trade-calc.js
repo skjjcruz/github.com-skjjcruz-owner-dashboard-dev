@@ -430,6 +430,13 @@
         if (!LI || LI._projectedYear) return false;
         return window.App?.LI_SOURCE?.source === 'server';
     }
+    // The server answers from its newest build (rebuilt every 30 min); the
+    // page keeps the build it loaded at open. Once a newer build lands every
+    // answer differs, so a comparison is only made against the same build.
+    function tcSameBuild(asOf) {
+        const t = Date.parse(asOf), mine = Date.parse(window.App?.LI_SOURCE?.built_at);
+        return Number.isFinite(t) && t === mine;
+    }
     // The device's and the server's evaluate_trade agree on everything a
     // screen shows: the verdict (minus `precedence`, a note for the AI) and
     // the headliner.
@@ -1382,7 +1389,7 @@
             // device's on everything the screen shows (verdict, headliner);
             // otherwise the device's stays and the difference is logged.
             const settle = () => {
-                if (!live || dev === undefined || srv === undefined || !srv || !dev) return;
+                if (!live || dev === undefined || srv === undefined || !srv || !dev || !tcSameBuild(srv.asOf)) return;
                 const same = tcSameCall(dev, srv);
                 if (window._labDbg) window._labDbg.tradeCallServer = { key, same, verdict: srv.verdict, headliner: srv.headliner };
                 if (same) setDhqCall(Object.assign({}, srv, { key, source: 'server' }));
@@ -1412,7 +1419,7 @@
                 try { if (localStorage.getItem('dhq_server_li_off') === '1') return; } catch (e) { /* storage off */ }
                 fetch('https://hovnqztlbsgsywrbidbh.supabase.co/functions/v1/dhq-tools/app?league=' + lid + '&user=' + encodeURIComponent(myRoster.owner_id) + '&tool=evaluate_trade&args=' + encodeURIComponent(JSON.stringify(args)), { credentials: 'omit' })
                     .then(r => (r.ok ? r.json() : null))
-                    .then(b => { srv = b && b.ok && b.result && b.result.verdict ? { verdict: b.result.verdict, headliner: b.result.headliner || null } : null; settle(); })
+                    .then(b => { srv = b && b.ok && b.result && b.result.verdict ? { verdict: b.result.verdict, headliner: b.result.headliner || null, asOf: b.result.numbers_as_of } : null; settle(); })
                     .catch(() => { srv = null; /* the device's call stands */ });
             }, 250);
             return () => { live = false; clearTimeout(t); };
@@ -4373,7 +4380,7 @@
                 .then(r => (r.ok ? r.json() : null))
                 .then(b => {
                     const res = b && b.ok && b.result && Array.isArray(b.result.results) ? b.result.results : null;
-                    if (!res) return;
+                    if (!res || !tcSameBuild(b.result.numbers_as_of)) return;
                     let same = 0, diff = 0; const sample = [];
                     results.forEach((r, i) => {
                         const a = offersOf(r), sv = res[i] && !res[i].error ? offersOf(res[i]) : null;
@@ -4398,7 +4405,7 @@
                 .then(r => (r.ok ? r.json() : null))
                 .then(b => {
                     const res = b && b.ok && b.result && Array.isArray(b.result.results) ? b.result.results : null;
-                    if (!res) return;
+                    if (!res || !tcSameBuild(b.result.numbers_as_of)) return;
                     let same = 0, diff = 0; const sample = [];
                     evals.forEach((ev, i) => {
                         const a = ev && !ev.error ? { verdict: ev.verdict, headliner: ev.headliner || null } : null;

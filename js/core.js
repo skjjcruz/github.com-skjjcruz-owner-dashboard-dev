@@ -99,7 +99,8 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // ─── Error Logger ──────────────────────────────────────────────────────────
     // Thin wrapper so failures show up in the console with a consistent prefix.
     // Replace the body here to route to an error reporting service in the future.
-    function wrLog(context, err) {
+    // extra: an optional payload (e.g. { sample }) attached to the report.
+    function wrLog(context, err, extra) {
         if (typeof console !== 'undefined') console.warn('[WarRoom]', context, err);
         // Non-string labels/payloads must not collapse to "[object Object]"
         // in the admin error table — JSON beats Object#toString here.
@@ -112,7 +113,8 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         var label = safeStr(context) || 'unknown';
         window.DHQBugCapture?.captureError?.(
             err instanceof Error ? err : new Error(safeStr(err) || label),
-            { source: 'wrLog', context: label }
+            { source: 'wrLog', context: label },
+            extra && typeof extra === 'object' ? extra : undefined
         );
     }
     window.wrLog = wrLog; // expose for cross-module access

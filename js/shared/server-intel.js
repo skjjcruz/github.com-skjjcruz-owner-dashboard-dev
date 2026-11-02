@@ -250,6 +250,9 @@
         if (typeof orig !== 'function' || orig.__serverIntel) return orig;
         const wrapped = async function () {
             if (App.LI_LOADED) return;
+            // A new league is loading: the last one's source no longer
+            // describes App.LI (set again below when the server's build is used).
+            App.LI_SOURCE = null;
             if (off() || root._liLoading || typeof root.fetch !== 'function') return orig.apply(this, arguments);
             let settle = () => {};
             track(String((state() || {}).currentLeagueId || ''), new Promise(r => { settle = r; }));

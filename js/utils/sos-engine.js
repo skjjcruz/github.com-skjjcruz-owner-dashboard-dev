@@ -224,6 +224,11 @@
             return;
         }
 
+        // Called before the player list has loaded (a tab or card opening
+        // early): with no players nothing can be tallied, so don't fetch 18
+        // weeks for nothing. The next call, once players are in, builds it.
+        if (Object.keys(playersData || {}).length < 100) return;
+
         // Fetch all weeks in parallel; fall back to season-1 if season has no data
         let allWeekData = await Promise.all(
             Array.from({ length: NFL_WEEKS }, (_, i) => fetchWeeklyStats(season, i + 1))

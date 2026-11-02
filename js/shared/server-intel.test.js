@@ -171,6 +171,20 @@ test('this week\'s DHQ projections ride along when the build is fresh (Phase A3)
     assert.equal(r.App.ServerProj.week, 8, 'values from the cache, projections from the server');
 });
 
+test('a new league load clears the last league\'s LI_SOURCE (device cache and device paths too)', async () => {
+    let r = load({ cache: true, fetch: () => Promise.resolve({ ok: false, status: 404 }) });
+    r.App.LI_SOURCE = { source: 'server', built_at: '2026-10-30T15:48:37Z' };   // left from the previous league
+    await r.App.loadLeagueIntel();
+    assert.equal(r.App.LI_SOURCE, null, 'values from this device\'s cache are not the server\'s build');
+    r = load({ fetch: () => Promise.resolve({ ok: false, status: 404 }) });
+    r.App.LI_SOURCE = { source: 'server', built_at: '2026-10-30T15:48:37Z' };
+    await r.App.loadLeagueIntel();
+    assert.equal(r.App.LI_SOURCE, null, 'computed on the device');
+    r = load();
+    await r.App.loadLeagueIntel();
+    assert.equal(r.App.LI_SOURCE.source, 'server', 'set again when the server\'s build is used');
+});
+
 test('projSettled: the projection engine can wait for this week\'s numbers (A8)', async () => {
     const proj = { week: 8, built_at: new Date().toISOString(), players: {}, app: { model: 'm1', results: { p1: { median: 1, mean: 1 } }, none: [], inj: {} } };
     let r = load({ fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve(body({ dhq_proj: proj })) }) });
