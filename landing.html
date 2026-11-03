@@ -1124,7 +1124,7 @@
       // reads 0 no matter how many people sign up (owner ask 2026-08-20).
       trackLandingEvent(authMode === 'signup' ? 'signup_started' : 'signin_started', { method: 'google' });
       markOAuthPending();
-      db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } });
+      db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname.replace(/\/([^/.]+)$/, '/$1.html') } });
     }
 
     // ── Apple OAuth (account only) ──────────────────────────────────────────
@@ -1138,7 +1138,7 @@
       // reads 0 no matter how many people sign up (owner ask 2026-08-20).
       trackLandingEvent(authMode === 'signup' ? 'signup_started' : 'signin_started', { method: 'apple' });
       markOAuthPending();
-      db.auth.signInWithOAuth({ provider: 'apple', options: { redirectTo: window.location.origin + window.location.pathname } });
+      db.auth.signInWithOAuth({ provider: 'apple', options: { redirectTo: window.location.origin + window.location.pathname.replace(/\/([^/.]+)$/, '/$1.html') } });
     }
 
     // Handle Google redirect back: store session, then route to step 2.
