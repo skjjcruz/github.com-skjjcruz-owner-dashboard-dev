@@ -15,6 +15,22 @@
 
     const KEY = (lid, season) => 'dhq_txns_' + lid + '_' + season;
     const TTL_MS = 6 * 60 * 60 * 1000;  // 6h — transactions are append-only within a week
+    // Storage-full fix (2026-11-04): a busy league's season of transactions
+    // ran to hundreds of KB per league and filled localStorage, after which
+    // every other save failed. Routine moves (free-agent adds/drops,
+    // commissioner moves) are kept for the last KEEP_WEEKS weeks; trades and
+    // waiver claims are kept for the whole season, because the Trade Log and
+    // the FAAB bid model (page and engine server alike) read all of them.
+    const KEEP_WEEKS = 8;
+    function trimmed(list, week) {
+        if (!(week > KEEP_WEEKS)) return list;
+        const cutoff = week - KEEP_WEEKS;
+        return list.filter(t => {
+            if (t.type === 'trade' || t.type === 'waiver') return true;
+            const leg = Number(t.leg);
+            return !(leg > 0) || leg > cutoff;   // no week on it: keep
+        });
+    }
 
     function store() { return window.App && window.App.DhqStorage; }
 
@@ -57,15 +73,19 @@
         }
         const results = await Promise.all(fetches);
         const all = results.flat().filter(t => t && t.type);
-        const txns = all.filter(t => t.status !== 'failed');
+        const txns = trimmed(all.filter(t => t.status !== 'failed'), c.offseason ? 0 : c.week);
         // Failed WAIVER claims are kept separately: a losing FAAB bid is real
         // willingness-to-pay evidence (the FAAB engine's best input), but every
         // existing reader of `txns` assumes completed transactions only — so
         // the main array's contract is unchanged.
         const failedWaivers = all.filter(t => t.status === 'failed' && t.type === 'waiver' && Number(t.settings && t.settings.waiver_bid) > 0);
         if (st) {
-            try { st.set(key, { ts: Date.now(), season, txns, failedWaivers }); }
-            catch (e) { if (window.dhqLog) window.dhqLog('txns.cache', e); }
+            // DhqStorage.set returns false when storage is full (after its
+            // janitor has had a go): drop this league's old copy rather than
+            // let a stale blob keep holding space other saves need.
+            let ok = false;
+            try { ok = st.set(key, { ts: Date.now(), season, txns, failedWaivers }) !== false; } catch (e) { ok = false; }
+            if (!ok) { try { if (st.remove) st.remove(key); else localStorage.removeItem(key); } catch (e) { /* storage unavailable */ } }
         }
         return txns;
     }
@@ -101,5 +121,5 @@
             .slice(0, limit || 10);
     }
 
-    window.WrTxns = { fetchLeagueTxns, hydrateLeagues, getCached, getFailedWaivers, recentTrades };
+    window.WrTxns = { fetchLeagueTxns, hydrateLeagues, getCached, getFailedWaivers, recentTrades, _trimmed: trimmed, KEEP_WEEKS };
 })();
