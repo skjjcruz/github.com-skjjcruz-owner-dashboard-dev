@@ -28,7 +28,7 @@ const SLEEPER = 'https://api.sleeper.app/v1';
 // The sign-in page itself. The function host serves every response as plain
 // text (its anti-phishing rule), so the page is a static file elsewhere that
 // talks to this function with JSON; /authorize sends the member there.
-const SIGNIN_PAGE = Deno.env.get('DHQ_SIGNIN_PAGE') || 'https://skjjcruz.github.io/DHQ-Web-Page/connect/';
+const SIGNIN_PAGE = Deno.env.get('DHQ_SIGNIN_PAGE') || 'https://dhq-lab.pages.dev/connect/';
 const PUBLIC_FUNCTIONS = (Deno.env.get('SUPABASE_URL') || 'https://hovnqztlbsgsywrbidbh.supabase.co').replace(/\/$/, '') + '/functions/v1';
 const ACCESS_TTL_S = 30 * 24 * 3600;      // 30 days
 const REFRESH_TTL_S = 180 * 24 * 3600;    // 180 days

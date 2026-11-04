@@ -28,7 +28,7 @@ test('every page\'s script-src allows only this site', () => {
         // snapshots, built there because the PFF key lives only in that repo),
         // which DHQ projections read (js/shared/dhq-proj.js DATA_HOME).
         const extra = m[1].trim().split(/\s+/).filter(x => /https?:/i.test(x));
-        assert.deepEqual(extra, p === 'index.html' ? ['https://skjjcruz.github.io/DHQ-Web-Page/data/'] : [], p + ' script-src: ' + m[1].trim());
+        assert.deepEqual(extra, p === 'index.html' ? ['https://dhq-lab.pages.dev/data/'] : [], p + ' script-src: ' + m[1].trim());
     }
 });
 

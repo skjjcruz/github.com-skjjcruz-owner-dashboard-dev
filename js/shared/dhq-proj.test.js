@@ -159,7 +159,7 @@ test('a snapshot that fails to load is set aside; the engine still loads', async
     D._st.deps = null; D._st.error = null; D._st.data = {};
     await D._loadDeps();
     assert.equal(D._st.error, null, 'the load did not fail');
-    assert.ok(asked.some(u => /^https:\/\/skjjcruz\.github\.io\/DHQ-Web-Page\/data\/usage-snapshot\.js\?v=/.test(u)), 'data comes from the Lab origin off the Lab: ' + asked.join(' '));
+    assert.ok(asked.some(u => /^https:\/\/dhq-lab\.pages\.dev\/data\/usage-snapshot\.js\?v=/.test(u)), 'data comes from the Lab origin off the Lab: ' + asked.join(' '));
     assert.ok(asked.some(u => /^js\/shared\/matchup-engine\.js\?v=/.test(u)), 'engine files come from this origin');
     const s = D._checkData(2026);
     assert.equal(s['data/pff-matchup-snapshot.js'].ok, false);

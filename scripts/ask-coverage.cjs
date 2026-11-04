@@ -26,7 +26,7 @@ const CALLS = [
   await c.addInitScript(k => { try { if (k) localStorage.setItem('dhq_lab_key_v2', k); } catch (e) {} }, process.env.LAB_KEY || '');
   const p = await c.newPage();
   const errs = []; p.on('pageerror', e => errs.push(String(e.message).slice(0, 160)));
-  await p.goto('https://skjjcruz.github.io/DHQ-Web-Page/', { waitUntil: 'domcontentloaded' });
+  await p.goto('https://dhq-lab.pages.dev/', { waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(5000);
   const inp = p.locator('input:visible').first();
   await inp.fill('skjjcruz');

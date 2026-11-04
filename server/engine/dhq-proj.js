@@ -13,7 +13,7 @@
 // 2026-10-10 except dhq-proj.js, where the Lab only adds later-week
 // functions; the current-week path is the same). The PFF and usage
 // snapshots are read from the published Lab
-// (https://skjjcruz.github.io/DHQ-Web-Page/data/…, public data, no key),
+// (https://dhq-lab.pages.dev/data/…, public data, no key),
 // exactly as the app and the website read them.
 //
 // Two of those files read ESPN through relays on the live app's Supabase
@@ -50,7 +50,8 @@ function projModel(root) {
   for (const f of MODEL_FILES) h.update(f).update('\0').update(fs.readFileSync(path.join(root || ROOT, f))).update('\0');
   return h.digest('hex').slice(0, 12);
 }
-const DATA_HOME = 'https://skjjcruz.github.io/DHQ-Web-Page/';
+// The Lab's data files, on Cloudflare Pages since 2026-11-04 (the Lab repo is private).
+const DATA_HOME = 'https://dhq-lab.pages.dev/';
 // The PFF, usage and WR/RB/TE model snapshots (Lab PRs #104/#106: DHQ's own
 // WR, RB and TE models, scored four times a day into data/wr-model-snapshot.js),
 // the same files dhq-proj.js loads in the page (its DEPS).
